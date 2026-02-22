@@ -940,7 +940,7 @@ export default function BonusHuntControl({
               style={{ ...STYLES.btnSecondary, borderColor: '#ffd700', color: '#ffd700', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
               title="Show Tip Options"
             >
-              Maxwin Hit? -> Send Tip 💸 {showTipMenu ? '▲' : '▼'}
+              Maxwin Hit? -&gt; Send Tip 💸 {showTipMenu ? '▲' : '▼'}
             </button>
             {showTipMenu && (
               <div style={{
