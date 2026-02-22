@@ -121,7 +121,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
   };
 
   const formatCurrency = (amount: number, currency: string) => {
-    return `${amount.toFixed(8)} ${currency.toUpperCase()}`;
+    return `${(amount || 0).toFixed(8)} ${(currency || 'UNK').toUpperCase()}`;
   };
 
   const formatDate = (dateStr: string) => {
@@ -288,23 +288,23 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                   {/* Fixture / Selection - First only + count */}
                   <td className="p-3">
                     <div className="flex flex-col gap-1">
-                      {bet.outcomes.length > 0 && (
+                      {bet.outcomes && bet.outcomes.length > 0 && (
                         <div className="flex flex-col mb-1 last:mb-0">
-                           <span className="text-white font-bold text-xs truncate max-w-[200px]" title={bet.outcomes[0].fixture.name}>
-                             {bet.outcomes[0].fixture.name}
+                           <span className="text-white font-bold text-xs truncate max-w-[200px]" title={bet.outcomes[0]?.fixture?.name}>
+                             {bet.outcomes[0]?.fixture?.name || 'Unknown Fixture'}
                            </span>
-                           <span className="text-[#00e701] text-[11px] truncate max-w-[200px]" title={`${bet.outcomes[0].outcome.name} (${bet.outcomes[0].market.name})`}>
-                             {bet.outcomes[0].outcome.name} <span className="text-[#55657e]">({bet.outcomes[0].market.name})</span>
+                           <span className="text-[#00e701] text-[11px] truncate max-w-[200px]" title={`${bet.outcomes[0]?.outcome?.name} (${bet.outcomes[0]?.market?.name})`}>
+                             {bet.outcomes[0]?.outcome?.name || 'Unknown Outcome'} <span className="text-[#55657e]">({bet.outcomes[0]?.market?.name || 'Unknown Market'})</span>
                            </span>
                            {/* Simple Match Status if Live */}
-                           {bet.outcomes[0].fixture.eventStatus?.matchStatus === 'live' && (
+                           {bet.outcomes[0]?.fixture?.eventStatus?.matchStatus === 'live' && (
                              <span className="text-[10px] text-[#ff4d4d] animate-pulse font-bold">
-                               LIVE {bet.outcomes[0].fixture.eventStatus.homeScore}-{bet.outcomes[0].fixture.eventStatus.awayScore}
+                               LIVE {bet.outcomes[0]?.fixture?.eventStatus?.homeScore}-{bet.outcomes[0]?.fixture?.eventStatus?.awayScore}
                              </span>
                            )}
                         </div>
                       )}
-                      {bet.outcomes.length > 1 && (
+                      {bet.outcomes && bet.outcomes.length > 1 && (
                           <span className="text-[10px] text-[#b1bad3] italic">
                               + {bet.outcomes.length - 1} more selection{bet.outcomes.length > 2 ? 's' : ''}
                           </span>
