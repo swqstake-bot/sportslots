@@ -128,20 +128,25 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     return new Date(dateStr).toLocaleString();
   };
 
+  const getOpenLegsCount = (bet: SportBet) => {
+    if (!bet.outcomes) return 0;
+    return bet.outcomes.filter((o: any) => 
+        o.outcome.status === 'active' || o.outcome.status === 'open' || 
+        o.market.status === 'active' || o.market.status === 'open' ||
+        o.status === 'active'
+    ).length;
+  };
+
   const calculateOpenLegs = (bet: SportBet) => {
     if (!bet.outcomes) return '0/0';
     const total = bet.outcomes.length;
-    // Count how many are not won/lost/void? Or specifically 'active' or 'open'
-    // Usually status is on the outcome or market.
-    // Let's assume outcome.status or market.status.
-    // The fragment has outcome.status and market.status.
-    // If status is 'active' or 'open', it's open.
-    const open = bet.outcomes.filter((o: any) => 
-        o.outcome.status === 'active' || o.outcome.status === 'open' || 
-        o.market.status === 'active' || o.market.status === 'open' ||
-        o.status === 'active' // SportBetOutcome top level status
-    ).length;
+    const open = getOpenLegsCount(bet);
     return `${open}/${total}`;
+  };
+
+  const getCashoutValue = (bet: SportBet) => {
+    if (bet.status !== 'active' || bet.cashoutDisabled || !bet.cashoutMultiplier) return 0;
+    return bet.amount * bet.cashoutMultiplier;
   };
 
   const copyLink = (betId: string, iid?: string) => {
@@ -191,6 +196,14 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
             case 'payout':
                 valA = a.payout;
                 valB = b.payout;
+                break;
+            case 'cashout':
+                valA = getCashoutValue(a);
+                valB = getCashoutValue(b);
+                break;
+            case 'openLegs':
+                valA = getOpenLegsCount(a);
+                valB = getOpenLegsCount(b);
                 break;
             case 'createdAt':
             default:
@@ -314,8 +327,13 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                      {formatCurrency(bet.amount, bet.currency)}
                   </td>
 
-                  {/* Potential */}
+                  {/* Cashout Value */}
                   <td className="p-3 font-mono text-[#00e701]">
+                    {getCashoutValue(bet) > 0 ? formatCurrency(getCashoutValue(bet), bet.currency) : '-'}
+                  </td>
+
+                  {/* Potential */}
+                  <td className="p-3 font-mono text-[#b1bad3]">
                     {formatCurrency(bet.payout, bet.currency)}
                   </td>
 
@@ -367,7 +385,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
               
               {bets.length === 0 && !isLoading && (
                  <tr>
-                    <td colSpan={7} className="p-8 text-center text-[#55657e]">
+                    <td colSpan={9} className="p-8 text-center text-[#55657e]">
                         <div className="flex flex-col items-center">
                             <svg className="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
                             <span className="font-bold uppercase tracking-wide">No bets found</span>
