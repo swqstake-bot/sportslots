@@ -179,6 +179,7 @@ export default function BonusHuntControl({
   const [hasBonusSlugs, setHasBonusSlugs] = useState(() => new Set(loadHasBonusSlugs()))
   const [wheelOpenedSlugs, setWheelOpenedSlugs] = useState(() => new Set())
   const [cryptoOnly, setCryptoOnly] = useState(true)
+  const [tipCopied, setTipCopied] = useState(false)
 
   const selectedSlots = slots.filter((s) => selectedSlugs.includes(s.slug))
   const [supportedCurrencies, setSupportedCurrencies] = useState(ALL_CURRENCIES)
@@ -910,6 +911,17 @@ export default function BonusHuntControl({
               Stoppen
             </button>
           )}
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText('FYN6Ejv7qLG4q6PrFW2txSLdV5i7dekGtibTMTZjRrWC')
+              setTipCopied(true)
+              setTimeout(() => setTipCopied(false), 2000)
+            }}
+            style={{ ...STYLES.btnSecondary, marginLeft: 'auto', borderColor: '#ffd700', color: '#ffd700', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            title="Copy Solana Address for Tip"
+          >
+            {tipCopied ? 'Copied! ❤️' : 'Maxwin Hit? -> Send Tip 💸'}
+          </button>
         </div>
 
         {error && <div style={STYLES.error}>{error}</div>}
