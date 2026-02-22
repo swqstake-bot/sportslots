@@ -42,7 +42,7 @@ export default function CasinoView() {
   const [loadedSetId, setLoadedSetId] = useState('')
   const [saveSlotSetOpen, setSaveSlotSetOpen] = useState(false)
   const [saveSlotSetName, setSaveSlotSetName] = useState('')
-  const [, setSaveSlotSetError] = useState('')
+  const [saveSlotSetError, setSaveSlotSetError] = useState('')
   const [toast, setToast] = useState('')
   const [theme] = useState(() => localStorage.getItem(THEME_KEY) || 'dark')
   const [, setImportError] = useState('')
@@ -310,21 +310,7 @@ export default function CasinoView() {
                           <Button variant="danger" size="sm" className="text-base px-4 py-2" onClick={(e) => handleDeleteSet(loadedSetId, e)}>Delete</Button>
                        )}
                      </div>
-                     
-                     {saveSlotSetOpen && (
-                       <div className="mt-4 flex gap-3 animate-in fade-in slide-in-from-top-2">
-                         <input 
-                           type="text" 
-                           placeholder="Set Name" 
-                           value={saveSlotSetName}
-                           onChange={(e) => setSaveSlotSetName(e.target.value)}
-                           className="bg-[#0f212e] border border-[#2f4553] rounded-lg px-4 py-2 text-base flex-1 focus:ring-2 focus:ring-[#00e676] outline-none"
-                         />
-                         <Button size="sm" className="text-base px-4 py-2" onClick={handleSaveSet}>Save</Button>
-                         <Button variant="ghost" size="sm" className="text-base px-4 py-2" onClick={() => setSaveSlotSetOpen(false)}>Cancel</Button>
-                       </div>
-                     )}
-                   </div>
+                     </div>
                    
                    <div className="w-full md:w-[460px] bg-[#0f212e] p-6 rounded-xl border border-[#2f4553]">
                       <h3 className="text-xl font-bold text-white mb-6 uppercase tracking-wider">Global Controls</h3>
@@ -461,7 +447,48 @@ export default function CasinoView() {
         </main>
       </div>
       
+
+      {/* Save Set Modal */}
+      {saveSlotSetOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
+          <div className="bg-[#1a2c38] p-6 rounded-xl border border-[#2f4553] w-full max-w-md shadow-2xl scale-100 animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xl font-bold text-white mb-4">Save Slot Set</h3>
+            
+            {saveSlotSetError && (
+              <div className="bg-red-500/10 border border-red-500/50 text-red-500 p-3 rounded mb-4 text-sm">
+                {saveSlotSetError}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-[#9ca3af] mb-1">Name</label>
+                <input 
+                  type="text" 
+                  placeholder="My Best Slots" 
+                  value={saveSlotSetName}
+                  onChange={(e) => setSaveSlotSetName(e.target.value)}
+                  className="w-full bg-[#0f212e] border border-[#2f4553] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#00e676] outline-none transition-all"
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSaveSet(e) }}
+                />
+              </div>
+              
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="ghost" onClick={() => setSaveSlotSetOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSaveSet} disabled={!saveSlotSetName.trim()}>
+                  Save
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && <Toast message={toast} visible={!!toast} onHide={() => setToast('')} />}
+
     </div>
   )
 }
