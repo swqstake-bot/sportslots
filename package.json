@@ -2,7 +2,7 @@
   "name": "stakesportselectron",
   "private": true,
   "type": "module",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "StakeSports Electron App",
   "author": "StakeSports",
   "repository": {
@@ -14,7 +14,7 @@
     "dev": "concurrently -k \"vite\" \"tsc -p electron/tsconfig.json -w\" \"wait-on tcp:5176 && cross-env VITE_DEV_SERVER_URL=http://localhost:5176 electron .\"",
     "build:compile": "tsc -b && vite build && tsc -p electron/tsconfig.json",
     "package": "npm run build:compile && electron-packager . --overwrite --out=release-final --platform=win32 --arch=x64 --icon=build/icon.ico --prune=true --asar --extra-resource=app-update.yml --ignore=\"^/(src|electron|tsconfig|vite\\.config|\\.git|\\.gitignore|README|LICENSE|builder-cache|release|release_old|release-packager|release-final)\"",
-    "build": "npm run build:compile && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
+    "build": "npm run build:compile && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --publish always",
     "lint": "eslint .",
     "preview": "vite preview"
   },
