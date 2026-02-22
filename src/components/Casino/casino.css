@@ -1,0 +1,94 @@
+/* Scoped Theme colors for Casino */
+.casino-root {
+  --bg-deep: #0f212e;
+  --bg-card: #1a2c38;
+  --bg-elevated: #213743;
+  --accent: #00e676;
+  --accent-rgb: 0, 230, 118;
+  --accent-dim: #00b859;
+  --accent-glow: rgba(0, 230, 118, 0.15);
+  --text: #b1bad3;
+  --text-muted: #8890a0;
+  --border: #2f4553;
+  --error: #ff5252;
+  --success: #00e676;
+
+  /* Font variables (assuming they are defined globally or here) */
+  --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --radius-md: 8px;
+  --transition-fast: 0.15s ease;
+  --focus-ring: 0 0 0 2px var(--bg-deep), 0 0 0 4px var(--accent);
+}
+
+.casino-root[data-theme='light'] {
+  --bg-deep: #e8ecf0;
+  --bg-card: #ffffff;
+  --bg-elevated: #f1f5f9;
+  --accent: #059669;
+  --accent-rgb: 5, 150, 105;
+  --accent-dim: #047857;
+  --accent-glow: rgba(5, 150, 105, 0.15);
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --border: #cbd5e1;
+  --error: #dc2626;
+  --success: #059669;
+}
+
+.casino-root {
+  font-family: var(--font-sans);
+  background: var(--bg-deep);
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Base form elements scoped */
+.casino-root select,
+.casino-root input[type='text'],
+.casino-root input[type='number'],
+.casino-root input[type='password'] {
+  color: var(--text);
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem; /* Add padding as reset removed it */
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.casino-root select:focus,
+.casino-root input[type='text']:focus,
+.casino-root input[type='number']:focus,
+.casino-root input[type='password']:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.casino-root select:hover,
+.casino-root input:hover {
+  border-color: var(--text-muted);
+}
+
+.casino-root select option {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+/* Buttons scoped */
+.casino-root button {
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.casino-root button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.casino-root button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.casino-root button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}

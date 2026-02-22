@@ -1,0 +1,3656 @@
+[
+  {
+    "ts": "2026-02-17T22:53:36.122Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 30,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "wfwpc",
+        "jackpotWin": null,
+        "roundId": "25438506137",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "0",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "clear",
+                  "data": {}
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "1111110110001100110011001"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "stops": [
+                "35",
+                "27",
+                "203",
+                "5",
+                "24"
+              ],
+              "grid": "--*))-+*/-*10.-*10,-0.+,00-"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "22000",
+            "wc": "0",
+            "awa": "22000",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "17600",
+                    "symbol": "6",
+                    "mask": "0000010010110100010001001",
+                    "count": "8"
+                  }
+                },
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "4400",
+                    "symbol": "8",
+                    "mask": "0000000001000001001010110",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0000010011110101011011111"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "--2)+1-.+5.0../.10/.010.00."
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "8800",
+            "wc": "0",
+            "awa": "30800",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "8800",
+                    "symbol": "9",
+                    "mask": "0000000000000101001100011",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0000000000000101001100011"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "--..+-).*2.)0)+1-1+5112//11"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "184800",
+            "wc": "0",
+            "awa": "215600",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "17"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "17",
+                    "c": "2",
+                    "multiplicative": false,
+                    "result": "2"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "12",
+                    "c": "2",
+                    "multiplicative": false,
+                    "result": "4"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "3",
+                    "p": "7",
+                    "c": "2",
+                    "multiplicative": false,
+                    "result": "7"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "3",
+                    "p": "2",
+                    "c": "2",
+                    "multiplicative": true,
+                    "result": "21"
+                  }
+                },
+                {
+                  "at": "cashWin",
+                  "data": {
+                    "winAmount": "184800"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "--1.+4+.*2/2.)+-)0+5-)2//.-"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "5409855",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:39Z"
+    },
+    "error": null,
+    "durationMs": 177
+  },
+  {
+    "ts": "2026-02-17T22:53:36.251Z",
+    "level": "info",
+    "type": "hacksaw/continue",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 31,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "roundId": "25438506137",
+      "continueInstructions": {
+        "action": "win_presentation_complete"
+      }
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438506137",
+        "possibleActions": [],
+        "events": []
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "5625455",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:40Z"
+    },
+    "error": null,
+    "durationMs": 128
+  },
+  {
+    "ts": "2026-02-17T22:53:36.478Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 32,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438506219",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "0",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "stops": [
+                "132",
+                "61",
+                "200",
+                "242",
+                "97"
+              ],
+              "grid": "--/,*.+)+/*+21.*4)*)/2*---)"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "5599055",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:40Z"
+    },
+    "error": null,
+    "durationMs": 212
+  },
+  {
+    "ts": "2026-02-17T22:53:36.629Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 33,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "started",
+        "jackpotWin": null,
+        "roundId": "25438506287",
+        "possibleActions": [
+          "play",
+          "gamble"
+        ],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "0",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "0",
+                    "symbol": "12",
+                    "mask": "0010000000000110000000000",
+                    "count": "3"
+                  }
+                },
+                {
+                  "at": "bonusfeaturewon",
+                  "data": {
+                    "bfw": "bonus",
+                    "bfc": "0"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "stops": [
+                "48",
+                "62",
+                "235",
+                "54",
+                "123"
+              ],
+              "grid": "--1+4,/-1).0/*/44)-,)+,)-1+"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "pick",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "0",
+            "awc": "0",
+            "c": {
+              "choice": "bonus"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "5572655",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:40Z"
+    },
+    "error": null,
+    "durationMs": 136
+  },
+  {
+    "ts": "2026-02-17T22:53:36.692Z",
+    "level": "info",
+    "type": "hacksaw/continue",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 34,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "roundId": "25438506287",
+      "continueInstructions": {
+        "action": "gamble"
+      }
+    },
+    "response": {
+      "round": {
+        "status": "started",
+        "jackpotWin": null,
+        "roundId": "25438506287",
+        "possibleActions": [
+          "play",
+          "gamble"
+        ],
+        "events": [
+          {
+            "et": 2,
+            "etn": "pick",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "0",
+            "awc": "0",
+            "c": {
+              "choice": "bonus_2"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": null,
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:40Z"
+    },
+    "error": null,
+    "durationMs": 62
+  },
+  {
+    "ts": "2026-02-17T22:53:36.762Z",
+    "level": "info",
+    "type": "hacksaw/continue",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 35,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "roundId": "25438506287",
+      "continueInstructions": {
+        "action": "gamble"
+      }
+    },
+    "response": {
+      "round": {
+        "status": "wfwpc",
+        "jackpotWin": null,
+        "roundId": "25438506287",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "feature_enter",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "0",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "eggSpins",
+                  "data": {
+                    "eggs": [
+                      "6",
+                      "3",
+                      "3"
+                    ]
+                  }
+                }
+              ],
+              "bonusFeatureWon": "fs_2",
+              "bonusFeatureCount": "12"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "fs_2_reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "8800",
+            "wc": "0",
+            "awa": "8800",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "mark",
+                  "data": {
+                    "c": "1"
+                  }
+                },
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "1"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "1",
+                    "p": "1",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "1"
+                  }
+                },
+                {
+                  "at": "cashWin",
+                  "data": {
+                    "winAmount": "8800"
+                  }
+                }
+              ],
+              "reelSet": "fs",
+              "stops": [
+                "221",
+                "205",
+                "255",
+                "40",
+                "201"
+              ],
+              "grid": "--)50+)).2+21*2-,+11.,-+1*0"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "fs_2_reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "149600",
+            "wc": "0",
+            "awa": "158400",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "16"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "4",
+                    "p": "16",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "4"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "3",
+                    "p": "11",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "7"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "6",
+                    "c": "1",
+                    "multiplicative": true,
+                    "result": "14"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "3",
+                    "p": "1",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "17"
+                  }
+                },
+                {
+                  "at": "cashWin",
+                  "data": {
+                    "winAmount": "149600"
+                  }
+                }
+              ],
+              "reelSet": "fs",
+              "stops": [
+                "48",
+                "138",
+                "76",
+                "2",
+                "194"
+              ],
+              "grid": "--1./1/-,0.0/++.+)5---,*0*0"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "fs_2_reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "114400",
+            "wc": "0",
+            "awa": "272800",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "16"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "16",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "2"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "11",
+                    "c": "1",
+                    "multiplicative": true,
+                    "result": "4"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "6",
+                    "c": "1",
+                    "multiplicative": true,
+                    "result": "8"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "5",
+                    "p": "1",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "13"
+                  }
+                },
+                {
+                  "at": "cashWin",
+                  "data": {
+                    "winAmount": "114400"
+                  }
+                }
+              ],
+              "reelSet": "fs",
+              "stops": [
+                "111",
+                "254",
+                "95",
+                "197",
+                "47"
+              ],
+              "grid": "--0++,-2+224-1)0205)+,.,0.,"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "fs_2_reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "17600",
+            "wc": "0",
+            "awa": "290400",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "1"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "1",
+                    "c": "1",
+                    "multiplicative": true,
+                    "result": "2"
+                  }
+                },
+                {
+                  "at": "cashWin",
+                  "data": {
+                    "winAmount": "17600"
+                  }
+                }
+              ],
+              "reelSet": "fs",
+              "stops": [
+                "156",
+                "267",
+                "208",
+                "108",
+                "88"
+              ],
+              "grid": "--*5-)-,0-.,,0)-0+/),+//)+2"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "fs_2_reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "114400",
+            "wc": "0",
+            "awa": "404800",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "mark",
+                  "data": {
+                    "c": "0"
+                  }
+                },
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "5"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "10",
+                    "p": "5",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "10"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "1",
+                    "p": "0",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "11"
+                  }
+                },
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "1"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "1",
+                    "c": "1",
+                    "multiplicative": true,
+                    "result": "2"
+                  }
+                },
+                {
+                  "at": "cashWin",
+                  "data": {
+                    "winAmount": "114400"
+                  }
+                }
+              ],
+              "reelSet": "fs",
+              "stops": [
+                "262",
+                "265",
+                "5",
+                "11",
+                "23"
+              ],
+              "grid": "--)5,.052-*+*0+,4*0.21/0..."
+            }
+          },
+          {
+            "et": 2,
+            "etn": "fs_2_reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "968000",
+            "wc": "0",
+            "awa": "1372800",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "roar",
+                  "data": {
+                    "h": "0000000000110000000000000"
+                  }
+                },
+                {
+                  "at": "revealMultsRoar",
+                  "data": {
+                    "p": "10"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "15",
+                    "p": "10",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "15"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "5",
+                    "p": "5",
+                    "c": "0",
+                    "multiplicative": true,
+                    "result": "75"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "5",
+                    "p": "0",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "80"
+                  }
+                },
+                {
+                  "at": "revealMultsRoar",
+                  "data": {
+                    "p": "11"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "5",
+                    "p": "11",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "5"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "20",
+                    "p": "6",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "25"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "5",
+                    "p": "1",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "30"
+                  }
+                },
+                {
+                  "at": "cashWin",
+                  "data": {
+                    "winAmount": "968000"
+                  }
+                }
+              ],
+              "reelSet": "fs",
+              "stops": [
+                "238",
+                "134",
+                "214",
+                "210",
+                "67"
+              ],
+              "grid": "--/)*0,,1)0*55/+.,*--)2.+*,"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "fs_2_reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "1416800",
+            "wc": "0",
+            "awa": "2789600",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "20"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "1",
+                    "p": "20",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "1"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "15",
+                    "c": "0",
+                    "multiplicative": true,
+                    "result": "2"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "3",
+                    "p": "10",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "5"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "4",
+                    "p": "5",
+                    "c": "0",
+                    "multiplicative": true,
+                    "result": "20"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "1",
+                    "p": "0",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "21"
+                  }
+                },
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "16"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "1",
+                    "p": "16",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "1"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "10",
+                    "p": "11",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "11"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "3",
+                    "p": "6",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "14"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "10",
+                    "p": "1",
+                    "c": "1",
+                    "multiplicative": true,
+                    "result": "140"
+                  }
+                },
+                {
+                  "at": "cashWin",
+                  "data": {
+                    "winAmount": "1416800"
+                  }
+                }
+              ],
+              "reelSet": "fs",
+              "stops": [
+                "52",
+                "38",
+                "261",
+                "235",
+                "86"
+              ],
+              "grid": "--,++-+)*1+/*11--.50.,5*0*0"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "fs_2_reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "105600",
+            "wc": "0",
+            "awa": "2895200",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "0"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "0",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "2"
+                  }
+                },
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "11"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "3",
+                    "p": "11",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "3"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "6",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "5"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "5",
+                    "p": "1",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "10"
+                  }
+                },
+                {
+                  "at": "cashWin",
+                  "data": {
+                    "winAmount": "105600"
+                  }
+                }
+              ],
+              "reelSet": "fs",
+              "stops": [
+                "249",
+                "167",
+                "81",
+                "88",
+                "203"
+              ],
+              "grid": "--5,*.,+2-.,+5+-0/)+*,-1/*)"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "fs_2_reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "140800",
+            "wc": "0",
+            "awa": "3036000",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "5"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "4",
+                    "p": "5",
+                    "c": "0",
+                    "multiplicative": true,
+                    "result": "4"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "0",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "6"
+                  }
+                },
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "16"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "1",
+                    "p": "16",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "1"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "3",
+                    "p": "11",
+                    "c": "1",
+                    "multiplicative": true,
+                    "result": "3"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "3",
+                    "p": "6",
+                    "c": "1",
+                    "multiplicative": true,
+                    "result": "9"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "1",
+                    "p": "1",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "10"
+                  }
+                },
+                {
+                  "at": "cashWin",
+                  "data": {
+                    "winAmount": "140800"
+                  }
+                }
+              ],
+              "reelSet": "fs",
+              "stops": [
+                "120",
+                "242",
+                "188",
+                "136",
+                "77"
+              ],
+              "grid": "--+1+**5,2,//)+,-,5*.4*./*0"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "fs_2_reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "35200",
+            "wc": "0",
+            "awa": "3071200",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "0"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "0",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "2"
+                  }
+                },
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "6"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "1",
+                    "p": "6",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "1"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "1",
+                    "p": "1",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "2"
+                  }
+                },
+                {
+                  "at": "cashWin",
+                  "data": {
+                    "winAmount": "35200"
+                  }
+                }
+              ],
+              "reelSet": "fs",
+              "stops": [
+                "72",
+                "55",
+                "195",
+                "137",
+                "226"
+              ],
+              "grid": "--5)-,//5-,/*+-.),*0*),.*)0"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "fs_2_reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "96800",
+            "wc": "0",
+            "awa": "3168000",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "20"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "1",
+                    "p": "20",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "1"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "15",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "3"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "10",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "5"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "3",
+                    "p": "5",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "8"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "1",
+                    "p": "0",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "9"
+                  }
+                },
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "1"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "2",
+                    "p": "1",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "2"
+                  }
+                },
+                {
+                  "at": "cashWin",
+                  "data": {
+                    "winAmount": "96800"
+                  }
+                }
+              ],
+              "reelSet": "fs",
+              "stops": [
+                "237",
+                "106",
+                "251",
+                "78",
+                "162"
+              ],
+              "grid": "--.5/*-/*//-,0,-),,./0510)+"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "fs_2_reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "44000",
+            "wc": "0",
+            "awa": "3212000",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "5"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "1",
+                    "p": "5",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "1"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "3",
+                    "p": "0",
+                    "c": "0",
+                    "multiplicative": false,
+                    "result": "4"
+                  }
+                },
+                {
+                  "at": "revealMults",
+                  "data": {
+                    "p": "1"
+                  }
+                },
+                {
+                  "at": "mult",
+                  "data": {
+                    "m": "1",
+                    "p": "1",
+                    "c": "1",
+                    "multiplicative": false,
+                    "result": "1"
+                  }
+                },
+                {
+                  "at": "cashWin",
+                  "data": {
+                    "winAmount": "44000"
+                  }
+                }
+              ],
+              "reelSet": "fs",
+              "stops": [
+                "241",
+                "170",
+                "191",
+                "181",
+                "130"
+              ],
+              "grid": "--,5*2,51/00/..+,/-).).4-*/"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "feature_exit",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "3212000",
+            "awc": "0",
+            "c": {}
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": null,
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:40Z"
+    },
+    "error": null,
+    "durationMs": 70
+  },
+  {
+    "ts": "2026-02-17T22:53:36.901Z",
+    "level": "info",
+    "type": "hacksaw/continue",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 36,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "roundId": "25438506287",
+      "continueInstructions": {
+        "action": "win_presentation_complete"
+      }
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438506287",
+        "possibleActions": [],
+        "events": []
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8784655",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:40Z"
+    },
+    "error": null,
+    "durationMs": 139
+  },
+  {
+    "ts": "2026-02-17T22:53:37.044Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 37,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "wfwpc",
+        "jackpotWin": null,
+        "roundId": "25438506433",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "17600",
+            "wc": "0",
+            "awa": "17600",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "17600",
+                    "symbol": "6",
+                    "mask": "0111100000100100001000010",
+                    "count": "8"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0111100000100100001000010"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "stops": [
+                "199",
+                "235",
+                "241",
+                "219",
+                "197"
+              ],
+              "grid": "---....0/4,*.1-./*)+.0*,+.+"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "17600",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "grid": "--+,-+--/4-*01-*/*)+,0*,+,+"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8758255",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:40Z"
+    },
+    "error": null,
+    "durationMs": 127
+  },
+  {
+    "ts": "2026-02-17T22:53:37.184Z",
+    "level": "info",
+    "type": "hacksaw/continue",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 38,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "roundId": "25438506433",
+      "continueInstructions": {
+        "action": "win_presentation_complete"
+      }
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438506433",
+        "possibleActions": [],
+        "events": []
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8775855",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:41Z"
+    },
+    "error": null,
+    "durationMs": 140
+  },
+  {
+    "ts": "2026-02-17T22:53:37.419Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 39,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438506516",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "0",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "stops": [
+                "142",
+                "170",
+                "70",
+                "263",
+                "30"
+              ],
+              "grid": "--12)/,++/2/-)-.)/4+*),.1*/"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8749455",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:41Z"
+    },
+    "error": null,
+    "durationMs": 218
+  },
+  {
+    "ts": "2026-02-17T22:53:37.567Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 40,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "wfwpc",
+        "jackpotWin": null,
+        "roundId": "25438506584",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "880",
+            "wc": "0",
+            "awa": "880",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "880",
+                    "symbol": "5",
+                    "mask": "0100100000000001001000110",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0100100000000001001000110"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "stops": [
+                "185",
+                "94",
+                "124",
+                "247",
+                "90"
+              ],
+              "grid": "--*-*/-*,/2,/1.20-.4-+4*--,"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "3520",
+            "wc": "0",
+            "awa": "4400",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "3520",
+                    "symbol": "7",
+                    "mask": "1001100000001101000000000",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "1001100000001101000000000"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "--/.+//*,*-,*1//0/..2+4*42,"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "880",
+            "wc": "0",
+            "awa": "5280",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "880",
+                    "symbol": "2",
+                    "mask": "0001000010101001000001000",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0001000010101001000001000"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "--).2*+,,+*,*1*-0*..2+4*42,"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "5280",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "grid": "--012-+).2.,),+-0,1.2+4.42,"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8723055",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:41Z"
+    },
+    "error": null,
+    "durationMs": 132
+  },
+  {
+    "ts": "2026-02-17T22:53:37.721Z",
+    "level": "info",
+    "type": "hacksaw/continue",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 41,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "roundId": "25438506584",
+      "continueInstructions": {
+        "action": "win_presentation_complete"
+      }
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438506584",
+        "possibleActions": [],
+        "events": []
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8728335",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:41Z"
+    },
+    "error": null,
+    "durationMs": 153
+  },
+  {
+    "ts": "2026-02-17T22:53:37.884Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 42,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "wfwpc",
+        "jackpotWin": null,
+        "roundId": "25438506670",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "880",
+            "wc": "0",
+            "awa": "880",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "880",
+                    "symbol": "1",
+                    "mask": "0001100010000010000010010",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0001100010000010000010010"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "stops": [
+                "188",
+                "39",
+                "237",
+                "83",
+                "138"
+              ],
+              "grid": "---+/))**,)/01-4)/,-*.)*.),"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "3520",
+            "wc": "0",
+            "awa": "4400",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "3520",
+                    "symbol": "7",
+                    "mask": "1011000000000110000010000",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "1011000000000110000010000"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "--/+//0-*,-,*1-//0,-4./*.*,"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "8800",
+            "wc": "0",
+            "awa": "13200",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "8800",
+                    "symbol": "2",
+                    "mask": "1001011010000001000001010",
+                    "count": "8"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "1001011010000001000001010"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "--*+)*,**,*0-1--,*,-4.0*.*,"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "1760",
+            "wc": "0",
+            "awa": "14960",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "880",
+                    "symbol": "5",
+                    "mask": "0100000010001001011000000",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "880",
+                    "symbol": "4",
+                    "mask": "0000110100000010000001001",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0100110110001011011001001"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "--)-)+,,0,-0/+-.,-1--.0,.4,"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "2640",
+            "wc": "0",
+            "awa": "17600",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "2640",
+                    "symbol": "6",
+                    "mask": "0100001000001000001000101",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0100001000001000001000101"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "--0.-02).--2)0.+,/+).001.4."
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "17600",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "grid": "--022+-)-,02)0--2/+-+,01)40"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8701935",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:41Z"
+    },
+    "error": null,
+    "durationMs": 147
+  },
+  {
+    "ts": "2026-02-17T22:53:38.022Z",
+    "level": "info",
+    "type": "hacksaw/continue",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 43,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "roundId": "25438506670",
+      "continueInstructions": {
+        "action": "win_presentation_complete"
+      }
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438506670",
+        "possibleActions": [],
+        "events": []
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8719535",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:41Z"
+    },
+    "error": null,
+    "durationMs": 138
+  },
+  {
+    "ts": "2026-02-17T22:53:38.190Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 44,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "wfwpc",
+        "jackpotWin": null,
+        "roundId": "25438506763",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "8800",
+            "wc": "0",
+            "awa": "8800",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "8800",
+                    "symbol": "1",
+                    "mask": "0001111101101000001000000",
+                    "count": "9"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0001111101101000001000000"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "stops": [
+                "259",
+                "55",
+                "164",
+                "84",
+                "234"
+              ],
+              "grid": "--0/2)))))2))1)*0/+-)/0*.-*"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "8800",
+            "wc": "0",
+            "awa": "17600",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "8800",
+                    "symbol": "7",
+                    "mask": "0101101001000001000100000",
+                    "count": "7"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0101101001000001000100000"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "---/+//2/+)/01220/+-*/0*.-*"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "17600",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "grid": "---/+-1-*+),2122,0+-*00*.-*"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8693135",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:42Z"
+    },
+    "error": null,
+    "durationMs": 152
+  },
+  {
+    "ts": "2026-02-17T22:53:38.325Z",
+    "level": "info",
+    "type": "hacksaw/continue",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 45,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "roundId": "25438506763",
+      "continueInstructions": {
+        "action": "win_presentation_complete"
+      }
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438506763",
+        "possibleActions": [],
+        "events": []
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8710735",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:42Z"
+    },
+    "error": null,
+    "durationMs": 134
+  },
+  {
+    "ts": "2026-02-17T22:53:38.481Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 46,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "wfwpc",
+        "jackpotWin": null,
+        "roundId": "25438506862",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "3520",
+            "wc": "0",
+            "awa": "3520",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "3520",
+                    "symbol": "7",
+                    "mask": "0110010100001000000001000",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0110010100001000000001000"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "stops": [
+                "228",
+                "186",
+                "60",
+                "7",
+                "118"
+              ],
+              "grid": "---//**/)/0-,0/0-40-..+/-.*"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "880",
+            "wc": "0",
+            "awa": "4400",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "880",
+                    "symbol": "5",
+                    "mask": "0000010101000010010000100",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0000010101000010010000100"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "--+))**-)-0-,))0-40-..+0-.*"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "880",
+            "wc": "0",
+            "awa": "5280",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "880",
+                    "symbol": "1",
+                    "mask": "0100101000010000010000100",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0100101000010000010000100"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "--1)**)+)*02,)20*40)..+0).*"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "4400",
+            "wc": "0",
+            "awa": "9680",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "4400",
+                    "symbol": "8",
+                    "mask": "0000001110000100100001000",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0000001110000100100001000"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "--1)-*)+0002,.*0*40*..+02.*"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "2640",
+            "wc": "0",
+            "awa": "12320",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "2640",
+                    "symbol": "2",
+                    "mask": "0100000010001110010000001",
+                    "count": "7"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0100000010001110010000001"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "--1*--)+/-*2,.***4)*..+.2.*"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "6160",
+            "wc": "0",
+            "awa": "18480",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "6160",
+                    "symbol": "6",
+                    "mask": "0001000010010000001001011",
+                    "count": "7"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0001000010010000001001011"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "--11).,+/-.0,.--)4)-.2+.2.."
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "18480",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "grid": "--1-).++,-1,,1-104/-1)+)2-2"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8684335",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:42Z"
+    },
+    "error": null,
+    "durationMs": 140
+  },
+  {
+    "ts": "2026-02-17T22:53:38.607Z",
+    "level": "info",
+    "type": "hacksaw/continue",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 47,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "roundId": "25438506862",
+      "continueInstructions": {
+        "action": "win_presentation_complete"
+      }
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438506862",
+        "possibleActions": [],
+        "events": []
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8702815",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:42Z"
+    },
+    "error": null,
+    "durationMs": 126
+  },
+  {
+    "ts": "2026-02-17T22:53:38.832Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 48,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438506935",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "0",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "stops": [
+                "246",
+                "93",
+                "49",
+                "75",
+                "150"
+              ],
+              "grid": "--/.)++4---1.,-.,.1-*,,.4*1"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8676415",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:42Z"
+    },
+    "error": null,
+    "durationMs": 210
+  },
+  {
+    "ts": "2026-02-17T22:53:38.988Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 49,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "wfwpc",
+        "jackpotWin": null,
+        "roundId": "25438507010",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "3520",
+            "wc": "0",
+            "awa": "3520",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "2640",
+                    "symbol": "6",
+                    "mask": "0011000011010100000000000",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "880",
+                    "symbol": "5",
+                    "mask": "0000000000101011010000100",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0011000011111111010000100"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "stops": [
+                "254",
+                "67",
+                "48",
+                "222",
+                "109"
+              ],
+              "grid": "--+1..*/*)..-.-.--,-*+2/-4,"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "3520",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "grid": "--0)2.++1+,1+**.*/,/*+2/)4,"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8650015",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:42Z"
+    },
+    "error": null,
+    "durationMs": 140
+  },
+  {
+    "ts": "2026-02-17T22:53:39.113Z",
+    "level": "info",
+    "type": "hacksaw/continue",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 50,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "roundId": "25438507010",
+      "continueInstructions": {
+        "action": "win_presentation_complete"
+      }
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438507010",
+        "possibleActions": [],
+        "events": []
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8653535",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:42Z"
+    },
+    "error": null,
+    "durationMs": 125
+  },
+  {
+    "ts": "2026-02-17T22:53:39.375Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 51,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438507116",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "0",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "stops": [
+                "68",
+                "131",
+                "228",
+                "176",
+                "233"
+              ],
+              "grid": "--)11-/0.**),***)0/200./,0/"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8627135",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:43Z"
+    },
+    "error": null,
+    "durationMs": 245
+  },
+  {
+    "ts": "2026-02-17T22:53:39.528Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 52,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "wfwpc",
+        "jackpotWin": null,
+        "roundId": "25438507180",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "880",
+            "wc": "0",
+            "awa": "880",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "880",
+                    "symbol": "3",
+                    "mask": "0000100001010010000010010",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0000100001010010000010010"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "stops": [
+                "223",
+                "14",
+                "132",
+                "211",
+                "251"
+              ],
+              "grid": "--/,*-+)2*,+)+20+1.)04+,4+)"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "880",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "grid": "--.,**+/,*-+)22,/).)041,40)"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8600735",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:43Z"
+    },
+    "error": null,
+    "durationMs": 137
+  },
+  {
+    "ts": "2026-02-17T22:53:39.664Z",
+    "level": "info",
+    "type": "hacksaw/continue",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 53,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "roundId": "25438507180",
+      "continueInstructions": {
+        "action": "win_presentation_complete"
+      }
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438507180",
+        "possibleActions": [],
+        "events": []
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8601615",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:43Z"
+    },
+    "error": null,
+    "durationMs": 136
+  },
+  {
+    "ts": "2026-02-17T22:53:39.879Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 54,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438507288",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "0",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "stops": [
+                "125",
+                "143",
+                "40",
+                "200",
+                "217"
+              ],
+              "grid": "--,1-,,**-200-*0*))*+,)12.,"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8575215",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:43Z"
+    },
+    "error": null,
+    "durationMs": 199
+  },
+  {
+    "ts": "2026-02-17T22:53:40.125Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 55,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438507362",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "0",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "stops": [
+                "231",
+                "242",
+                "101",
+                "262",
+                "116"
+              ],
+              "grid": "--0*)+)+*4/2+102*-,-.-.)/*-"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8548815",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:43Z"
+    },
+    "error": null,
+    "durationMs": 230
+  },
+  {
+    "ts": "2026-02-17T22:53:40.353Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 56,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438507437",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "0",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "stops": [
+                "250",
+                "105",
+                "50",
+                "217",
+                "155"
+              ],
+              "grid": "--,*-*)++-,,04-./+.0,/+**.*"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8522415",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:44Z"
+    },
+    "error": null,
+    "durationMs": 205
+  },
+  {
+    "ts": "2026-02-17T22:53:40.573Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 57,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438507519",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "0",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "stops": [
+                "67",
+                "199",
+                "43",
+                "241",
+                "230"
+              ],
+              "grid": "--..*-,)-2.,00+*/,+**/0*//)"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8496015",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:44Z"
+    },
+    "error": null,
+    "durationMs": 203
+  },
+  {
+    "ts": "2026-02-17T22:53:40.739Z",
+    "level": "info",
+    "type": "hacksaw/bet",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 58,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "bets": [
+        {
+          "betAmount": "8800",
+          "buyBonus": "mod_bonus"
+        }
+      ],
+      "offerId": null,
+      "promotionId": null,
+      "autoplay": false
+    },
+    "response": {
+      "round": {
+        "status": "wfwpc",
+        "jackpotWin": null,
+        "roundId": "25438507581",
+        "possibleActions": [],
+        "events": [
+          {
+            "et": 2,
+            "etn": "reveal",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "880",
+            "wc": "0",
+            "awa": "880",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "gridwin",
+                  "data": {
+                    "winAmount": "880",
+                    "symbol": "5",
+                    "mask": "0010000101000010100000001",
+                    "count": "6"
+                  }
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "0010000101000010100000001"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "stops": [
+                "154",
+                "142",
+                "242",
+                "264",
+                "163"
+              ],
+              "grid": "--,+-2411-.-.*+*-4-+*1*)//-"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "880",
+            "awc": "0",
+            "c": {
+              "actions": [
+                {
+                  "at": "clear",
+                  "data": {}
+                },
+                {
+                  "at": "remove",
+                  "data": {
+                    "mask": "1110101000001110111011000"
+                  }
+                }
+              ],
+              "reelSet": "default",
+              "grid": "--,,-2)1+..0.1+**4*+*4*)//1"
+            }
+          },
+          {
+            "et": 2,
+            "etn": "collapse",
+            "en": "0",
+            "ba": "0",
+            "bc": "0",
+            "wa": "0",
+            "wc": "0",
+            "awa": "880",
+            "awc": "0",
+            "c": {
+              "reelSet": "default",
+              "grid": "--)1/+/0+,/*1*-20....441//1"
+            }
+          }
+        ]
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8469615",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:44Z"
+    },
+    "error": null,
+    "durationMs": 150
+  },
+  {
+    "ts": "2026-02-17T22:53:40.872Z",
+    "level": "info",
+    "type": "hacksaw/continue",
+    "endpoint": "/api/hacksaw/play/bet",
+    "request": {
+      "seq": 59,
+      "sessionUuid": "0485341e-f1c8-4397-b48c-de3c47b3832a",
+      "roundId": "25438507581",
+      "continueInstructions": {
+        "action": "win_presentation_complete"
+      }
+    },
+    "response": {
+      "round": {
+        "status": "completed",
+        "jackpotWin": null,
+        "roundId": "25438507581",
+        "possibleActions": [],
+        "events": []
+      },
+      "promotionNoLongerAvailable": false,
+      "promotionWin": null,
+      "offer": null,
+      "freeRoundOffer": null,
+      "statusCode": 0,
+      "statusMessage": "",
+      "accountBalance": {
+        "currencyCode": "ARS",
+        "balance": "8470495",
+        "realBalance": null,
+        "bonusBalance": null
+      },
+      "statusData": null,
+      "dialog": null,
+      "customData": null,
+      "serverTime": "2026-02-17T22:53:44Z"
+    },
+    "error": null,
+    "durationMs": 133
+  }
+]

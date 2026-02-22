@@ -1,0 +1,82 @@
+{
+  "name": "stakesportselectron",
+  "private": true,
+  "type": "module",
+  "version": "1.0.1",
+  "description": "StakeSports Electron App",
+  "author": "StakeSports",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/swqstake-bot/sportslots.git"
+  },
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"tsc -p electron/tsconfig.json -w\" \"wait-on tcp:5176 && cross-env VITE_DEV_SERVER_URL=http://localhost:5176 electron .\"",
+    "build:compile": "tsc -b && vite build && tsc -p electron/tsconfig.json",
+    "package": "npm run build:compile && electron-packager . --overwrite --out=release-final --platform=win32 --arch=x64 --icon=build/icon.ico --prune=true --asar --extra-resource=app-update.yml --ignore=\"^/(src|electron|tsconfig|vite\\.config|\\.git|\\.gitignore|README|LICENSE|builder-cache|release|release_old|release-packager|release-final)\"",
+    "build": "npm run build:compile && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.2.0",
+    "autoprefixer": "^10.4.24",
+    "axios": "^1.13.5",
+    "clsx": "^2.1.1",
+    "crypto-js": "^4.2.0",
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.8.3",
+    "graphql-ws": "^6.0.7",
+    "node-fetch": "^3.3.2",
+    "pako": "^2.1.0",
+    "postcss": "^8.5.6",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "recharts": "^3.7.0",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.2.0",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^40.6.0",
+    "electron-builder": "^26.8.1",
+    "electron-packager": "^17.1.2",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.48.0",
+    "vite": "^7.3.1",
+    "wait-on": "^9.0.4"
+  },
+  "build": {
+    "appId": "com.stakesports.electron",
+    "productName": "StakeSportsElectron",
+    "directories": {
+      "output": "release-final"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "dist/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "forceCodeSigning": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "swqstake-bot",
+        "repo": "sportslots"
+      }
+    ]
+  }
+}

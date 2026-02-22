@@ -1,0 +1,389 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { useUserStore } from '../../store/userStore';
+import type { SportBet } from '../../store/userStore';
+import { StakeApi } from '../../api/client';
+import { Queries } from '../../api/queries';
+
+interface ActiveBetsModalProps {
+  onClose: () => void;
+}
+
+export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
+  const { user } = useUserStore();
+  const userName = user?.name;
+  
+  const [bets, setBets] = useState<SportBet[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [sortField, setSortField] = useState<string>('createdAt');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // New: Fetch all bets function
+  const fetchAllBets = useCallback(async () => {
+    if (!userName) {
+        console.error("No user found in store");
+        return;
+    }
+    
+    // Don't set loading state for background refresh to avoid UI flickering
+    // But for initial load we might want it.
+    // Let's use a local ref or just check if we have bets.
+    // If we have bets, we are refreshing.
+    
+    // Actually, if we refresh, we shouldn't clear bets immediately?
+    // User said: "refresh every 60s".
+    // If we clear bets, the UI flashes empty.
+    // We should fetch in background and then update.
+    
+    // Modified approach:
+    // 1. Fetch all bets into a temporary array.
+    // 2. Once done, replace `bets` state.
+    // 3. This avoids "0 bets found" flash during refresh.
+    
+    setIsLoading(true);
+    try {
+      let currentOffset = 0;
+      let keepFetching = true;
+      const BATCH_LIMIT = 50; 
+      let allFetchedBets: SportBet[] = [];
+
+      while (keepFetching) {
+        // console.log(`Fetching active bets offset: ${currentOffset}`);
+        const res = await StakeApi.query<any>(Queries.FetchActiveSportBets, {
+          limit: BATCH_LIMIT,
+          offset: currentOffset,
+          name: userName
+        });
+
+        if (res.errors) {
+            console.error("GraphQL Errors:", res.errors);
+            keepFetching = false;
+            break;
+        }
+
+        if (res.data?.user?.activeSportBets) {
+          const newBets = res.data.user.activeSportBets;
+          
+          if (newBets.length > 0) {
+              allFetchedBets = [...allFetchedBets, ...newBets];
+          }
+          
+          if (newBets.length < BATCH_LIMIT) {
+            keepFetching = false;
+          } else {
+            currentOffset += BATCH_LIMIT;
+          }
+        } else {
+          keepFetching = false;
+        }
+      }
+      
+      // Update state once with all bets
+      // Deduplicate just in case
+      const uniqueBets = Array.from(new Map(allFetchedBets.map(item => [item.id, item])).values());
+      setBets(uniqueBets);
+
+    } catch (err) {
+      console.error("Error fetching all active bets:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [userName]);
+
+  // Initial load - now calls fetchAllBets instead of paginated fetch
+  useEffect(() => {
+    // fetchBets(false);
+    fetchAllBets();
+  }, [fetchAllBets]);
+
+  // Refresh interval (optional, every 60s)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Auto-refresh active bets
+      fetchAllBets();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [fetchAllBets]);
+
+  const handleCashout = async (betId: string, multiplier: number) => {
+    try {
+      const result = await StakeApi.mutate(Queries.CashoutSportBet, {
+        betId,
+        multiplier
+      });
+      if (result.data?.cashoutSportBet) {
+        // Remove from list or mark as cashed out
+        setBets(prev => prev.filter(b => b.id !== betId));
+      }
+    } catch (err) {
+      console.error("Cashout failed", err);
+    }
+  };
+
+  const formatCurrency = (amount: number, currency: string) => {
+    return `${amount.toFixed(8)} ${currency.toUpperCase()}`;
+  };
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleString();
+  };
+
+  const calculateOpenLegs = (bet: SportBet) => {
+    if (!bet.outcomes) return '0/0';
+    const total = bet.outcomes.length;
+    // Count how many are not won/lost/void? Or specifically 'active' or 'open'
+    // Usually status is on the outcome or market.
+    // Let's assume outcome.status or market.status.
+    // The fragment has outcome.status and market.status.
+    // If status is 'active' or 'open', it's open.
+    const open = bet.outcomes.filter((o: any) => 
+        o.outcome.status === 'active' || o.outcome.status === 'open' || 
+        o.market.status === 'active' || o.market.status === 'open' ||
+        o.status === 'active' // SportBetOutcome top level status
+    ).length;
+    return `${open}/${total}`;
+  };
+
+  const copyLink = (betId: string, iid?: string) => {
+    // Construct URL based on old tool behavior
+    // If iid (ShareIdentifier) exists, use the stake slip sharing URL
+    // Otherwise fallback to my-bets URL with bet ID
+    let url;
+    if (iid) {
+        const safeIid = encodeURIComponent(iid);
+        url = `https://stake.com/sports/home?operation=withdraw&iid=${safeIid}&modal=bet`;
+    } else {
+        url = `https://stake.com/sports/my-bets/${betId}?modal=bet`;
+    }
+    
+    // Copy to clipboard
+    navigator.clipboard.writeText(url).then(() => {
+        setCopiedId(betId);
+        setTimeout(() => setCopiedId(null), 2000);
+    }).catch(err => {
+        console.error("Failed to copy link", err);
+    });
+  };
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+        setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+        setSortField(field);
+        setSortDirection('desc');
+    }
+  };
+
+  const sortedBets = React.useMemo(() => {
+    return [...bets].sort((a, b) => {
+        let valA: any = a;
+        let valB: any = b;
+
+        switch (sortField) {
+            case 'amount':
+                valA = a.amount;
+                valB = b.amount;
+                break;
+            case 'payoutMultiplier':
+                valA = a.potentialMultiplier || a.payoutMultiplier;
+                valB = b.potentialMultiplier || b.payoutMultiplier;
+                break;
+            case 'payout':
+                valA = a.payout;
+                valB = b.payout;
+                break;
+            case 'createdAt':
+            default:
+                valA = new Date(a.createdAt).getTime();
+                valB = new Date(b.createdAt).getTime();
+                break;
+        }
+
+        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+    });
+  }, [bets, sortField, sortDirection]);
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] backdrop-blur-sm">
+      <div className="bg-[#1a2c38] border border-[#2f4553] rounded-lg shadow-2xl w-[95vw] h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 border-b border-[#2f4553] bg-[#0f212e]">
+          <h2 className="text-xl font-bold text-white flex items-center gap-3">
+            Active Bets
+            <span className="text-sm font-normal text-[#b1bad3] bg-[#2f4553] px-2 py-0.5 rounded-full">
+              {bets.length}
+            </span>
+          </h2>
+          <div className="flex gap-2">
+            <button 
+                onClick={fetchAllBets}
+                disabled={isLoading}
+                className="p-2 hover:bg-[#2f4553] rounded-lg transition-colors text-[#b1bad3] hover:text-white disabled:opacity-50"
+                title="Refresh All Bets"
+            >
+                {isLoading ? (
+                    <span className="animate-spin block">↻</span>
+                ) : (
+                    <span>↻</span>
+                )}
+            </button>
+            <button onClick={onClose} className="p-2 hover:bg-[#2f4553] rounded-lg transition-colors">
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Table Content */}
+        <div className="flex-1 overflow-auto bg-[#0f212e] scrollbar-thin scrollbar-thumb-[#2f4553] scrollbar-track-transparent">
+            {isLoading && bets.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full gap-4 text-[#b1bad3]">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#00e701]"></div>
+                    <p className="animate-pulse">Loading all active bets...</p>
+                </div>
+            ) : (
+            <table className="w-full text-left border-collapse">
+            <thead className="bg-[#1a2c38] sticky top-0 z-10 text-xs font-bold text-[#b1bad3] uppercase tracking-wider shadow-sm select-none">
+              <tr>
+                <th className="p-3 border-b border-[#2f4553] cursor-pointer hover:text-white" onClick={() => handleSort('createdAt')}>
+                    Time {sortField === 'createdAt' && <span className="text-[#00e701]">{sortDirection === 'asc' ? '↑' : '↓'}</span>}
+                </th>
+                <th className="p-3 border-b border-[#2f4553]">Fixture / Selection</th>
+                <th className="p-3 border-b border-[#2f4553]">Legs</th>
+                <th className="p-3 border-b border-[#2f4553] cursor-pointer hover:text-white" onClick={() => handleSort('payoutMultiplier')}>
+                    Odds {sortField === 'payoutMultiplier' && <span className="text-[#00e701]">{sortDirection === 'asc' ? '↑' : '↓'}</span>}
+                </th>
+                <th className="p-3 border-b border-[#2f4553] cursor-pointer hover:text-white" onClick={() => handleSort('amount')}>
+                    Stake {sortField === 'amount' && <span className="text-[#00e701]">{sortDirection === 'asc' ? '↑' : '↓'}</span>}
+                </th>
+                <th className="p-3 border-b border-[#2f4553] cursor-pointer hover:text-white" onClick={() => handleSort('payout')}>
+                    Potential {sortField === 'payout' && <span className="text-[#00e701]">{sortDirection === 'asc' ? '↑' : '↓'}</span>}
+                </th>
+                <th className="p-3 border-b border-[#2f4553]">Status</th>
+                <th className="p-3 border-b border-[#2f4553] text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#2f4553]">
+              {sortedBets.map((bet) => (
+                <tr key={bet.id} className="hover:bg-[#1a2c38]/50 transition-colors group text-sm text-[#b1bad3]">
+                  {/* Time */}
+                  <td className="p-3 whitespace-nowrap font-mono text-xs">
+                    {formatDate(bet.createdAt)}
+                  </td>
+                  
+                  {/* Fixture / Selection - First only + count */}
+                  <td className="p-3">
+                    <div className="flex flex-col gap-1">
+                      {bet.outcomes.length > 0 && (
+                        <div className="flex flex-col mb-1 last:mb-0">
+                           <span className="text-white font-bold text-xs truncate max-w-[200px]" title={bet.outcomes[0].fixture.name}>
+                             {bet.outcomes[0].fixture.name}
+                           </span>
+                           <span className="text-[#00e701] text-[11px] truncate max-w-[200px]" title={`${bet.outcomes[0].outcome.name} (${bet.outcomes[0].market.name})`}>
+                             {bet.outcomes[0].outcome.name} <span className="text-[#55657e]">({bet.outcomes[0].market.name})</span>
+                           </span>
+                           {/* Simple Match Status if Live */}
+                           {bet.outcomes[0].fixture.eventStatus?.matchStatus === 'live' && (
+                             <span className="text-[10px] text-[#ff4d4d] animate-pulse font-bold">
+                               LIVE {bet.outcomes[0].fixture.eventStatus.homeScore}-{bet.outcomes[0].fixture.eventStatus.awayScore}
+                             </span>
+                           )}
+                        </div>
+                      )}
+                      {bet.outcomes.length > 1 && (
+                          <span className="text-[10px] text-[#b1bad3] italic">
+                              + {bet.outcomes.length - 1} more selection{bet.outcomes.length > 2 ? 's' : ''}
+                          </span>
+                      )}
+                    </div>
+                  </td>
+
+                  {/* Legs Status */}
+                  <td className="p-3 font-mono text-xs text-[#b1bad3]">
+                      {calculateOpenLegs(bet)}
+                  </td>
+
+                  {/* Odds */}
+                  <td className="p-3 font-mono text-white">
+                    {(bet.potentialMultiplier || bet.payoutMultiplier || 0).toFixed(2)}x
+                  </td>
+
+                  {/* Stake */}
+                  <td className="p-3 font-mono text-white">
+                     {formatCurrency(bet.amount, bet.currency)}
+                  </td>
+
+                  {/* Potential */}
+                  <td className="p-3 font-mono text-[#00e701]">
+                    {formatCurrency(bet.payout, bet.currency)}
+                  </td>
+
+                  {/* Status */}
+                  <td className="p-3">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border ${
+                        bet.status === 'active' ? 'bg-[#1475e1]/10 text-[#1475e1] border-[#1475e1]/30' : 
+                        bet.status === 'won' ? 'bg-[#00e701]/10 text-[#00e701] border-[#00e701]/30' : 
+                        bet.status === 'lost' ? 'bg-[#ff4d4d]/10 text-[#ff4d4d] border-[#ff4d4d]/30' :
+                        'bg-[#2f4553] text-[#b1bad3] border-transparent'
+                    }`}>
+                        {bet.status}
+                    </span>
+                  </td>
+
+                  {/* Action (Cashout / Link) */}
+                  <td className="p-3 text-right">
+                    <div className="flex justify-end gap-2">
+                        {/* Link Button */}
+                        <button
+                            onClick={() => copyLink(bet.id, bet.bet?.iid || bet.iid)}
+                            className="p-1.5 bg-[#2f4553] hover:bg-[#3d5566] text-[#b1bad3] hover:text-white rounded border border-[#2f4553] hover:border-[#b1bad3] transition-all min-w-[28px]"
+                            title="Copy Bet Link"
+                        >
+                            {copiedId === bet.id ? (
+                                <svg className="w-4 h-4 text-[#00e701]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                            ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                            )}
+                        </button>
+
+                        {bet.status === 'active' && !bet.cashoutDisabled && bet.cashoutMultiplier && (
+                            <button
+                                onClick={() => handleCashout(bet.id, bet.cashoutMultiplier)}
+                                className="bg-[#2f4553] hover:bg-[#3d5566] text-white text-xs px-3 py-1.5 rounded border border-[#2f4553] hover:border-[#b1bad3] transition-all shadow-lg"
+                            >
+                                <div className="flex flex-col items-end">
+                                    <span className="font-bold">Cashout</span>
+                                    <span className="text-[10px] text-[#00e701] font-mono">
+                                        {formatCurrency(bet.amount * bet.cashoutMultiplier, bet.currency)}
+                                    </span>
+                                </div>
+                            </button>
+                        )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              
+              {bets.length === 0 && !isLoading && (
+                 <tr>
+                    <td colSpan={7} className="p-8 text-center text-[#55657e]">
+                        <div className="flex flex-col items-center">
+                            <svg className="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                            <span className="font-bold uppercase tracking-wide">No bets found</span>
+                        </div>
+                    </td>
+                 </tr>
+              )}
+            </tbody>
+          </table>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-[#2f4553] bg-[#1a2c38] flex justify-between items-center text-xs text-[#b1bad3]">
+            <span>Total Active: {bets.length}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
