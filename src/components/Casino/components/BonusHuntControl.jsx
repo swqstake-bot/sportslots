@@ -683,7 +683,7 @@ export default function BonusHuntControl({
           >
             <option value="">— Slot-Set laden —</option>
             {slotSets.map((s) => (
-              <option key={s.id} value={s.id}>{s.name} ({s.slots?.length || 0})</option>
+              <option key={s.id} value={s.id}>{s.name} ({(s.slugs || s.slots || []).length})</option>
             ))}
           </select>
           <button type="button" onClick={() => onSaveSlotSet?.()} disabled={isRunning || selectedSlugs.length === 0} style={STYLES.btnSecondary}>

@@ -297,7 +297,7 @@ export default function CasinoView() {
                          className="bg-[#0f212e] border border-[#2f4553] rounded-lg px-4 py-2 text-base focus:ring-2 focus:ring-[#00e676] outline-none"
                        >
                          <option value="">Select Set...</option>
-                         {slotSets.map(s => <option key={s.id} value={s.id}>{s.name} ({s.slugs.length})</option>)}
+                         {slotSets.map(s => <option key={s.id} value={s.id}>{s.name} ({(s.slugs || []).length})</option>)}
                        </select>
                        
                        <Button variant="secondary" size="sm" className="text-base px-4 py-2" onClick={() => setSaveSlotSetOpen(true)}>Save Set</Button>

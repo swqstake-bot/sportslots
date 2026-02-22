@@ -10,7 +10,22 @@ const HAS_BONUS_KEY = 'slotbot_has_bonus_slugs'
 export function loadSlotSets() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
+    const sets = raw ? JSON.parse(raw) : []
+    // Migration: ensure 'slugs' property exists (from legacy 'slots')
+    return sets.map(s => {
+      // Create a shallow copy to avoid mutating the original object if it comes from a cache (though JSON.parse creates new objects)
+      const newSet = { ...s }
+      
+      // If slugs is missing or not an array, try to migrate from slots
+      if (!Array.isArray(newSet.slugs)) {
+        if (Array.isArray(newSet.slots)) {
+          newSet.slugs = [...newSet.slots]
+        } else {
+          newSet.slugs = []
+        }
+      }
+      return newSet
+    })
   } catch {
     return []
   }
@@ -19,7 +34,7 @@ export function loadSlotSets() {
 export function saveSlotSet({ name, slots }) {
   const sets = loadSlotSets()
   const id = `set_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
-  sets.push({ id, name: (name || 'Unbenannt').trim(), slots: [...(slots || [])], createdAt: Date.now() })
+  sets.push({ id, name: (name || 'Unbenannt').trim(), slugs: [...(slots || [])], createdAt: Date.now() })
   localStorage.setItem(STORAGE_KEY, JSON.stringify(sets))
   return id
 }
@@ -45,9 +60,12 @@ export function importSlotSets(jsonStr, merge = true) {
     if (!Array.isArray(imported)) return { ok: false, error: 'Ungültiges Format' }
     const sets = merge ? loadSlotSets() : []
     for (const s of imported) {
-      if (!s.name || !Array.isArray(s.slots)) continue
+      // Support both 'slots' (legacy) and 'slugs'
+      const slugs = Array.isArray(s.slugs) ? s.slugs : (Array.isArray(s.slots) ? s.slots : [])
+      if (!s.name || slugs.length === 0 && !s.slots && !s.slugs) continue
+      
       const id = `set_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
-      sets.push({ id, name: String(s.name).trim(), slots: s.slots, createdAt: s.createdAt || Date.now() })
+      sets.push({ id, name: String(s.name).trim(), slugs, createdAt: s.createdAt || Date.now() })
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(sets))
     return { ok: true, count: sets.length }
