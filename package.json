@@ -2,7 +2,7 @@
   "name": "stakesportselectron",
   "private": true,
   "type": "module",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "StakeSports Electron App",
   "author": "StakeSports",
   "repository": {
@@ -69,6 +69,7 @@
     ],
     "win": {
       "target": "nsis",
+      "icon": "build/icon.ico",
       "forceCodeSigning": false
     },
     "publish": [
