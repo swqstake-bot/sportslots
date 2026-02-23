@@ -129,11 +129,11 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
   };
 
   const getOpenLegsCount = (bet: SportBet) => {
-    if (!bet.outcomes) return 0;
+    if (!bet.outcomes || !Array.isArray(bet.outcomes)) return 0;
     return bet.outcomes.filter((o: any) => 
-        o.outcome.status === 'active' || o.outcome.status === 'open' || 
-        o.market.status === 'active' || o.market.status === 'open' ||
-        o.status === 'active'
+        o?.outcome?.status === 'active' || o?.outcome?.status === 'open' || 
+        o?.market?.status === 'active' || o?.market?.status === 'open' ||
+        o?.status === 'active'
     ).length;
   };
 
