@@ -4,9 +4,9 @@
  * Fiat: /100, Crypto: unverändert
  */
 
-const FIAT_CURRENCIES = ['eur', 'usd', 'usdc', 'usdt', 'ars', 'brl', 'mxn', 'cad', 'aud', 'clp', 'jpy', 'krw', 'inr', 'idr', 'php', 'pkr', 'pln', 'ngn', 'cny']
+export const FIAT_CURRENCIES = ['eur', 'usd', 'usdc', 'usdt', 'ars', 'brl', 'mxn', 'cad', 'aud', 'clp', 'jpy', 'krw', 'inr', 'idr', 'php', 'pkr', 'pln', 'ngn', 'cny']
 // Ohne Dezimalstellen – Wert = Betrag direkt (1000 = 1000 IDR)
-const ZERO_DECIMAL_CURRENCIES = ['idr', 'jpy', 'krw', 'vnd']
+export const ZERO_DECIMAL_CURRENCIES = ['idr', 'jpy', 'krw', 'vnd']
 
 export function isFiat(currencyCode) {
   return FIAT_CURRENCIES.includes((currencyCode || '').toLowerCase())
@@ -44,6 +44,34 @@ export function formatBetLabel(value, currencyCode) {
   if (cc === 'EUR') return `${formatted} €`
   if (['USD', 'USDC', 'USDT'].includes(cc)) return `$${formatted}`
   return `${formatted} ${cc}`
+}
+
+/**
+ * Converts minor units (Satoshis/Cents) to major units (BTC/USD)
+ * @param {number|string} amount - Minor units
+ * @param {string} currency - Currency code
+ * @returns {number} Major units
+ */
+export function toUnits(amount, currency) {
+  const c = (currency || '').toLowerCase()
+  if (ZERO_DECIMAL_CURRENCIES.includes(c)) return Number(amount)
+  if (isFiat(c)) return Number(amount) / 100
+  // Crypto: Stake uses 8 decimals (Satoshis) for internal calculation mostly
+  return Number(amount) / 1e8
+}
+
+/**
+ * Converts major units (BTC/USD) to minor units (Satoshis/Cents)
+ * @param {number|string} units - Major units
+ * @param {string} currency - Currency code
+ * @returns {number} Minor units
+ */
+export function toMinor(units, currency) {
+  const c = (currency || '').toLowerCase()
+  if (ZERO_DECIMAL_CURRENCIES.includes(c)) return Math.round(Number(units))
+  if (isFiat(c)) return Math.round(Number(units) * 100)
+  // Crypto: Convert to Satoshis
+  return Math.round(Number(units) * 1e8)
 }
 
 /** minBetUsd etc. – USD in Dollar (Major Units), flexible Dezimalstellen */

@@ -197,12 +197,7 @@ export default function BonusHuntControl({
     }
   }, [showTipMenu])
 
-  const TIP_WALLETS = [
-    { id: 'sol', label: 'USDC (Solana)', address: 'FYN6Ejv7qLG4q6PrFW2txSLdV5i7dekGtibTMTZjRrWC', icon: '◎' },
-    { id: 'xrp', label: 'XRP (No Memo)', address: 'rNq4YuCm3sQNd7r5GVxA5m5p4H7eS3jjsq', icon: '✕' },
-    { id: 'btc', label: 'Bitcoin', address: 'bc1qvee0n46u7r3p0cawlc860apd0yshsx76dcznqy', icon: '₿' },
-    { id: 'ltc', label: 'LTC', address: 'LQP2hMfrz9CQEwbQt89qgnYcCdqYwzAm9o', icon: 'Ł' },
-  ]
+
 
   const selectedSlots = slots.filter((s) => selectedSlugs.includes(s.slug))
   const [supportedCurrencies, setSupportedCurrencies] = useState(ALL_CURRENCIES)
@@ -934,71 +929,8 @@ export default function BonusHuntControl({
               Stoppen
             </button>
           )}
-          <div style={{ position: 'relative', marginLeft: 'auto' }} ref={tipMenuRef}>
-            <button
-              onClick={() => setShowTipMenu(!showTipMenu)}
-              style={{ ...STYLES.btnSecondary, borderColor: '#ffd700', color: '#ffd700', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-              title="Show Tip Options"
-            >
-              Maxwin Hit? -&gt; Send Tip 💸 {showTipMenu ? '▲' : '▼'}
-            </button>
-            {showTipMenu && (
-              <div style={{
-                position: 'absolute',
-                bottom: '100%',
-                right: 0,
-                marginBottom: '0.5rem',
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-md)',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                zIndex: 100,
-                minWidth: 240,
-                overflow: 'hidden',
-                display: 'flex',
-                flexDirection: 'column'
-              }}>
-                <div style={{ padding: '0.5rem 0.75rem', background: 'rgba(255, 215, 0, 0.1)', borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: '#ffd700', fontWeight: 600 }}>
-                  Wähle eine Währung ❤️
-                </div>
-                {TIP_WALLETS.map((wallet, idx) => (
-                  <button
-                    key={wallet.id}
-                    onClick={() => {
-                      navigator.clipboard.writeText(wallet.address)
-                      setTipCopied(wallet.id)
-                      setTimeout(() => setTipCopied(false), 2000)
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.75rem',
-                      width: '100%',
-                      padding: '0.75rem 1rem',
-                      background: 'transparent',
-                      border: 'none',
-                      borderBottom: idx < TIP_WALLETS.length - 1 ? '1px solid var(--border)' : 'none',
-                      color: 'var(--text)',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      fontSize: '0.9rem',
-                      transition: 'background 0.2s'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <span style={{ fontSize: '1.2rem', width: 24, textAlign: 'center', color: 'var(--text-muted)' }}>{wallet.icon}</span>
-                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                      <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{wallet.label}</span>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'monospace', opacity: 0.8 }}>
-                        {wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}
-                      </span>
-                    </div>
-                    {tipCopied === wallet.id && <span style={{ color: 'var(--success)', fontWeight: 'bold' }}>✓</span>}
-                  </button>
-                ))}
-              </div>
-            )}
+          <div style={{ marginLeft: 'auto' }}>
+            <TipMenu />
           </div>
         </div>
 

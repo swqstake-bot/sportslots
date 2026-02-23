@@ -25,30 +25,23 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
         return;
     }
     
-    // Don't set loading state for background refresh to avoid UI flickering
-    // But for initial load we might want it.
-    // Let's use a local ref or just check if we have bets.
-    // If we have bets, we are refreshing.
-    
-    // Actually, if we refresh, we shouldn't clear bets immediately?
-    // User said: "refresh every 60s".
-    // If we clear bets, the UI flashes empty.
-    // We should fetch in background and then update.
-    
-    // Modified approach:
-    // 1. Fetch all bets into a temporary array.
-    // 2. Once done, replace `bets` state.
-    // 3. This avoids "0 bets found" flash during refresh.
+    // Prevent re-entry if already loading
+    if (isLoading) return;
     
     setIsLoading(true);
     try {
       let currentOffset = 0;
       let keepFetching = true;
       const BATCH_LIMIT = 50; 
+      const MAX_BETS_LIMIT = 500; // Safety limit to prevent infinite loops
       let allFetchedBets: SportBet[] = [];
 
       while (keepFetching) {
-        // console.log(`Fetching active bets offset: ${currentOffset}`);
+        if (allFetchedBets.length >= MAX_BETS_LIMIT) {
+            console.warn("Max bets limit reached, stopping fetch");
+            break;
+        }
+
         const res = await StakeApi.query<any>(Queries.FetchActiveSportBets, {
           limit: BATCH_LIMIT,
           offset: currentOffset,
@@ -121,7 +114,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
   };
 
   const formatCurrency = (amount: number, currency: string) => {
-    return `${(amount || 0).toFixed(8)} ${(currency || 'UNK').toUpperCase()}`;
+    return `${formatAmount(amount, currency)} ${(currency || 'UNK').toUpperCase()}`;
   };
 
   const formatDate = (dateStr: string) => {

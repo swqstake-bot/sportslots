@@ -3,6 +3,7 @@ import { useAutoBetStore, type AutoBetStrategy } from '../../store/autoBetStore'
 import { useUserStore } from '../../store/userStore';
 import { StakeApi } from '../../api/client';
 import { Queries } from '../../api/queries';
+import { TipMenu } from '../ui/TipMenu';
 
 const STRATEGIES: AutoBetStrategy[] = [
   'Smart', 'Conservative', 'Aggressive', 'Balanced', 'Favorites', 'Underdogs', 'ValueHunter'
@@ -13,32 +14,6 @@ export function AutoBetView() {
   const { availableCurrencies, balances } = useUserStore();
   const [activeTab, setActiveTab] = useState<'settings' | 'logs'>('settings');
   const [sports, setSports] = useState<{name: string, slug: string}[]>([]);
-
-  // Tip Menu State
-  const [showTipMenu, setShowTipMenu] = useState(false);
-  const tipMenuRef = useRef<HTMLDivElement>(null);
-  const [tipCopied, setTipCopied] = useState(false);
-
-  const TIP_WALLETS = [
-    { id: 'sol', label: 'USDC (Solana)', address: 'FYN6Ejv7qLG4q6PrFW2txSLdV5i7dekGtibTMTZjRrWC', icon: '◎' },
-    { id: 'xrp', label: 'XRP (No Memo)', address: 'rNq4YuCm3sQNd7r5GVxA5m5p4H7eS3jjsq', icon: '✕' },
-    { id: 'btc', label: 'Bitcoin', address: 'bc1qvee0n46u7r3p0cawlc860apd0yshsx76dcznqy', icon: '₿' },
-    { id: 'ltc', label: 'LTC', address: 'LQP2hMfrz9CQEwbQt89qgnYcCdqYwzAm9o', icon: 'Ł' },
-  ];
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (tipMenuRef.current && !tipMenuRef.current.contains(event.target as Node)) {
-        setShowTipMenu(false);
-      }
-    }
-    if (showTipMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showTipMenu]);
 
   useEffect(() => {
     async function fetchSports() {
@@ -188,86 +163,8 @@ export function AutoBetView() {
                   </div>
 
                   {/* Tip Menu */}
-                  <div style={{ position: 'relative', marginBottom: '1rem', display: 'flex', justifyContent: 'flex-end' }} ref={tipMenuRef}>
-                    <button
-                        onClick={() => setShowTipMenu(!showTipMenu)}
-                        style={{
-                            padding: '0.5rem 1rem',
-                            background: 'transparent',
-                            color: '#ffd700',
-                            border: '1px solid #ffd700',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '0.85rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem'
-                        }}
-                        title="Show Tip Options"
-                    >
-                        Maxwin Hit? -&gt; Send Tip 💸 {showTipMenu ? '▲' : '▼'}
-                    </button>
-                    {showTipMenu && (
-                        <div style={{
-                            position: 'absolute',
-                            top: '100%',
-                            right: 0,
-                            marginTop: '0.5rem',
-                            background: '#1a2c38',
-                            border: '1px solid #2f4553',
-                            borderRadius: '8px',
-                            padding: '0.5rem',
-                            zIndex: 50,
-                            minWidth: '220px',
-                            boxShadow: '0 4px 6px rgba(0,0,0,0.3)'
-                        }}>
-                            <div style={{ fontSize: '0.8rem', color: '#b1bad3', marginBottom: '0.5rem', padding: '0 0.5rem' }}>
-                                Select Wallet to Copy:
-                            </div>
-                            {TIP_WALLETS.map(wallet => (
-                                <button
-                                    key={wallet.id}
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(wallet.address)
-                                        setTipCopied(true)
-                                        setTimeout(() => setTipCopied(false), 2000)
-                                        setShowTipMenu(false)
-                                    }}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        width: '100%',
-                                        padding: '0.6rem 0.75rem',
-                                        background: 'transparent',
-                                        border: 'none',
-                                        color: '#fff',
-                                        textAlign: 'left',
-                                        cursor: 'pointer',
-                                        fontSize: '0.9rem',
-                                        borderRadius: '4px'
-                                    }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = '#2f4553'}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                >
-                                    <span style={{ marginRight: '0.75rem', width: '20px', textAlign: 'center' }}>{wallet.icon}</span>
-                                    <span>{wallet.label}</span>
-                                </button>
-                            ))}
-                            {tipCopied && (
-                                <div style={{
-                                    marginTop: '0.5rem',
-                                    padding: '0.4rem',
-                                    background: 'rgba(0, 231, 1, 0.1)',
-                                    color: '#00e701',
-                                    fontSize: '0.8rem',
-                                    textAlign: 'center',
-                                    borderRadius: '4px'
-                                }}>
-                                    Address Copied!
-                                </div>
-                            )}
-                        </div>
-                    )}
+                  <div className="flex justify-end mb-4">
+                    <TipMenu />
                   </div>
 
                   {/* Wallet & Amount */}

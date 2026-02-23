@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { fetchChallengeList, fetchCurrencyRates } from '../api/stakeChallenges'
 import { getProvider } from '../api/providers'
-import { isFiat, formatAmount } from '../utils/formatAmount'
+import { isFiat, formatAmount, toUnits, toMinor } from '../utils/formatAmount'
 import { parseBetResponse } from '../utils/parseBetResponse'
 import { Button } from './ui/Button'
 import { CURRENCY_GROUPS } from '../constants/currencies'
@@ -10,7 +10,6 @@ import { addDiscoveredFromChallenges, loadDiscoveredSlots } from '../utils/disco
 
 const REFRESH_INTERVAL_MS = 2 * 60 * 1000 // 2 Minuten
 const PAGE_SIZE = 24 // Stake Default
-const ZERO_DECIMAL_CURRENCIES = ['idr', 'jpy', 'krw', 'vnd']
 
 const STYLES = {
   container: {
@@ -146,22 +145,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const processedIdsRef = useRef(new Set())
   const activeRunsRef = useRef(activeRuns)
   const totalStatsRef = useRef(totalSessionStats)
-
-  const toUnits = useCallback((amount, currency) => {
-    const c = (currency || '').toLowerCase()
-    if (ZERO_DECIMAL_CURRENCIES.includes(c)) return Number(amount)
-    if (isFiat(c)) return Number(amount) / 100
-    // Crypto: Stake nutzt meist 8 Decimals (Satoshis) für interne Berechnung
-    return Number(amount) / 1e8
-  }, [])
-
-  const toMinor = useCallback((units, currency) => {
-    const c = (currency || '').toLowerCase()
-    if (ZERO_DECIMAL_CURRENCIES.includes(c)) return Math.round(units)
-    if (isFiat(c)) return Math.ceil(Number(units) * 100)
-    // Crypto: In Satoshis umrechnen
-    return Math.round(Number(units) * 1e8)
-  }, [])
 
   const log = useCallback((msg) => {
     setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 100))

@@ -4,7 +4,7 @@ import { PROVIDERS as PROVIDERS_BASIC } from '../constants/slots'
 import { PROVIDERS as PROVIDERS_META } from '../constants/providers'
 import { ALL_CURRENCIES, filterCurrenciesByProvider } from '../constants/currencies'
 import { fetchSupportedCurrencies } from '../api/stakeChallenges'
-import { isFiat } from '../utils/formatAmount'
+import { isFiat, isStable } from '../utils/formatAmount'
 import { getEffectiveBetAmount } from '../constants/bet'
 import { parseBetResponse } from '../utils/parseBetResponse'
 import { formatBetLabel } from '../utils/formatAmount'
@@ -179,7 +179,6 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   })
 
   const allowedCurrencies = filterCurrenciesByProvider(supportedCurrencies, [slot]) || supportedCurrencies
-  const isStable = (v) => v === 'usdc' || v === 'usdt'
   const cryptoOpts = allowedCurrencies.filter((c) => !isFiat(c.value) || isStable(c.value))
   const fiatOpts = allowedCurrencies.filter((c) => isFiat(c.value) && !isStable(c.value))
 
