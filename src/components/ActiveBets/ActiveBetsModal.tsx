@@ -219,7 +219,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
   }, [bets, sortField, sortDirection]);
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] backdrop-blur-sm">
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] backdrop-blur-sm">
       <div className="bg-[#1a2c38] border border-[#2f4553] rounded-lg shadow-2xl w-[95vw] h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-[#2f4553] bg-[#0f212e]">
