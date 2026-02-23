@@ -17,7 +17,7 @@ const generateUUID = () => {
 
 // Check if sport is Esport
 const isEsport = (slug: string) => {
-  const esports = ['esports', 'csgo', 'dota2', 'league-of-legends', 'valorant', 'call-of-duty', 'rainbow-six', 'starcraft', 'fifa', 'nba2k', 'ecricket'];
+  const esports = ['esports', 'csgo','crossfire','cs2', 'dota2', 'league-of-legends', 'valorant', 'call-of-duty', 'rainbow-six', 'starcraft', 'fifa', 'nba2k','LoL', 'ecricket'];
   return esports.some(e => slug.toLowerCase().includes(e));
 };
 
