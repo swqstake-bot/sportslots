@@ -15,6 +15,7 @@ import { isSlotNoExtraBet, addSlotNoExtraBet } from '../utils/slotExtraBetMemory
 import { loadHasBonusSlugs, toggleHasBonusSlug, removeHasBonusSlug } from '../utils/slotSets'
 import { notifyBonusHit } from '../utils/notifications'
 import { saveBonusLog, isSaveBonusLogsEnabled, setSaveBonusLogsEnabled, exportBonusLogsAsFile, clearBonusLogs } from '../utils/apiLogger'
+import { TipMenu } from '../../ui/TipMenu'
 
 const HUNT_BET_LEVELS = [
   1100, 2200, 4400, 6600, 8800, 11000, 22000, 44000, 66000, 110000, 220000,
