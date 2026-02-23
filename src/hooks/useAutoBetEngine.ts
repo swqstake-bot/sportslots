@@ -323,6 +323,20 @@ export function useAutoBetEngine() {
                                     rejections.outcomeStatus++;
                                     continue;
                                 }
+
+                                // Stake Shield: Quarter Lines Check
+                                // If Shield is enabled (strict or normal), we must avoid Quarter Lines (e.g. 1.25, 2.75)
+                                // Quarter lines usually appear in outcome names like "Over 2.25", "Under 1.75", "Asian Handicap -0.25"
+                                if (settings.stakeShield?.enabled) {
+                                    const name = outcome.name || '';
+                                    // Regex to find numbers ending in .25 or .75
+                                    // Matches: 1.25, 2.75, -0.25, +1.75
+                                    const isQuarterLine = /\d+\.(25|75)\b/.test(name);
+                                    if (isQuarterLine) {
+                                        // console.log(`Skipping Quarter Line outcome: ${name}`);
+                                        continue;
+                                    }
+                                }
                             
                             const odds = outcome.odds;
                             if (odds >= settings.minOdds && odds <= settings.maxOdds) {
