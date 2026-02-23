@@ -1,3 +1,4 @@
 provider: github
 owner: swqstake-bot
 repo: sportslots
+updaterCacheDirName: stakesportselectron-updater
