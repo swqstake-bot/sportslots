@@ -28,6 +28,10 @@ export interface AutoBetSettings {
   scanLimit?: number;
   enabled: boolean;
   
+  // New Logic Settings
+  fillUp: boolean; // If true, retry every 3 mins when 150 limit reached
+  coverWithShield: boolean; // If true, place duplicate bet with shield after normal bet
+
   // Stake Shield Settings
   stakeShield: {
     enabled: boolean;
@@ -68,6 +72,8 @@ const DEFAULT_SETTINGS: AutoBetSettings = {
   numberOfBets: 10,
   eventFilter: '',
   enabled: false,
+  fillUp: false,
+  coverWithShield: false,
   stakeShield: {
     enabled: false,
     legsThatCanLose: 1,

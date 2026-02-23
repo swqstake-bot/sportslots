@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 const TIP_WALLETS = [
   { id: 'sol', label: 'USDC (Solana)', address: 'FYN6Ejv7qLG4q6PrFW2txSLdV5i7dekGtibTMTZjRrWC', icon: '◎' },

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useAutoBetStore, type AutoBetStrategy } from '../../store/autoBetStore';
 import { useUserStore } from '../../store/userStore';
 import { StakeApi } from '../../api/client';
@@ -279,6 +279,46 @@ export function AutoBetView() {
                         placeholder="100"
                       />
                     </div>
+
+                  {/* Fill Up Logic */}
+                  <div className="flex items-center gap-3 p-3 rounded bg-[#0f212e] border border-[#2f4553]">
+                    <div className="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                        <input 
+                            type="checkbox" 
+                            name="toggle-fillup" 
+                            id="toggle-fillup" 
+                            className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer"
+                            style={{ right: settings.fillUp ? '0' : 'auto', left: settings.fillUp ? 'auto' : '0', borderColor: settings.fillUp ? '#00e701' : '#2f4553' }}
+                            checked={settings.fillUp || false}
+                            onChange={(e) => updateSettings({ fillUp: e.target.checked })}
+                        />
+                        <label htmlFor="toggle-fillup" className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${settings.fillUp ? 'bg-[#00e701]' : 'bg-[#2f4553]'}`}></label>
+                    </div>
+                    <div>
+                        <label htmlFor="toggle-fillup" className="block text-sm font-bold text-white cursor-pointer">Fill Up Mode</label>
+                        <p className="text-xs text-[#b1bad3]">Keep filling up to 150 bets. Retry every 3 mins if full.</p>
+                    </div>
+                  </div>
+
+                  {/* Cover with Shield Logic */}
+                  <div className="flex items-center gap-3 p-3 rounded bg-[#0f212e] border border-[#2f4553]">
+                    <div className="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                        <input 
+                            type="checkbox" 
+                            name="toggle-cover" 
+                            id="toggle-cover" 
+                            className="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer"
+                            style={{ right: settings.coverWithShield ? '0' : 'auto', left: settings.coverWithShield ? 'auto' : '0', borderColor: settings.coverWithShield ? '#00e701' : '#2f4553' }}
+                            checked={settings.coverWithShield || false}
+                            onChange={(e) => updateSettings({ coverWithShield: e.target.checked })}
+                        />
+                        <label htmlFor="toggle-cover" className={`toggle-label block overflow-hidden h-5 rounded-full cursor-pointer ${settings.coverWithShield ? 'bg-[#00e701]' : 'bg-[#2f4553]'}`}></label>
+                    </div>
+                    <div>
+                        <label htmlFor="toggle-cover" className="block text-sm font-bold text-white cursor-pointer">Cover with Shield</label>
+                        <p className="text-xs text-[#b1bad3]">Place 2nd identical bet with Shield after success.</p>
+                    </div>
+                  </div>
 
                     {/* Scan Limit Slider */}
                     <div className="group">

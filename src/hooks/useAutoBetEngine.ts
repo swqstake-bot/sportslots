@@ -48,7 +48,7 @@ export function useAutoBetEngine() {
     setIsProcessing(true);
     addLog('Starting AutoBet cycle...', 'info');
 
-    if (placedBetsCount.current >= settings.numberOfBets) {
+    if (placedBetsCount.current >= settings.numberOfBets && !settings.fillUp) {
       addLog(`Target number of bets reached (${settings.numberOfBets}). Stopping.`, 'success');
       stop();
       processingRef.current = false;
@@ -66,11 +66,22 @@ export function useAutoBetEngine() {
       });
 
       if (activeBetsCheck.data?.user?.activeSportBets && activeBetsCheck.data.user.activeSportBets.length > 0) {
-        addLog('Active bets limit (150) reached. Cannot place more bets until some settle.', 'error');
-        stop();
-        processingRef.current = false;
-        setIsProcessing(false);
-        return;
+        if (settings.fillUp) {
+            addLog('Active bets limit (150) reached. Fill Up Mode: Waiting 3 minutes before retrying...', 'warning');
+            processingRef.current = false;
+            setIsProcessing(false);
+            
+            // Set 3 minute timeout
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            timeoutRef.current = setTimeout(processAutoBet, 180000); 
+            return;
+        } else {
+            addLog('Active bets limit (150) reached. Cannot place more bets until some settle.', 'error');
+            stop();
+            processingRef.current = false;
+            setIsProcessing(false);
+            return;
+        }
       }
 
       // 1. Check Balance
@@ -541,6 +552,74 @@ export function useAutoBetEngine() {
                 consecutiveFailures = 0; // Reset failure count
                 addLog(`Bet placed successfully! ID: ${betId} (${placedBetsCount.current}/${settings.numberOfBets})`, 'success');
                 
+                // === Cover with Shield Logic ===
+                if (settings.coverWithShield && betPlaced) {
+                     try {
+                        addLog('Cover with Shield: Attempting to place duplicate shielded bet...', 'info');
+                        
+                        // 1. Fetch Offers for the SAME selections
+                        const shieldOutcomes = selections.map(s => ({
+                            outcomeId: s.outcomeId,
+                            betType: 'sports'
+                        }));
+                        
+                        const shieldRes = await StakeApi.query<any>(Queries.StakeShieldOffers, {
+                            outcomes: shieldOutcomes
+                        });
+                        
+                        let coverShieldEnabled = false;
+                        let coverShieldProtectionLevel = undefined;
+                        let coverShieldOfferOdds = undefined;
+                        
+                        if (shieldRes.data?.stakeShieldOffers?.offers) {
+                            const offers = shieldRes.data.stakeShieldOffers.offers;
+                            // Default to max protection if not specified, or use same settings as main shield
+                            const desiredLegs = settings.stakeShield?.legsThatCanLose || 1;
+                            const sortedOffers = offers.sort((a: any, b: any) => (b.legsThatCanLose || 0) - (a.legsThatCanLose || 0));
+                            const bestOffer = sortedOffers.find((o: any) => (o.legsThatCanLose || 0) <= desiredLegs);
+                            
+                            if (bestOffer) {
+                                coverShieldEnabled = true;
+                                coverShieldProtectionLevel = bestOffer.legsThatCanLose;
+                                coverShieldOfferOdds = bestOffer.offerOdds;
+                            }
+                        }
+                        
+                        if (coverShieldEnabled) {
+                            const coverIdentifier = generateUUID();
+                            const coverBetVariables = {
+                                amount: settings.amount,
+                                currency: settings.currency,
+                                outcomeIds: outcomeIds.map(id => id.toString()),
+                                betType: 'sports',
+                                oddsChange: 'any',
+                                identifier: coverIdentifier,
+                                stakeShieldEnabled: true,
+                                stakeShieldProtectionLevel: coverShieldProtectionLevel,
+                                stakeShieldOfferOdds: coverShieldOfferOdds
+                            };
+                            
+                            const coverRes = await StakeApi.query<any>(Queries.PlaceSportBet, coverBetVariables);
+                            
+                            if (coverRes.data?.sportBet || coverRes.data?.createSportBet) {
+                                const coverId = coverRes.data?.sportBet?.id || coverRes.data?.createSportBet?.id;
+                                addLog(`Cover Bet placed successfully! ID: ${coverId} (Shielded)`, 'success');
+                                placedBetsCount.current += 1; // Count towards total? Yes, it's a bet.
+                                localAvailableBalance -= settings.amount;
+                            } else {
+                                addLog('Cover Bet skipped: API returned no bet object (Shield might be unavailable).', 'warning');
+                            }
+                        } else {
+                            addLog('Cover Bet skipped: No valid Stake Shield offer found.', 'warning');
+                        }
+                        
+                     } catch (coverErr: any) {
+                         // User requested to simply skip if it fails, so we log as warning and continue
+                         addLog(`Cover Bet skipped (Error): ${coverErr.message}`, 'warning');
+                     }
+                }
+                // ==============================
+
                 // Small delay between bets to avoid rate limits
                 await new Promise(r => setTimeout(r, 250));
             } else {
@@ -558,7 +637,7 @@ export function useAutoBetEngine() {
       }
       
       // If we finished the loop because we reached the target
-      if (placedBetsCount.current >= settings.numberOfBets) {
+      if (placedBetsCount.current >= settings.numberOfBets && !settings.fillUp) {
           addLog(`Target number of bets reached (${settings.numberOfBets}). Stopping.`, 'success');
           stop();
           return; // Stop the cycle

@@ -3,6 +3,7 @@ import { useUserStore } from '../../store/userStore';
 import type { SportBet } from '../../store/userStore';
 import { StakeApi } from '../../api/client';
 import { Queries } from '../../api/queries';
+import { formatAmount } from '../Casino/utils/formatAmount';
 
 interface ActiveBetsModalProps {
   onClose: () => void;
