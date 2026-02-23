@@ -266,6 +266,9 @@ const SportBetPreview_SportBet = `fragment SportBetPreview_SportBet on SportBet 
   cashoutMultiplier
   createdAt
   id
+  bet {
+    iid
+  }
   user {
     id
   }

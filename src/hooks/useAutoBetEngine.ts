@@ -58,14 +58,26 @@ export function useAutoBetEngine() {
 
     try {
       // 0. Check Active Bets Limit (150)
-      // If we can fetch a bet at offset 149, it means we have at least 150 active bets.
-      const activeBetsCheck = await StakeApi.query<any>(Queries.FetchActiveSportBets, {
-        limit: 1,
-        offset: 149,
-        name: currentUser.name
-      });
+      // Check for limit of active bets (150 is the hard limit)
+      // We check if we can fetch a bet at offset 149, it means we have at least 150 active bets.
+      let isLimitReached = false;
+      
+      try {
+        const activeBetsCheck = await StakeApi.query<any>(Queries.FetchActiveSportBets, {
+          limit: 1,
+          offset: 149,
+          name: currentUser.name
+        });
+        
+        if (activeBetsCheck.data?.user?.activeSportBets && activeBetsCheck.data.user.activeSportBets.length > 0) {
+            isLimitReached = true;
+        }
+      } catch (err) {
+          // If query fails, assume not reached to be safe, or log warning
+          console.warn("Failed to check active bets limit", err);
+      }
 
-      if (activeBetsCheck.data?.user?.activeSportBets && activeBetsCheck.data.user.activeSportBets.length > 0) {
+      if (isLimitReached) {
         if (settings.fillUp) {
             addLog('Active bets limit (150) reached. Fill Up Mode: Waiting 3 minutes before retrying...', 'warning');
             processingRef.current = false;
@@ -92,6 +104,15 @@ export function useAutoBetEngine() {
         return;
       }
 
+      // If we are in fillUp mode and we've reached the target number of bets for this session, 
+      // but NOT the global 150 limit, we should technically pause or stop?
+      // No, user said: "Wenn nicht füllt er wieder auf, also quasi nicht anzahl an wetten sondern 'fill up'"
+      // So if fillUp is ON, we ignore 'numberOfBets' setting essentially, or we treat numberOfBets as "bets per batch"?
+      // The user instruction implies: "Keep betting until 150 active bets is reached".
+      // So we should probably ignore `placedBetsCount` check if fillUp is active, OR user sets a high number.
+      // Let's assume numberOfBets is still a safety cap per run, but for fillUp we might want to override it?
+      // For now, let's stick to the logic: if 150 limit is NOT reached, we continue.
+      
       // 2. Determine Sports to Scan
       let sportsToScan: { name: string; slug: string; type?: string }[] = [];
 
@@ -133,6 +154,9 @@ export function useAutoBetEngine() {
       const candidates: any[] = [];
 
       // 3. Fetch Fixtures for each sport
+      let rejections = { status: 0, odds: 0, marketStatus: 0, outcomeStatus: 0, noMarkets: 0 };
+      let consecutiveMarketInactive = 0; // Track consecutive inactive markets to trigger reload
+
       for (const sport of sportsToScan) {
         // Check running state again between fetches
         if (!useAutoBetStore.getState().isRunning) break;
@@ -197,10 +221,15 @@ export function useAutoBetEngine() {
                 
                 // addLog(`Found ${fixtures.length} fixtures for ${sport.name} (${type})`, 'info');
                 
-                const rejections = { status: 0, odds: 0, marketStatus: 0, outcomeStatus: 0, noMarkets: 0 };
-
                 // 4. Extract Candidates (Outcomes)
                 for (const fixture of fixtures) {
+                
+                // If we hit too many inactive markets, we might want to break early and re-fetch (or just let it continue)
+                if (consecutiveMarketInactive > 10) {
+                     addLog(`Too many consecutive inactive markets (>10). Stopping current scan to refresh fixtures.`, 'warning');
+                     break; // Break fixture loop
+                }
+
                 // For live games, status might be 'active' or 'live'
                 // For upcoming, status is usually 'scheduled' or 'active'
                 // Let's rely on the query result mainly, but check basic status
@@ -281,9 +310,12 @@ export function useAutoBetEngine() {
                             // But maybe status string is different?
                             if (market.status !== 'active' && market.status !== 'open') {
                                 rejections.marketStatus++;
-                                // console.log(`Rejected market ${market.name} status: ${market.status}`);
+                                consecutiveMarketInactive++; // Increment inactive counter
                                 continue;
                             }
+                            
+                            // Reset counter if we found an active market
+                            consecutiveMarketInactive = 0;
                             
                             for (const outcome of market.outcomes) {
                                 // Fix: Check outcome.active (boolean) instead of outcome.status (undefined in fragment)
@@ -330,8 +362,16 @@ export function useAutoBetEngine() {
         }
       }
 
-      if (candidates.length < settings.minLegs) {
-        addLog(`Not enough candidates found (${candidates.length}). Need ${settings.minLegs}.`, 'warning');
+      // 5. Shuffle and Pick
+      if (candidates.length === 0) {
+        addLog(`No suitable bets found in this scan. Rejections: Status=${rejections.status}, Market=${rejections.marketStatus}, Outcome=${rejections.outcomeStatus}. Retrying in 30s...`, 'info');
+        
+        // If we broke due to consecutive inactive markets, we should probably retry sooner?
+        // But 30s is fine.
+        processingRef.current = false;
+        setIsProcessing(false);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        timeoutRef.current = setTimeout(processAutoBet, 30000);
         return;
       }
 
