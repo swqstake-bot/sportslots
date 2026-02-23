@@ -9,6 +9,8 @@ import { getEffectiveBetAmount } from '../../constants/bet'
 import { logApiCall } from '../../utils/apiLogger'
 
 const ZERO_DECIMAL_CURRENCIES = ['idr', 'jpy', 'krw', 'vnd']
+// Fiat-Währungen haben meist 2 Dezimalstellen, Crypto meist 8
+const FIAT_CURRENCIES = ['eur', 'usd', 'brl', 'cad', 'cny', 'inr', 'mxn', 'php', 'pln', 'rub', 'try', 'ngn', 'ars', 'cop', 'pen', 'clp']
 const STAKEENGINE_MIN_DELAY_MS = 50
 
 function parseConfigFromUrl(config) {
@@ -30,7 +32,18 @@ function parseConfigFromUrl(config) {
 function toStakeEngineAmount(betAmount, targetCurrency) {
   const curr = (targetCurrency || 'eur').toLowerCase()
   const isZeroDec = ZERO_DECIMAL_CURRENCIES.includes(curr)
-  const units = isZeroDec ? Number(betAmount) : Number(betAmount) / 100
+  const isFiat = FIAT_CURRENCIES.includes(curr)
+  
+  let units
+  if (isZeroDec) {
+    units = Number(betAmount)
+  } else if (isFiat) {
+    units = Number(betAmount) / 100
+  } else {
+    // Crypto: Input ist in Satoshis (1e8), wir brauchen Major Units
+    units = Number(betAmount) / 1e8
+  }
+  
   return Math.round(units * 1_000_000)
 }
 
@@ -114,9 +127,16 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const betLevelsRaw = configData?.betLevels?.map((v) => Number(v)).filter((b) => b > 0) ?? []
   const betLevels = betLevelsRaw.map((v) => {
     const units = v / 1_000_000
-    return targetCurrency && !ZERO_DECIMAL_CURRENCIES.includes(targetCurrency.toLowerCase())
-      ? Math.round(units * 100)
-      : Math.round(units)
+    const curr = (targetCurrency || 'eur').toLowerCase()
+    
+    if (ZERO_DECIMAL_CURRENCIES.includes(curr)) {
+      return Math.round(units)
+    } else if (FIAT_CURRENCIES.includes(curr)) {
+      return Math.round(units * 100)
+    } else {
+      // Crypto: Major -> Satoshis (1e8)
+      return Math.round(units * 1e8)
+    }
   })
 
   const stepBet = configData?.stepBet ?? 100_000

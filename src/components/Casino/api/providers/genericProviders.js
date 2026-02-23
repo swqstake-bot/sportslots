@@ -218,7 +218,23 @@ function makeAdapter(path) {
       const body = {}
       if (session.token != null) body.token = session.token
       if (session.gameId != null) body.gameId = session.gameId
-      body.bet = Number(effectiveBet)
+      
+      // BetAmount ist in Minor (Cents/Satoshis), Provider erwartet meist Major (EUR/BTC)
+      const currency = (session.currencyCode || 'eur').toLowerCase()
+      const isZeroDec = ['idr', 'jpy', 'krw', 'vnd'].includes(currency)
+      const isFiat = ['eur', 'usd', 'brl', 'cad', 'cny', 'inr', 'mxn', 'php', 'pln', 'rub', 'try', 'ngn', 'ars', 'cop', 'pen', 'clp'].includes(currency)
+
+      let betMajor
+      if (isZeroDec) {
+        betMajor = Number(effectiveBet)
+      } else if (isFiat) {
+        betMajor = Number(effectiveBet) / 100
+      } else {
+        // Crypto: Satoshis -> Major
+        betMajor = Number(effectiveBet) / 1e8
+      }
+      
+      body.bet = betMajor
       const t0 = Date.now()
       const res = await postViaProxy(upstreamUrl, body)
       const json = await res.json().catch(() => null)

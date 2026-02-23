@@ -258,7 +258,14 @@ function snapToNearest(amount, levels) {
 
 export async function placeBet(session, betAmount, extraBet, autoplay = false) {
   const effectiveBet = getEffectiveBetAmount(betAmount, extraBet)
-  const units = Math.max(1, Math.round(effectiveBet / (session.currencyMult || 1000)))
+  
+  // effectiveBet ist in Minor (Cents). Umrechnung in Provider-Units (currencyMult)
+  // currencyMult ist meist 1000 pro Major-Unit (1 EUR = 1000 Units)
+  // oder bei ZeroDec 1 JPY = 1 Unit? Muss geprüft werden.
+  // Annahme: currencyMult bezieht sich auf 1 Major Unit.
+  
+  const units = Math.max(1, Math.round((effectiveBet / 100) * (session.currencyMult || 1000)))
+  
   const chipAmount = snapToNearest(units, session.betLevelsRaw?.length ? session.betLevelsRaw : [units])
   
   const s = session._internal

@@ -6,11 +6,37 @@ import { getWebReadySlots, PROVIDERS } from '../constants/slots'
 
 const STORAGE_KEY = 'slotbot_discovered_slots'
 
-function inferProviderId(slug) {
+export function inferProviderId(slug) {
   if (!slug || typeof slug !== 'string') return 'stakeEngine'
   const s = slug.toLowerCase()
+
+  // Bekannte Provider-Prefixe
   if (s.startsWith('hacksaw-')) return 'hacksaw'
   if (s.startsWith('pragmatic-play-') || s.startsWith('pragmatic-')) return 'pragmatic'
+  if (s.startsWith('nolimit-')) return 'nolimit'
+  if (s.startsWith('avatarux-')) return 'avatarux'
+  if (s.startsWith('relax-')) return 'relax'
+  if (s.startsWith('blueprint-')) return 'blueprint'
+  if (s.startsWith('endorphina-')) return 'endorphina'
+  if (s.startsWith('thunderkick-')) return 'thunderkick'
+  if (s.startsWith('netent-')) return 'netent'
+  if (s.startsWith('gameart-')) return 'gameart'
+  if (s.startsWith('push-gaming-') || s.startsWith('push-')) return 'push'
+  if (s.startsWith('big-time-gaming-') || s.startsWith('btg-')) return 'btg'
+  if (s.startsWith('oak-')) return 'oak'
+  if (s.startsWith('red-tiger-') || s.startsWith('redtiger-')) return 'redtiger'
+  if (s.startsWith('playngo-') || s.startsWith('play-n-go-')) return 'playngo'
+  if (s.startsWith('octoplay-')) return 'octoplay'
+  if (s.startsWith('peter-sons-') || s.startsWith('peterandsons-')) return 'peterandsons'
+  if (s.startsWith('shady-')) return 'shady'
+  if (s.startsWith('shuffle-')) return 'shuffle'
+  if (s.startsWith('titan-')) return 'titan'
+  if (s.startsWith('twist-')) return 'twist'
+  if (s.startsWith('popiplay-')) return 'popiplay'
+  if (s.startsWith('helio-')) return 'helio'
+  if (s.startsWith('samurai-')) return 'samurai'
+  
+  // Standard-Fallback
   return 'stakeEngine'
 }
 
@@ -50,7 +76,7 @@ export function addDiscoveredFromChallenges(challenges) {
   for (const c of challenges) {
     const slug = c.gameSlug || c.game?.slug
     if (!slug || known.has(slug)) continue
-    if (slug.toLowerCase().startsWith('nolimit-')) continue
+    // if (slug.toLowerCase().startsWith('nolimit-')) continue // NoLimit jetzt unterstützt
     const providerId = inferProviderId(slug)
     if (PROVIDERS[providerId]?.impl !== 'web') continue
     const name = c.gameName || c.game?.name || slug

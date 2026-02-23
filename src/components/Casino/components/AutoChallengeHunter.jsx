@@ -6,7 +6,7 @@ import { parseBetResponse } from '../utils/parseBetResponse'
 import { Button } from './ui/Button'
 import { CURRENCY_GROUPS } from '../constants/currencies'
 import { notifyChallengeStart, requestNotificationPermission } from '../utils/notifications'
-import { addDiscoveredFromChallenges } from '../utils/discoveredSlots'
+import { addDiscoveredFromChallenges, loadDiscoveredSlots } from '../utils/discoveredSlots'
 
 const REFRESH_INTERVAL_MS = 2 * 60 * 1000 // 2 Minuten
 const PAGE_SIZE = 24 // Stake Default
@@ -123,7 +123,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const [maxMinBet, setMaxMinBet] = useState(0.20)
   const [minPrizeUsd, setMinPrizeUsd] = useState(5.00)
   const [sourceCurrency, setSourceCurrency] = useState('xrp')
-  const [targetCurrency, setTargetCurrency] = useState('pln')
+  const [targetCurrency, setTargetCurrency] = useState('usd')
   const [huntEnabled, setHuntEnabled] = useState(false)
   const [autoStart, setAutoStart] = useState(false)
   const [maxParallel, setMaxParallel] = useState(1)
@@ -151,14 +151,16 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     const c = (currency || '').toLowerCase()
     if (ZERO_DECIMAL_CURRENCIES.includes(c)) return Number(amount)
     if (isFiat(c)) return Number(amount) / 100
-    return Number(amount)
+    // Crypto: Stake nutzt meist 8 Decimals (Satoshis) für interne Berechnung
+    return Number(amount) / 1e8
   }, [])
 
   const toMinor = useCallback((units, currency) => {
     const c = (currency || '').toLowerCase()
     if (ZERO_DECIMAL_CURRENCIES.includes(c)) return Math.round(units)
     if (isFiat(c)) return Math.ceil(Number(units) * 100)
-    return Number(units)
+    // Crypto: In Satoshis umrechnen
+    return Math.round(Number(units) * 1e8)
   }, [])
 
   const log = useCallback((msg) => {
@@ -211,6 +213,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         if (onDiscoveredSlots) onDiscoveredSlots()
       }
 
+      // Kombiniere vorhandene Slots mit neu entdeckten für diese Runde
+      const currentSlots = [...webSlots, ...addedSlots]
+
       let addedCount = 0
       for (const c of unique) {
         if (processedIdsRef.current.has(c.id)) continue
@@ -220,8 +225,24 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         const prizeUsd = getPrizeUsd(c, newRates)
         const isMinBetOk = minBet >= minMinBet && minBet <= maxMinBet
         const isPrizeOk = (prizeUsd || 0) >= minPrizeUsd
-        const slot = webSlots.find((s) => s.slug === c.gameSlug)
-        const eligible = isMinBetOk && isPrizeOk && !!slot && !c.completedAt && c.active !== false
+        
+        // Nutze currentSlots statt webSlots (Prop)
+        let slot = currentSlots.find((s) => s.slug === c.gameSlug)
+        
+        // Fallback-Logik analog zu getChallengeMeta: Wenn Slot fehlt, ist er trotzdem "ok" (wird simuliert oder später geladen)
+        if (!slot) {
+           // Wir prüfen, ob er in den discovered slots ist (falls addedSlots leer war aber localstorage voll)
+           // Da wir oben addedSlots merged haben, ist das nur für ganz neue fälle
+           slot = { slug: c.gameSlug, name: c.gameName || c.gameSlug, id: c.gameSlug }
+        }
+
+        // isSlotOk ist immer true, da wir Fallback haben. 
+        // WICHTIG: Wenn wir 100% Logik wollen, sollten wir prüfen, ob wir ihn spielen KÖNNEN.
+        // Aber die Anforderung war "Availability Logic: Enforced 'Available' status... defaults to simulation".
+        // Also ist eligible = true korrekt.
+        
+        const eligible = isMinBetOk && isPrizeOk && !c.completedAt && c.active !== false
+        
         if (eligible) {
           log(`Neue Challenge gefunden: ${c.gameName} (${c.minBetUsd}$)`)
           processedIdsRef.current.add(c.id)
@@ -260,6 +281,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const getPrizeUsd = (c, currentRates = rates) => {
     if (c.award == null) return 0
     const currency = (c.currency || 'usd').toLowerCase()
+    if (currency === 'usd') return c.award
     const rate = currentRates[currency] || 0
     if (!rate) return 0
     return c.award * rate
@@ -329,6 +351,12 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
     let slot = webSlots.find(s => s.slug === challenge.gameSlug)
     if (!slot) {
+      // Versuch aus Discovered Slots zu laden (falls webSlots noch nicht updated)
+      const discovered = loadDiscoveredSlots()
+      slot = discovered.find(s => s.slug === challenge.gameSlug)
+    }
+    
+    if (!slot) {
       slot = { slug: challenge.gameSlug, name: challenge.gameName || challenge.gameSlug, id: challenge.gameSlug }
     }
 
@@ -362,7 +390,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       
       let session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
       
-      const rate = rates[tCurr] || 0
+      // Fallback: Wenn tCurr == 'usd', ist Rate 1, sonst 0 wenn nicht gefunden
+      const rate = rates[tCurr] || (tCurr === 'usd' ? 1 : 0)
       if (!rate) throw new Error(`Kein Kurs für ${tCurr.toUpperCase()}`)
       
       let targetBetUnits = (challenge.minBetUsd / rate)

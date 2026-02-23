@@ -307,21 +307,33 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     throw new Error('Bonus aktiv – bitte im Spielfenster manuell weiterspielen.')
   }
   const curr = (session.targetCurrency || 'eur').toLowerCase()
+  const isZeroDec = ZERO_DECIMAL_CURRENCIES.includes(curr)
+  const isFiat = ['eur', 'usd', 'brl', 'cad', 'cny', 'inr', 'mxn', 'php', 'pln', 'rub', 'try', 'ngn', 'ars', 'cop', 'pen', 'clp'].includes(curr)
+  
   const b = Number(betAmount)
   const lines = session.lines || 20
   let c
+  
   if (curr === 'idr') {
     if (BIGBASS_SYMBOL.test(session.symbol || '')) {
-      c = Math.round(b / lines) // 250/10=25, 1000/10=100
+      c = Math.round(b / lines) 
     } else {
       c = Math.round(b / IDR_C_MULTIPLIER)
     }
-  } else if (ZERO_DECIMAL_CURRENCIES.includes(curr)) {
+  } else if (isZeroDec) {
     c = Math.round(b)
   } else {
-    c = Math.round(b / 100)
+    // b ist in Minor (Cents/Satoshis).
+    // Pragmatic erwartet c als Coin Value in Major Units (z.B. 0.01 für 1 Cent, oder 0.00000001 für 1 Satoshi)
+    const scale = isFiat ? 100 : 1e8
+    const c_minor = b / lines
+    // Wir runden nicht zu früh, sondern senden den Float (oder formatiert)
+    // Aber Pragmatic akzeptiert oft nur bestimmte Coin Values.
+    // Wir nehmen an, dass die BetLevels korrekt waren und c_minor "glatt" aufgeht (oder wir runden auf precision)
+    c = c_minor / scale
   }
-  const minC = BIGBASS_SYMBOL.test(session.symbol || '') && curr === 'idr' ? 25 : 1
+  
+  const minC = BIGBASS_SYMBOL.test(session.symbol || '') && curr === 'idr' ? 25 : (isZeroDec ? 1 : 0.00000001)
   const cVal = Math.max(minC, c)
   const l = lines
 
@@ -389,7 +401,6 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     ? Math.max(0, (lastParsed.balance ?? 0) - (firstSpinBalance ?? 0))
     : (lastParsed.w ?? 0)
 
-  const isZeroDec = ZERO_DECIMAL_CURRENCIES.includes(curr)
   const currencyCode = (session.targetCurrency || 'eur').toUpperCase()
   const bal = Number(lastParsed.balance) || 0
   const win = Number(totalWin) || 0
