@@ -38,7 +38,7 @@ export function useAutoBetEngine() {
   }, [isRunning]);
 
   const processAutoBet = useCallback(async () => {
-    // Always get fresh state
+    // Always get fresh state from store (so Stop → change settings → Start uses new values)
     const { settings, isRunning: currentIsRunning } = useAutoBetStore.getState();
     const currentUser = useUserStore.getState().user;
     const currentBalances = useUserStore.getState().balances;
@@ -47,7 +47,7 @@ export function useAutoBetEngine() {
     
     processingRef.current = true;
     setIsProcessing(true);
-    addLog('Starting AutoBet cycle...', 'info');
+    addLog(`Starting AutoBet cycle... (Sport: ${settings.sportSlug}, GameType: ${settings.gameType})`, 'info');
 
     if (placedBetsCount.current >= settings.numberOfBets && !settings.fillUp) {
       addLog(`Target number of bets reached (${settings.numberOfBets}). Stopping.`, 'success');
@@ -201,7 +201,7 @@ export function useAutoBetEngine() {
         const typesToFetch = forceUpcoming ? ['upcoming'] : (settings.gameType === 'all' ? ['live', 'upcoming'] : [settings.gameType]);
 
         for (const type of typesToFetch) {
-            
+            if (!useAutoBetStore.getState().isRunning) break;
             try {
                 let fixtures: any[] = [];
 
@@ -254,7 +254,7 @@ export function useAutoBetEngine() {
                 
                 // 4. Extract Candidates (Outcomes)
                 for (const fixture of fixtures) {
-                
+                if (!useAutoBetStore.getState().isRunning) break;
                 // If we hit too many inactive markets, we might want to break early and re-fetch (or just let it continue)
                 if (consecutiveMarketInactive > 10) {
                      addLog(`Too many consecutive inactive markets (>10). Stopping current scan to refresh fixtures.`, 'warning');
@@ -427,9 +427,11 @@ export function useAutoBetEngine() {
       // Use a local balance tracker to prevent overspending before the store updates
       let localAvailableBalance = currentBalance;
 
-      while (placedBetsCount.current < settings.numberOfBets && useAutoBetStore.getState().isRunning) {
-        // Refresh settings inside the loop to catch UI changes immediately
+      // Fill-up: place until 150; otherwise cap by numberOfBets. Re-read settings each iteration.
+      while (useAutoBetStore.getState().isRunning) {
         const currentSettings = useAutoBetStore.getState().settings;
+        const maxBets = currentSettings.fillUp ? 150 : currentSettings.numberOfBets;
+        if (placedBetsCount.current >= maxBets) break;
         
         // Recalculate crypto amount based on current settings (if user changed amount or currency)
         let loopExchangeRate = 1;
@@ -518,7 +520,7 @@ export function useAutoBetEngine() {
 
         // 6. Place Bet
         const totalOdds = selections.reduce((acc, s) => acc * s.odds, 1);
-        addLog(`Placing bet ${placedBetsCount.current + 1}/${currentSettings.numberOfBets}: ${selections.length} legs, Odds: ${totalOdds.toFixed(2)}`, 'info');
+        addLog(`Placing bet ${placedBetsCount.current + 1}/${maxBets}: ${selections.length} legs, Odds: ${totalOdds.toFixed(2)}`, 'info');
 
         const outcomeIds = selections.map(s => s.outcomeId);
         const identifier = generateUUID();
@@ -651,7 +653,7 @@ export function useAutoBetEngine() {
                 localAvailableBalance -= loopCryptoAmount; // Deduct locally
                 betsInBatch++;
                 consecutiveFailures = 0; // Reset failure count
-                addLog(`Bet placed successfully! ID: ${betId} (${placedBetsCount.current}/${currentSettings.numberOfBets})`, 'success');
+                addLog(`Bet placed successfully! ID: ${betId} (${placedBetsCount.current}/${maxBets})`, 'success');
                 
                 // === Cover with Shield Logic ===
                 if (currentSettings.coverWithShield && betPlaced) {
@@ -750,10 +752,8 @@ export function useAutoBetEngine() {
     } finally {
       processingRef.current = false;
       setIsProcessing(false);
-      
-      // Schedule next run if still running
       if (useAutoBetStore.getState().isRunning) {
-        timeoutRef.current = setTimeout(processAutoBet, 30000); // 30 seconds interval
+        timeoutRef.current = setTimeout(processAutoBet, 30000);
       }
     }
   }, [addLog, stop, addActiveBet]);
