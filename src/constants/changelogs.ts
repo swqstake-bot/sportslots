@@ -1,4 +1,10 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.48': [
+    '✨ NEW: Auto Cashout Options - Now works for confirmed bets too!',
+    '✨ NEW: AutoBet - Enter bet amount in USD instead of Crypto',
+    '🐛 FIXED: Cashout value calculation improved (real provider margin)',
+    '🐛 FIXED: Starting Soon scan limit now works correctly',
+  ],
   '1.0.34': [
     'Feature: Active Bets - Auto Cashout (Profit Threshold)',
     'Feature: Active Bets - Real-time Cashout Preview',
