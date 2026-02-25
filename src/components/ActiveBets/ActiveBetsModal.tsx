@@ -28,33 +28,47 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
   const refreshCashoutOffers = useCallback(async (source: SportBet[] = activeBets) => {
     if (source.length === 0) return;
     const next: SportBet[] = [];
-    for (const b of source) {
-      const customPrices = (b as any)?.customPrices;
-      const hasShield = Array.isArray(customPrices) && customPrices.some((p: any) => p?.type === 'stake_shield');
-      const cashoutConfigValues = Array.isArray(b.outcomes)
-        ? b.outcomes
-            .map((o: any) => o?.fixture?.tournament?.category?.sport?.cashoutConfiguration?.cashoutEnabled)
-            .filter((v: any) => v === true || v === false)
-        : [];
-      const anyEnabled = cashoutConfigValues.includes(true);
-      const anyDisabled = cashoutConfigValues.includes(false);
-      const configDisables = !anyEnabled && anyDisabled;
+    const chunks: SportBet[][] = [];
+    
+    // Split into chunks of 5 to avoid rate limits
+    for (let i = 0; i < source.length; i += 5) {
+      chunks.push(source.slice(i, i + 5));
+    }
 
-      if (b?.customBet || hasShield || configDisables) {
-        next.push({ ...b, cashoutDisabled: true, cashoutMultiplier: b.cashoutMultiplier || 0 });
-        continue;
-      }
-      try {
-        const preview = await StakeApi.query<any>(Queries.PreviewCashout, { betId: b.id });
-        const data = preview?.data?.sportBet;
-        if (data && (data.cashoutMultiplier > 0)) {
-          next.push({ ...b, cashoutMultiplier: data.cashoutMultiplier, cashoutDisabled: false });
-        } else {
-          next.push({ ...b, cashoutMultiplier: b.cashoutMultiplier || 0 });
+    for (const chunk of chunks) {
+      const chunkPromises = chunk.map(async (b) => {
+        const customPrices = (b as any)?.customPrices;
+        const hasShield = Array.isArray(customPrices) && customPrices.some((p: any) => p?.type === 'stake_shield');
+        const cashoutConfigValues = Array.isArray(b.outcomes)
+          ? b.outcomes
+              .map((o: any) => o?.fixture?.tournament?.category?.sport?.cashoutConfiguration?.cashoutEnabled)
+              .filter((v: any) => v === true || v === false)
+          : [];
+        const anyEnabled = cashoutConfigValues.includes(true);
+        const anyDisabled = cashoutConfigValues.includes(false);
+        const configDisables = !anyEnabled && anyDisabled;
+
+        if (b?.customBet || hasShield || configDisables) {
+          return { ...b, cashoutDisabled: true, cashoutMultiplier: b.cashoutMultiplier || 0 };
         }
-      } catch {
-        next.push({ ...b });
-      }
+        try {
+          // Add small delay between requests if needed, but parallel in chunk is better
+          const preview = await StakeApi.query<any>(Queries.PreviewCashout, { betId: b.id });
+          const data = preview?.data?.sportBet;
+          if (data && (data.cashoutMultiplier > 0)) {
+            return { ...b, cashoutMultiplier: data.cashoutMultiplier, cashoutDisabled: false };
+          } else {
+            return { ...b, cashoutMultiplier: b.cashoutMultiplier || 0 };
+          }
+        } catch {
+          return { ...b };
+        }
+      });
+      
+      const chunkResults = await Promise.all(chunkPromises);
+      next.push(...chunkResults);
+      // Wait 1s between chunks to respect rate limits
+      await new Promise(r => setTimeout(r, 1000));
     }
     setActiveBets(next);
   }, [activeBets]);
@@ -115,7 +129,10 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
       // Deduplicate just in case
       const uniqueBets = Array.from(new Map(allFetchedBets.map(item => [item.id, item])).values());
       setActiveBets(uniqueBets);
-      refreshCashoutOffers(uniqueBets);
+      // Wait a bit before starting heavy cashout requests
+      setTimeout(() => {
+        refreshCashoutOffers(uniqueBets);
+      }, 2000);
 
     } catch (err) {
       console.error("Error fetching all active bets:", err);
@@ -239,16 +256,15 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     fetchUsdRates();
   }, [fetchActiveBets, fetchFinishedBets, fetchUsdRates]);
 
-  // Refresh interval (optional, every 60s)
+  // Refresh interval (optional, every 120s instead of 60s)
   useEffect(() => {
     const interval = setInterval(() => {
       fetchActiveBets();
       fetchFinishedBets();
-      refreshCashoutOffers();
       evaluateAutoCashout();
-    }, 60000);
+    }, 120000);
     return () => clearInterval(interval);
-  }, [fetchActiveBets, fetchFinishedBets, refreshCashoutOffers, evaluateAutoCashout]);
+  }, [fetchActiveBets, fetchFinishedBets, evaluateAutoCashout]);
 
 
   const handleCashout = async (betId: string, multiplier: number) => {
