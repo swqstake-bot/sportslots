@@ -538,6 +538,7 @@ export const Queries = {
             cashoutMultiplier
             amount
             currency
+            payout
           }
         }
       }
