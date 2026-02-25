@@ -47,6 +47,7 @@ export function useAutoBetEngine() {
     
     processingRef.current = true;
     setIsProcessing(true);
+    let scheduled150Retry = false;
     addLog(`Starting AutoBet cycle... (Sport: ${settings.sportSlug}, GameType: ${settings.gameType})`, 'info');
 
     if (placedBetsCount.current >= settings.numberOfBets && !settings.fillUp) {
@@ -94,13 +95,13 @@ export function useAutoBetEngine() {
 
       if (isLimitReached) {
         if (settings.fillUp) {
-            addLog('Active bets limit (150) reached. Fill Up Mode: Waiting 3 minutes before retrying...', 'warning');
+            const waitMs = 60000 + Math.random() * 120000; // 1–3 min zufällig
+            addLog(`Active bets limit (150) reached. Fill Up: Pause ${Math.round(waitMs / 60000)} min, dann erneut scannen.`, 'warning');
             processingRef.current = false;
             setIsProcessing(false);
             
-            // Set 3 minute timeout
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
-            timeoutRef.current = setTimeout(processAutoBet, 180000); 
+            timeoutRef.current = setTimeout(processAutoBet, waitMs);
             return;
         } else {
             addLog('Active bets limit (150) reached. Cannot place more bets until some settle.', 'error');
@@ -733,6 +734,23 @@ export function useAutoBetEngine() {
             }
 
         } catch (err: any) {
+            const msg = String(err?.message || err || '').toLowerCase();
+            const is150Limit = msg.includes('150') && (msg.includes('active') || msg.includes('sport bet'));
+            if (is150Limit) {
+                const currentSettings = useAutoBetStore.getState().settings;
+                if (currentSettings.fillUp) {
+                    addLog('150 active bets limit (API). Fill Up: Waiting 1–3 min, then re-scanning...', 'warning');
+                    scheduled150Retry = true;
+                    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+                    const delayMs = 60000 + Math.random() * 120000;
+                    timeoutRef.current = setTimeout(processAutoBet, delayMs);
+                    return;
+                } else {
+                    addLog('150 active bets limit reached. Stopping.', 'error');
+                    stop();
+                    return;
+                }
+            }
             addLog(`Error placing bet: ${err.message}`, 'error');
             consecutiveFailures++;
             await new Promise(r => setTimeout(r, 2000));
@@ -752,7 +770,7 @@ export function useAutoBetEngine() {
     } finally {
       processingRef.current = false;
       setIsProcessing(false);
-      if (useAutoBetStore.getState().isRunning) {
+      if (useAutoBetStore.getState().isRunning && !scheduled150Retry) {
         timeoutRef.current = setTimeout(processAutoBet, 30000);
       }
     }
