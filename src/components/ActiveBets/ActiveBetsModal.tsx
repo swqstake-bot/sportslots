@@ -887,9 +887,6 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                             return formatCurrency((bet as any).cashoutValue, bet.currency);
                         }
 
-                        const multiplier = bet.cashoutMultiplier || 0;
-                        const amount = bet.amount || 0;
-                        
                         // Advanced Cashout Calculation based on provider logic
                         // Constants
                         const LIABILITY_SENSITIVITY = 0.001;
