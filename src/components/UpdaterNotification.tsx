@@ -1,31 +1,42 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+
+const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 export function UpdaterNotification() {
     const [status, setStatus] = useState<'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'>('idle');
     const [progress, setProgress] = useState<number>(0);
     const [info, setInfo] = useState<any>(null);
-
     const [errorMsg, setErrorMsg] = useState<string>('');
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const triggerCheck = () => {
+        const api = (window as any).electronAPI;
+        if (api?.invoke) {
+            api.invoke('check-for-updates').catch((err: unknown) => {
+                console.warn('[Updater] check-for-updates failed:', err);
+            });
+        }
+    };
 
     useEffect(() => {
-        // Trigger check on mount
-        (window as any).electronAPI.invoke('check-for-updates');
+        const api = (window as any).electronAPI;
+        if (!api?.invoke || !api?.on) return;
 
-        const unsubscribe = (window as any).electronAPI.on('update-status', (data: any) => {
-            console.log('Update Status:', data);
+        const unsubscribe = api.on('update-status', (data: any) => {
             setStatus(data.status);
-            if (data.progress) {
-                setProgress(data.progress.percent);
-            }
-            if (data.info) {
-                setInfo(data.info);
-            }
-            if (data.error) {
-                setErrorMsg(data.error);
-            }
+            if (data.progress) setProgress(data.progress.percent ?? 0);
+            if (data.info) setInfo(data.info);
+            if (data.error) setErrorMsg(data.error);
         });
 
+        // First check after a short delay so main process / window is ready
+        const t = setTimeout(triggerCheck, 2000);
+        // Then check periodically so long-running sessions see new releases
+        intervalRef.current = setInterval(triggerCheck, CHECK_INTERVAL_MS);
+
         return () => {
+            clearTimeout(t);
+            if (intervalRef.current) clearInterval(intervalRef.current);
             if (typeof unsubscribe === 'function') unsubscribe();
         };
     }, []);
