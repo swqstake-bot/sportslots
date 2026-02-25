@@ -5,7 +5,7 @@ import { getCashoutValue } from '../../services/cashoutService';
 import { formatAmount } from '../Casino/utils/formatAmount';
 
 function getLegStatus(outcome: SportBetOutcome): 'won' | 'lost' | 'open' {
-  const s = (outcome?.status ?? outcome?.outcome?.status ?? '').toLowerCase();
+  const s = (outcome?.status ?? '').toLowerCase();
   if (s === 'won' || s === 'win') return 'won';
   if (s === 'lost' || s === 'loss') return 'lost';
   return 'open';
