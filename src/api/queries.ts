@@ -546,6 +546,22 @@ export const Queries = {
     }
   }`,
 
+  FetchFinishedSportBets: `query FetchFinishedSportBets($limit: Int!, $offset: Int!, $name: String, $status: [SportBetStatusEnum!]) {
+    user(name: $name) {
+      id
+      sportBetList(limit: $limit, offset: $offset, status: $status) {
+        id
+        iid
+        bet {
+          ... on SportBet {
+            ...SportBetPreview_SportBet
+          }
+        }
+      }
+    }
+  }
+  ${SportBetPreview_SportBet}`,
+
   StakeShieldOffers: `query StakeShieldOffers($outcomes: [StakeShieldOffersOutcomesInput!]!) {
     stakeShieldOffers(outcomes: $outcomes) {
       offers {
