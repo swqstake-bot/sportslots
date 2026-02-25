@@ -15,6 +15,15 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set version from tag
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^v', ''
+          npm pkg set version=$version
+          echo "Building version $version"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
