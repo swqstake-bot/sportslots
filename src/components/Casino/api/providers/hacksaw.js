@@ -55,31 +55,65 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     userAgent: HACKSAW_USER_AGENT,
     token: cfg.token,
   }
-  const tAuth = Date.now()
-  const authRes = await safeFetch(`${HACKSAW_API_BASE}/authenticate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(authReq),
-  })
-
   let authData
-  try {
-    authData = await authRes.json()
-  } catch (e) {
-    const errText = await authRes.text()
-    logApiCall({ type: 'hacksaw/authenticate', endpoint: `${HACKSAW_API_BASE}/authenticate`, request: authReq, response: null, error: errText || String(e), durationMs: Date.now() - tAuth })
-    throw new Error(`Authenticate fehlgeschlagen: ${errText || authRes.status}`)
+  let lastAuthError
+  
+  // Retry loop for authenticate (max 3 attempts) to handle missing sessionUuid or temporary errors
+  for (let i = 0; i < 3; i++) {
+    const tAuth = Date.now()
+    try {
+      const authRes = await safeFetch(`${HACKSAW_API_BASE}/authenticate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(authReq),
+      })
+
+      try {
+        authData = await authRes.json()
+      } catch (e) {
+        const errText = await authRes.text()
+        lastAuthError = `Authenticate JSON Error: ${errText || String(e)}`
+        logApiCall({ type: 'hacksaw/authenticate', endpoint: `${HACKSAW_API_BASE}/authenticate`, request: authReq, response: null, error: lastAuthError, durationMs: Date.now() - tAuth })
+        await new Promise(r => setTimeout(r, 1000))
+        continue
+      }
+
+      const apiError = (authData?.statusCode && authData.statusCode !== 0) ? `API Error ${authData.statusCode} (${authData.statusMessage})` : null
+      logApiCall({ type: 'hacksaw/authenticate', endpoint: `${HACKSAW_API_BASE}/authenticate`, request: authReq, response: authData, error: !authRes.ok ? `HTTP ${authRes.status}` : apiError, durationMs: Date.now() - tAuth })
+
+      if (!authRes.ok) {
+        lastAuthError = `Authenticate HTTP Error: ${authRes.status}`
+        await new Promise(r => setTimeout(r, 1000))
+        continue
+      }
+
+      if (authData?.statusCode && authData.statusCode !== 0) {
+        lastAuthError = `Authenticate API Error: ${authData.statusCode} (${authData.statusMessage || 'Unknown'})`
+        await new Promise(r => setTimeout(r, 1000))
+        continue
+      }
+
+      const uuid = authData?.sessionUuid ?? authData?.session?.uuid
+      if (!uuid) {
+        lastAuthError = `Keine sessionUuid in Authenticate-Response (Try ${i+1})`
+        await new Promise(r => setTimeout(r, 1000))
+        continue
+      }
+
+      // Success
+      lastAuthError = null
+      break
+    } catch (netErr) {
+      lastAuthError = `Authenticate Network Error: ${netErr.message}`
+      await new Promise(r => setTimeout(r, 1000))
+    }
   }
 
-  logApiCall({ type: 'hacksaw/authenticate', endpoint: `${HACKSAW_API_BASE}/authenticate`, request: authReq, response: authData, error: !authRes.ok ? `HTTP ${authRes.status}` : null, durationMs: Date.now() - tAuth })
-
-  if (!authRes.ok) {
-    throw new Error(`Authenticate fehlgeschlagen: ${authRes.status}`)
+  if (lastAuthError) {
+    throw new Error(lastAuthError)
   }
+
   const sessionUuid = authData?.sessionUuid ?? authData?.session?.uuid
-  if (!sessionUuid) {
-    throw new Error('Keine sessionUuid in Authenticate-Response')
-  }
 
   const packageName = slotSlug.includes('-') ? slotSlug.split('-').slice(1).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : slotSlug
   const launchReq = {

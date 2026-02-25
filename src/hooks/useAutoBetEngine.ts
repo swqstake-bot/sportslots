@@ -3,6 +3,8 @@ import { useAutoBetStore } from '../store/autoBetStore';
 import { useUserStore } from '../store/userStore';
 import { StakeApi } from '../api/client';
 import { Queries } from '../api/queries';
+// @ts-ignore
+import { fetchCurrencyRates } from '../components/Casino/api/stakeChallenges';
 
 // Helper to generate UUID for bets
 const generateUUID = () => {
@@ -57,6 +59,20 @@ export function useAutoBetEngine() {
     }
 
     try {
+      // 0. Fetch Currency Rates (for USD conversion)
+      let ratesMap: Record<string, number> = {};
+      try {
+        const rates = await fetchCurrencyRates();
+        if (rates) ratesMap = rates;
+      } catch (err) {
+        console.warn("Failed to fetch currency rates", err);
+        if (settings.currency.toLowerCase() !== 'usd') {
+             addLog(`CRITICAL: Failed to fetch currency rates. Stopping for safety.`, 'error');
+             stop();
+             return;
+        }
+      }
+
       // 0. Check Active Bets Limit (150)
       // Check for limit of active bets (150 is the hard limit)
       // We check if we can fetch a bet at offset 149, it means we have at least 150 active bets.
@@ -98,8 +114,24 @@ export function useAutoBetEngine() {
 
       // 1. Check Balance
       const currentBalance = currentBalances[settings.currency.toLowerCase()] || 0;
-      if (currentBalance < settings.amount) {
-        addLog(`Insufficient balance: ${currentBalance} ${settings.currency} < ${settings.amount}`, 'error');
+      
+      let initialExchangeRate = 1;
+      const initialCurrency = settings.currency.toLowerCase();
+      if (initialCurrency !== 'usd') {
+         if (ratesMap[initialCurrency]) {
+             initialExchangeRate = ratesMap[initialCurrency];
+             addLog(`Exchange Rate: 1 ${settings.currency.toUpperCase()} = $${initialExchangeRate.toFixed(2)}`, 'info');
+         } else {
+             addLog(`CRITICAL: Exchange rate missing for ${settings.currency}. Stopping.`, 'error');
+             stop();
+             return;
+         }
+      }
+
+      const initialCryptoAmount = parseFloat((settings.amount / initialExchangeRate).toFixed(8));
+      
+      if (currentBalance < initialCryptoAmount) {
+        addLog(`Insufficient balance: ${currentBalance} ${settings.currency} < ${initialCryptoAmount} (${settings.amount} USD)`, 'error');
         stop();
         return;
       }
@@ -399,6 +431,22 @@ export function useAutoBetEngine() {
       while (placedBetsCount.current < settings.numberOfBets && useAutoBetStore.getState().isRunning) {
         // Refresh settings inside the loop to catch UI changes immediately
         const currentSettings = useAutoBetStore.getState().settings;
+        
+        // Recalculate crypto amount based on current settings (if user changed amount or currency)
+        let loopExchangeRate = 1;
+        const loopCurrency = currentSettings.currency.toLowerCase();
+        
+        if (loopCurrency !== 'usd') {
+            if (ratesMap[loopCurrency]) {
+                loopExchangeRate = ratesMap[loopCurrency];
+            } else {
+                addLog(`CRITICAL: Exchange rate missing for ${currentSettings.currency}. Stopping.`, 'error');
+                stop();
+                return;
+            }
+        }
+        
+        const loopCryptoAmount = parseFloat((currentSettings.amount / loopExchangeRate).toFixed(8));
 
         // Safety break if we've tried too many times in one scan without success
         if (consecutiveFailures >= 10) {
@@ -415,8 +463,8 @@ export function useAutoBetEngine() {
         }
 
         // Check Balance
-        if (localAvailableBalance < currentSettings.amount) {
-            addLog(`Insufficient balance for next bet: ${localAvailableBalance.toFixed(8)} < ${currentSettings.amount}`, 'error');
+        if (localAvailableBalance < loopCryptoAmount) {
+            addLog(`Insufficient balance for next bet: ${localAvailableBalance.toFixed(8)} < ${loopCryptoAmount} (${currentSettings.amount} USD)`, 'error');
             stop();
             return;
         }
@@ -567,7 +615,7 @@ export function useAutoBetEngine() {
 
         try {
             const betVariables: any = {
-                amount: currentSettings.amount,
+                amount: loopCryptoAmount,
                 currency: currentSettings.currency,
                 outcomeIds: outcomeIds.map(id => id.toString()),
                 betType: 'sports',
@@ -601,13 +649,13 @@ export function useAutoBetEngine() {
 
             if (betPlaced) {
                 placedBetsCount.current += 1;
-                localAvailableBalance -= settings.amount; // Deduct locally
+                localAvailableBalance -= loopCryptoAmount; // Deduct locally
                 betsInBatch++;
                 consecutiveFailures = 0; // Reset failure count
-                addLog(`Bet placed successfully! ID: ${betId} (${placedBetsCount.current}/${settings.numberOfBets})`, 'success');
+                addLog(`Bet placed successfully! ID: ${betId} (${placedBetsCount.current}/${currentSettings.numberOfBets})`, 'success');
                 
                 // === Cover with Shield Logic ===
-                if (settings.coverWithShield && betPlaced) {
+                if (currentSettings.coverWithShield && betPlaced) {
                      try {
                         addLog('Cover with Shield: Attempting to place duplicate shielded bet...', 'info');
                         
@@ -628,7 +676,7 @@ export function useAutoBetEngine() {
                         if (shieldRes.data?.stakeShieldOffers?.offers) {
                             const offers = shieldRes.data.stakeShieldOffers.offers;
                             // Default to max protection if not specified, or use same settings as main shield
-                            const desiredLegs = settings.stakeShield?.legsThatCanLose || 1;
+                            const desiredLegs = currentSettings.stakeShield?.legsThatCanLose || 1;
                             const sortedOffers = offers.sort((a: any, b: any) => (b.legsThatCanLose || 0) - (a.legsThatCanLose || 0));
                             const bestOffer = sortedOffers.find((o: any) => (o.legsThatCanLose || 0) <= desiredLegs);
                             
@@ -642,8 +690,8 @@ export function useAutoBetEngine() {
                         if (coverShieldEnabled) {
                             const coverIdentifier = generateUUID();
                             const coverBetVariables = {
-                                amount: settings.amount,
-                                currency: settings.currency,
+                                amount: loopCryptoAmount,
+                                currency: currentSettings.currency,
                                 outcomeIds: outcomeIds.map(id => id.toString()),
                                 betType: 'sports',
                                 oddsChange: 'any',
@@ -659,7 +707,7 @@ export function useAutoBetEngine() {
                                 const coverId = coverRes.data?.sportBet?.id || coverRes.data?.createSportBet?.id;
                                 addLog(`Cover Bet placed successfully! ID: ${coverId} (Shielded)`, 'success');
                                 placedBetsCount.current += 1; // Count towards total? Yes, it's a bet.
-                                localAvailableBalance -= settings.amount;
+                                localAvailableBalance -= loopCryptoAmount;
                             } else {
                                 addLog('Cover Bet skipped: API returned no bet object (Shield might be unavailable).', 'warning');
                             }

@@ -121,3 +121,8 @@ export function removeHasBonusSlug(slug) {
   }
   return list
 }
+
+export function clearHasBonusSlugs() {
+  localStorage.removeItem(HAS_BONUS_KEY)
+  return []
+}

@@ -181,7 +181,7 @@ export function ActiveBetCard({ bet, onCashout }: ActiveBetCardProps) {
                  {o.outcome.name}
               </span>
               <span className="text-[#00e701] ml-2 font-mono bg-[#0f212e] px-1.5 py-0.5 rounded border border-[#2f4553]">
-                {o.outcome.odds.toFixed(2)}
+                {(o.odds ?? o.outcome?.odds ?? 0).toFixed(2)}
               </span>
             </div>
             <div className="text-[10px] text-[#8899a6] px-1 truncate mt-0.5">

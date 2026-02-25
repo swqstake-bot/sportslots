@@ -12,7 +12,7 @@ import { SlotSelectMulti } from './SlotSelectGrouped'
 import SlotSlider from './SlotSlider'
 import { parseBetResponse } from '../utils/parseBetResponse'
 import { isSlotNoExtraBet, addSlotNoExtraBet } from '../utils/slotExtraBetMemory'
-import { loadHasBonusSlugs, toggleHasBonusSlug, removeHasBonusSlug } from '../utils/slotSets'
+import { loadHasBonusSlugs, toggleHasBonusSlug, removeHasBonusSlug, clearHasBonusSlugs } from '../utils/slotSets'
 import { notifyBonusHit } from '../utils/notifications'
 import { saveBonusLog, isSaveBonusLogsEnabled, setSaveBonusLogsEnabled, exportBonusLogsAsFile, clearBonusLogs } from '../utils/apiLogger'
 import { TipMenu } from '../../ui/TipMenu'
@@ -306,6 +306,13 @@ export default function BonusHuntControl({
     if (isRunning) return
     toggleHasBonusSlug(slug)
     setHasBonusSlugs(new Set(loadHasBonusSlugs()))
+  }
+
+  const handleUncheckAllBonus = () => {
+    if (isRunning) return
+    if (!window.confirm('Möchtest du wirklich bei ALLEN Slots den "hat Bonus"-Status entfernen?')) return
+    clearHasBonusSlugs()
+    setHasBonusSlugs(new Set())
   }
 
   const handleToggleBonusLogs = (checked) => {
@@ -693,6 +700,7 @@ export default function BonusHuntControl({
           <span style={{ flex: 1 }} />
           <button type="button" onClick={selectAll} style={STYLES.btnSecondary} disabled={isRunning}>Alle</button>
           <button type="button" onClick={selectNone} style={STYLES.btnSecondary} disabled={isRunning}>Keine</button>
+          <button type="button" onClick={handleUncheckAllBonus} style={{ ...STYLES.btnSecondary, color: 'var(--text)' }} disabled={isRunning}>Uncheck Bonus</button>
           <button
             type="button"
             onClick={() => {

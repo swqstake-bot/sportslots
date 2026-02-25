@@ -15,6 +15,8 @@ import CasinoView from './components/Casino/CasinoView';
 import { KeyAuthLogin } from './components/KeyAuthLogin';
 import { isKeyAuthEnabled } from './api/keyauth';
 import { UpdaterNotification } from './components/UpdaterNotification';
+import { ChangelogModal } from './components/ui/ChangelogModal';
+import { getChangelogForVersion } from './constants/changelogs';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -58,6 +60,31 @@ function App() {
   const { currentView, selectedSport } = useUiStore();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Changelog State
+  const [showChangelog, setShowChangelog] = useState(false);
+  const [changelogVersion, setChangelogVersion] = useState('');
+  const [changelogContent, setChangelogContent] = useState<string[]>([]);
+
+  useEffect(() => {
+    // Check for version update
+    const currentVersion = (window as any).electronAPI?.version;
+    if (!currentVersion) return;
+
+    const lastSeenVersion = localStorage.getItem('app_last_seen_version');
+
+    if (currentVersion !== lastSeenVersion) {
+      // Version changed!
+      const changes = getChangelogForVersion(currentVersion);
+      // Show modal even if no specific notes, just to announce update
+      setChangelogVersion(currentVersion);
+      setChangelogContent(changes || []);
+      setShowChangelog(true);
+      
+      // Update last seen version
+      localStorage.setItem('app_last_seen_version', currentVersion);
+    }
+  }, []);
 
   const handleKeyAuthSuccess = () => {
     sessionStorage.setItem('keyauth_ok', '1');
@@ -149,6 +176,12 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-[#0f212e] text-white font-sans overflow-hidden select-none">
       <UpdaterNotification />
+      <ChangelogModal 
+        isOpen={showChangelog} 
+        onClose={() => setShowChangelog(false)} 
+        version={changelogVersion} 
+        changes={changelogContent} 
+      />
       {/* Header */}
       <header className="bg-[#1a2c38] px-6 h-16 shadow-lg flex justify-between items-center shrink-0 z-50 border-b border-[#2f4553]">
         <div className="flex items-center gap-4">
