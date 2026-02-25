@@ -39,11 +39,6 @@ export function BetListCard({
         : 'bg-stake-brand/15 text-stake-brand border-stake-brand/40';
   const statusLower = String(bet.status ?? '').toLowerCase();
   const isCashout = statusLower === 'cashout' || statusLower === 'cashoutpending';
-  const potentialPayout =
-    bet.payout && bet.payout > 0
-      ? bet.payout
-      : bet.amount * (bet.potentialMultiplier || bet.payoutMultiplier || 0);
-
   const isLostLike =
     statusLower === 'lost' ||
     statusLower === 'settled' ||
@@ -105,17 +100,22 @@ export function BetListCard({
                     {formatCurrency(bet.payout, bet.currency)}
                   </span>
                 </>
-              ) : (
+              ) : bet.status === 'active' ? (
                 <>
                   {formatCurrency(bet.amount, bet.currency)} →{' '}
                   <span className="text-stake-success font-mono font-semibold">
-                    {formatCurrency(potentialPayout, bet.currency)}
+                    {bet.cashoutMultiplier != null && bet.cashoutMultiplier > 0 && !bet.cashoutDisabled
+                      ? formatCurrency(getCashoutValue(bet), bet.currency)
+                      : '–'}
                   </span>
-                  {(bet.potentialMultiplier ?? bet.payoutMultiplier) != null && (
-                    <span className="ml-2 text-stake-text-dim font-mono">
-                      @ {(bet.potentialMultiplier ?? bet.payoutMultiplier).toFixed(2)}x
-                    </span>
-                  )}
+                  <span className="ml-2 text-stake-text-dim text-xs">Cashout</span>
+                </>
+              ) : (
+                <>
+                  {formatCurrency(bet.amount, bet.currency)} →{' '}
+                  <span className="text-stake-text-dim font-mono">
+                    {bet.payout != null && bet.payout > 0 ? formatCurrency(bet.payout, bet.currency) : '–'}
+                  </span>
                 </>
               )}
             </p>
