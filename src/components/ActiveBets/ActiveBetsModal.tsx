@@ -53,8 +53,11 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
         }
         try {
           // Add small delay between requests if needed, but parallel in chunk is better
-          const preview = await StakeApi.query<any>(Queries.PreviewCashout, { betId: b.id });
-          const data = preview?.data?.bet;
+          const iid = (b as any)?.bet?.iid;
+          if (!iid) return { ...b };
+          
+          const preview = await StakeApi.query<any>(Queries.PreviewCashout, { iid });
+          const data = preview?.data?.bet?.bet;
           if (data && (data.cashoutMultiplier > 0)) {
             return { ...b, cashoutMultiplier: data.cashoutMultiplier, cashoutDisabled: false };
           } else {
