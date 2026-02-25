@@ -63,6 +63,57 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     setSelectedBetIds(new Set());
   };
 
+  // Helper to check single bet for auto cashout
+  const checkSingleBetAutoCashout = useCallback(async (bet: SportBet) => {
+      // Debug log to verify this function is actually called
+      console.log(`[AutoCheck] Processing ${bet.id} (Status: ${bet.status}, Enabled: ${autoCashoutEnabled})`);
+      
+      if (!autoCashoutEnabled || !bet || bet.status !== 'active') return;
+      
+      let cashoutValue = (bet as any).cashoutValue;
+      
+      // Calculate if missing
+      if (!cashoutValue && bet.cashoutMultiplier && bet.amount) {
+           const stake = bet.amount;
+           const potentialPayout = bet.payout || (stake * (bet.potentialMultiplier || 0));
+           const fairValue = stake * bet.cashoutMultiplier;
+           
+           const LIABILITY_SENSITIVITY = 0.001;
+           const liabilityFactor = 1 / (1 + potentialPayout * LIABILITY_SENSITIVITY);
+           
+           const isSingle = bet.outcomes && bet.outcomes.length === 1;
+           const typeFactor = isSingle ? 0.93 : 0.61;
+
+           cashoutValue = fairValue * typeFactor * liabilityFactor;
+      }
+
+      if (!cashoutValue || cashoutValue <= 0) {
+          console.log(`[AutoCheck] Skipped ${bet.id}: Invalid cashout value`);
+          return;
+      }
+
+      const rate = usdRates[(bet.currency || 'usd').toLowerCase()] || 1;
+      const valueUsd = cashoutValue * rate;
+      
+      console.log(`[AutoCheck] ${bet.id}: $${valueUsd.toFixed(2)} (Target: $${autoCashoutTargetUsd})`);
+
+      if (valueUsd >= autoCashoutTargetUsd) {
+        console.log(`>>> AUTO CASHOUT TRIGGERED for ${bet.id}`);
+        try {
+          const multiplierToUse = bet.cashoutMultiplier || 0;
+          if (multiplierToUse <= 0) return;
+          
+          const result = await StakeApi.mutate(Queries.CashoutSportBet, { betId: bet.id, multiplier: multiplierToUse });
+          if (result?.data?.cashoutSportBet) {
+            console.log(`Cashout success: ${bet.id}`);
+            setActiveBets((prev: SportBet[]) => prev.filter((x: SportBet) => x.id !== bet.id));
+          }
+        } catch (err) {
+          console.error(`Auto cashout failed for ${bet.id}`, err);
+        }
+      }
+  }, [autoCashoutEnabled, autoCashoutTargetUsd, usdRates]);
+
   const refreshCashoutOffers = useCallback(async (source: SportBet[] = activeBets) => {
     if (source.length === 0) return;
     const next: SportBet[] = [];
@@ -79,7 +130,6 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
         const hasShield = Array.isArray(customPrices) && customPrices.some((p: any) => p?.type === 'stake_shield');
         
         // Simplified cashout logic: allow cashout checks for ALL bets except shield/custom
-        // The previous strict filtering was blocking valid cashouts
         if (b?.customBet || hasShield) {
           return { ...b, cashoutDisabled: true, cashoutMultiplier: b.cashoutMultiplier || 0 };
         }
@@ -96,7 +146,10 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
           if (data) {
             // Prefer explicit payout from preview if available (might be the cashout value)
             if (data.payout > 0) {
-                 return { ...b, cashoutMultiplier: 0, cashoutValue: data.payout, cashoutDisabled: false };
+                 const updatedBet = { ...b, cashoutMultiplier: 0, cashoutValue: data.payout, cashoutDisabled: false };
+                 // Trigger check immediately
+                 checkSingleBetAutoCashout(updatedBet);
+                 return updatedBet;
             }
             
             if (data.cashoutMultiplier > 0) {
@@ -113,12 +166,16 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
 
                 const estimatedRealCashout = fairValue * typeFactor * liabilityFactor;
                 
-                return { 
+                const updatedBet = { 
                     ...b, 
                     cashoutMultiplier: data.cashoutMultiplier, 
                     cashoutValue: estimatedRealCashout, // Store calculated value
                     cashoutDisabled: false 
                 };
+                
+                // Trigger check immediately
+                checkSingleBetAutoCashout(updatedBet);
+                return updatedBet;
             }
           }
           
@@ -132,11 +189,18 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
       
       const chunkResults = await Promise.all(chunkPromises);
       next.push(...chunkResults);
+      
+      // OPTIONAL: Update state incrementally to show progress?
+      // Updating state here might cause re-renders and re-trigger of effects.
+      // But it gives better UX. Let's do it safely.
+      // We need to merge 'next' (processed) with the remaining unprocessed bets?
+      // Or just wait.
+      
       // Wait 3s between individual checks
       await new Promise(r => setTimeout(r, 3000));
     }
     setActiveBets(next);
-  }, [activeBets]);
+  }, [activeBets, checkSingleBetAutoCashout]);
 
   // New: Fetch all bets function
   const fetchActiveBets = useCallback(async () => {
