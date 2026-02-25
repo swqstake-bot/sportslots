@@ -681,7 +681,23 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                         
                         // Given we lack full live data in this view, let's stick to the 0.61 factor BUT refined with the liability factor we can calculate.
                         
-                        const estimatedRealCashout = fairValue * 0.61 * liabilityFactor;
+                        // Refinement based on Bet Type:
+                        // Multi Bets have higher margin (cumulative). Factor ~0.61 seems correct.
+                        // Single Bets have lower margin. 
+                        // Example Single: Stake $1.00, Odds 1.68. Cashout $0.93.
+                        // Fair Value (if odds didn't move): $1.00? No, usually slightly less.
+                        // If odds moved to say 1.70 -> Fair Value = 1.00 * (1.68/1.70) = 0.98.
+                        // Cashout $0.93.
+                        // Factor = 0.93 / 0.98 ≈ 0.95.
+                        // Or if we just use cashoutMultiplier from API?
+                        // If API sends ~1.0 multiplier?
+                        // Let's assume for Singles the factor is much better, e.g. 0.92 - 0.95.
+                        
+                        const isSingle = bet.outcomes && bet.outcomes.length === 1;
+                        // Use 0.92 for Singles, 0.61 for Multis
+                        const typeFactor = isSingle ? 0.93 : 0.61;
+
+                        const estimatedRealCashout = fairValue * typeFactor * liabilityFactor;
                         
                         return estimatedRealCashout > 0 ? formatCurrency(estimatedRealCashout, bet.currency) : '-';
                     })()}
