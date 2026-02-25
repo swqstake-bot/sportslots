@@ -58,6 +58,11 @@ export interface SportBetOutcome {
   };
 }
 
+/** Custom price from API (e.g. stake_shield) */
+export interface SportBetCustomPrice {
+  type?: string;
+}
+
 export interface SportBet {
   id: string;
   active: boolean;
@@ -78,7 +83,11 @@ export interface SportBet {
   user: {
     id: string;
   };
-  outcomes: any[];
+  outcomes: SportBetOutcome[];
+  /** Estimated or API-provided cashout value (currency units) */
+  cashoutValue?: number;
+  /** API custom prices – e.g. stake_shield disables cashout */
+  customPrices?: SportBetCustomPrice[];
 }
 
 interface User {

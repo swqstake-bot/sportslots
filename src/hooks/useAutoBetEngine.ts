@@ -3,7 +3,6 @@ import { useAutoBetStore } from '../store/autoBetStore';
 import { useUserStore } from '../store/userStore';
 import { StakeApi } from '../api/client';
 import { Queries } from '../api/queries';
-// @ts-ignore
 import { fetchCurrencyRates } from '../components/Casino/api/stakeChallenges';
 
 // Helper to generate UUID for bets
@@ -186,7 +185,7 @@ export function useAutoBetEngine() {
       const candidates: any[] = [];
 
       // 3. Fetch Fixtures for each sport
-      let rejections = { status: 0, odds: 0, marketStatus: 0, outcomeStatus: 0, noMarkets: 0 };
+      const rejections = { status: 0, odds: 0, marketStatus: 0, outcomeStatus: 0, noMarkets: 0 };
       let consecutiveMarketInactive = 0; // Track consecutive inactive markets to trigger reload
 
       for (const sport of sportsToScan) {

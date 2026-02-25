@@ -16,6 +16,7 @@ import { KeyAuthLogin } from './components/KeyAuthLogin';
 import { isKeyAuthEnabled } from './api/keyauth';
 import { UpdaterNotification } from './components/UpdaterNotification';
 import { ChangelogModal } from './components/ui/ChangelogModal';
+import { GlobalToast } from './components/ui/GlobalToast';
 import { getChangelogForVersion } from './constants/changelogs';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
@@ -175,6 +176,7 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen bg-[#0f212e] text-white font-sans overflow-hidden select-none">
+      <GlobalToast />
       <UpdaterNotification />
       <ChangelogModal 
         isOpen={showChangelog} 

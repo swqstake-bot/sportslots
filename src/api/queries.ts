@@ -417,7 +417,6 @@ export const Queries = {
     }
   }
   ${FixturePreview}
-  ${FixtureOptionsSameGameMultiButton_SportFixture}
   ${SportGroupTemplates}`,
 
   FetchFixtureMarkets: `query FetchFixtureMarkets($fixture: String!, $groups: [String!]!) {

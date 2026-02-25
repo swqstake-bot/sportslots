@@ -1,9 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useUserStore } from '../../store/userStore';
 import type { SportBet } from '../../store/userStore';
+import { useUiStore } from '../../store/uiStore';
 import { StakeApi } from '../../api/client';
 import { Queries } from '../../api/queries';
 import { formatAmount } from '../Casino/utils/formatAmount';
+import { getCashoutValue, isCashoutDisabledByCustomPrices } from '../../services/cashoutService';
+import { useAutoCashout } from '../../hooks/useAutoCashout';
+import { BetPreviewModal } from './BetPreviewModal';
+
+const ROW_HEIGHT = 76;
+const VIRTUAL_THRESHOLD = 30; // ab dieser Anzahl Zeilen virtualisieren
+const TABLE_GRID_COLS = '40px 130px minmax(160px,1fr) 56px 64px 80px 88px 88px 80px 100px';
 
 interface ActiveBetsModalProps {
   onClose: () => void;
@@ -26,6 +34,17 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
   const [usdRates, setUsdRates] = useState<Record<string, number>>({});
 
   const [selectedBetIds, setSelectedBetIds] = useState<Set<string>>(new Set());
+  const [previewBet, setPreviewBet] = useState<SportBet | null>(null);
+  const showToast = useUiStore((s) => s.showToast);
+
+  const { checkSingleBetAutoCashout, evaluateAutoCashout } = useAutoCashout({
+    enabled: autoCashoutEnabled,
+    targetUsd: autoCashoutTargetUsd,
+    activeBets,
+    setActiveBets,
+    usdRates,
+    onAutoCashoutSuccess: () => showToast('Auto-Cashout ausgeführt', 'success'),
+  });
 
   const handleSelectBet = (id: string, checked: boolean) => {
     const next = new Set(selectedBetIds);
@@ -63,74 +82,6 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     setSelectedBetIds(new Set());
   };
 
-  // Use a ref to always access the latest state inside async callbacks
-  const autoCashoutStateRef = React.useRef({ enabled: autoCashoutEnabled, target: autoCashoutTargetUsd });
-  
-  useEffect(() => {
-      autoCashoutStateRef.current = { enabled: autoCashoutEnabled, target: autoCashoutTargetUsd };
-  }, [autoCashoutEnabled, autoCashoutTargetUsd]);
-
-  // Helper to check single bet for auto cashout
-  const checkSingleBetAutoCashout = useCallback(async (bet: SportBet) => {
-      const { enabled, target } = autoCashoutStateRef.current;
-      
-      // Debug log to verify this function is actually called
-      console.log(`[AutoCheck] Processing ${bet.id} (Status: ${bet.status}, Enabled: ${enabled})`);
-      
-      // Allow 'active' AND 'confirmed' status
-      if (!enabled || !bet || (bet.status !== 'active' && bet.status !== 'confirmed')) {
-          if (bet.status !== 'active' && bet.status !== 'confirmed') console.log(`[AutoCheck] Skipped ${bet.id}: Status is ${bet.status}`);
-          return;
-      }
-      
-      let cashoutValue = (bet as any).cashoutValue;
-      
-      // Calculate if missing
-      if ((!cashoutValue || cashoutValue <= 0) && bet.cashoutMultiplier && bet.amount) {
-           const stake = bet.amount;
-           const potentialPayout = bet.payout || (stake * (bet.potentialMultiplier || 0));
-           const fairValue = stake * bet.cashoutMultiplier;
-           
-           const LIABILITY_SENSITIVITY = 0.001;
-           const liabilityFactor = 1 / (1 + potentialPayout * LIABILITY_SENSITIVITY);
-           
-           const isSingle = bet.outcomes && bet.outcomes.length === 1;
-           const typeFactor = isSingle ? 0.93 : 0.61;
-
-           cashoutValue = fairValue * typeFactor * liabilityFactor;
-           
-           console.log(`[AutoCheck] Calc Details for ${bet.id}: Stake=${stake}, Mult=${bet.cashoutMultiplier}, Fair=${fairValue.toFixed(2)}, Type=${typeFactor}, Liab=${liabilityFactor.toFixed(4)} -> Res=$${cashoutValue.toFixed(2)}`);
-      } else if (!cashoutValue) {
-           console.log(`[AutoCheck] Cannot calc value for ${bet.id}: Missing multiplier (${bet.cashoutMultiplier}) or amount (${bet.amount})`);
-      }
-
-      if (!cashoutValue || cashoutValue <= 0) {
-          console.log(`[AutoCheck] Skipped ${bet.id}: Invalid cashout value (Value: ${cashoutValue})`);
-          return;
-      }
-
-      const rate = usdRates[(bet.currency || 'usd').toLowerCase()] || 1;
-      const valueUsd = cashoutValue * rate;
-      
-      console.log(`[AutoCheck] ${bet.id}: $${valueUsd.toFixed(2)} (Target: $${target})`);
-
-      if (valueUsd >= target) {
-        console.log(`>>> AUTO CASHOUT TRIGGERED for ${bet.id}`);
-        try {
-          const multiplierToUse = bet.cashoutMultiplier || 0;
-          if (multiplierToUse <= 0) return;
-          
-          const result = await StakeApi.mutate(Queries.CashoutSportBet, { betId: bet.id, multiplier: multiplierToUse });
-          if (result?.data?.cashoutSportBet) {
-            console.log(`Cashout success: ${bet.id}`);
-            setActiveBets((prev: SportBet[]) => prev.filter((x: SportBet) => x.id !== bet.id));
-          }
-        } catch (err) {
-          console.error(`Auto cashout failed for ${bet.id}`, err);
-        }
-      }
-  }, [usdRates]);
-
   const refreshCashoutOffers = useCallback(async (source: SportBet[] = activeBets) => {
     if (source.length === 0) return;
     const next: SportBet[] = [];
@@ -143,60 +94,34 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
 
     for (const chunk of chunks) {
       const chunkPromises = chunk.map(async (b) => {
-        const customPrices = (b as any)?.customPrices;
-        const hasShield = Array.isArray(customPrices) && customPrices.some((p: any) => p?.type === 'stake_shield');
-        
-        // Simplified cashout logic: allow cashout checks for ALL bets except shield/custom
-        if (b?.customBet || hasShield) {
+        if (b?.customBet || isCashoutDisabledByCustomPrices(b)) {
           return { ...b, cashoutDisabled: true, cashoutMultiplier: b.cashoutMultiplier || 0 };
         }
 
         try {
-          // Add small delay between requests if needed, but parallel in chunk is better
-          const iid = (b as any)?.bet?.iid;
+          const iid = b?.bet?.iid;
           if (!iid) return { ...b };
-          
-          console.log(`Checking cashout for ${b.id} (iid: ${iid})`);
-          const preview = await StakeApi.query<any>(Queries.PreviewCashout, { iid });
-          const data = preview?.data?.bet?.bet;
-          
-          if (data) {
-            // Prefer explicit payout from preview if available (might be the cashout value)
-            if (data.payout > 0) {
-                 const updatedBet = { ...b, cashoutMultiplier: 0, cashoutValue: data.payout, cashoutDisabled: false };
-                 // Trigger check immediately
-                 checkSingleBetAutoCashout(updatedBet);
-                 return updatedBet;
-            }
-            
-            if (data.cashoutMultiplier > 0) {
-                // Calculate estimated real cashout value
-                const stake = b.amount || 0;
-                const potentialPayout = b.payout || (stake * (b.potentialMultiplier || 0));
-                const fairValue = stake * data.cashoutMultiplier;
-                
-                const LIABILITY_SENSITIVITY = 0.001;
-                const liabilityFactor = 1 / (1 + potentialPayout * LIABILITY_SENSITIVITY);
-                
-                const isSingle = b.outcomes && b.outcomes.length === 1;
-                const typeFactor = isSingle ? 0.93 : 0.61;
 
-                const estimatedRealCashout = fairValue * typeFactor * liabilityFactor;
-                
-                const updatedBet = { 
-                    ...b, 
-                    cashoutMultiplier: data.cashoutMultiplier, 
-                    cashoutValue: estimatedRealCashout, // Store calculated value
-                    cashoutDisabled: false 
-                };
-                
-                // Trigger check immediately
-                checkSingleBetAutoCashout(updatedBet);
-                return updatedBet;
+          const preview = await StakeApi.query<{ bet?: { bet?: { payout?: number; cashoutMultiplier?: number } } }>(Queries.PreviewCashout, { iid });
+          const data = preview?.data?.bet?.bet;
+
+          if (data) {
+            if (data.payout != null && data.payout > 0) {
+              const updatedBet: SportBet = { ...b, cashoutMultiplier: 0, cashoutValue: data.payout, cashoutDisabled: false };
+              checkSingleBetAutoCashout(updatedBet);
+              return updatedBet;
+            }
+            if (data.cashoutMultiplier != null && data.cashoutMultiplier > 0) {
+              const updatedBet: SportBet = {
+                ...b,
+                cashoutMultiplier: data.cashoutMultiplier,
+                cashoutValue: getCashoutValue({ ...b, cashoutMultiplier: data.cashoutMultiplier }),
+                cashoutDisabled: false,
+              };
+              checkSingleBetAutoCashout(updatedBet);
+              return updatedBet;
             }
           }
-          
-          // Fallback
           return { ...b, cashoutMultiplier: b.cashoutMultiplier || 0 };
         } catch (err) {
           console.error(`Cashout check failed for ${b.id}`, err);
@@ -385,81 +310,6 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     }
   }, []);
 
-  const evaluateAutoCashout = useCallback(async () => {
-    const { enabled, target } = autoCashoutStateRef.current;
-    if (!enabled) return;
-    console.log("Evaluating Auto Cashout...");
-    
-    if (activeBets.length === 0) {
-        console.log("No active bets to evaluate.");
-        return;
-    }
-
-    for (const b of activeBets) {
-      if (b.status !== 'active' && b.status !== 'confirmed') {
-          console.log(`[Eval] Skipping ${b.id}: Status is ${b.status}`);
-          continue;
-      }
-      
-      // Use the pre-calculated cashoutValue if available, or fallback
-      let cashoutValue = (b as any).cashoutValue;
-      
-      // Calculate if missing
-      if ((!cashoutValue || cashoutValue <= 0) && b.cashoutMultiplier && b.amount) {
-           const stake = b.amount;
-           const potentialPayout = b.payout || (stake * (b.potentialMultiplier || 0));
-           const fairValue = stake * b.cashoutMultiplier;
-           
-           const LIABILITY_SENSITIVITY = 0.001;
-           const liabilityFactor = 1 / (1 + potentialPayout * LIABILITY_SENSITIVITY);
-           
-           const isSingle = b.outcomes && b.outcomes.length === 1;
-           const typeFactor = isSingle ? 0.93 : 0.61;
-
-           cashoutValue = fairValue * typeFactor * liabilityFactor;
-           
-           console.log(`[Eval] Calc Details for ${b.id}: Stake=${stake}, Mult=${b.cashoutMultiplier}, Fair=${fairValue.toFixed(2)}, Type=${typeFactor}, Liab=${liabilityFactor.toFixed(4)} -> Res=$${cashoutValue.toFixed(2)}`);
-      }
-
-      if (!cashoutValue || cashoutValue <= 0) {
-          // Log only if it has a multiplier but no value (weird state)
-          if (b.cashoutMultiplier > 0) console.log(`[Eval] Bet ${b.id} has multiplier ${b.cashoutMultiplier} but calculated value is 0 or invalid.`);
-          continue;
-      }
-
-      const rate = usdRates[(b.currency || 'usd').toLowerCase()] || 1;
-      const valueUsd = cashoutValue * rate;
-      
-      console.log(`[Eval] Bet ${b.id}: Value $${valueUsd.toFixed(2)} (Target: $${target})`);
-
-      // Check if Total Value >= Target
-      if (valueUsd >= target) {
-        console.log(`>>> TRIGGER AUTO CASHOUT for ${b.id}: Value $${valueUsd.toFixed(2)} >= Target $${target}`);
-        try {
-          // Use the multiplier from the bet object required for the mutation
-          const multiplierToUse = b.cashoutMultiplier || 0;
-          if (multiplierToUse <= 0) {
-              console.error(`Cannot cashout ${b.id}: Multiplier is 0`);
-              continue; 
-          }
-          
-          const result = await StakeApi.mutate(Queries.CashoutSportBet, { betId: b.id, multiplier: multiplierToUse });
-          console.log(`Cashout result for ${b.id}:`, result);
-          
-          if (result?.data?.cashoutSportBet) {
-            console.log(`Successfully cashed out ${b.id}`);
-            setActiveBets((prev: SportBet[]) => prev.filter((x: SportBet) => x.id !== b.id));
-          } else {
-             console.error(`Cashout failed for ${b.id} (no data returned)`, result);
-          }
-        } catch (err) {
-          console.error(`Auto cashout exception for ${b.id}`, err);
-          continue;
-        }
-      }
-    }
-  }, [activeBets, usdRates]);
-
   // Initial load - now calls fetchAllBets instead of paginated fetch
   useEffect(() => {
     fetchActiveBets();
@@ -492,14 +342,15 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     try {
       const result = await StakeApi.mutate(Queries.CashoutSportBet, {
         betId,
-        multiplier
+        multiplier,
       });
       if (result.data?.cashoutSportBet) {
-        // Remove from list or mark as cashed out
-        setActiveBets((prev: SportBet[]) => prev.filter((b: SportBet) => b.id !== betId));
+        setActiveBets((prev) => prev.filter((b) => b.id !== betId));
+        showToast('Cashout erfolgreich', 'success');
       }
     } catch (err) {
-      console.error("Cashout failed", err);
+      console.error('Cashout failed', err);
+      showToast('Cashout fehlgeschlagen', 'error');
     }
   };
 
@@ -569,11 +420,6 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     return `${open}/${total}`;
   };
 
-  const getCashoutValue = (bet: SportBet) => {
-    if (bet.status !== 'active' || bet.cashoutDisabled || !bet.cashoutMultiplier) return 0;
-    return bet.amount * bet.cashoutMultiplier;
-  };
-
   const copyLink = (betId: string, iid?: string) => {
     // Construct URL based on old tool behavior
     // If iid (ShareIdentifier) exists, use the stake slip sharing URL
@@ -586,12 +432,13 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
         url = `https://stake.com/sports/my-bets/${betId}?modal=bet`;
     }
     
-    // Copy to clipboard
     navigator.clipboard.writeText(url).then(() => {
-        setCopiedId(betId);
-        setTimeout(() => setCopiedId(null), 2000);
-    }).catch(err => {
-        console.error("Failed to copy link", err);
+      setCopiedId(betId);
+      setTimeout(() => setCopiedId(null), 2000);
+      showToast('Link kopiert', 'success');
+    }).catch((err) => {
+      console.error('Failed to copy link', err);
+      showToast('Kopieren fehlgeschlagen', 'error');
     });
   };
 
@@ -661,8 +508,35 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     });
   }, [activeBets, finishedBets, activeTab, sortField, sortDirection]);
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(400);
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setContainerHeight(el.clientHeight));
+    ro.observe(el);
+    setContainerHeight(el.clientHeight);
+    return () => ro.disconnect();
+  }, []);
+  const useVirtual = sortedBets.length >= VIRTUAL_THRESHOLD;
+  const virtualRange = useMemo(() => {
+    if (!useVirtual) return { start: 0, end: sortedBets.length };
+    const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 3);
+    const visibleCount = Math.ceil(containerHeight / ROW_HEIGHT) + 6;
+    return { start, end: Math.min(sortedBets.length, start + visibleCount) };
+  }, [useVirtual, scrollTop, containerHeight, sortedBets.length]);
+  const visibleBets = useMemo(() => sortedBets.slice(virtualRange.start, virtualRange.end), [sortedBets, virtualRange.start, virtualRange.end]);
+
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] backdrop-blur-sm">
+      {previewBet && (
+        <BetPreviewModal
+          bet={previewBet}
+          onClose={() => setPreviewBet(null)}
+          onCashout={previewBet.status === 'active' ? handleCashout : undefined}
+        />
+      )}
       <div className="bg-[#1a2c38] border border-[#2f4553] rounded-lg shadow-2xl w-[95vw] h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-[#2f4553] bg-[#0f212e]">
@@ -776,13 +650,61 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
         </div>
 
         {/* Table Content */}
-        <div className="flex-1 overflow-auto bg-[#0f212e] scrollbar-thin scrollbar-thumb-[#2f4553] scrollbar-track-transparent">
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[#0f212e]">
             {(activeTab === 'active' ? isLoadingActive : isLoadingFinished) && (activeTab === 'active' ? activeBets.length : finishedBets.length) === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full gap-4 text-[#b1bad3]">
+                <div className="flex flex-col items-center justify-center flex-1 gap-4 text-[#b1bad3]">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#00e701]"></div>
                     <p className="animate-pulse">{activeTab === 'active' ? 'Loading all active bets...' : 'Loading finished bets...'}</p>
                 </div>
+            ) : useVirtual ? (
+                <div ref={scrollContainerRef} onScroll={() => setScrollTop(scrollContainerRef.current?.scrollTop ?? 0)} className="flex-1 min-h-0 overflow-auto scrollbar-thin scrollbar-thumb-[#2f4553] scrollbar-track-transparent">
+                    <div className="sticky top-0 z-10 grid bg-[#1a2c38] text-xs font-bold text-[#b1bad3] uppercase tracking-wider border-b border-[#2f4553]" style={{ gridTemplateColumns: TABLE_GRID_COLS }}>
+                        <div className="p-3 w-10"><input type="checkbox" className="cursor-pointer accent-[#00e701]" checked={activeBets.length > 0 && selectedBetIds.size === activeBets.length} onChange={e => handleSelectAll(e.target.checked)} /></div>
+                        <div className="p-3 cursor-pointer hover:text-white" onClick={() => handleSort('createdAt')}>Time {sortField === 'createdAt' && <span className="text-[#00e701]">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</div>
+                        <div className="p-3">Fixture / Selection</div>
+                        <div className="p-3 cursor-pointer hover:text-white" onClick={() => handleSort('openLegs')}>Legs {sortField === 'openLegs' && <span className="text-[#00e701]">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</div>
+                        <div className="p-3 cursor-pointer hover:text-white" onClick={() => handleSort('payoutMultiplier')}>Odds {sortField === 'payoutMultiplier' && <span className="text-[#00e701]">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</div>
+                        <div className="p-3 cursor-pointer hover:text-white" onClick={() => handleSort('amount')}>Stake {sortField === 'amount' && <span className="text-[#00e701]">{sortDirection === 'asc' ? '↑' : '↓'}</span>}</div>
+                        <div className="p-3 cursor-pointer hover:text-white" onClick={() => handleSort('cashoutMultiplier')}>Cashout</div>
+                        <div className="p-3 cursor-pointer hover:text-white" onClick={() => handleSort('payout')}>Potential</div>
+                        <div className="p-3 cursor-pointer hover:text-white" onClick={() => handleSort('status')}>Status</div>
+                        <div className="p-3 text-right">Action</div>
+                    </div>
+                    <div style={{ height: sortedBets.length * ROW_HEIGHT, position: 'relative' }}>
+                        {visibleBets.map((bet, i) => (
+                            <div key={bet.id} role="button" tabIndex={0} onClick={() => setPreviewBet(bet)} onKeyDown={(e) => e.key === 'Enter' && setPreviewBet(bet)} className={`grid text-sm text-[#b1bad3] hover:bg-[#1a2c38]/50 border-b border-[#2f4553]/50 cursor-pointer ${selectedBetIds.has(bet.id) ? 'bg-[#1a2c38]' : ''}`} style={{ position: 'absolute', left: 0, right: 0, top: (virtualRange.start + i) * ROW_HEIGHT, height: ROW_HEIGHT, gridTemplateColumns: TABLE_GRID_COLS }} title="Klicken für Schein-Preview">
+                                <div className="p-3" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedBetIds.has(bet.id)} onChange={e => handleSelectBet(bet.id, e.target.checked)} className="cursor-pointer accent-[#00e701]" /></div>
+                                <div className="p-3 whitespace-nowrap font-mono text-xs">{formatDate(bet.createdAt)}</div>
+                                <div className="p-3 flex flex-col gap-1 min-w-0">
+                                    {bet.outcomes?.length > 0 && (
+                                        <>
+                                            <span className="text-white font-bold text-xs truncate max-w-[200px]" title={bet.outcomes[0]?.fixture?.name}>{bet.outcomes[0]?.fixture?.name || 'Unknown'}</span>
+                                            <span className="text-[#00e701] text-[11px] truncate max-w-[200px]">{bet.outcomes[0]?.outcome?.name || ''} <span className="text-[#55657e]">({bet.outcomes[0]?.market?.name})</span></span>
+                                            {bet.outcomes[0]?.fixture?.eventStatus?.matchStatus === 'live' && <span className="text-[10px] text-[#ff4d4d] animate-pulse font-bold">LIVE {bet.outcomes[0]?.fixture?.eventStatus?.homeScore}-{bet.outcomes[0]?.fixture?.eventStatus?.awayScore}</span>}
+                                        </>
+                                    )}
+                                    {bet.outcomes && bet.outcomes.length > 1 && <span className="text-[10px] italic">+ {bet.outcomes.length - 1} more</span>}
+                                </div>
+                                <div className="p-3 font-mono text-xs">{calculateOpenLegs(bet)}</div>
+                                <div className="p-3 font-mono text-white">{(bet.potentialMultiplier || bet.payoutMultiplier || 0).toFixed(2)}x</div>
+                                <div className="p-3 font-mono text-white">{formatCurrency(bet.amount, bet.currency)}</div>
+                                <div className="p-3 font-mono text-[#00e701]">{getCashoutValue(bet) > 0 ? formatCurrency(getCashoutValue(bet), bet.currency) : '-'}</div>
+                                <div className="p-3 font-mono text-[#b1bad3]">{formatCurrency((bet.payout && bet.payout > 0) ? bet.payout : (bet.amount * (bet.potentialMultiplier || bet.payoutMultiplier || 0)), bet.currency)}</div>
+                                <div className="p-3">
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase border ${bet.status === 'active' ? 'bg-[#1475e1]/10 text-[#1475e1] border-[#1475e1]/30' : bet.status === 'won' ? 'bg-[#00e701]/10 text-[#00e701] border-[#00e701]/30' : bet.status === 'lost' ? 'bg-[#ff4d4d]/10 text-[#ff4d4d] border-[#ff4d4d]/30' : 'bg-[#2f4553] text-[#b1bad3] border-transparent'}`}>{bet.status}</span>
+                                </div>
+                                <div className="p-3 text-right flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                                    <button onClick={() => copyLink(bet.id, bet.bet?.iid || bet.iid)} className="p-1.5 bg-[#2f4553] hover:bg-[#3d5566] rounded border min-w-[28px]" title="Copy Bet Link">{copiedId === bet.id ? <span className="text-[#00e701]">✓</span> : '⎘'}</button>
+                                    {activeTab === 'active' && bet.status === 'active' && !bet.cashoutDisabled && bet.cashoutMultiplier && (
+                                        <button onClick={() => handleCashout(bet.id, bet.cashoutMultiplier)} className="bg-[#2f4553] hover:bg-[#3d5566] text-white text-xs px-3 py-1.5 rounded border">Cashout</button>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
             ) : (
+            <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-[#2f4553] scrollbar-track-transparent">
             <table className="w-full text-left border-collapse">
             <thead className="bg-[#1a2c38] sticky top-0 z-10 text-xs font-bold text-[#b1bad3] uppercase tracking-wider shadow-sm select-none">
               <tr>
@@ -821,9 +743,9 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
             </thead>
             <tbody className="divide-y divide-[#2f4553]">
               {sortedBets.map((bet) => (
-                <tr key={bet.id} className={`hover:bg-[#1a2c38]/50 transition-colors group text-sm text-[#b1bad3] ${selectedBetIds.has(bet.id) ? 'bg-[#1a2c38]' : ''}`}>
+                <tr key={bet.id} role="button" tabIndex={0} onClick={() => setPreviewBet(bet)} onKeyDown={(e) => e.key === 'Enter' && setPreviewBet(bet)} className={`hover:bg-[#1a2c38]/50 transition-colors group text-sm text-[#b1bad3] cursor-pointer ${selectedBetIds.has(bet.id) ? 'bg-[#1a2c38]' : ''}`} title="Klicken für Schein-Preview">
                   {/* Checkbox */}
-                  <td className="p-3">
+                  <td className="p-3" onClick={(e) => e.stopPropagation()}>
                       <input 
                         type="checkbox" 
                         checked={selectedBetIds.has(bet.id)}
@@ -882,34 +804,8 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                   {/* Cashout Value */}
                   <td className="p-3 font-mono text-[#00e701]">
                     {(() => {
-                        // Use explicit cashoutValue if available (from payout field)
-                        if ((bet as any).cashoutValue > 0) {
-                            return formatCurrency((bet as any).cashoutValue, bet.currency);
-                        }
-
-                        // Advanced Cashout Calculation based on provider logic
-                        // Constants
-                        const LIABILITY_SENSITIVITY = 0.001;
-                        // const PRICE_MOVE_SENSITIVITY = 2.1; // Unused for now as we use empirical factor
-                        
-                        // Inputs
-                        const stake = bet.amount || 0;
-                        const potentialPayout = bet.payout || (stake * (bet.potentialMultiplier || 0));
-                        const fairValueMultiplier = bet.cashoutMultiplier || 0;
-                        
-                        // Step 1: Fair Value
-                        const fairValue = stake * fairValueMultiplier;
-                        
-                        // Step 2: Liability Factor
-                        const liabilityFactor = 1 / (1 + potentialPayout * LIABILITY_SENSITIVITY);
-                        
-                        // Step 3: Empirical Factor based on bet type
-                        const isSingle = bet.outcomes && bet.outcomes.length === 1;
-                        const typeFactor = isSingle ? 0.93 : 0.61;
-
-                        const estimatedRealCashout = fairValue * typeFactor * liabilityFactor;
-                        
-                        return estimatedRealCashout > 0 ? formatCurrency(estimatedRealCashout, bet.currency) : '-';
+                      const val = getCashoutValue(bet);
+                      return val > 0 ? formatCurrency(val, bet.currency) : '-';
                     })()}
                   </td>
 
@@ -952,7 +848,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                   </td>
 
                   {/* Action (Cashout / Link) */}
-                  <td className="p-3 text-right">
+                  <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-2">
                         {/* Link Button */}
                         <button
@@ -997,6 +893,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
               )}
             </tbody>
           </table>
+            </div>
           )}
         </div>
 
