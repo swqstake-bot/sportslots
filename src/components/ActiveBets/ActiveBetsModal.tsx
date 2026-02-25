@@ -305,38 +305,76 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
   }, []);
 
   const evaluateAutoCashout = useCallback(async () => {
-    if (!autoCashoutEnabled || activeBets.length === 0) return;
+    if (!autoCashoutEnabled) return;
+    console.log("Evaluating Auto Cashout...");
+    
+    if (activeBets.length === 0) {
+        console.log("No active bets to evaluate.");
+        return;
+    }
+
     for (const b of activeBets) {
-      if (b.status !== 'active' || b.cashoutDisabled) continue;
+      if (b.status !== 'active') continue;
       
       // Use the pre-calculated cashoutValue if available, or fallback
       let cashoutValue = (b as any).cashoutValue;
       
-      if (!cashoutValue && b.cashoutMultiplier && b.amount) {
-          // Fallback if not calculated yet (shouldn't happen with new logic)
-          cashoutValue = b.amount * b.cashoutMultiplier; 
+      // If we don't have a value yet (because refreshCashoutOffers runs async), we might miss it here.
+      // But `evaluateAutoCashout` is called when `activeBets` updates.
+      // However, `refreshCashoutOffers` updates `activeBets` chunk by chunk.
+      
+      if (!cashoutValue) {
+           // Maybe we can calculate it on the fly if we have multiplier?
+           if (b.cashoutMultiplier && b.amount) {
+               // Use the same logic as in the table render?
+               const stake = b.amount;
+               const potentialPayout = b.payout || (stake * (b.potentialMultiplier || 0));
+               const fairValue = stake * b.cashoutMultiplier;
+               
+               const LIABILITY_SENSITIVITY = 0.001;
+               const liabilityFactor = 1 / (1 + potentialPayout * LIABILITY_SENSITIVITY);
+               
+               const isSingle = b.outcomes && b.outcomes.length === 1;
+               const typeFactor = isSingle ? 0.93 : 0.61;
+
+               cashoutValue = fairValue * typeFactor * liabilityFactor;
+               console.log(`[AutoCashout] Calculated value on fly for ${b.id}: $${cashoutValue.toFixed(2)} (Multiplier: ${b.cashoutMultiplier})`);
+           }
       }
       
-      if (!cashoutValue || cashoutValue <= 0) continue;
+      if (!cashoutValue || cashoutValue <= 0) {
+          // Log only if it has a multiplier but no value (weird state)
+          if (b.cashoutMultiplier > 0) console.log(`[AutoCashout] Bet ${b.id} has multiplier ${b.cashoutMultiplier} but calculated value is 0 or invalid.`);
+          continue;
+      }
 
       const rate = usdRates[(b.currency || 'usd').toLowerCase()] || 1;
       const valueUsd = cashoutValue * rate;
       
+      console.log(`[AutoCashout] Bet ${b.id}: Value $${valueUsd.toFixed(2)} (Target: $${autoCashoutTargetUsd})`);
+
       // Check if Total Value >= Target
       if (valueUsd >= autoCashoutTargetUsd) {
-        console.log(`Auto Cashout triggered for ${b.id}: Value $${valueUsd.toFixed(2)} >= Target $${autoCashoutTargetUsd}`);
+        console.log(`>>> TRIGGER AUTO CASHOUT for ${b.id}: Value $${valueUsd.toFixed(2)} >= Target $${autoCashoutTargetUsd}`);
         try {
           // Use the multiplier from the bet object required for the mutation
-          // Note: If we estimated the value, the multiplier is still the one from API.
           const multiplierToUse = b.cashoutMultiplier || 0;
-          if (multiplierToUse <= 0) continue; 
+          if (multiplierToUse <= 0) {
+              console.error(`Cannot cashout ${b.id}: Multiplier is 0`);
+              continue; 
+          }
           
           const result = await StakeApi.mutate(Queries.CashoutSportBet, { betId: b.id, multiplier: multiplierToUse });
+          console.log(`Cashout result for ${b.id}:`, result);
+          
           if (result?.data?.cashoutSportBet) {
+            console.log(`Successfully cashed out ${b.id}`);
             setActiveBets((prev: SportBet[]) => prev.filter((x: SportBet) => x.id !== b.id));
+          } else {
+             console.error(`Cashout failed for ${b.id} (no data returned)`, result);
           }
         } catch (err) {
-          console.error(`Auto cashout failed for ${b.id}`, err);
+          console.error(`Auto cashout exception for ${b.id}`, err);
           continue;
         }
       }
@@ -353,12 +391,22 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
   // Refresh interval (optional, every 120s instead of 60s)
   useEffect(() => {
     const interval = setInterval(() => {
+      // Don't fetch if already fetching
       fetchActiveBets();
       fetchFinishedBets();
-      evaluateAutoCashout();
+      // evaluateAutoCashout is called AFTER fetchActiveBets completes inside fetchActiveBets logic if we wanted,
+      // but here it runs independently.
+      // Ideally evaluateAutoCashout should run more frequently or after updates.
     }, 120000);
     return () => clearInterval(interval);
-  }, [fetchActiveBets, fetchFinishedBets, evaluateAutoCashout]);
+  }, [fetchActiveBets, fetchFinishedBets]);
+
+  // Evaluate Auto Cashout whenever activeBets updates
+  useEffect(() => {
+    if (autoCashoutEnabled) {
+        evaluateAutoCashout();
+    }
+  }, [activeBets, autoCashoutEnabled, evaluateAutoCashout]);
 
 
   const handleCashout = async (betId: string, multiplier: number) => {
