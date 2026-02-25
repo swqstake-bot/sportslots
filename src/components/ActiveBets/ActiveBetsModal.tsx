@@ -127,16 +127,18 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
           const data = preview?.data?.bet?.bet;
 
           if (data) {
-            if (data.payout != null && data.payout > 0) {
-              const updatedBet: SportBet = { ...b, cashoutMultiplier: 0, cashoutValue: data.payout, cashoutDisabled: false };
-              checkSingleBetAutoCashout(updatedBet);
-              return updatedBet;
-            }
-            if (data.cashoutMultiplier != null && data.cashoutMultiplier > 0) {
+            const hasPayout = data.payout != null && data.payout > 0;
+            const hasMultiplier = data.cashoutMultiplier != null && data.cashoutMultiplier > 0;
+
+            if (hasPayout || hasMultiplier) {
+              const mult = hasMultiplier ? data.cashoutMultiplier! : (b.cashoutMultiplier ?? 0);
+              const value = hasPayout
+                ? data.payout!
+                : getCashoutValue({ ...b, cashoutMultiplier: mult });
               const updatedBet: SportBet = {
                 ...b,
-                cashoutMultiplier: data.cashoutMultiplier,
-                cashoutValue: getCashoutValue({ ...b, cashoutMultiplier: data.cashoutMultiplier }),
+                cashoutMultiplier: mult,
+                cashoutValue: value,
                 cashoutDisabled: false,
               };
               checkSingleBetAutoCashout(updatedBet);
@@ -192,6 +194,36 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
       showToast('Cashout fehlgeschlagen', 'error');
     }
   };
+
+  const handlePreviewBet = useCallback(async (bet: SportBet) => {
+    const iid = bet?.bet?.iid;
+    if (bet.status === 'active' && iid && !bet?.customBet && !isCashoutDisabledByCustomPrices(bet)) {
+      try {
+        const preview = await StakeApi.query<{ bet?: { bet?: { payout?: number; cashoutMultiplier?: number } } }>(Queries.PreviewCashout, { iid });
+        const data = preview?.data?.bet?.bet;
+        if (data) {
+          const hasPayout = data.payout != null && data.payout > 0;
+          const hasMultiplier = data.cashoutMultiplier != null && data.cashoutMultiplier > 0;
+          if (hasPayout || hasMultiplier) {
+            const mult = hasMultiplier ? data.cashoutMultiplier! : (bet.cashoutMultiplier ?? 0);
+            const value = hasPayout ? data.payout! : getCashoutValue({ ...bet, cashoutMultiplier: mult });
+            const updatedBet: SportBet = {
+              ...bet,
+              cashoutMultiplier: mult,
+              cashoutValue: value,
+              cashoutDisabled: false,
+            };
+            setActiveBets((prev) => prev.map((b) => (b.id === bet.id ? updatedBet : b)));
+            setPreviewBet(updatedBet);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error(`Preview cashout failed for ${bet.id}`, err);
+      }
+    }
+    setPreviewBet(bet);
+  }, [setActiveBets]);
 
   const formatCurrency = (amount: number, currency: string) => {
     // Stake sends raw amounts (e.g. 0.20 for $0.20), but formatAmount expects minor units for fiat (e.g. 20 cents)
@@ -486,7 +518,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                           bet={bet}
                           formatCurrency={formatCurrency}
                           onCashout={handleCashout}
-                          onPreview={setPreviewBet}
+                          onPreview={handlePreviewBet}
                           onCopyLink={copyLink}
                           copiedId={copiedId}
                         />
@@ -508,7 +540,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                           bet={bet}
                           formatCurrency={formatCurrency}
                           onCashout={handleCashout}
-                          onPreview={setPreviewBet}
+                          onPreview={handlePreviewBet}
                           onCopyLink={copyLink}
                           copiedId={copiedId}
                         />
@@ -533,7 +565,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                           bet={bet}
                           formatCurrency={formatCurrency}
                           onCashout={handleCashout}
-                          onPreview={setPreviewBet}
+                          onPreview={handlePreviewBet}
                           onCopyLink={copyLink}
                           copiedId={copiedId}
                         />
@@ -555,7 +587,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                           bet={bet}
                           formatCurrency={formatCurrency}
                           onCashout={handleCashout}
-                          onPreview={setPreviewBet}
+                          onPreview={handlePreviewBet}
                           onCopyLink={copyLink}
                           copiedId={copiedId}
                         />
@@ -575,7 +607,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                           bet={bet}
                           formatCurrency={formatCurrency}
                           onCashout={handleCashout}
-                          onPreview={setPreviewBet}
+                          onPreview={handlePreviewBet}
                           onCopyLink={copyLink}
                           copiedId={copiedId}
                         />

@@ -143,7 +143,7 @@ export function BetPreviewModal({ bet, onClose, onCashout }: BetPreviewModalProp
                 onClick={handleCashout}
                 className="w-full bg-[#00e701] hover:bg-[#00c201] text-[#0f212e] font-bold text-sm py-2.5 rounded border border-[#00e701] shadow-lg transition-all"
               >
-                Cashout {formatCurrency(bet.amount * bet.cashoutMultiplier, bet.currency)}
+                Cashout {formatCurrency(getCashoutValue(bet), bet.currency)}
               </button>
             )}
           </div>
