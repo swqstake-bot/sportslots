@@ -253,7 +253,7 @@ export default function CasinoView() {
       })
       // Scroll to top or show notification?
       setToast(`Challenge ausgewählt: ${challenge.gameName || challenge.gameSlug}`)
-  }, [])
+  }, [setMode, setSelectedSlugs, setToast])
 
   if (status === 'idle') {
       return <div className="p-8 text-center text-gray-400">Loading Casino Session...</div>
