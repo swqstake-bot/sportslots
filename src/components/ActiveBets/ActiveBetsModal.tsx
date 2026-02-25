@@ -25,6 +25,40 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
   const [autoCashoutTargetUsd, setAutoCashoutTargetUsd] = useState(500);
   const [usdRates, setUsdRates] = useState<Record<string, number>>({});
 
+  const refreshCashoutOffers = useCallback(async (source: SportBet[] = activeBets) => {
+    if (source.length === 0) return;
+    const next: SportBet[] = [];
+    for (const b of source) {
+      const customPrices = (b as any)?.customPrices;
+      const hasShield = Array.isArray(customPrices) && customPrices.some((p: any) => p?.type === 'stake_shield');
+      const cashoutConfigValues = Array.isArray(b.outcomes)
+        ? b.outcomes
+            .map((o: any) => o?.fixture?.tournament?.category?.sport?.cashoutConfiguration?.cashoutEnabled)
+            .filter((v: any) => v === true || v === false)
+        : [];
+      const anyEnabled = cashoutConfigValues.includes(true);
+      const anyDisabled = cashoutConfigValues.includes(false);
+      const configDisables = !anyEnabled && anyDisabled;
+
+      if (b?.customBet || hasShield || configDisables) {
+        next.push({ ...b, cashoutDisabled: true, cashoutMultiplier: b.cashoutMultiplier || 0 });
+        continue;
+      }
+      try {
+        const preview = await StakeApi.query<any>(Queries.PreviewCashout, { betId: b.id });
+        const data = preview?.data?.sportBet;
+        if (data && (data.cashoutMultiplier > 0)) {
+          next.push({ ...b, cashoutMultiplier: data.cashoutMultiplier, cashoutDisabled: false });
+        } else {
+          next.push({ ...b, cashoutMultiplier: b.cashoutMultiplier || 0 });
+        }
+      } catch {
+        next.push({ ...b });
+      }
+    }
+    setActiveBets(next);
+  }, [activeBets]);
+
   // New: Fetch all bets function
   const fetchActiveBets = useCallback(async () => {
     if (!userName) {
@@ -177,40 +211,6 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
       setUsdRates({});
     }
   }, []);
-
-  const refreshCashoutOffers = useCallback(async (source: SportBet[] = activeBets) => {
-    if (source.length === 0) return;
-    const next: SportBet[] = [];
-    for (const b of source) {
-      const customPrices = (b as any)?.customPrices;
-      const hasShield = Array.isArray(customPrices) && customPrices.some((p: any) => p?.type === 'stake_shield');
-      const cashoutConfigValues = Array.isArray(b.outcomes)
-        ? b.outcomes
-            .map((o: any) => o?.fixture?.tournament?.category?.sport?.cashoutConfiguration?.cashoutEnabled)
-            .filter((v: any) => v === true || v === false)
-        : [];
-      const anyEnabled = cashoutConfigValues.includes(true);
-      const anyDisabled = cashoutConfigValues.includes(false);
-      const configDisables = !anyEnabled && anyDisabled;
-
-      if (b?.customBet || hasShield || configDisables) {
-        next.push({ ...b, cashoutDisabled: true, cashoutMultiplier: b.cashoutMultiplier || 0 });
-        continue;
-      }
-      try {
-        const preview = await StakeApi.query<any>(Queries.PreviewCashout, { betId: b.id });
-        const data = preview?.data?.sportBet;
-        if (data && (data.cashoutMultiplier > 0)) {
-          next.push({ ...b, cashoutMultiplier: data.cashoutMultiplier, cashoutDisabled: false });
-        } else {
-          next.push({ ...b, cashoutMultiplier: b.cashoutMultiplier || 0 });
-        }
-      } catch {
-        next.push({ ...b });
-      }
-    }
-    setActiveBets(next);
-  }, [activeBets]);
 
   const evaluateAutoCashout = useCallback(async () => {
     if (!autoCashoutEnabled || activeBets.length === 0) return;
