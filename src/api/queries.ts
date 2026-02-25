@@ -530,11 +530,13 @@ export const Queries = {
   ${SportBetPreview_SportBet}`,
 
   PreviewCashout: `query PreviewCashout($betId: String!) {
-    sportBet(id: $betId) {
-      id
-      cashoutMultiplier
-      amount
-      currency
+    bet(id: $betId) {
+      ... on SportBet {
+        id
+        cashoutMultiplier
+        amount
+        currency
+      }
     }
   }`,
 
