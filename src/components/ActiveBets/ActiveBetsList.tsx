@@ -4,7 +4,7 @@ import type { SportBet } from '../../store/userStore';
 import { useUiStore } from '../../store/uiStore';
 import { getCashoutValue } from '../../services/cashoutService';
 
-const TOP_N = 5;
+const TOP_N = 15;
 
 function getOpenLegsCount(bet: SportBet): number {
   if (!bet.outcomes || !Array.isArray(bet.outcomes)) return 0;
@@ -67,7 +67,7 @@ export const ActiveBetsList: React.FC = () => {
           </div>
         ) : (
           <>
-            <p className="text-[10px] font-bold text-stake-text-dim uppercase tracking-wider px-1 mb-1.5">Top 5 (Cashout → Legs offen)</p>
+            <p className="text-[10px] font-bold text-stake-text-dim uppercase tracking-wider px-1 mb-1.5">Top 15 (Cashout → Legs offen)</p>
             <div className="rounded-lg border border-stake-border bg-stake-bg-card overflow-hidden">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
@@ -84,6 +84,12 @@ export const ActiveBetsList: React.FC = () => {
                     const cashout = getCashoutValue(bet);
                     const open = getOpenLegsCount(bet);
                     const total = bet.outcomes?.length ?? 0;
+                    const legsClass =
+                      open <= 1
+                        ? 'bg-red-500/20 text-red-400 border-red-500/50'
+                        : open <= 3
+                          ? 'bg-amber-500/20 text-amber-400 border-amber-500/50'
+                          : 'bg-stake-border/50 text-stake-text-muted border-transparent';
                     return (
                       <tr
                         key={bet.id}
@@ -97,8 +103,10 @@ export const ActiveBetsList: React.FC = () => {
                         <td className="py-1.5 px-2 text-right font-mono text-stake-success">
                           {cashout > 0 ? formatShort(cashout, bet.currency) : '–'}
                         </td>
-                        <td className="py-1.5 px-2 text-center font-mono">
-                          {open}/{total}
+                        <td className="py-1.5 px-2 text-center">
+                          <span className={`inline-block font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border ${legsClass}`}>
+                            {open}/{total}
+                          </span>
                         </td>
                       </tr>
                     );

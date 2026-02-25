@@ -26,6 +26,24 @@ export function BetListCard({
   const outcomes = bet.outcomes ?? [];
   const hasMultipleLegs = outcomes.length > 1;
   const firstFixture = outcomes[0]?.fixture?.name ?? 'Bet';
+
+  const openLegsCount = outcomes.filter(
+    (o: any) =>
+      o?.outcome?.status === 'active' ||
+      o?.outcome?.status === 'open' ||
+      o?.market?.status === 'active' ||
+      o?.market?.status === 'open' ||
+      o?.status === 'active'
+  ).length;
+  const legsLabel = outcomes.length > 0 ? `${openLegsCount}/${outcomes.length}` : null;
+  const dateLabel = bet.createdAt ? new Date(bet.createdAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : null;
+
+  const legsBadgeClass =
+    openLegsCount <= 1
+      ? 'bg-red-500/20 text-red-400 border-red-500/50'
+      : openLegsCount <= 3
+        ? 'bg-amber-500/20 text-amber-400 border-amber-500/50'
+        : 'bg-stake-brand/15 text-stake-brand border-stake-brand/40';
   const statusLower = String(bet.status ?? '').toLowerCase();
   const isCashout = statusLower === 'cashout' || statusLower === 'cashoutpending';
   const potentialPayout =
@@ -100,9 +118,26 @@ export function BetListCard({
                   <span className="text-stake-success font-mono font-semibold">
                     {formatCurrency(potentialPayout, bet.currency)}
                   </span>
+                  {(bet.potentialMultiplier ?? bet.payoutMultiplier) != null && (
+                    <span className="ml-2 text-stake-text-dim font-mono">
+                      @ {(bet.potentialMultiplier ?? bet.payoutMultiplier).toFixed(2)}x
+                    </span>
+                  )}
                 </>
               )}
             </p>
+            {(legsLabel != null || dateLabel != null) && (
+              <p className="mt-2 flex flex-wrap items-center gap-2">
+                {legsLabel != null && (
+                  <span className={`inline-flex items-center px-2.5 py-1 rounded-md border text-sm font-bold font-mono ${legsBadgeClass}`}>
+                    {legsLabel} Legs offen
+                  </span>
+                )}
+                {dateLabel != null && (
+                  <span className="text-xs text-stake-text-muted">{dateLabel}</span>
+                )}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-3 shrink-0">
             <span

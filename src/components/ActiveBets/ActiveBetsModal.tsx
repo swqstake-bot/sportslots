@@ -53,8 +53,17 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     },
   });
 
-  const [sortField, _setSortField] = useState<string>('createdAt');
-  const [sortDirection, _setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [sortField, setSortField] = useState<string>('createdAt');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection('desc');
+    }
+  };
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'active' | 'finished'>('active');
   const [autoCashoutEnabled, setAutoCashoutEnabled] = useState(false);
@@ -426,6 +435,40 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
               <div className="absolute bottom-0 left-0 w-full h-0.5 bg-stake-success shadow-[0_0_8px_rgba(0,231,1,0.6)]" />
             )}
           </button>
+        </div>
+
+        {/* Sort bar */}
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-stake-border bg-stake-bg-deep/80 flex-wrap">
+          <span className="text-xs text-stake-text-muted uppercase tracking-wider">Sortieren:</span>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { key: 'createdAt', label: 'Datum' },
+              { key: 'cashout', label: 'Cashout' },
+              { key: 'openLegs', label: 'Legs' },
+              { key: 'payoutMultiplier', label: 'Quote' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => handleSort(key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  sortField === key
+                    ? 'bg-stake-success/20 text-stake-success border border-stake-success/50'
+                    : 'bg-stake-border/50 text-stake-text-muted hover:text-white border border-transparent'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'))}
+              className="p-1.5 rounded-lg bg-stake-border/50 text-stake-text-muted hover:text-white border border-transparent"
+              title={sortDirection === 'asc' ? 'Aufsteigend (älteste zuerst)' : 'Absteigend (neueste zuerst)'}
+            >
+              {sortDirection === 'asc' ? '↑' : '↓'}
+            </button>
+          </div>
         </div>
 
         {/* Card layout: collapsible sections, more whitespace */}
