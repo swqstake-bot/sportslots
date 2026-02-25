@@ -63,12 +63,21 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     setSelectedBetIds(new Set());
   };
 
+  // Use a ref to always access the latest state inside async callbacks
+  const autoCashoutStateRef = React.useRef({ enabled: autoCashoutEnabled, target: autoCashoutTargetUsd });
+  
+  useEffect(() => {
+      autoCashoutStateRef.current = { enabled: autoCashoutEnabled, target: autoCashoutTargetUsd };
+  }, [autoCashoutEnabled, autoCashoutTargetUsd]);
+
   // Helper to check single bet for auto cashout
   const checkSingleBetAutoCashout = useCallback(async (bet: SportBet) => {
-      // Debug log to verify this function is actually called
-      console.log(`[AutoCheck] Processing ${bet.id} (Status: ${bet.status}, Enabled: ${autoCashoutEnabled})`);
+      const { enabled, target } = autoCashoutStateRef.current;
       
-      if (!autoCashoutEnabled || !bet || bet.status !== 'active') return;
+      // Debug log to verify this function is actually called
+      console.log(`[AutoCheck] Processing ${bet.id} (Status: ${bet.status}, Enabled: ${enabled})`);
+      
+      if (!enabled || !bet || bet.status !== 'active') return;
       
       let cashoutValue = (bet as any).cashoutValue;
       
@@ -85,19 +94,23 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
            const typeFactor = isSingle ? 0.93 : 0.61;
 
            cashoutValue = fairValue * typeFactor * liabilityFactor;
+           
+           console.log(`[AutoCheck] Calc Details for ${bet.id}: Stake=${stake}, Mult=${bet.cashoutMultiplier}, Fair=${fairValue.toFixed(2)}, Type=${typeFactor}, Liab=${liabilityFactor.toFixed(4)} -> Res=$${cashoutValue.toFixed(2)}`);
+      } else if (!cashoutValue) {
+           console.log(`[AutoCheck] Cannot calc value for ${bet.id}: Missing multiplier (${bet.cashoutMultiplier}) or amount (${bet.amount})`);
       }
 
       if (!cashoutValue || cashoutValue <= 0) {
-          console.log(`[AutoCheck] Skipped ${bet.id}: Invalid cashout value`);
+          console.log(`[AutoCheck] Skipped ${bet.id}: Invalid cashout value (Value: ${cashoutValue})`);
           return;
       }
 
       const rate = usdRates[(bet.currency || 'usd').toLowerCase()] || 1;
       const valueUsd = cashoutValue * rate;
       
-      console.log(`[AutoCheck] ${bet.id}: $${valueUsd.toFixed(2)} (Target: $${autoCashoutTargetUsd})`);
+      console.log(`[AutoCheck] ${bet.id}: $${valueUsd.toFixed(2)} (Target: $${target})`);
 
-      if (valueUsd >= autoCashoutTargetUsd) {
+      if (valueUsd >= target) {
         console.log(`>>> AUTO CASHOUT TRIGGERED for ${bet.id}`);
         try {
           const multiplierToUse = bet.cashoutMultiplier || 0;
@@ -112,7 +125,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
           console.error(`Auto cashout failed for ${bet.id}`, err);
         }
       }
-  }, [autoCashoutEnabled, autoCashoutTargetUsd, usdRates]);
+  }, [usdRates]);
 
   const refreshCashoutOffers = useCallback(async (source: SportBet[] = activeBets) => {
     if (source.length === 0) return;
