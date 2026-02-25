@@ -2,21 +2,9 @@ import React, { useMemo } from 'react';
 import { useUserStore } from '../../store/userStore';
 import type { SportBet } from '../../store/userStore';
 import { useUiStore } from '../../store/uiStore';
-import { getCashoutValue } from '../../services/cashoutService';
+import { getCashoutValue, getOpenLegsCount } from '../../services/cashoutService';
 
 const TOP_N = 15;
-
-function getOpenLegsCount(bet: SportBet): number {
-  if (!bet.outcomes || !Array.isArray(bet.outcomes)) return 0;
-  return bet.outcomes.filter(
-    (o: any) =>
-      o?.outcome?.status === 'active' ||
-      o?.outcome?.status === 'open' ||
-      o?.market?.status === 'active' ||
-      o?.market?.status === 'open' ||
-      o?.status === 'active'
-  ).length;
-}
 
 function formatShort(amount: number, currency: string): string {
   const c = (currency || '').toUpperCase();

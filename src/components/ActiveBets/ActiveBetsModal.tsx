@@ -6,7 +6,7 @@ import { useUiStore } from '../../store/uiStore';
 import { StakeApi } from '../../api/client';
 import { Queries } from '../../api/queries';
 import { formatAmount } from '../Casino/utils/formatAmount';
-import { getCashoutValue, isCashoutDisabledByCustomPrices } from '../../services/cashoutService';
+import { getCashoutValue, getOpenLegsCount, isCashoutDisabledByCustomPrices } from '../../services/cashoutService';
 import { useAutoCashout } from '../../hooks/useAutoCashout';
 import { useBetHistory } from '../../hooks/useBetHistory';
 import { BetPreviewModal } from './BetPreviewModal';
@@ -237,15 +237,6 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     }
     
     return `${formatAmount(val, currency)} ${(currency || 'UNK').toUpperCase()}`;
-  };
-
-  const getOpenLegsCount = (bet: SportBet) => {
-    if (!bet.outcomes || !Array.isArray(bet.outcomes)) return 0;
-    return bet.outcomes.filter((o: any) => 
-        o?.outcome?.status === 'active' || o?.outcome?.status === 'open' || 
-        o?.market?.status === 'active' || o?.market?.status === 'open' ||
-        o?.status === 'active'
-    ).length;
   };
 
   const copyLink = (betId: string, iid?: string) => {

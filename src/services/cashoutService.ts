@@ -40,3 +40,22 @@ export function isCashoutDisabledByCustomPrices(bet: SportBet): boolean {
   if (!Array.isArray(customPrices)) return false;
   return customPrices.some((p) => p?.type === 'stake_shield');
 }
+
+/** Statuses that mean the leg is already settled (won/lost) – nicht mehr "offen". */
+const LEG_CLOSED_STATUSES = [
+  'won', 'lost', 'settled', 'settledmanual', 'settledpending',
+  'void', 'cancelled', 'cancelpending', 'refunded'
+];
+
+function isLegClosed(o: any): boolean {
+  const s = (o?.outcome?.status ?? o?.market?.status ?? o?.status ?? '').toString().toLowerCase();
+  return LEG_CLOSED_STATUSES.some((closed) => s.includes(closed) || s === closed);
+}
+
+/**
+ * Anzahl Legs, die noch nicht als gewonnen oder verloren hinterlegt sind (offen).
+ */
+export function getOpenLegsCount(bet: SportBet): number {
+  if (!bet.outcomes || !Array.isArray(bet.outcomes)) return 0;
+  return bet.outcomes.filter((o: any) => !isLegClosed(o)).length;
+}

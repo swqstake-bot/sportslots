@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MatchTracker } from './MatchTracker';
 import type { SportBet } from '../../store/userStore';
-import { getCashoutValue } from '../../services/cashoutService';
+import { getCashoutValue, getOpenLegsCount } from '../../services/cashoutService';
 
 interface BetListCardProps {
   bet: SportBet;
@@ -27,14 +27,7 @@ export function BetListCard({
   const hasMultipleLegs = outcomes.length > 1;
   const firstFixture = outcomes[0]?.fixture?.name ?? 'Bet';
 
-  const openLegsCount = outcomes.filter(
-    (o: any) =>
-      o?.outcome?.status === 'active' ||
-      o?.outcome?.status === 'open' ||
-      o?.market?.status === 'active' ||
-      o?.market?.status === 'open' ||
-      o?.status === 'active'
-  ).length;
+  const openLegsCount = getOpenLegsCount(bet);
   const legsLabel = outcomes.length > 0 ? `${openLegsCount}/${outcomes.length}` : null;
   const dateLabel = bet.createdAt ? new Date(bet.createdAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : null;
 
