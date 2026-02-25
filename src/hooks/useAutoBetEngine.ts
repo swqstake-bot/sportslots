@@ -62,7 +62,7 @@ export function useAutoBetEngine() {
       // 0. Fetch Currency Rates (for USD conversion)
       let ratesMap: Record<string, number> = {};
       try {
-        const rates = await fetchCurrencyRates();
+        const rates = await fetchCurrencyRates('');
         if (rates) ratesMap = rates;
       } catch (err) {
         console.warn("Failed to fetch currency rates", err);
