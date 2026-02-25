@@ -181,7 +181,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
       });
       if (result.data?.cashoutSportBet) {
         // Remove from list or mark as cashed out
-        setBets(prev => prev.filter(b => b.id !== betId));
+        setActiveBets((prev: SportBet[]) => prev.filter((b: SportBet) => b.id !== betId));
       }
     } catch (err) {
       console.error("Cashout failed", err);
