@@ -1,65 +1,112 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useUserStore } from '../../store/userStore';
+import type { SportBet } from '../../store/userStore';
 import { useUiStore } from '../../store/uiStore';
-import { ActiveBetCard } from './ActiveBetCard';
-import { StakeApi } from '../../api/client';
-import { Queries } from '../../api/queries';
+import { getCashoutValue } from '../../services/cashoutService';
+
+const TOP_N = 5;
+
+function getOpenLegsCount(bet: SportBet): number {
+  if (!bet.outcomes || !Array.isArray(bet.outcomes)) return 0;
+  return bet.outcomes.filter(
+    (o: any) =>
+      o?.outcome?.status === 'active' ||
+      o?.outcome?.status === 'open' ||
+      o?.market?.status === 'active' ||
+      o?.market?.status === 'open' ||
+      o?.status === 'active'
+  ).length;
+}
+
+function formatShort(amount: number, currency: string): string {
+  const c = (currency || '').toUpperCase();
+  if (amount >= 1000) return `${(amount / 1000).toFixed(1)}k ${c}`;
+  if (amount >= 1) return `${amount.toFixed(2)} ${c}`;
+  return `${amount.toFixed(4)} ${c}`;
+}
 
 export const ActiveBetsList: React.FC = () => {
-  const { activeBets, setActiveBets } = useUserStore();
+  const { activeBets } = useUserStore();
   const { toggleActiveBetsModal } = useUiStore();
 
-  const handleCashout = async (betId: string, multiplier: number) => {
-    // In a real app, we might show a custom modal. For now, we'll skip the native confirm 
-    // to keep the flow smooth, or use a very subtle indicator. 
-    // Given the user's preference for autonomy, we'll assume the user knows what they are doing 
-    // when clicking the button (which usually has a confirmation state in the button itself).
-    // The ActiveBetCard might handle the "confirm" state internally (e.g. "Confirm Cashout").
-    // If ActiveBetCard emits 'onCashout', we assume it's confirmed.
-    
-    try {
-      const result = await StakeApi.mutate(Queries.CashoutSportBet, {
-        betId,
-        multiplier
-      });
-      if (result.data?.cashoutSportBet) {
-        setActiveBets(activeBets.filter(b => b.id !== betId));
-      }
-    } catch (err) {
-      console.error("Cashout failed", err);
-    }
-  };
+  const topBets = useMemo(() => {
+    if (!activeBets?.length) return [];
+    return [...activeBets]
+      .sort((a, b) => {
+        const cashA = getCashoutValue(a);
+        const cashB = getCashoutValue(b);
+        if (cashB !== cashA) return cashB - cashA;
+        return getOpenLegsCount(a) - getOpenLegsCount(b);
+      })
+      .slice(0, TOP_N);
+  }, [activeBets]);
 
   if (!activeBets) return null;
 
   return (
-    <div className="flex flex-col h-full bg-[#0f212e] overflow-hidden">
-      {/* View All Button */}
-      <div className="p-2 border-b border-[#2f4553] bg-[#1a2c38]">
-        <button 
+    <div className="flex flex-col h-full bg-stake-bg-deep overflow-hidden">
+      <div className="p-2 border-b border-stake-border bg-stake-bg-card">
+        <button
           onClick={toggleActiveBetsModal}
-          className="w-full bg-[#0f212e] hover:bg-[#2f4553] text-[#b1bad3] hover:text-white border border-[#2f4553] rounded py-1.5 px-3 text-xs font-bold uppercase tracking-wide transition-all flex items-center justify-center gap-2"
+          className="w-full bg-stake-bg-deep hover:bg-stake-border text-stake-text-muted hover:text-white border border-stake-border rounded py-2 px-3 text-xs font-bold uppercase tracking-wide transition-all flex items-center justify-center gap-2"
         >
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
-          Open Full Window
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+          </svg>
+          Alle Wetten ({activeBets.length})
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-0 scrollbar-thin scrollbar-thumb-[#2f4553] scrollbar-track-transparent">
+      <div className="flex-1 overflow-y-auto min-h-0 p-2">
         {activeBets.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-[#b1bad3] opacity-60">
-            <svg className="w-16 h-16 mb-4 text-[#2f4553]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-            <span className="text-sm font-bold uppercase tracking-wide">No Active Bets</span>
-            <span className="text-xs mt-1">Your active bets will appear here.</span>
+          <div className="flex flex-col items-center justify-center h-48 text-stake-text-muted opacity-70">
+            <svg className="w-12 h-12 mb-3 text-stake-border" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <span className="text-xs font-bold uppercase tracking-wider">Keine aktiven Wetten</span>
           </div>
         ) : (
-          activeBets.map(bet => (
-            <ActiveBetCard 
-              key={bet.id} 
-              bet={bet} 
-              onCashout={handleCashout} 
-            />
-          ))
+          <>
+            <p className="text-[10px] font-bold text-stake-text-dim uppercase tracking-wider px-1 mb-1.5">Top 5 (Cashout → Legs offen)</p>
+            <div className="rounded-lg border border-stake-border bg-stake-bg-card overflow-hidden">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-stake-bg-deep/80 text-stake-text-muted border-b border-stake-border">
+                    <th className="py-1.5 px-2 font-bold w-6">#</th>
+                    <th className="py-1.5 px-2 font-bold truncate max-w-[120px]">Fixture</th>
+                    <th className="py-1.5 px-2 font-bold text-right w-14">Cashout</th>
+                    <th className="py-1.5 px-2 font-bold text-center w-10">Legs</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stake-border/70">
+                  {topBets.map((bet, i) => {
+                    const fixtureName = bet.outcomes?.[0]?.fixture?.name ?? '–';
+                    const cashout = getCashoutValue(bet);
+                    const open = getOpenLegsCount(bet);
+                    const total = bet.outcomes?.length ?? 0;
+                    return (
+                      <tr
+                        key={bet.id}
+                        onClick={toggleActiveBetsModal}
+                        className="hover:bg-stake-border/50 cursor-pointer transition-colors text-stake-text-muted hover:text-white"
+                      >
+                        <td className="py-1.5 px-2 font-mono text-stake-text-dim">{i + 1}</td>
+                        <td className="py-1.5 px-2 truncate max-w-[120px]" title={fixtureName}>
+                          {fixtureName}
+                        </td>
+                        <td className="py-1.5 px-2 text-right font-mono text-stake-success">
+                          {cashout > 0 ? formatShort(cashout, bet.currency) : '–'}
+                        </td>
+                        <td className="py-1.5 px-2 text-center font-mono">
+                          {open}/{total}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </div>

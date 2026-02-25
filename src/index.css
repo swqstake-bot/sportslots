@@ -1,6 +1,25 @@
 @import "tailwindcss";
 
-/* Theme colors */
+/* Stake-style design system (Tailwind v4 @theme) */
+@theme {
+  /* Brand & semantic */
+  --color-stake-success: #00e701;
+  --color-stake-error: #ff4d4d;
+  --color-stake-brand: #1475e1;
+  --color-stake-warning: #ffb347;
+  /* Surfaces */
+  --color-stake-bg-deep: #0f212e;
+  --color-stake-bg-card: #1a2c38;
+  --color-stake-bg-elevated: #0f212e;
+  --color-stake-border: #2f4553;
+  --color-stake-border-hover: #3d5566;
+  /* Text */
+  --color-stake-text: #ffffff;
+  --color-stake-text-muted: #b1bad3;
+  --color-stake-text-dim: #55657e;
+}
+
+/* Theme colors (legacy vars) */
 :root,
 [data-theme='dark'] {
   --bg-deep: #0a0c0f;
@@ -15,6 +34,10 @@
   --border: #2d3542;
   --error: #ff5252;
   --success: #00e676;
+  /* Stake design tokens */
+  --stake-success: #00e701;
+  --stake-error: #ff4d4d;
+  --stake-brand: #1475e1;
 }
 
 [data-theme='light'] {

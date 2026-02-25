@@ -2,7 +2,7 @@
   "name": "stakesportselectron",
   "private": true,
   "type": "module",
-  "version": "1.0.50",
+  "version": "1.0.51",
   "description": "StakeSports Electron App",
   "author": "StakeSports",
   "repository": {
@@ -26,6 +26,7 @@
     "crypto-js": "^4.2.0",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.3",
+    "framer-motion": "^12.34.3",
     "graphql-ws": "^6.0.7",
     "node-fetch": "^3.3.2",
     "pako": "^2.1.0",

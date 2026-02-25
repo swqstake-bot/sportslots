@@ -4,3 +4,4 @@ export * from './BetGraph';
 export * from './ActiveBetsModal';
 export * from './BetPreviewModal';
 export * from './MatchTracker';
+export * from './AutoCashoutControls';
