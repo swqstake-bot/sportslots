@@ -53,8 +53,8 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     },
   });
 
-  const [sortField, setSortField] = useState<string>('createdAt');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [sortField, _setSortField] = useState<string>('createdAt');
+  const [sortDirection, _setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'active' | 'finished'>('active');
   const [autoCashoutEnabled, setAutoCashoutEnabled] = useState(false);
@@ -72,21 +72,6 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     usdRates,
     onAutoCashoutSuccess: () => showToast('Auto-Cashout ausgeführt', 'success'),
   });
-
-  const handleSelectBet = (id: string, checked: boolean) => {
-    const next = new Set(selectedBetIds);
-    if (checked) next.add(id);
-    else next.delete(id);
-    setSelectedBetIds(next);
-  };
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedBetIds(new Set(activeBets.map(b => b.id)));
-    } else {
-      setSelectedBetIds(new Set());
-    }
-  };
 
   const handleCashoutSelected = async () => {
     const ids = Array.from(selectedBetIds);
@@ -245,10 +230,6 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     return `${formatAmount(val, currency)} ${(currency || 'UNK').toUpperCase()}`;
   };
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleString();
-  };
-
   const getOpenLegsCount = (bet: SportBet) => {
     if (!bet.outcomes || !Array.isArray(bet.outcomes)) return 0;
     return bet.outcomes.filter((o: any) => 
@@ -256,13 +237,6 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
         o?.market?.status === 'active' || o?.market?.status === 'open' ||
         o?.status === 'active'
     ).length;
-  };
-
-  const calculateOpenLegs = (bet: SportBet) => {
-    if (!bet.outcomes) return '0/0';
-    const total = bet.outcomes.length;
-    const open = getOpenLegsCount(bet);
-    return `${open}/${total}`;
   };
 
   const copyLink = (betId: string, iid?: string) => {
@@ -285,15 +259,6 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
       console.error('Failed to copy link', err);
       showToast('Kopieren fehlgeschlagen', 'error');
     });
-  };
-
-  const handleSort = (field: string) => {
-    if (sortField === field) {
-        setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-        setSortField(field);
-        setSortDirection('desc');
-    }
   };
 
   const sortedBets = React.useMemo(() => {
