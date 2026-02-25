@@ -4,6 +4,7 @@
 
 const SportFixtureCompetitor = `fragment SportFixtureCompetitor on SportFixtureCompetitor {
   name
+  defaultName
   extId
   countryCode
   abbreviation
@@ -407,7 +408,7 @@ export const Queries = {
   }`,
 
   FixtureList: `query FixtureList($type: SportSearchEnum!, $groups: String!, $offset: Int!, $limit: Int!, $sportType: SportTypeEnum) {
-    fixtureCount(type: $type)
+    fixtureCount(type: $type, sportType: $sportType)
     fixtureList(type: $type, limit: $limit, offset: $offset, sportType: $sportType) {
       ...FixturePreview
       groups(groups: [$groups], status: [active, suspended, deactivated]) {
@@ -416,6 +417,7 @@ export const Queries = {
     }
   }
   ${FixturePreview}
+  ${FixtureOptionsSameGameMultiButton_SportFixture}
   ${SportGroupTemplates}`,
 
   FetchFixtureMarkets: `query FetchFixtureMarkets($fixture: String!, $groups: [String!]!) {
