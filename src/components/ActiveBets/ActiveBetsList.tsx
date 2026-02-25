@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 import { useUserStore } from '../../store/userStore';
-import type { SportBet } from '../../store/userStore';
 import { useUiStore } from '../../store/uiStore';
 import { getCashoutValue, getOpenLegsCount } from '../../services/cashoutService';
 
