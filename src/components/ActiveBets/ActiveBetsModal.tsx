@@ -77,12 +77,16 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
       // Debug log to verify this function is actually called
       console.log(`[AutoCheck] Processing ${bet.id} (Status: ${bet.status}, Enabled: ${enabled})`);
       
-      if (!enabled || !bet || bet.status !== 'active') return;
+      // Allow 'active' AND 'confirmed' status
+      if (!enabled || !bet || (bet.status !== 'active' && bet.status !== 'confirmed')) {
+          if (bet.status !== 'active' && bet.status !== 'confirmed') console.log(`[AutoCheck] Skipped ${bet.id}: Status is ${bet.status}`);
+          return;
+      }
       
       let cashoutValue = (bet as any).cashoutValue;
       
       // Calculate if missing
-      if (!cashoutValue && bet.cashoutMultiplier && bet.amount) {
+      if ((!cashoutValue || cashoutValue <= 0) && bet.cashoutMultiplier && bet.amount) {
            const stake = bet.amount;
            const potentialPayout = bet.payout || (stake * (bet.potentialMultiplier || 0));
            const fairValue = stake * bet.cashoutMultiplier;
@@ -382,7 +386,8 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
   }, []);
 
   const evaluateAutoCashout = useCallback(async () => {
-    if (!autoCashoutEnabled) return;
+    const { enabled, target } = autoCashoutStateRef.current;
+    if (!enabled) return;
     console.log("Evaluating Auto Cashout...");
     
     if (activeBets.length === 0) {
@@ -391,48 +396,45 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     }
 
     for (const b of activeBets) {
-      if (b.status !== 'active') continue;
+      if (b.status !== 'active' && b.status !== 'confirmed') {
+          console.log(`[Eval] Skipping ${b.id}: Status is ${b.status}`);
+          continue;
+      }
       
       // Use the pre-calculated cashoutValue if available, or fallback
       let cashoutValue = (b as any).cashoutValue;
       
-      // If we don't have a value yet (because refreshCashoutOffers runs async), we might miss it here.
-      // But `evaluateAutoCashout` is called when `activeBets` updates.
-      // However, `refreshCashoutOffers` updates `activeBets` chunk by chunk.
-      
-      if (!cashoutValue) {
-           // Maybe we can calculate it on the fly if we have multiplier?
-           if (b.cashoutMultiplier && b.amount) {
-               // Use the same logic as in the table render?
-               const stake = b.amount;
-               const potentialPayout = b.payout || (stake * (b.potentialMultiplier || 0));
-               const fairValue = stake * b.cashoutMultiplier;
-               
-               const LIABILITY_SENSITIVITY = 0.001;
-               const liabilityFactor = 1 / (1 + potentialPayout * LIABILITY_SENSITIVITY);
-               
-               const isSingle = b.outcomes && b.outcomes.length === 1;
-               const typeFactor = isSingle ? 0.93 : 0.61;
+      // Calculate if missing
+      if ((!cashoutValue || cashoutValue <= 0) && b.cashoutMultiplier && b.amount) {
+           const stake = b.amount;
+           const potentialPayout = b.payout || (stake * (b.potentialMultiplier || 0));
+           const fairValue = stake * b.cashoutMultiplier;
+           
+           const LIABILITY_SENSITIVITY = 0.001;
+           const liabilityFactor = 1 / (1 + potentialPayout * LIABILITY_SENSITIVITY);
+           
+           const isSingle = b.outcomes && b.outcomes.length === 1;
+           const typeFactor = isSingle ? 0.93 : 0.61;
 
-               cashoutValue = fairValue * typeFactor * liabilityFactor;
-               console.log(`[AutoCashout] Calculated value on fly for ${b.id}: $${cashoutValue.toFixed(2)} (Multiplier: ${b.cashoutMultiplier})`);
-           }
+           cashoutValue = fairValue * typeFactor * liabilityFactor;
+           
+           console.log(`[Eval] Calc Details for ${b.id}: Stake=${stake}, Mult=${b.cashoutMultiplier}, Fair=${fairValue.toFixed(2)}, Type=${typeFactor}, Liab=${liabilityFactor.toFixed(4)} -> Res=$${cashoutValue.toFixed(2)}`);
       }
-      
+
       if (!cashoutValue || cashoutValue <= 0) {
           // Log only if it has a multiplier but no value (weird state)
-          if (b.cashoutMultiplier > 0) console.log(`[AutoCashout] Bet ${b.id} has multiplier ${b.cashoutMultiplier} but calculated value is 0 or invalid.`);
+          if (b.cashoutMultiplier > 0) console.log(`[Eval] Bet ${b.id} has multiplier ${b.cashoutMultiplier} but calculated value is 0 or invalid.`);
           continue;
       }
 
       const rate = usdRates[(b.currency || 'usd').toLowerCase()] || 1;
       const valueUsd = cashoutValue * rate;
       
-      console.log(`[AutoCashout] Bet ${b.id}: Value $${valueUsd.toFixed(2)} (Target: $${autoCashoutTargetUsd})`);
+      console.log(`[Eval] Bet ${b.id}: Value $${valueUsd.toFixed(2)} (Target: $${target})`);
 
       // Check if Total Value >= Target
-      if (valueUsd >= autoCashoutTargetUsd) {
-        console.log(`>>> TRIGGER AUTO CASHOUT for ${b.id}: Value $${valueUsd.toFixed(2)} >= Target $${autoCashoutTargetUsd}`);
+      if (valueUsd >= target) {
+        console.log(`>>> TRIGGER AUTO CASHOUT for ${b.id}: Value $${valueUsd.toFixed(2)} >= Target $${target}`);
         try {
           // Use the multiplier from the bet object required for the mutation
           const multiplierToUse = b.cashoutMultiplier || 0;
@@ -456,7 +458,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
         }
       }
     }
-  }, [autoCashoutEnabled, activeBets, usdRates, autoCashoutTargetUsd]);
+  }, [activeBets, usdRates]);
 
   // Initial load - now calls fetchAllBets instead of paginated fetch
   useEffect(() => {
@@ -891,73 +893,21 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                         // Advanced Cashout Calculation based on provider logic
                         // Constants
                         const LIABILITY_SENSITIVITY = 0.001;
-                        // const LMAX = 0.1; // This cap seems wrong (10% max cashout?), user says "maxCashout = stake * (1 + lmax)".
-                        // If lmax is 0.1, max cashout is 1.1x stake. But user had $0.38 on $0.20 stake (1.9x).
-                        // Maybe lmax is different or ignored for small amounts? Or it's a cap on the *increase*?
-                        // Let's use the other factors first.
-                        const PRICE_MOVE_SENSITIVITY = 2.1;
+                        // const PRICE_MOVE_SENSITIVITY = 2.1; // Unused for now as we use empirical factor
                         
                         // Inputs
                         const stake = bet.amount || 0;
                         const potentialPayout = bet.payout || (stake * (bet.potentialMultiplier || 0));
                         const fairValueMultiplier = bet.cashoutMultiplier || 0;
                         
-                        // Step 1: Fair Value (Stake API sends this as cashoutMultiplier * stake?)
-                        // Or is cashoutMultiplier just the probability (1/odds)?
-                        // User said: "Fair Value (calc): $0.62 (Multiplier ~3.1)". Stake was 0.2. 0.2 * 3.1 = 0.62.
-                        // So 'fairValue' = stake * cashoutMultiplier.
+                        // Step 1: Fair Value
                         const fairValue = stake * fairValueMultiplier;
                         
                         // Step 2: Liability Factor
-                        // liabilityFactor = 1 / (1 + fairValue * liabilitySensitivity)
-                        // If fairValue is $0.62, factor = 1 / (1 + 0.62 * 0.001) = 1 / 1.00062 ≈ 0.999.
-                        // This has almost NO effect for small bets.
-                        // Maybe fairValue should be POTENTIAL payout?
-                        // "liability reduces the value when the potential payout is large".
-                        // So let's use potentialPayout.
                         const liabilityFactor = 1 / (1 + potentialPayout * LIABILITY_SENSITIVITY);
-                        // Example: Potential $8.80. Factor = 1 / (1 + 8.8 * 0.001) = 1 / 1.0088 ≈ 0.991.
-                        // Still small effect.
                         
-                        // Step 3: Price Move Factor
-                        // We don't have live odds history here to calculate drift properly.
-                        // However, we can approximate "drift" by comparing current Fair Value vs Initial Expectation?
-                        // Or maybe we assume the difference between Fair Value and Stake is the drift?
-                        // If we don't have oddsDrift, we can't use this factor accurately.
-                        // BUT, if we look at the empirical factor of ~0.61 from before.
-                        // Maybe we can stick to a simplified reduction curve?
-                        
-                        // User provided specific formula. Let's try to simulate it.
-                        // "The real cashout applies a provider discount (typically 55–75%)".
-                        
-                        // Let's use the empirical 0.61 factor for now as it matched the user's specific case perfectly.
-                        // The advanced formula requires `currentOdds` and `initialOdds` for every leg, which we might not have fully loaded here.
-                        
-                        // Wait, if I implement the full formula I need `currentOdds`.
-                        // Do we have them? `bet.outcomes` has `odds` (initial).
-                        // Do we have live odds? We fetch `activeBets` which has `outcomes`.
-                        // Are those outcomes updated with live odds? Usually `FetchActiveSportBets` returns snapshot at bet time?
-                        // No, active bets usually have current status.
-                        // Let's check `SportMarketOutcome` in query. It has `odds`.
-                        // If `odds` in activeBets are LIVE odds, we can calc drift.
-                        // But usually `odds` in bet history are the odds TAKEN.
-                        
-                        // Given we lack full live data in this view, let's stick to the 0.61 factor BUT refined with the liability factor we can calculate.
-                        
-                        // Refinement based on Bet Type:
-                        // Multi Bets have higher margin (cumulative). Factor ~0.61 seems correct.
-                        // Single Bets have lower margin. 
-                        // Example Single: Stake $1.00, Odds 1.68. Cashout $0.93.
-                        // Fair Value (if odds didn't move): $1.00? No, usually slightly less.
-                        // If odds moved to say 1.70 -> Fair Value = 1.00 * (1.68/1.70) = 0.98.
-                        // Cashout $0.93.
-                        // Factor = 0.93 / 0.98 ≈ 0.95.
-                        // Or if we just use cashoutMultiplier from API?
-                        // If API sends ~1.0 multiplier?
-                        // Let's assume for Singles the factor is much better, e.g. 0.92 - 0.95.
-                        
+                        // Step 3: Empirical Factor based on bet type
                         const isSingle = bet.outcomes && bet.outcomes.length === 1;
-                        // Use 0.92 for Singles, 0.61 for Multis
                         const typeFactor = isSingle ? 0.93 : 0.61;
 
                         const estimatedRealCashout = fairValue * typeFactor * liabilityFactor;
