@@ -21,6 +21,9 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'active' | 'finished'>('active');
+  const [autoCashoutEnabled, setAutoCashoutEnabled] = useState(false);
+  const [autoCashoutTargetUsd, setAutoCashoutTargetUsd] = useState(500);
+  const [usdRates, setUsdRates] = useState<Record<string, number>>({});
 
   // New: Fetch all bets function
   const fetchActiveBets = useCallback(async () => {
@@ -78,13 +81,14 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
       // Deduplicate just in case
       const uniqueBets = Array.from(new Map(allFetchedBets.map(item => [item.id, item])).values());
       setActiveBets(uniqueBets);
+      refreshCashoutOffers(uniqueBets);
 
     } catch (err) {
       console.error("Error fetching all active bets:", err);
     } finally {
       setIsLoadingActive(false);
     }
-  }, [userName, isLoadingActive]);
+  }, [userName, isLoadingActive, refreshCashoutOffers]);
 
   const fetchFinishedBets = useCallback(async () => {
     if (!userName) {
@@ -158,20 +162,94 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     }
   }, [userName, isLoadingFinished]);
 
+  const fetchUsdRates = useCallback(async () => {
+    try {
+      const res = await StakeApi.query<any>(Queries.CurrencyConfiguration, {});
+      const list = res?.data?.info?.currencies || [];
+      const map: Record<string, number> = {};
+      for (const c of list) {
+        const name = String(c?.name || '').toLowerCase();
+        const usd = Number(c?.usd || 0);
+        if (name) map[name] = usd;
+      }
+      setUsdRates(map);
+    } catch {
+      setUsdRates({});
+    }
+  }, []);
+
+  const refreshCashoutOffers = useCallback(async (source: SportBet[] = activeBets) => {
+    if (source.length === 0) return;
+    const next: SportBet[] = [];
+    for (const b of source) {
+      const customPrices = (b as any)?.customPrices;
+      const hasShield = Array.isArray(customPrices) && customPrices.some((p: any) => p?.type === 'stake_shield');
+      const cashoutConfigValues = Array.isArray(b.outcomes)
+        ? b.outcomes
+            .map((o: any) => o?.fixture?.tournament?.category?.sport?.cashoutConfiguration?.cashoutEnabled)
+            .filter((v: any) => v === true || v === false)
+        : [];
+      const anyEnabled = cashoutConfigValues.includes(true);
+      const anyDisabled = cashoutConfigValues.includes(false);
+      const configDisables = !anyEnabled && anyDisabled;
+
+      if (b?.customBet || hasShield || configDisables) {
+        next.push({ ...b, cashoutDisabled: true, cashoutMultiplier: b.cashoutMultiplier || 0 });
+        continue;
+      }
+      try {
+        const preview = await StakeApi.query<any>(Queries.PreviewCashout, { betId: b.id });
+        const data = preview?.data?.sportBet;
+        if (data && (data.cashoutMultiplier > 0)) {
+          next.push({ ...b, cashoutMultiplier: data.cashoutMultiplier, cashoutDisabled: false });
+        } else {
+          next.push({ ...b, cashoutMultiplier: b.cashoutMultiplier || 0 });
+        }
+      } catch {
+        next.push({ ...b });
+      }
+    }
+    setActiveBets(next);
+  }, [activeBets]);
+
+  const evaluateAutoCashout = useCallback(async () => {
+    if (!autoCashoutEnabled || activeBets.length === 0) return;
+    for (const b of activeBets) {
+      if (b.status !== 'active' || b.cashoutDisabled || !b.cashoutMultiplier || b.cashoutMultiplier <= 0) continue;
+      const rate = usdRates[(b.currency || 'usd').toLowerCase()] || 1;
+      const cashout = b.amount * b.cashoutMultiplier;
+      const profitUsd = (cashout - b.amount) * rate;
+      if (profitUsd >= autoCashoutTargetUsd) {
+        try {
+          const result = await StakeApi.mutate(Queries.CashoutSportBet, { betId: b.id, multiplier: b.cashoutMultiplier });
+          if (result?.data?.cashoutSportBet) {
+            setActiveBets((prev: SportBet[]) => prev.filter((x: SportBet) => x.id !== b.id));
+          }
+        } catch {
+          continue;
+        }
+      }
+    }
+  }, [autoCashoutEnabled, activeBets, usdRates, autoCashoutTargetUsd]);
+
   // Initial load - now calls fetchAllBets instead of paginated fetch
   useEffect(() => {
     fetchActiveBets();
     fetchFinishedBets();
-  }, [fetchActiveBets, fetchFinishedBets]);
+    fetchUsdRates();
+  }, [fetchActiveBets, fetchFinishedBets, fetchUsdRates]);
 
   // Refresh interval (optional, every 60s)
   useEffect(() => {
     const interval = setInterval(() => {
       fetchActiveBets();
       fetchFinishedBets();
+      refreshCashoutOffers();
+      evaluateAutoCashout();
     }, 60000);
     return () => clearInterval(interval);
-  }, [fetchActiveBets, fetchFinishedBets]);
+  }, [fetchActiveBets, fetchFinishedBets, refreshCashoutOffers, evaluateAutoCashout]);
+
 
   const handleCashout = async (betId: string, multiplier: number) => {
     try {
@@ -266,6 +344,23 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                 valA = a.payout;
                 valB = b.payout;
                 break;
+            case 'status':
+                if (activeTab === 'finished') {
+                    const statusA = String(a.status || '').toLowerCase();
+                    const statusB = String(b.status || '').toLowerCase();
+                    const score = (s: string) =>
+                        s.includes('cashout') ? 2 :
+                        s.includes('lost') ? 1 :
+                        s.includes('won') ? 0 :
+                        s.includes('cancel') ? -1 :
+                        0;
+                    valA = score(statusA);
+                    valB = score(statusB);
+                } else {
+                    valA = String(a.status || '').toLowerCase();
+                    valB = String(b.status || '').toLowerCase();
+                }
+                break;
             case 'cashout':
                 valA = getCashoutValue(a);
                 valB = getCashoutValue(b);
@@ -331,6 +426,16 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
               <div className="absolute bottom-0 left-0 w-full h-0.5 bg-[#00e701] shadow-[0_0_8px_rgba(0,231,1,0.6)]"></div>
             )}
           </button>
+          <div className="flex items-center gap-2 px-3 py-2">
+            <label className="text-[#b1bad3] text-xs">Auto Cashout ≥ ${autoCashoutTargetUsd}</label>
+            <input type="checkbox" checked={autoCashoutEnabled} onChange={e => setAutoCashoutEnabled(e.target.checked)} />
+            <input
+              type="number"
+              className="bg-[#1a2c38] border border-[#2f4553] text-[#b1bad3] text-xs px-2 py-1 rounded w-20"
+              value={autoCashoutTargetUsd}
+              onChange={e => setAutoCashoutTargetUsd(Math.max(0, Number(e.target.value) || 0))}
+            />
+          </div>
           <button
             onClick={() => setActiveTab('finished')}
             className={`flex-1 py-3 font-bold text-xs transition-all relative uppercase tracking-wider ${
@@ -373,7 +478,9 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                 <th className="p-3 border-b border-[#2f4553] cursor-pointer hover:text-white" onClick={() => handleSort('payout')}>
                     Potential {sortField === 'payout' && <span className="text-[#00e701]">{sortDirection === 'asc' ? '↑' : '↓'}</span>}
                 </th>
-                <th className="p-3 border-b border-[#2f4553]">Status</th>
+                <th className="p-3 border-b border-[#2f4553] cursor-pointer hover:text-white" onClick={() => handleSort('status')}>
+                    Status {sortField === 'status' && <span className="text-[#00e701]">{sortDirection === 'asc' ? '↑' : '↓'}</span>}
+                </th>
                 <th className="p-3 border-b border-[#2f4553] text-right">Action</th>
               </tr>
             </thead>
