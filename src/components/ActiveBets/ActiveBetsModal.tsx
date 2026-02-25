@@ -25,6 +25,44 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
   const [autoCashoutTargetUsd, setAutoCashoutTargetUsd] = useState(500);
   const [usdRates, setUsdRates] = useState<Record<string, number>>({});
 
+  const [selectedBetIds, setSelectedBetIds] = useState<Set<string>>(new Set());
+
+  const handleSelectBet = (id: string, checked: boolean) => {
+    const next = new Set(selectedBetIds);
+    if (checked) next.add(id);
+    else next.delete(id);
+    setSelectedBetIds(next);
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedBetIds(new Set(activeBets.map(b => b.id)));
+    } else {
+      setSelectedBetIds(new Set());
+    }
+  };
+
+  const handleCashoutSelected = async () => {
+    const ids = Array.from(selectedBetIds);
+    if (ids.length === 0) return;
+    
+    // Process sequentially or batch? 
+    // Cashout is per bet.
+    for (const id of ids) {
+      const bet = activeBets.find(b => b.id === id);
+      if (bet && bet.cashoutMultiplier && !bet.cashoutDisabled) {
+         try {
+           await handleCashout(id, bet.cashoutMultiplier);
+         } catch (e) {
+           console.error(`Failed to cashout ${id}`, e);
+         }
+         // Small delay
+         await new Promise(r => setTimeout(r, 500));
+      }
+    }
+    setSelectedBetIds(new Set());
+  };
+
   const refreshCashoutOffers = useCallback(async (source: SportBet[] = activeBets) => {
     if (source.length === 0) return;
     const next: SportBet[] = [];
@@ -62,7 +100,25 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
             }
             
             if (data.cashoutMultiplier > 0) {
-                return { ...b, cashoutMultiplier: data.cashoutMultiplier, cashoutDisabled: false };
+                // Calculate estimated real cashout value
+                const stake = b.amount || 0;
+                const potentialPayout = b.payout || (stake * (b.potentialMultiplier || 0));
+                const fairValue = stake * data.cashoutMultiplier;
+                
+                const LIABILITY_SENSITIVITY = 0.001;
+                const liabilityFactor = 1 / (1 + potentialPayout * LIABILITY_SENSITIVITY);
+                
+                const isSingle = b.outcomes && b.outcomes.length === 1;
+                const typeFactor = isSingle ? 0.93 : 0.61;
+
+                const estimatedRealCashout = fairValue * typeFactor * liabilityFactor;
+                
+                return { 
+                    ...b, 
+                    cashoutMultiplier: data.cashoutMultiplier, 
+                    cashoutValue: estimatedRealCashout, // Store calculated value
+                    cashoutDisabled: false 
+                };
             }
           }
           
@@ -251,17 +307,36 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
   const evaluateAutoCashout = useCallback(async () => {
     if (!autoCashoutEnabled || activeBets.length === 0) return;
     for (const b of activeBets) {
-      if (b.status !== 'active' || b.cashoutDisabled || !b.cashoutMultiplier || b.cashoutMultiplier <= 0) continue;
+      if (b.status !== 'active' || b.cashoutDisabled) continue;
+      
+      // Use the pre-calculated cashoutValue if available, or fallback
+      let cashoutValue = (b as any).cashoutValue;
+      
+      if (!cashoutValue && b.cashoutMultiplier && b.amount) {
+          // Fallback if not calculated yet (shouldn't happen with new logic)
+          cashoutValue = b.amount * b.cashoutMultiplier; 
+      }
+      
+      if (!cashoutValue || cashoutValue <= 0) continue;
+
       const rate = usdRates[(b.currency || 'usd').toLowerCase()] || 1;
-      const cashout = b.amount * b.cashoutMultiplier;
-      const profitUsd = (cashout - b.amount) * rate;
-      if (profitUsd >= autoCashoutTargetUsd) {
+      const valueUsd = cashoutValue * rate;
+      
+      // Check if Total Value >= Target
+      if (valueUsd >= autoCashoutTargetUsd) {
+        console.log(`Auto Cashout triggered for ${b.id}: Value $${valueUsd.toFixed(2)} >= Target $${autoCashoutTargetUsd}`);
         try {
-          const result = await StakeApi.mutate(Queries.CashoutSportBet, { betId: b.id, multiplier: b.cashoutMultiplier });
+          // Use the multiplier from the bet object required for the mutation
+          // Note: If we estimated the value, the multiplier is still the one from API.
+          const multiplierToUse = b.cashoutMultiplier || 0;
+          if (multiplierToUse <= 0) continue; 
+          
+          const result = await StakeApi.mutate(Queries.CashoutSportBet, { betId: b.id, multiplier: multiplierToUse });
           if (result?.data?.cashoutSportBet) {
             setActiveBets((prev: SportBet[]) => prev.filter((x: SportBet) => x.id !== b.id));
           }
-        } catch {
+        } catch (err) {
+          console.error(`Auto cashout failed for ${b.id}`, err);
           continue;
         }
       }
@@ -503,16 +578,61 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
               <div className="absolute bottom-0 left-0 w-full h-0.5 bg-[#00e701] shadow-[0_0_8px_rgba(0,231,1,0.6)]"></div>
             )}
           </button>
-          <div className="flex items-center gap-2 px-3 py-2">
-            <label className="text-[#b1bad3] text-xs">Auto Cashout ≥ ${autoCashoutTargetUsd}</label>
-            <input type="checkbox" checked={autoCashoutEnabled} onChange={e => setAutoCashoutEnabled(e.target.checked)} />
-            <input
-              type="number"
-              className="bg-[#1a2c38] border border-[#2f4553] text-[#b1bad3] text-xs px-2 py-1 rounded w-20"
-              value={autoCashoutTargetUsd}
-              onChange={e => setAutoCashoutTargetUsd(Math.max(0, Number(e.target.value) || 0))}
-            />
+          
+          {/* Auto Cashout & Bulk Actions */}
+          <div className={`flex items-center gap-3 px-4 py-2 border-l border-r border-[#2f4553] transition-all duration-300 ${autoCashoutEnabled ? 'bg-[#00e701]/5 shadow-[inset_0_0_20px_rgba(0,231,1,0.1)]' : ''}`}>
+            
+            {/* Bulk Cashout Button */}
+            {selectedBetIds.size > 0 && (
+                <button 
+                    onClick={handleCashoutSelected}
+                    className="bg-[#00e701] hover:bg-[#00c201] text-[#0f212e] text-xs font-bold px-3 py-1.5 rounded shadow-[0_0_10px_rgba(0,231,1,0.4)] animate-in fade-in zoom-in duration-200"
+                >
+                    Cashout Selected ({selectedBetIds.size})
+                </button>
+            )}
+
+            <div className="h-6 w-px bg-[#2f4553] mx-1"></div>
+
+            <div className="flex items-center gap-2">
+                <div className="relative flex items-center">
+                    <input 
+                        type="checkbox" 
+                        id="auto-cashout-toggle"
+                        checked={autoCashoutEnabled} 
+                        onChange={e => setAutoCashoutEnabled(e.target.checked)} 
+                        className="peer sr-only"
+                    />
+                    <label 
+                        htmlFor="auto-cashout-toggle"
+                        className={`w-9 h-5 rounded-full cursor-pointer transition-colors relative ${autoCashoutEnabled ? 'bg-[#00e701]' : 'bg-[#2f4553]'}`}
+                    >
+                        <div className={`absolute top-1 left-1 bg-white w-3 h-3 rounded-full transition-transform ${autoCashoutEnabled ? 'translate-x-4' : ''}`}></div>
+                    </label>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                    <span className={`text-xs font-bold ${autoCashoutEnabled ? 'text-[#00e701] drop-shadow-[0_0_5px_rgba(0,231,1,0.5)]' : 'text-[#b1bad3]'}`}>
+                        AUTO CASHOUT ≥
+                    </span>
+                    <div className="relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#b1bad3] text-xs">$</span>
+                        <input
+                           type="number"
+                           className={`bg-[#1a2c38] border text-xs pl-4 pr-2 py-1 rounded w-20 outline-none transition-all ${
+                               autoCashoutEnabled 
+                               ? 'border-[#00e701] text-white shadow-[0_0_5px_rgba(0,231,1,0.3)]' 
+                               : 'border-[#2f4553] text-[#b1bad3] focus:border-white focus:text-white'
+                           }`}
+                           value={autoCashoutTargetUsd}
+                           onChange={e => setAutoCashoutTargetUsd(Math.max(0, Number(e.target.value) || 0))}
+                           // disabled={!autoCashoutEnabled} // Allow editing even if disabled
+                         />
+                    </div>
+                </div>
+            </div>
           </div>
+
           <button
             onClick={() => setActiveTab('finished')}
             className={`flex-1 py-3 font-bold text-xs transition-all relative uppercase tracking-wider ${
@@ -539,6 +659,14 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
             <table className="w-full text-left border-collapse">
             <thead className="bg-[#1a2c38] sticky top-0 z-10 text-xs font-bold text-[#b1bad3] uppercase tracking-wider shadow-sm select-none">
               <tr>
+                <th className="p-3 border-b border-[#2f4553] w-10">
+                    <input 
+                        type="checkbox" 
+                        className="cursor-pointer accent-[#00e701]"
+                        checked={activeBets.length > 0 && selectedBetIds.size === activeBets.length}
+                        onChange={e => handleSelectAll(e.target.checked)}
+                    />
+                </th>
                 <th className="p-3 border-b border-[#2f4553] cursor-pointer hover:text-white" onClick={() => handleSort('createdAt')}>
                     Time {sortField === 'createdAt' && <span className="text-[#00e701]">{sortDirection === 'asc' ? '↑' : '↓'}</span>}
                 </th>
@@ -566,7 +694,17 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
             </thead>
             <tbody className="divide-y divide-[#2f4553]">
               {sortedBets.map((bet) => (
-                <tr key={bet.id} className="hover:bg-[#1a2c38]/50 transition-colors group text-sm text-[#b1bad3]">
+                <tr key={bet.id} className={`hover:bg-[#1a2c38]/50 transition-colors group text-sm text-[#b1bad3] ${selectedBetIds.has(bet.id) ? 'bg-[#1a2c38]' : ''}`}>
+                  {/* Checkbox */}
+                  <td className="p-3">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedBetIds.has(bet.id)}
+                        onChange={e => handleSelectBet(bet.id, e.target.checked)}
+                        className="cursor-pointer accent-[#00e701]"
+                      />
+                  </td>
+
                   {/* Time */}
                   <td className="p-3 whitespace-nowrap font-mono text-xs">
                     {formatDate(bet.createdAt)}
