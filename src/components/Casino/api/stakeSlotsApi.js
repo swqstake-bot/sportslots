@@ -1,7 +1,7 @@
 import { StakeApi } from '../../../api/client'
 import { logApiCall } from '../utils/apiLogger'
 
-const PAGE_SIZE = 50
+const PAGE_SIZE = 5
 
 const PROVIDER_MAP = {
   'hacksaw-gaming': 'hacksaw',
@@ -89,8 +89,8 @@ export async function fetchStakeSlots(accessToken) {
       if (games.length < PAGE_SIZE) break
       offset += PAGE_SIZE
       
-      // Safety break
-      if (offset > 10000) break 
+      // Safety break – Stake API number_less_equal bei hohem offset (max ~100)
+      if (offset >= 100) break 
     }
     
     logApiCall({ type: 'stake/slugKuratorGroup', endpoint: 'graphql', request: { offset }, response: { count: all.length }, error: null, durationMs: Date.now() - t0 })
