@@ -94,12 +94,16 @@ export const useAutoBetStore = create<AutoBetState>((set) => ({
   start: () => set({ isRunning: true }),
   stop: () => set({ isRunning: false }),
 
-  addLog: (message, type = 'info') => set((state) => ({
-    logs: [
+  addLog: (message, type = 'info') => set((state) => {
+    const next = [
       { id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, timestamp: Date.now(), message, type },
       ...state.logs
-    ].slice(0, 100) // Keep last 100 logs
-  })),
+    ].slice(0, 100);
+    try {
+      localStorage.setItem('autobet_logs_backup', JSON.stringify({ savedAt: Date.now(), logs: next.slice(0, 50) }));
+    } catch (_) {}
+    return { logs: next };
+  }),
 
   clearLogs: () => set({ logs: [] }),
 

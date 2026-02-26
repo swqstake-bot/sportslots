@@ -69,6 +69,8 @@ export function useAutoBetEngine() {
         if (settings.currency.toLowerCase() !== 'usd') {
              addLog(`CRITICAL: Failed to fetch currency rates. Stopping for safety.`, 'error');
              stop();
+             processingRef.current = false;
+             setIsProcessing(false);
              return;
         }
       }
@@ -428,11 +430,15 @@ export function useAutoBetEngine() {
       // Use a local balance tracker to prevent overspending before the store updates
       let localAvailableBalance = currentBalance;
 
-      // Fill-up: place until 150; otherwise cap by numberOfBets. Re-read settings each iteration.
+      // Fill-up: place until 150 (API limit); otherwise cap by numberOfBets. Re-read settings each iteration.
+      // WICHTIG: Bei fillUp NICHT auf placedBetsCount prüfen – der zählt nur diese Session und
+      // wird nicht zurückgesetzt wenn Wetten settled haben. Wenn z.B. 150 platziert, 10 settled →
+      // User hat 140 aktive, könnte 10 mehr platzieren. placedBetsCount=150 würde sonst sofort
+      // brechen, obwohl die API noch Kapazität hat. Die API lehnt ab wenn 150 erreicht (Catch-Block).
       while (useAutoBetStore.getState().isRunning) {
         const currentSettings = useAutoBetStore.getState().settings;
         const maxBets = currentSettings.fillUp ? 150 : currentSettings.numberOfBets;
-        if (placedBetsCount.current >= maxBets) break;
+        if (!currentSettings.fillUp && placedBetsCount.current >= maxBets) break;
         
         // Recalculate crypto amount based on current settings (if user changed amount or currency)
         let loopExchangeRate = 1;
