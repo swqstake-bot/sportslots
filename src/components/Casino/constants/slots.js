@@ -672,6 +672,14 @@ export const SUPPORTED_SLOTS = [
   { slug: 'paperclip-deadspin-bonanza', name: 'Paperclip Deadspin Bonanza', providerId: 'stakeEngine' },
   { slug: 'knucklehead-sheikhs-vs-snakes', name: 'Knucklehead Sheikhs Vs Snakes', providerId: 'stakeEngine' },
   { slug: 'paperclip-crown-conquest', name: 'Paperclip Crown Conquest', providerId: 'stakeEngine' },
+  { slug: 'paperclip-pinball-peak', name: 'Paperclip Pinball Peak', providerId: 'stakeEngine' },
+  { slug: 'paperclip-knight-fall', name: 'Paperclip Knight Fall', providerId: 'stakeEngine' },
+  { slug: 'paperclip-minedrop', name: 'Paperclip Minedrop', providerId: 'stakeEngine' },
+  { slug: 'paperclip-red-robin', name: 'Paperclip Red Robin', providerId: 'stakeEngine' },
+  { slug: 'paperclip-penguins-can-fly', name: 'Paperclip Penguins Can Fly', providerId: 'stakeEngine' },
+  { slug: 'paperclip-maze-quest', name: 'Paperclip Maze Quest', providerId: 'stakeEngine' },
+  { slug: 'paperclip-pinball-street', name: 'Paperclip Pinball Street', providerId: 'stakeEngine' },
+  { slug: 'paperclip-balance', name: 'Paperclip Balance', providerId: 'stakeEngine' },
   { slug: 'sidequest-stupid-cupid', name: 'Stupid Cupid', providerId: 'stakeEngine' },
 ]
 

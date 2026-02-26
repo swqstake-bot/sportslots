@@ -2,7 +2,7 @@
   "name": "stakesportselectron",
   "private": true,
   "type": "module",
-  "version": "1.0.65",
+  "version": "1.0.66",
   "description": "StakeSports Electron App",
   "author": "StakeSports",
   "repository": {
