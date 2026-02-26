@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useUserStore } from '../../store/userStore';
 import type { SportBet } from '../../store/userStore';
@@ -370,9 +371,10 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     return { liveBets: live, upcomingBets: upcoming, wonBets: won, lostBets: lost, cashoutBets: cashout };
   }, [sortedBets, activeTab]);
 
-  return (
+  const modalContent = (
     <motion.div
-      className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] backdrop-blur-sm"
+      className="fixed inset-0 bg-black/80 flex items-start justify-center pb-8 overflow-y-auto z-[9999] backdrop-blur-sm px-4 sm:px-6"
+      style={{ paddingTop: 120 }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -388,7 +390,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
         )}
       </AnimatePresence>
       <motion.div
-        className="bg-stake-bg-card border border-stake-border rounded-lg shadow-2xl w-[95vw] h-[90vh] flex flex-col overflow-hidden"
+        className="bg-stake-bg-card border border-stake-border rounded-lg shadow-2xl w-full max-w-4xl min-h-[50vh] max-h-[calc(100vh-11rem)] flex flex-col overflow-hidden shrink-0"
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}
@@ -641,10 +643,15 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
           )}
         </div>
 
-        <div className="p-4 border-t border-stake-border bg-stake-bg-card flex justify-between items-center text-xs text-stake-text-muted">
+        <div className="p-4 border-t border-stake-border bg-stake-bg-card flex justify-between items-center text-xs text-stake-text-muted gap-4">
             <span>{activeTab === 'active' ? `Total Active: ${activeBets.length}` : `Total Finished: ${finishedBets.length}`}</span>
+            <button onClick={onClose} className="px-4 py-2 bg-stake-success/20 hover:bg-stake-success/30 text-stake-success font-bold rounded-lg border border-stake-success/50 transition-colors uppercase tracking-wider shrink-0">
+              Schließen
+            </button>
         </div>
       </motion.div>
     </motion.div>
   );
+
+  return createPortal(modalContent, document.body);
 }

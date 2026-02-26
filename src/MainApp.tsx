@@ -184,14 +184,14 @@ function App() {
         version={changelogVersion} 
         changes={changelogContent} 
       />
-      {/* Header */}
-      <header className="bg-[#1a2c38] px-6 h-16 shadow-lg flex justify-between items-center shrink-0 z-50 border-b border-[#2f4553]">
+      {/* Header - h-12 (48px) statt h-16 für mehr Platz im Content-Bereich */}
+      <header className="bg-[#1a2c38] px-4 sm:px-6 h-12 sm:h-14 shadow-lg flex justify-between items-center shrink-0 z-50 border-b border-[#2f4553]">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <svg className="w-6 h-6 text-[#00e701]" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 2L2 7l10 5 10-5-10-5zm0 9l2.5-1.25L12 8.5l-2.5 1.25L12 11zm0 2.5l-5-2.5-5 2.5L12 22l10-8.5-5-2.5-5 2.5z"/>
             </svg>
-            <h1 className="text-lg font-black text-white tracking-wider italic">STAKE<span className="text-[#00e701]">SPORTS</span></h1>
+            <h1 className="text-base sm:text-lg font-black text-white tracking-wider italic">STAKE<span className="text-[#00e701]">SPORTS</span></h1>
           </div>
           {user && (
             <div className="flex items-center gap-2 bg-[#0f212e] px-3 py-1.5 rounded-full border border-[#2f4553]">
