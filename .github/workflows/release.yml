@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (z.B. 1.0.64) – nur bei manuellem Start'
+        required: true
+        default: '1.0.64'
 
 permissions:
   contents: write
@@ -18,10 +24,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set version from tag
+      - name: Set version from tag or input
         run: |
-          $tag = "${{ github.ref_name }}"
-          $version = $tag -replace '^v', ''
+          $evt = '${{ github.event_name }}'
+          if ($evt -eq 'workflow_dispatch') {
+            $version = '${{ github.event.inputs.version }}'
+          } else {
+            $version = '${{ github.ref_name }}' -replace '^v', ''
+          }
           npm pkg set version=$version
           echo "Building version $version"
 
