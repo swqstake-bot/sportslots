@@ -60,8 +60,9 @@ export const ActiveBetsList: React.FC = () => {
                 <thead>
                   <tr className="bg-stake-bg-deep/80 text-stake-text-muted border-b border-stake-border">
                     <th className="py-1.5 px-2 font-bold w-6">#</th>
-                    <th className="py-1.5 px-2 font-bold truncate max-w-[120px]">Fixture</th>
-                    <th className="py-1.5 px-2 font-bold text-right w-14">Cashout</th>
+                    <th className="py-1.5 px-2 font-bold truncate max-w-[100px]">Fixture</th>
+                    <th className="py-1.5 px-1 font-bold text-right w-10">Quote</th>
+                    <th className="py-1.5 px-2 font-bold text-right w-12">Cashout</th>
                     <th className="py-1.5 px-2 font-bold text-center w-10">Legs</th>
                   </tr>
                 </thead>
@@ -84,8 +85,13 @@ export const ActiveBetsList: React.FC = () => {
                         className="hover:bg-stake-border/50 cursor-pointer transition-colors text-stake-text-muted hover:text-white"
                       >
                         <td className="py-1.5 px-2 font-mono text-stake-text-dim">{i + 1}</td>
-                        <td className="py-1.5 px-2 truncate max-w-[120px]" title={fixtureName}>
+                        <td className="py-1.5 px-2 truncate max-w-[100px]" title={fixtureName}>
                           {fixtureName}
+                        </td>
+                        <td className="py-1.5 px-1 text-right font-mono text-stake-success text-[10px]">
+                          {(bet.potentialMultiplier || bet.payoutMultiplier) > 0
+                            ? `${(bet.potentialMultiplier || bet.payoutMultiplier).toFixed(1)}x`
+                            : '–'}
                         </td>
                         <td className="py-1.5 px-2 text-right font-mono text-stake-success">
                           {cashout > 0 ? formatShort(cashout, bet.currency) : '–'}

@@ -119,6 +119,14 @@ export function BetListCard({
                 </>
               )}
             </p>
+            {(bet.potentialMultiplier > 0 || bet.payoutMultiplier > 0) && (
+              <p className="text-sm text-stake-text-muted mt-1">
+                Quote:{' '}
+                <span className="text-stake-success font-mono font-semibold">
+                  {(bet.potentialMultiplier || bet.payoutMultiplier).toFixed(2)}x
+                </span>
+              </p>
+            )}
             {(legsLabel != null || dateLabel != null) && (
               <p className="mt-2 flex flex-wrap items-center gap-2">
                 {legsLabel != null && (
