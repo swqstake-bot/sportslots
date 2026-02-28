@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.72': [
+    '🐛 Build-Fix: shieldOddsCache (unused param)',
+  ],
   '1.0.71': [
     '🐛 Active Bets: Shield-angepasste Odds werden nun korrekt angezeigt (nicht mehr die Original-Quote)',
     '🐛 Shield-Odds werden persistiert – auch nach Refresh/Neustart sichtbar',

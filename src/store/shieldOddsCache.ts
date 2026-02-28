@@ -35,8 +35,7 @@ export function setShieldOdds(betId: string, payoutMultiplier: number) {
   save();
 }
 
-/** Alte Einträge entfernen (z.B. > 7 Tage) – optional, um Speicher zu begrenzen */
-export function pruneOlderThan(ms: number) {
-  // Wir speichern keine Timestamps – bei Bedarf erweiterbar
-  // Für jetzt: Cache behalten
+/** Alte Einträge entfernen (z.B. > 7 Tage) – optional, bei Bedarf erweiterbar */
+export function pruneOlderThan(_ms: number) {
+  // Aktuell: keine Timestamps gespeichert – Cache behalten
 }
