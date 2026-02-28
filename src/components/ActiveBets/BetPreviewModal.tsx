@@ -1,7 +1,7 @@
 import { BetGraph } from './BetGraph';
 import { MatchTracker } from './MatchTracker';
 import type { SportBet, SportBetOutcome } from '../../store/userStore';
-import { getCashoutValue } from '../../services/cashoutService';
+import { getCashoutValue, getEffectiveOdds } from '../../services/cashoutService';
 import { formatAmount } from '../Casino/utils/formatAmount';
 
 function getLegStatus(outcome: SportBetOutcome): 'won' | 'lost' | 'open' {
@@ -54,7 +54,7 @@ export function BetPreviewModal({ bet, onClose, onCashout }: BetPreviewModalProp
             </div>
             <div className="text-right">
               <span className="text-[#00e701] font-bold font-mono">
-                {formatCurrency(bet.amount * (bet.potentialMultiplier || bet.payoutMultiplier || 0), bet.currency)}
+                {formatCurrency(bet.amount * getEffectiveOdds(bet), bet.currency)}
               </span>
               <span className="text-[#b1bad3] text-xs ml-2 uppercase">Möglicher Gewinn</span>
             </div>
@@ -132,7 +132,7 @@ export function BetPreviewModal({ bet, onClose, onCashout }: BetPreviewModalProp
             <div className="mb-3 h-16 w-full bg-[#1a2c38] rounded overflow-hidden border border-[#2f4553]">
               <BetGraph
                 currentValue={bet.cashoutMultiplier}
-                maxValue={bet.potentialMultiplier}
+                maxValue={getEffectiveOdds(bet)}
                 label=""
                 color={bet.cashoutMultiplier > 1 ? '#00e701' : '#ffd700'}
                 height={64}

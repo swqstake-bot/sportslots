@@ -15,13 +15,21 @@ export function estimateCashoutValue(bet: SportBet): number {
   if (!bet.cashoutMultiplier || !bet.amount || bet.cashoutMultiplier <= 0) return 0;
 
   const stake = bet.amount;
-  const potentialPayout = bet.payout || stake * (bet.potentialMultiplier || 0);
+  const potentialPayout = bet.payout || stake * getEffectiveOdds(bet);
   const fairValue = stake * bet.cashoutMultiplier;
   const liabilityFactor = 1 / (1 + potentialPayout * LIABILITY_SENSITIVITY);
   const isSingle = bet.outcomes?.length === 1;
   const typeFactor = isSingle ? TYPE_FACTOR_SINGLE : TYPE_FACTOR_MULTI;
 
   return fairValue * typeFactor * liabilityFactor;
+}
+
+/**
+ * Returns the effective odds to display (Shield-adjusted when available).
+ * Bei Stake Shield: adjustments.payoutMultiplier = die Odds, die wir abgeschlossen haben.
+ */
+export function getEffectiveOdds(bet: SportBet): number {
+  return bet.adjustments?.payoutMultiplier ?? bet.potentialMultiplier ?? bet.payoutMultiplier ?? 0;
 }
 
 /**

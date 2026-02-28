@@ -1,6 +1,7 @@
 import React from 'react';
 import { BetGraph } from './BetGraph';
 import { MatchTracker } from './MatchTracker';
+import { getEffectiveOdds } from '../../services/cashoutService';
 
 interface ActiveBetCardProps {
   bet: any;
@@ -88,7 +89,7 @@ export function ActiveBetCard({ bet, onCashout }: ActiveBetCardProps) {
              </div>
              <BetGraph 
                currentValue={bet.cashoutMultiplier} 
-               maxValue={bet.potentialMultiplier}
+               maxValue={getEffectiveOdds(bet)}
                label=""
                color={bet.cashoutMultiplier > 1 ? '#00e701' : '#ffd700'} 
                height={64}
@@ -103,7 +104,7 @@ export function ActiveBetCard({ bet, onCashout }: ActiveBetCardProps) {
              {/* Cashout Value Progress Bar (Visualizing value vs potential) */}
              <div 
                 className="absolute top-0 left-0 h-full bg-[#00e701] opacity-10 transition-all duration-500 group-hover:opacity-20"
-                style={{ width: `${Math.min(100, (bet.cashoutMultiplier / bet.potentialMultiplier) * 100)}%` }}
+                style={{ width: `${Math.min(100, (bet.cashoutMultiplier / (getEffectiveOdds(bet) || 1)) * 100)}%` }}
              />
              
              <div className="relative z-10 flex justify-between items-center px-3 h-full w-full">

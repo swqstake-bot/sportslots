@@ -88,6 +88,8 @@ export interface SportBet {
   cashoutValue?: number;
   /** API custom prices – e.g. stake_shield disables cashout */
   customPrices?: SportBetCustomPrice[];
+  /** Stake Shield: angepasste Odds (die wir abgeschlossen haben) */
+  adjustments?: { payoutMultiplier?: number };
 }
 
 interface User {

@@ -7,7 +7,7 @@ import { useUiStore } from '../../store/uiStore';
 import { StakeApi } from '../../api/client';
 import { Queries } from '../../api/queries';
 import { formatAmount } from '../Casino/utils/formatAmount';
-import { getCashoutValue, getOpenLegsCount, isCashoutDisabledByCustomPrices } from '../../services/cashoutService';
+import { getCashoutValue, getEffectiveOdds, getOpenLegsCount, isCashoutDisabledByCustomPrices } from '../../services/cashoutService';
 import { useAutoCashout } from '../../hooks/useAutoCashout';
 import { useBetHistory } from '../../hooks/useBetHistory';
 import { BetPreviewModal } from './BetPreviewModal';
@@ -306,8 +306,8 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                 valB = b.amount;
                 break;
             case 'payoutMultiplier':
-                valA = a.potentialMultiplier || a.payoutMultiplier;
-                valB = b.potentialMultiplier || b.payoutMultiplier;
+                valA = getEffectiveOdds(a);
+                valB = getEffectiveOdds(b);
                 break;
             case 'payout':
                 valA = a.payout;

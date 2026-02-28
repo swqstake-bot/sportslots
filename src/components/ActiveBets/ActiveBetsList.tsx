@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useUserStore } from '../../store/userStore';
 import { useUiStore } from '../../store/uiStore';
-import { getCashoutValue, getOpenLegsCount } from '../../services/cashoutService';
+import { getCashoutValue, getEffectiveOdds, getOpenLegsCount } from '../../services/cashoutService';
 
 const TOP_N = 15;
 
@@ -89,8 +89,8 @@ export const ActiveBetsList: React.FC = () => {
                           {fixtureName}
                         </td>
                         <td className="py-1.5 px-1 text-right font-mono text-stake-success text-[10px]">
-                          {(bet.potentialMultiplier || bet.payoutMultiplier) > 0
-                            ? `${(bet.potentialMultiplier || bet.payoutMultiplier).toFixed(1)}x`
+                          {getEffectiveOdds(bet) > 0
+                            ? `${getEffectiveOdds(bet).toFixed(1)}x`
                             : '–'}
                         </td>
                         <td className="py-1.5 px-2 text-right font-mono text-stake-success">

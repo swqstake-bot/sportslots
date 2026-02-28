@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MatchTracker } from './MatchTracker';
 import type { SportBet } from '../../store/userStore';
-import { getCashoutValue, getOpenLegsCount } from '../../services/cashoutService';
+import { getCashoutValue, getEffectiveOdds, getOpenLegsCount } from '../../services/cashoutService';
 
 interface BetListCardProps {
   bet: SportBet;
@@ -119,11 +119,11 @@ export function BetListCard({
                 </>
               )}
             </p>
-            {(bet.potentialMultiplier > 0 || bet.payoutMultiplier > 0) && (
+            {getEffectiveOdds(bet) > 0 && (
               <p className="text-sm text-stake-text-muted mt-1">
                 Quote:{' '}
                 <span className="text-stake-success font-mono font-semibold">
-                  {(bet.potentialMultiplier || bet.payoutMultiplier).toFixed(2)}x
+                  {getEffectiveOdds(bet).toFixed(2)}x
                 </span>
               </p>
             )}
