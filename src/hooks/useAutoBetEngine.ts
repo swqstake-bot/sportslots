@@ -3,6 +3,7 @@ import { useAutoBetStore } from '../store/autoBetStore';
 import { useUserStore } from '../store/userStore';
 import { StakeApi } from '../api/client';
 import { Queries } from '../api/queries';
+import { setShieldOdds } from '../store/shieldOddsCache';
 import { fetchCurrencyRates } from '../components/Casino/api/stakeChallenges';
 
 // Helper to generate UUID for bets
@@ -645,13 +646,23 @@ export function useAutoBetEngine() {
             if (betRes.data?.sportBet) {
                 betPlaced = true;
                 betId = betRes.data.sportBet.id;
-                addActiveBet(betRes.data.sportBet);
+                const betToAdd = { ...betRes.data.sportBet };
+                if (stakeShieldEnabled && stakeShieldOfferOdds != null) {
+                    betToAdd.adjustments = { payoutMultiplier: stakeShieldOfferOdds };
+                    setShieldOdds(betId, stakeShieldOfferOdds);
+                }
+                addActiveBet(betToAdd);
             } else {
                 const betData = betRes.data?.createSportBet || betRes.data?.sportBet;
                 if (betData) {
                     betPlaced = true;
                     betId = betData.id;
-                    addActiveBet(betData);
+                    const betToAdd = { ...betData };
+                    if (stakeShieldEnabled && stakeShieldOfferOdds != null) {
+                        betToAdd.adjustments = { payoutMultiplier: stakeShieldOfferOdds };
+                        setShieldOdds(betId, stakeShieldOfferOdds);
+                    }
+                    addActiveBet(betToAdd);
                 }
             }
 
@@ -712,7 +723,14 @@ export function useAutoBetEngine() {
                             const coverRes = await StakeApi.query<any>(Queries.PlaceSportBet, coverBetVariables);
                             
                             if (coverRes.data?.sportBet || coverRes.data?.createSportBet) {
-                                const coverId = coverRes.data?.sportBet?.id || coverRes.data?.createSportBet?.id;
+                                const coverBet = coverRes.data?.sportBet || coverRes.data?.createSportBet;
+                                const coverId = coverBet.id;
+                                const coverBetToAdd = { ...coverBet };
+                                if (coverShieldOfferOdds != null) {
+                                    coverBetToAdd.adjustments = { payoutMultiplier: coverShieldOfferOdds };
+                                    setShieldOdds(coverId, coverShieldOfferOdds);
+                                }
+                                addActiveBet(coverBetToAdd);
                                 addLog(`Cover Bet placed successfully! ID: ${coverId} (Shielded)`, 'success');
                                 placedBetsCount.current += 1; // Count towards total? Yes, it's a bet.
                                 localAvailableBalance -= loopCryptoAmount;

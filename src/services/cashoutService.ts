@@ -3,6 +3,7 @@
  * Used by useAutoCashout and ActiveBetsModal; unit-testable.
  */
 import type { SportBet } from '../store/userStore';
+import { getShieldOdds } from '../store/shieldOddsCache';
 
 const LIABILITY_SENSITIVITY = 0.001;
 const TYPE_FACTOR_SINGLE = 0.93;
@@ -27,9 +28,15 @@ export function estimateCashoutValue(bet: SportBet): number {
 /**
  * Returns the effective odds to display (Shield-adjusted when available).
  * Bei Stake Shield: adjustments.payoutMultiplier = die Odds, die wir abgeschlossen haben.
+ * Fallback: shieldOddsCache (falls API adjustments nicht liefert).
  */
 export function getEffectiveOdds(bet: SportBet): number {
-  return bet.adjustments?.payoutMultiplier ?? bet.potentialMultiplier ?? bet.payoutMultiplier ?? 0;
+  if (bet.adjustments?.payoutMultiplier != null && bet.adjustments.payoutMultiplier > 0) {
+    return bet.adjustments.payoutMultiplier;
+  }
+  const cached = getShieldOdds(bet.id);
+  if (cached != null && cached > 0) return cached;
+  return bet.potentialMultiplier ?? bet.payoutMultiplier ?? 0;
 }
 
 /**

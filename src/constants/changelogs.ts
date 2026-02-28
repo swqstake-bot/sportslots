@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.71': [
+    '🐛 Active Bets: Shield-angepasste Odds werden nun korrekt angezeigt (nicht mehr die Original-Quote)',
+    '🐛 Shield-Odds werden persistiert – auch nach Refresh/Neustart sichtbar',
+  ],
   '1.0.70': [
     '✨ Sport-Filter: Auswahl und Live/Upcoming-Toggle werden gespeichert (bleiben nach Neustart/Update erhalten)',
     '✨ AutoBet: Alle Einstellungen (Sport, GameType, Odds, Shield, Event-Filter, etc.) werden persistiert',
