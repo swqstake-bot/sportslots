@@ -67,6 +67,7 @@ export const SUPPORTED_SLOTS = [
   { slug: 'evoslot-eddies-vaults', name: "Eddie's Vaults", providerId: 'stakeEngine' },
   { slug: 'creativecity-chocolate-factory', name: 'Chocolate Factory', providerId: 'stakeEngine' },
   { slug: 'valkyrie-lokis-vault', name: "Loki's Vault", providerId: 'stakeEngine' },
+  { slug: 'dbushgaming-cyber-samurai-the-last-code', name: 'Cyber Samurai The Last Code', providerId: 'stakeEngine' },
   // Pragmatic Play – Bet-Levels kommen aus doInit (währungsabhängig)
   { slug: 'pragmatic-play-sugar-rush-1000', name: 'Sugar Rush 1000', providerId: 'pragmatic' },
   { slug: 'pragmatic-play-big-bass-boom', name: 'Big Bass Boom', providerId: 'pragmatic' },

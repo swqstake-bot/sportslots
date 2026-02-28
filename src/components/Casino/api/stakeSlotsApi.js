@@ -38,6 +38,7 @@ const PROVIDER_MAP = {
   'evoslot': 'stakeEngine',
   'creativecity': 'stakeEngine',
   'valkyrie': 'stakeEngine',
+  'd-bush-gaming': 'stakeEngine',
 }
 
 const SLUG_KURATOR_QUERY = `query SlugKuratorGroup($slug: String!, $limit: Int!, $offset: Int!, $sort: GameKuratorGroupGameSortEnum = popular7d, $filterIds: [String!], $locale: Locale = "en") {
