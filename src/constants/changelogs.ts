@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.70': [
+    '✨ Sport-Filter: Auswahl und Live/Upcoming-Toggle werden gespeichert (bleiben nach Neustart/Update erhalten)',
+    '✨ AutoBet: Alle Einstellungen (Sport, GameType, Odds, Shield, Event-Filter, etc.) werden persistiert',
+  ],
   '1.0.48': [
     '✨ NEW: Auto Cashout Options - Now works for confirmed bets too!',
     '✨ NEW: AutoBet - Enter bet amount in USD instead of Crypto',

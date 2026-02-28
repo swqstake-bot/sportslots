@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 export type AutoBetStrategy = 'Smart' | 'Conservative' | 'Aggressive' | 'Balanced' | 'Favorites' | 'Underdogs' | 'Diverse' | 'ValueHunter' | 'Momentum' | 'Martingale' | 'Fibonacci' | 'Kelly' | 'Value';
 
@@ -81,32 +82,49 @@ const DEFAULT_SETTINGS: AutoBetSettings = {
   },
 };
 
-export const useAutoBetStore = create<AutoBetState>((set) => ({
-  settings: DEFAULT_SETTINGS,
-  logs: [],
-  isRunning: false,
-  isModalOpen: false,
+export const useAutoBetStore = create<AutoBetState>()(
+  persist(
+    (set) => ({
+      settings: DEFAULT_SETTINGS,
+      logs: [],
+      isRunning: false,
+      isModalOpen: false,
 
-  updateSettings: (newSettings) => set((state) => ({ 
-    settings: { ...state.settings, ...newSettings } 
-  })),
+      updateSettings: (newSettings) => set((state) => ({
+        settings: { ...state.settings, ...newSettings },
+      })),
 
-  start: () => set({ isRunning: true }),
-  stop: () => set({ isRunning: false }),
+      start: () => set({ isRunning: true }),
+      stop: () => set({ isRunning: false }),
 
-  addLog: (message, type = 'info') => set((state) => {
-    const next = [
-      { id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, timestamp: Date.now(), message, type },
-      ...state.logs
-    ].slice(0, 100);
-    try {
-      localStorage.setItem('autobet_logs_backup', JSON.stringify({ savedAt: Date.now(), logs: next.slice(0, 50) }));
-    } catch (_) {}
-    return { logs: next };
-  }),
+      addLog: (message, type = 'info') =>
+        set((state) => {
+          const next = [
+            {
+              id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              timestamp: Date.now(),
+              message,
+              type,
+            },
+            ...state.logs,
+          ].slice(0, 100);
+          try {
+            localStorage.setItem(
+              'autobet_logs_backup',
+              JSON.stringify({ savedAt: Date.now(), logs: next.slice(0, 50) })
+            );
+          } catch (_) {}
+          return { logs: next };
+        }),
 
-  clearLogs: () => set({ logs: [] }),
+      clearLogs: () => set({ logs: [] }),
 
-  openModal: () => set({ isModalOpen: true }),
-  closeModal: () => set({ isModalOpen: false })
-}));
+      openModal: () => set({ isModalOpen: true }),
+      closeModal: () => set({ isModalOpen: false }),
+    }),
+    {
+      name: 'autobet-storage',
+      partialize: (state) => ({ settings: state.settings }),
+    }
+  )
+);

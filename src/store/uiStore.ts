@@ -12,6 +12,8 @@ interface UiState {
   currentView: 'sports' | 'casino';
   casinoMode: 'play' | 'challenges' | 'bonushunt' | 'forum' | 'logs';
   selectedSport: string | null;
+  /** Live/Upcoming-Filter bei Sportansicht (z.B. Soccer) */
+  sportFilterType: 'live' | 'upcoming';
   rightSidebarTab: 'autobet' | 'activebets' | 'betslip';
   isBetSlipExpanded: boolean;
   isActiveBetsModalOpen: boolean;
@@ -20,6 +22,7 @@ interface UiState {
   setCurrentView: (view: 'sports' | 'casino') => void;
   setCasinoMode: (mode: 'play' | 'challenges' | 'bonushunt' | 'forum' | 'logs') => void;
   setSelectedSport: (sport: string | null) => void;
+  setSportFilterType: (type: 'live' | 'upcoming') => void;
   setRightSidebarTab: (tab: 'autobet' | 'activebets' | 'betslip') => void;
   toggleBetSlip: () => void;
   toggleActiveBetsModal: () => void;
@@ -33,6 +36,7 @@ export const useUiStore = create<UiState>()(
       currentView: 'sports',
       casinoMode: 'play',
       selectedSport: 'soccer',
+      sportFilterType: 'upcoming',
       rightSidebarTab: 'activebets',
       isBetSlipExpanded: true,
       isActiveBetsModalOpen: false,
@@ -41,6 +45,7 @@ export const useUiStore = create<UiState>()(
       setCasinoMode: (mode) => set({ casinoMode: mode }),
       setCurrentView: (view) => set({ currentView: view }),
       setSelectedSport: (sport) => set({ selectedSport: sport }),
+      setSportFilterType: (type) => set({ sportFilterType: type }),
       setRightSidebarTab: (tab) => set({ rightSidebarTab: tab }),
       toggleBetSlip: () => set((state) => ({ isBetSlipExpanded: !state.isBetSlipExpanded })),
       toggleActiveBetsModal: () => set((state) => ({ isActiveBetsModalOpen: !state.isActiveBetsModalOpen })),
@@ -53,6 +58,7 @@ export const useUiStore = create<UiState>()(
         currentView: state.currentView,
         casinoMode: state.casinoMode,
         selectedSport: state.selectedSport,
+        sportFilterType: state.sportFilterType,
         rightSidebarTab: state.rightSidebarTab,
         isBetSlipExpanded: state.isBetSlipExpanded,
       }),

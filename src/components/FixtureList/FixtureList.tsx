@@ -1,7 +1,7 @@
 import { useBetSlipStore } from '../../store/betSlipStore';
 import type { Outcome } from '../../store/betSlipStore';
 import { useLiveFixtures } from '../../hooks/useLiveFixtures';
-import { useState } from 'react';
+import { useUiStore } from '../../store/uiStore';
 import { FixtureCard } from './FixtureCard';
 
 interface FixtureListProps {
@@ -10,8 +10,8 @@ interface FixtureListProps {
 
 export function FixtureList({ sportSlug }: FixtureListProps) {
   const isSpecialCategory = sportSlug === 'live' || sportSlug === 'upcoming';
-  const [filterType, setFilterType] = useState<'live' | 'upcoming'>('upcoming');
-  const effectiveType = isSpecialCategory ? (sportSlug as 'live' | 'upcoming') : filterType;
+  const { sportFilterType, setSportFilterType } = useUiStore();
+  const effectiveType = isSpecialCategory ? (sportSlug as 'live' | 'upcoming') : sportFilterType;
 
   const { fixtures, loading, error } = useLiveFixtures(sportSlug, {
     pollingInterval: 5000,
@@ -71,14 +71,14 @@ export function FixtureList({ sportSlug }: FixtureListProps) {
           {!isSpecialCategory && (
             <div className="flex bg-stake-bg-deep p-1 rounded-full border border-stake-border">
               <button
-                onClick={() => setFilterType('live')}
-                className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${filterType === 'live' ? 'bg-stake-bg-card text-white' : 'text-stake-text-muted hover:text-white'}`}
+                onClick={() => setSportFilterType('live')}
+                className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${sportFilterType === 'live' ? 'bg-stake-bg-card text-white' : 'text-stake-text-muted hover:text-white'}`}
               >
                 Live
               </button>
               <button
-                onClick={() => setFilterType('upcoming')}
-                className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${filterType === 'upcoming' ? 'bg-stake-bg-card text-white' : 'text-stake-text-muted hover:text-white'}`}
+                onClick={() => setSportFilterType('upcoming')}
+                className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${sportFilterType === 'upcoming' ? 'bg-stake-bg-card text-white' : 'text-stake-text-muted hover:text-white'}`}
               >
                 Upcoming
               </button>
@@ -105,14 +105,14 @@ export function FixtureList({ sportSlug }: FixtureListProps) {
           {!isSpecialCategory ? (
             <div className="flex bg-stake-bg-deep p-1.5 rounded-full border border-stake-border">
               <button
-                onClick={() => setFilterType('live')}
-                className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${filterType === 'live' ? 'bg-stake-bg-card text-white shadow-sm' : 'text-stake-text-muted hover:text-white'}`}
+                onClick={() => setSportFilterType('live')}
+                className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${sportFilterType === 'live' ? 'bg-stake-bg-card text-white shadow-sm' : 'text-stake-text-muted hover:text-white'}`}
               >
                 Live
               </button>
               <button
-                onClick={() => setFilterType('upcoming')}
-                className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${filterType === 'upcoming' ? 'bg-stake-bg-card text-white shadow-sm' : 'text-stake-text-muted hover:text-white'}`}
+                onClick={() => setSportFilterType('upcoming')}
+                className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${sportFilterType === 'upcoming' ? 'bg-stake-bg-card text-white shadow-sm' : 'text-stake-text-muted hover:text-white'}`}
               >
                 Upcoming
               </button>
