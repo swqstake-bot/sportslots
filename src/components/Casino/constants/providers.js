@@ -8,10 +8,12 @@ export const PROVIDERS = {
     sessionFields: ['token', 'sessionUuid', 'seq'],
     betLevelsSource: 'api',
     continuePolicy: 'instructions-or-win_presentation_complete',
+    supportsMultiCurrencySameSlot: false,
   },
   pragmatic: {
     id: 'pragmatic',
     name: 'Pragmatic Play',
+    supportsMultiCurrencySameSlot: true,
     gameServicePathV4: '/gs2c/ge/v4/gameService',
     gameServicePathV3: '/gs2c/ge/v3/gameService',
     zeroDecimalCurrencies: ['idr', 'jpy', 'krw', 'vnd'],
@@ -22,6 +24,7 @@ export const PROVIDERS = {
   stakeEngine: {
     id: 'stakeEngine',
     name: 'Stake Engine',
+    supportsMultiCurrencySameSlot: true,
     amountScale: 1000000,
     zeroDecimalCurrencies: ['idr', 'jpy', 'krw', 'vnd'],
     sessionFields: ['sessionID', 'rgsUrl'],
@@ -38,6 +41,7 @@ export const PROVIDERS = {
   nolimit: {
     id: 'nolimit',
     name: 'Nolimit City',
+    supportsMultiCurrencySameSlot: true,
     protocol: '@nolimit/game-communication@0.1.48',
     requiresExtPlayerKey: true,
     modes: { standard: 'CAP_MODE_STANDARD' },
@@ -180,4 +184,11 @@ export const PROVIDERS = {
   tl: { id: 'tl', name: '1000 Lakes alias', aliasOf: 'stakeEngine' },
   stc: { id: 'stc', name: 'Stake Engine alias', aliasOf: 'stakeEngine' },
   popi: { id: 'popi', name: 'Popiplay alias', aliasOf: 'popiplay' },
+}
+
+/** Prüft ob Provider denselben Slot in verschiedenen Währungen parallel erlaubt */
+export function supportsMultiCurrencySameSlot(providerId) {
+  const p = PROVIDERS[providerId] || {}
+  const base = p.aliasOf ? (PROVIDERS[p.aliasOf] || {}) : p
+  return base.supportsMultiCurrencySameSlot !== false
 }

@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.74': [
+    '✨ Play: Gleicher Slot in verschiedenen Währungen (Stake Engine, Pragmatic, NoLimit)',
+    '🐛 Stake Engine: Multiplikatoren/Gewinne korrekt (payoutMultiplier statt winAmount)',
+  ],
   '1.0.73': [
     '✨ Slot-Bets: WebSocket houseBets-Subscription – Echtzeit-Updates, keine RGS-Skalierung nötig',
     '🐛 Slot: Vault-Auszahlungen werden nicht mehr fälschlich als Spin-Gewinn gezählt',

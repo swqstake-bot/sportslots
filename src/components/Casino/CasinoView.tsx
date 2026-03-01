@@ -36,7 +36,9 @@ export default function CasinoView() {
   const [error, setError] = useState('')
   const [discoveredSlots, setDiscoveredSlots] = useState(() => loadDiscoveredSlots())
   const { slots: webSlots } = useSlots(token, discoveredSlots)
-  const [selectedSlugs, setSelectedSlugs] = useState<string[]>([])
+  const [selectedSlotInstances, setSelectedSlotInstances] = useState<{ id: string; slug: string; sourceCurrency?: string; targetCurrency?: string }[]>([])
+
+  const selectedSlugs = selectedSlotInstances.map((i) => i.slug)
   const { casinoMode: mode, setCasinoMode: setMode } = useUiStore()
   const [slotSets, setSlotSets] = useState<SlotSet[]>(() => loadSlotSets())
   const [loadedSetId, setLoadedSetId] = useState('')
@@ -130,24 +132,24 @@ export default function CasinoView() {
   */
 
   const handleStartAll = useCallback(() => {
-    selectedSlugs.forEach((slug) => {
-      const ref = slotControlRefsMap.current.get(slug)
+    selectedSlotInstances.forEach((inst) => {
+      const ref = slotControlRefsMap.current.get(inst.id)
       if (ref) ref.startAutospin()
     })
-  }, [selectedSlugs])
+  }, [selectedSlotInstances])
 
   const handleStopAll = useCallback(() => {
-    selectedSlugs.forEach((slug) => {
-      const ref = slotControlRefsMap.current.get(slug)
+    selectedSlotInstances.forEach((inst) => {
+      const ref = slotControlRefsMap.current.get(inst.id)
       if (ref) ref.stopAll()
     })
-  }, [selectedSlugs])
+  }, [selectedSlotInstances])
 
   const handleApplyFirstSlotSettings = useCallback(() => {
     const refs = slotControlRefsMap.current
-    const first = selectedSlugs[0]
+    const first = selectedSlotInstances[0]
     if (!first) return
-    const ctrl = refs.get(first)
+    const ctrl = refs.get(first.id)
     if (!ctrl?.getSettings) return
     const settings = ctrl.getSettings()
     
@@ -157,18 +159,17 @@ export default function CasinoView() {
       setSharedTargetCurrency(settings.targetCurrency)
     }
 
-    for (let i = 1; i < selectedSlugs.length; i++) {
-      const slug = selectedSlugs[i]
-      refs.get(slug)?.applySettings?.(settings)
+    for (let i = 1; i < selectedSlotInstances.length; i++) {
+      refs.get(selectedSlotInstances[i].id)?.applySettings?.(settings)
     }
     setToast('Einstellungen vom ersten Slot auf alle übertragen')
-  }, [selectedSlugs, useSharedCurrency])
+  }, [selectedSlotInstances, useSharedCurrency])
 
   const handleSaveSet = (e: any) => {
     e?.preventDefault()
     if (!saveSlotSetName.trim()) return
     try {
-      const id = saveSlotSet({ name: saveSlotSetName, slots: selectedSlugs })
+      const id = saveSlotSet({ name: saveSlotSetName, slots: selectedSlotInstances.map((i) => i.slug) })
       const newSets = loadSlotSets()
       setSlotSets(newSets)
       setSaveSlotSetOpen(false)
@@ -185,8 +186,13 @@ export default function CasinoView() {
   const handleLoadSet = (id: string) => {
     setLoadedSetId(id)
     const set = slotSets.find(s => s.id === id)
-    if (set) {
-      setSelectedSlugs(set.slugs)
+    if (set && Array.isArray(set.slugs)) {
+      setSelectedSlotInstances(set.slugs.map((slug, i) => ({
+        id: `inst_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 9)}`,
+        slug,
+        sourceCurrency: sharedSourceCurrency,
+        targetCurrency: sharedTargetCurrency,
+      })))
     }
   }
 
@@ -238,22 +244,48 @@ export default function CasinoView() {
   }
 
   const handleToggleSlot = useCallback((slug: string) => {
-    setSelectedSlugs(prev => prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug])
+    setSelectedSlotInstances((prev) =>
+      prev.some((i) => i.slug === slug)
+        ? prev.filter((i) => i.slug !== slug)
+        : [...prev, { id: `inst_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`, slug, sourceCurrency: sharedSourceCurrency, targetCurrency: sharedTargetCurrency }]
+    )
+  }, [sharedSourceCurrency, sharedTargetCurrency])
+
+  const handleAddInstance = useCallback((slug: string, source?: string | null, target?: string | null, blocked?: boolean) => {
+    if (blocked) {
+      setToast('Hacksaw unterstützt nur eine Session pro Spiel')
+      setTimeout(() => setToast(''), 3000)
+      return
+    }
+    setSelectedSlotInstances((prev) => [
+      ...prev,
+      {
+        id: `inst_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        slug,
+        sourceCurrency: source || sharedSourceCurrency,
+        targetCurrency: target || sharedTargetCurrency,
+      },
+    ])
+  }, [sharedSourceCurrency, sharedTargetCurrency])
+
+  const handleRemoveInstance = useCallback((instanceId: string) => {
+    setSelectedSlotInstances((prev) => prev.filter((i) => i.id !== instanceId))
   }, [])
 
   const handleSelectChallenge = useCallback((challenge: { gameSlug: string; gameName?: string; currency?: string }) => {
       if (!challenge?.gameSlug) return
       setMode('play')
-      // Add to selection if not present
-      setSelectedSlugs(prev => {
-          if (!prev.includes(challenge.gameSlug)) {
-              return [...prev, challenge.gameSlug]
-          }
-          return prev
+      setSelectedSlotInstances((prev) => {
+          if (prev.some((i) => i.slug === challenge.gameSlug)) return prev
+          return [...prev, {
+            id: `inst_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+            slug: challenge.gameSlug,
+            sourceCurrency: sharedSourceCurrency,
+            targetCurrency: challenge.currency || sharedTargetCurrency,
+          }]
       })
-      // Scroll to top or show notification?
       setToast(`Challenge ausgewählt: ${challenge.gameName || challenge.gameSlug}`)
-  }, [setMode, setSelectedSlugs, setToast])
+  }, [setMode, sharedSourceCurrency, sharedTargetCurrency])
 
   if (status === 'idle') {
       return <div className="p-8 text-center text-gray-400">Loading Casino Session...</div>
@@ -283,7 +315,12 @@ export default function CasinoView() {
                      <SlotSelectMulti
                        slots={webSlots}
                        selectedSlugs={selectedSlugs}
+                       selectedInstances={selectedSlotInstances}
                        onToggle={handleToggleSlot}
+                       onAddInstance={handleAddInstance}
+                       onRemoveInstance={handleRemoveInstance}
+                       sharedSourceCurrency={sharedSourceCurrency}
+                       sharedTargetCurrency={sharedTargetCurrency}
                        favorites={favorites}
                        onToggleFavorite={handleToggleFavorite}
                        disabled={false}
@@ -315,17 +352,17 @@ export default function CasinoView() {
                    <div className="w-full md:w-[460px] bg-[#0f212e] p-6 rounded-xl border border-[#2f4553]">
                       <h3 className="text-xl font-bold text-white mb-6 uppercase tracking-wider">Global Controls</h3>
                       <div className="grid grid-cols-2 gap-4 mb-6">
-                         <Button onClick={handleStartAll} disabled={selectedSlugs.length === 0} className="w-full h-14 text-lg bg-[#00e676] hover:bg-[#00b859] text-[#0a0c0f] font-bold">
+                         <Button onClick={handleStartAll} disabled={selectedSlotInstances.length === 0} className="w-full h-14 text-lg bg-[#00e676] hover:bg-[#00b859] text-[#0a0c0f] font-bold">
                            Start All
                          </Button>
-                         <Button onClick={handleStopAll} disabled={selectedSlugs.length === 0} variant="danger" className="w-full h-14 text-lg">
+                         <Button onClick={handleStopAll} disabled={selectedSlotInstances.length === 0} variant="danger" className="w-full h-14 text-lg">
                            Stop All
                          </Button>
                        </div>
 
                        <Button 
                          onClick={handleApplyFirstSlotSettings} 
-                         disabled={selectedSlugs.length < 2} 
+                         disabled={selectedSlotInstances.length < 2} 
                          variant="secondary" 
                          className="w-full mb-6 py-3"
                        >
@@ -367,27 +404,28 @@ export default function CasinoView() {
 
                {/* Slots Grid */}
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                {selectedSlugs.map(slug => {
-                  const slot = webSlots.find(s => s.slug === slug)
+                {selectedSlotInstances.map((inst) => {
+                  const slot = webSlots.find((s: any) => s.slug === inst.slug)
                   if (!slot) return null
                   return (
                     <SlotControl
-                      key={slug}
-                      ref={(el: any) => { slotControlRefsMap.current.set(slug, el) }}
+                      key={inst.id}
+                      ref={(el: any) => { slotControlRefsMap.current.set(inst.id, el) }}
                       slot={slot}
                       accessToken={token}
                       onLogUpdate={() => setPlayLogRefreshKey(k => k + 1)}
-                      initialExpanded={selectedSlugs.length <= 2}
+                      initialExpanded={selectedSlotInstances.length <= 2}
                       useSharedCurrency={useSharedCurrency}
-                      sharedSourceCurrency={sharedSourceCurrency}
-                      sharedTargetCurrency={sharedTargetCurrency}
+                      sharedSourceCurrency={inst.sourceCurrency || sharedSourceCurrency}
+                      sharedTargetCurrency={inst.targetCurrency || sharedTargetCurrency}
+                      initialTargetCurrency={inst.targetCurrency}
                       sharedCryptoOnly={sharedCryptoOnly}
                     />
                   )
                 })}
               </div>
                
-               {selectedSlugs.length === 0 && (
+               {selectedSlotInstances.length === 0 && (
                  <div className="text-center py-20 text-[#9ca3af] bg-[#0f212e] rounded-xl border border-[#2f4553] border-dashed">
                    <div className="text-4xl mb-4 opacity-20">🎰</div>
                    <p className="text-lg">Select slots to start playing</p>
@@ -414,8 +452,13 @@ export default function CasinoView() {
                 // @ts-expect-error - webSlots type mismatch
                 selectedSlugs={selectedSlugs}
                 onToggleSlot={handleToggleSlot}
-                onSelectAll={() => setSelectedSlugs(webSlots.map(s => s.slug))}
-                onSelectNone={() => setSelectedSlugs([])}
+                onSelectAll={() => setSelectedSlotInstances(webSlots.map((s: any) => ({
+                  id: `inst_${Date.now()}_${s.slug}_${Math.random().toString(36).slice(2, 9)}`,
+                  slug: s.slug,
+                  sourceCurrency: sharedSourceCurrency,
+                  targetCurrency: sharedTargetCurrency,
+                })))}
+                onSelectNone={() => setSelectedSlotInstances([])}
                 // @ts-expect-error - slotSets type mismatch
                 slotSets={slotSets}
                 loadedSetId={loadedSetId}

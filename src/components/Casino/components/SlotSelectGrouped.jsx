@@ -3,7 +3,7 @@
  */
 import { useState, useMemo, useEffect } from 'react'
 import { getSlotsGroupedByProvider, PROVIDERS as PROVIDERS_BASIC } from '../constants/slots'
-import { PROVIDERS as PROVIDERS_META } from '../constants/providers'
+import { PROVIDERS as PROVIDERS_META, supportsMultiCurrencySameSlot } from '../constants/providers'
 
 const STYLES = {
   searchInput: {
@@ -170,7 +170,22 @@ function slotMatchesSearch(slot, q) {
   return slot._searchCache.name.includes(ql) || slot._searchCache.slug.includes(ql)
 }
 
-export function SlotSelectMulti({ slots, selectedSlugs, onToggle, disabled, favorites = [], onToggleFavorite }) {
+/**
+ * @param {object} props
+ * @param {Array} props.slots
+ * @param {Array<string>} props.selectedSlugs - für Bonus Hunt (unique)
+ * @param {Array<{id,slug,sourceCurrency?,targetCurrency?}>} [props.selectedInstances] - für Play mode
+ * @param {Function} props.onToggle - (slug) => void
+ * @param {Function} [props.onAddInstance] - (slug, sourceCurrency?, targetCurrency?) => void
+ * @param {Function} [props.onRemoveInstance] - (instanceId) => void
+ * @param {boolean} [props.disabled]
+ * @param {Array} [props.favorites]
+ * @param {Function} [props.onToggleFavorite]
+ * @param {string} [props.sharedSourceCurrency]
+ * @param {string} [props.sharedTargetCurrency]
+ */
+export function SlotSelectMulti({ slots, selectedSlugs, selectedInstances = [], onToggle, onAddInstance, onRemoveInstance, disabled, favorites = [], onToggleFavorite, sharedSourceCurrency, sharedTargetCurrency }) {
+  const isInstanceMode = !!onAddInstance
   const groups = getSlotsGroupedByProvider(slots)
   const [open, setOpen] = useState({})
   const [search, setSearch] = useState('')
@@ -217,6 +232,49 @@ export function SlotSelectMulti({ slots, selectedSlugs, onToggle, disabled, favo
 
   return (
     <div style={{ marginBottom: '1rem' }}>
+      {isInstanceMode && selectedInstances.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+          {selectedInstances.map((inst) => {
+            const slot = slots?.find((s) => s.slug === inst.slug)
+            const label = slot?.name || inst.slug
+            const cc = inst.targetCurrency || inst.sourceCurrency ? ` (${(inst.targetCurrency || inst.sourceCurrency || '').toUpperCase()})` : ''
+            return (
+              <div
+                key={inst.id}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.35rem 0.6rem',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--accent)',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: '0.85rem',
+                  color: 'var(--text)',
+                }}
+              >
+                <span>{label}{cc}</span>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onRemoveInstance?.(inst.id) }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '0.1rem',
+                    fontSize: '1rem',
+                    color: 'var(--text-muted)',
+                    lineHeight: 1,
+                  }}
+                  title="Entfernen"
+                >
+                  ×
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 140, ...STYLES.searchWrap }}>
           <span style={STYLES.searchIcon}>🔍</span>
@@ -282,15 +340,32 @@ export function SlotSelectMulti({ slots, selectedSlugs, onToggle, disabled, favo
                     return 0
                   })
                   .map((slot) => {
-                    const selected = selectedSlugs.includes(slot.slug)
+                    const selected = isInstanceMode
+                      ? selectedInstances.some((i) => i.slug === slot.slug)
+                      : selectedSlugs.includes(slot.slug)
+                    const instanceCount = isInstanceMode ? selectedInstances.filter((i) => i.slug === slot.slug).length : (selected ? 1 : 0)
                     const isFav = favorites.includes(slot.slug)
+                    const handleClick = () => {
+                      if (disabled) return
+                      if (isInstanceMode) {
+                        const alreadyHas = selectedInstances.some((i) => i.slug === slot.slug)
+                        const supportsMulti = supportsMultiCurrencySameSlot(slot.providerId || slot.provider)
+                        if (alreadyHas && !supportsMulti) {
+                          onAddInstance?.(slot.slug, null, null, true) // blocked - parent can show toast
+                        } else {
+                          onAddInstance?.(slot.slug, sharedSourceCurrency, sharedTargetCurrency, false)
+                        }
+                      } else {
+                        onToggle(slot.slug)
+                      }
+                    }
                     return (
                       <div
                         key={slot.slug}
                         role="button"
                         tabIndex={0}
-                        onClick={() => !disabled && onToggle(slot.slug)}
-                        onKeyDown={(e) => e.key === 'Enter' && !disabled && onToggle(slot.slug)}
+                        onClick={handleClick}
+                        onKeyDown={(e) => e.key === 'Enter' && handleClick()}
                         style={{
                           ...STYLES.slot,
                           ...(selected ? STYLES.slotSelected : {}),
@@ -310,7 +385,12 @@ export function SlotSelectMulti({ slots, selectedSlugs, onToggle, disabled, favo
                         }}>
                           {selected && '✓'}
                         </div>
-                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: selected ? 600 : 400 }}>{slot.name}</span>
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: selected ? 600 : 400 }}>
+                          {slot.name}
+                          {instanceCount > 1 && (
+                            <span style={{ marginLeft: '0.35rem', fontSize: '0.75rem', opacity: 0.8 }}>({instanceCount})</span>
+                          )}
+                        </span>
                         {onToggleFavorite && (
                           <button
                             type="button"

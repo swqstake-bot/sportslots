@@ -265,6 +265,11 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false) {
   let winAmount = Number(
     round?.winAmount ?? round?.win ?? round?.outcome?.win ?? round?.result?.winAmount ?? 0
   )
+  // Stake Engine RGS nutzt payoutMultiplier (z.B. 1150 = 11.5x), nicht winAmount
+  const payoutMult = Number(round?.payoutMultiplier ?? round?.payout_multiplier ?? 0)
+  if (winAmount === 0 && payoutMult > 0 && amount > 0) {
+    winAmount = Math.round((amount * payoutMult) / 100)
+  }
   const balanceObj = playData?.balance || {}
   const balanceRaw = balanceObj?.amount != null ? Number(balanceObj.amount) : null
   const respCurrency = (balanceObj?.currency || session?.currencyCode || 'EUR').toLowerCase()
