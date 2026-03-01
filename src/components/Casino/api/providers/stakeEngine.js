@@ -10,7 +10,7 @@ import { logApiCall } from '../../utils/apiLogger'
 
 const ZERO_DECIMAL_CURRENCIES = ['idr', 'jpy', 'krw', 'vnd']
 // Fiat-Währungen haben meist 2 Dezimalstellen, Crypto meist 8
-const FIAT_CURRENCIES = ['eur', 'usd', 'brl', 'cad', 'cny', 'inr', 'mxn', 'php', 'pln', 'rub', 'try', 'ngn', 'ars', 'cop', 'pen', 'clp']
+const FIAT_CURRENCIES = ['eur', 'usd', 'brl', 'cad', 'cny', 'inr', 'mxn', 'php', 'pln', 'pkr', 'rub', 'try', 'ngn', 'ars', 'cop', 'pen', 'clp']
 const STAKEENGINE_MIN_DELAY_MS = 50
 
 function parseConfigFromUrl(config) {

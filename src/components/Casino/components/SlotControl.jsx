@@ -262,14 +262,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     const effectiveBet = getEffectiveBetAmount(betAmt, useExtraBet, slot?.slug)
     const parsed = parseBetResponse(result, effectiveBet)
 
-    // Fallback: Win aus Balance-Delta nur bei EINZEL-Slot – bei Multi-Slot wäre Balance geteilt → falsche Werte
+    // Fallback Balance-Delta deaktiviert: Vault-Auszahlungen während Spin würden fälschlich als Win gezählt.
+    // RGS/Stake Engine liefert winAmountDisplay; houseBets liefert echte Payouts.
     let winAmount = parsed.winAmount
-    if (winAmount === 0 && !compact) {
-      const prevBalance = lastBalanceRef.current
-      if (parsed.balance != null && prevBalance != null) {
-        winAmount = Math.max(0, parsed.balance - prevBalance + effectiveBet)
-      }
-    }
     lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
     const parsedWithWin = { ...parsed, winAmount }
 
@@ -301,7 +296,10 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     if (!accessToken) return
     const sub = subscribeToBetUpdates(accessToken, (b) => {
       const slug = String(b?.gameSlug || '')
-      if (!slug || slug !== slot.slug) return
+      if (!slug) return
+      // Exakt oder slot.slug endet mit -gameSlug (z.B. hacksaw-le-bandit vs le-bandit)
+      const matches = slug === slot.slug || slot.slug.endsWith('-' + slug)
+      if (!matches) return
       const betAmount = Number(b?.amount) || 0
       const winAmount = Number(b?.payout) || 0
       const currencyCode = (b?.currency || '').toUpperCase() || null
@@ -504,12 +502,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         }
 
         let winAmount = parsed.winAmount
-        if (winAmount === 0 && !compact) {
-          const prevBalance = lastBalanceRef.current
-          if (parsed.balance != null && prevBalance != null) {
-            winAmount = Math.max(0, parsed.balance - prevBalance + effectiveBet)
-          }
-        }
+        // Kein Balance-Delta-Fallback: Vault-Auszahlungen würden als Win erscheinen
 
         const bonusMeetsScatter = autospinMinScatter <= 0 ||
           (parsed.scatterCount != null && parsed.scatterCount >= autospinMinScatter) ||

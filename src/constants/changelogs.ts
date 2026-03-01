@@ -1,4 +1,10 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.73': [
+    '✨ Slot-Bets: WebSocket houseBets-Subscription – Echtzeit-Updates, keine RGS-Skalierung nötig',
+    '🐛 Slot: Vault-Auszahlungen werden nicht mehr fälschlich als Spin-Gewinn gezählt',
+    '🐛 Slot: Nur CasinoBet/SoftswissBet – Vault-/Transfer-Events gefiltert',
+    '🐛 PKR: Einsatz-Anzeige korrigiert (pkr zu FIAT_CURRENCIES ergänzt)',
+  ],
   '1.0.72': [
     '🐛 Build-Fix: shieldOddsCache (unused param)',
   ],
