@@ -309,11 +309,31 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
       )
       currentData = continueResult
       currentSeq += 1
+      const parsedAfter = parseBetResponse(currentData, betAmount)
+      if (parsedAfter?.isBonus && shouldSkipBonus(parsedAfter, options)) {
+        const stoppedScatter = getImpliedScatterLevel(parsedAfter, options?.slotSlug)
+        return { data: currentData, baseData: currentData, nextSeq: currentSeq, initialBonusScatter: stoppedScatter ?? initialBonusScatter }
+      }
     }
     return { data: currentData, nextSeq: currentSeq, initialBonusScatter }
   }
 
   return { data, nextSeq: currentSeq }
+}
+
+function getImpliedScatterLevel(parsed, slotSlug = '') {
+  const bonusId = (parsed?.bonusFeatureId || '').toLowerCase()
+  const slug = (slotSlug || '').toLowerCase()
+  if (slug.includes('le-cowboy')) {
+    const M = { fs: 3, fs_1: 3, fs_2: 4, fs_3: 5, pistols: 5, pistols_at_dawn: 5, fs_pistols: 5 }
+    return M[bonusId] ?? null
+  }
+  if (slug.includes('octo-attack')) {
+    const M = { fs: 3, fs_1: 3, fs_2: 4 }
+    return M[bonusId] ?? null
+  }
+  const M = { fs: 3, fs_1: 3, fs_2: 4 }
+  return M[bonusId] ?? null
 }
 
 /**
@@ -337,6 +357,20 @@ export function shouldSkipBonus(parsed, options) {
     }
     if (OCTO_MAPPING.hasOwnProperty(bonusId)) {
       specialLevel = OCTO_MAPPING[bonusId]
+    }
+  } else if (slotSlug.includes('le-cowboy')) {
+    // Le Cowboy: Trail (3), High Noon Saloon (4), Pistols at Dawn (5/Epic)
+    const LE_COWBOY_MAPPING = {
+      'fs': 3,
+      'fs_1': 3,   // Trail of Trickery
+      'fs_2': 4,   // High Noon Saloon
+      'fs_3': 5,   // Pistols at Dawn (5-Scatter / Hidden Epic)
+      'pistols': 5,
+      'pistols_at_dawn': 5,
+      'fs_pistols': 5,
+    }
+    if (LE_COWBOY_MAPPING.hasOwnProperty(bonusId)) {
+      specialLevel = LE_COWBOY_MAPPING[bonusId]
     }
   } else {
     // Global/Legacy Mappings (falls nötig)
