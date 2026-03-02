@@ -4,6 +4,7 @@
  */
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { getProvider } from '../api/providers'
+import { getImpliedScatterLevel } from '../api/providers/hacksaw'
 import { ALL_CURRENCIES, filterCurrenciesByProvider } from '../constants/currencies'
 import { fetchSupportedCurrencies, fetchCurrencyRates } from '../api/stakeChallenges'
 import { formatAmount, formatBetLabel, isFiat, isStable, toMinor, toUnits } from '../utils/formatAmount'
@@ -563,7 +564,7 @@ export default function BonusHuntControl({
 
           const effectiveBet = getEffectiveBetAmount(betAmount, usedExtraBet, slot.slug)
           const parsed = parseBetResponse(data, effectiveBet)
-          const scatterForStat = initialBonusScatter ?? parsed.scatterCount
+          const scatterForStat = initialBonusScatter ?? getImpliedScatterLevel(parsed, slot.slug) ?? parsed.scatterCount
           slotSpins += 1
           slotWagered += effectiveBet
 
@@ -656,7 +657,7 @@ export default function BonusHuntControl({
               slotName: slot.name,
               betAmount: effectiveBet,
               winAmount,
-              isBonus: parsed.isBonus,
+              isBonus: parsed.isBonus || (scatterForStat != null && scatterForStat >= 3),
               scatterCount: scatterForStat,
               balance: parsed.balance,
               stoppedBonus: shouldStopOnBonus,
@@ -689,7 +690,7 @@ export default function BonusHuntControl({
                 totalWagered: slotWagered,
                 bonusWin: shouldStopOnBonus ? winAmount : undefined,
                 multiWin: hitMulti ? winAmount : undefined,
-                scatterCount: parsed.scatterCount,
+                scatterCount: scatterForStat ?? parsed.scatterCount,
               },
             }))
           } else {

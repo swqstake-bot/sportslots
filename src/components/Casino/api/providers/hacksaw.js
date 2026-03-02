@@ -321,11 +321,11 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
   return { data, nextSeq: currentSeq }
 }
 
-function getImpliedScatterLevel(parsed, slotSlug = '') {
+export function getImpliedScatterLevel(parsed, slotSlug = '') {
   const bonusId = (parsed?.bonusFeatureId || '').toLowerCase()
   const slug = (slotSlug || '').toLowerCase()
   if (slug.includes('le-cowboy')) {
-    const M = { fs: 3, fs_1: 3, fs_2: 4, fs_3: 5, pistols: 5, pistols_at_dawn: 5, fs_pistols: 5 }
+    const M = { fs: 3, fs_1: 3, fs_2: 4, fs_3: 5, pistols: 5, pistols_at_dawn: 5, fs_pistols: 5, epic: 5, fs_epic: 5 }
     return M[bonusId] ?? null
   }
   if (slug.includes('octo-attack')) {
@@ -368,6 +368,8 @@ export function shouldSkipBonus(parsed, options) {
       'pistols': 5,
       'pistols_at_dawn': 5,
       'fs_pistols': 5,
+      'epic': 5,
+      'fs_epic': 5,
     }
     if (LE_COWBOY_MAPPING.hasOwnProperty(bonusId)) {
       specialLevel = LE_COWBOY_MAPPING[bonusId]
