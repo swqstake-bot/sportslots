@@ -111,16 +111,23 @@ function parsePragmaticResponse(text) {
   const getNum = (k) => parseFloat((params.get(k) || '0').replace(/,/g, ''))
   const w = getNum('w')
   const tw = getNum('tw')
+  const tmb = getNum('tmb')
+  const fs_total = params.get('fs_total') != null ? getNum('fs_total') : null
   return {
     na: params.get('na') || '',
     index: params.get('index') || '1',
     counter: params.get('counter') || '1',
     balance: getNum('balance'),
     balance_cash: getNum('balance_cash'),
+    balance_bonus: params.has('balance_bonus') ? getNum('balance_bonus') : null,
     w: w || tw,
+    tw,
+    tmb,
+    fs_total,
     ntp: getNum('ntp'),
     c: getNum('c'),
     rid: params.get('rid'),
+    reel_set: params.get('reel_set') || null,
     noMoney: text?.includes('nomoney='),
     systemError: text?.includes('ext_code=SystemError'),
     fs: text?.includes('&fs=') || params.has('fs'),

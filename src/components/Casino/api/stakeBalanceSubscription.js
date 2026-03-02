@@ -1,8 +1,16 @@
 import { createClient } from 'graphql-ws'
-import { fetchUserBalances } from './stakeWallet'
 
-/** GraphQL subscription für houseBets (Stake WebSocket).
- *  BetBet ist Union/Interface – Felder nur via Inline-Fragments auf konkrete Typen. */
+const BALANCE_UPDATED_SUBSCRIPTION = `
+  subscription BalanceUpdated {
+    balanceUpdated {
+      currency
+      amount
+      __typename
+    }
+  }
+`
+
+/** GraphQL subscription für houseBets. Bet ist Union – Felder via Inline-Fragments. */
 const HOUSEBETS_SUBSCRIPTION = `
   subscription HouseBets {
     houseBets {
@@ -76,13 +84,31 @@ const HOUSEBETS_SUBSCRIPTION = `
   }
 `
 
+/** Edge-Cases wo API-Name von slug-Konvention abweicht */
+const GAME_NAME_SLUG_OVERRIDES = {
+  "rogue's riches": 'rogues-riches',
+  "raga's rock": 'ragas-rock',
+  "ragna's rock": 'ragnas-rock',
+  "ali baba's riches": 'ali-babas-riches',
+  "aladdin's quest": 'aladdins-quest',
+  "naughty nick's book": 'naughty-nicks-book',
+  'great buffalo hold\'n win': 'great-buffalo-hold-n-win',
+  'great buffalo hold’n win': 'great-buffalo-hold-n-win',
+  'rosh immortality cube megaways': 'rosh-immortality-cube-megaways',
+  'the sword and the grail excalibur': 'the-sword-and-the-grail-excalibur',
+  'cat wilde and the incan quest': 'cat-wilde-and-the-incan-quest',
+  'rich wilde and the tome of insanity': 'rich-wilde-and-the-tome-of-insanity',
+  'rich wilde and the pearls of vishnu': 'rich-wilde-and-the-pearls-of-vishnu',
+}
+
 /**
  * Mappt game name zu slug für Filterung (Fallback wenn API keinen slug liefert)
  */
 function gameNameToSlug(name) {
   if (!name || typeof name !== 'string') return ''
-  return name
-    .toLowerCase()
+  const key = name.toLowerCase().trim()
+  if (GAME_NAME_SLUG_OVERRIDES[key]) return GAME_NAME_SLUG_OVERRIDES[key]
+  return key
     .replace(/\s+/g, '-')
     .replace(/[^a-z0-9-]/g, '')
 }
@@ -168,45 +194,64 @@ export function subscribeToBetUpdates(accessToken, onUpdate) {
 }
 
 /**
- * Fetch user balance (Polling helper)
- * Can be used by components to keep balance in sync
- * Polls every 5 seconds.
+ * Subscribes to balance updates via Stake GraphQL WebSocket.
+ *
+ * @param {string} accessToken - Session token (von getSessionToken)
+ * @param {function} onUpdate - callback({ currency, amount })
  */
 export function subscribeToBalanceUpdates(accessToken, onUpdate) {
-   if (!accessToken) return { disconnect() {} }
+  if (!accessToken?.trim()) {
+    return { disconnect() {} }
+  }
 
-   let active = true
-   let intervalId = null
+  let unsubscribe = null
+  let client = null
 
-   const poll = async () => {
-     if (!active) return
-     try {
-       const { available } = await fetchUserBalances(accessToken)
-       if (!active) return
-       
-       // Emit updates for each currency found
-       for (const bal of available) {
-         onUpdate({
-           currency: bal.currency,
-           amount: bal.amount
-         })
-       }
-     } catch (err) {
-       // Silent fail on poll error
-       // console.error("Balance poll error", err)
-     }
-   }
+  try {
+    client = createClient({
+      url: 'wss://stake.com/_api/websockets',
+      connectionParams: {
+        accessToken,
+        language: 'de',
+        lockdownToken: `sl-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      },
+      lazy: true,
+      retryAttempts: 3,
+      on: {
+        error: (err) => {
+          console.warn('[StakeBalanceWS] Connection error:', err?.message || err)
+        },
+      },
+    })
 
-   // Initial poll
-   poll()
+    unsubscribe = client.subscribe(
+      { query: BALANCE_UPDATED_SUBSCRIPTION },
+      {
+        next: (result) => {
+          const bu = result?.data?.balanceUpdated
+          if (!bu?.currency) return
+          const amount = bu.amount != null ? Number(bu.amount) : 0
+          onUpdate({
+            currency: (bu.currency || '').toLowerCase(),
+            amount,
+          })
+        },
+        error: (err) => {
+          console.warn('[StakeBalanceWS] Subscription error:', err?.message || err)
+        },
+        complete: () => {},
+      }
+    )
+  } catch (err) {
+    console.warn('[StakeBalanceWS] Failed to create client:', err?.message || err)
+  }
 
-   // Set interval
-   intervalId = setInterval(poll, 5000)
-
-   return { 
-     disconnect() {
-       active = false
-       if (intervalId) clearInterval(intervalId)
-     } 
-   }
+  return {
+    disconnect() {
+      try {
+        if (typeof unsubscribe === 'function') unsubscribe()
+        if (client?.dispose) client.dispose()
+      } catch (_) {}
+    },
+  }
 }

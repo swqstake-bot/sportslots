@@ -177,8 +177,8 @@ export function parseBetResponse(response, betAmount) {
   const detectors = [
     () => stateBonus?.bonusFeatureId ? { isBonus: true, shouldStopOnBonus: true } : null,
     (r) => (r?.freeRoundOffer || r?.promotionWin) ? { isBonus: true, shouldStopOnBonus: true } : null,
-    // Pragmatic Fallback: Parser darf Bonus setzen, wenn Provider-Flag vorhanden
-    (r) => (r?._pragmatic?.na === 'b' || r?._pragmatic?.fs === true || r?._pragmatic?.fs_opt === true)
+    // Pragmatic: Bonus wenn na=b, fs, fs_opt oder fs_total gesetzt
+    (r) => (r?._pragmatic?.na === 'b' || r?._pragmatic?.fs === true || r?._pragmatic?.fs_opt === true || r?._pragmatic?.fs_total != null)
       ? { isBonus: true, shouldStopOnBonus: true }
       : null,
     (r) => {
@@ -218,9 +218,11 @@ export function parseBetResponse(response, betAmount) {
       if (anyActionFs) return { isBonus: true, shouldStopOnBonus: true }
       return null
     },
+    // Hacksaw: feature_enter, bonus_spin, pick = Bonus
     (r) => r?.round?.events?.some((ev) => {
       const etn = String(ev?.etn || '').toLowerCase()
-      return etn === 'feature_enter' || etn === 'fs_enter' || etn === 'freespins_enter' || etn === 'fs_start'
+      return etn === 'feature_enter' || etn === 'fs_enter' || etn === 'freespins_enter' || etn === 'fs_start' ||
+        etn === 'bonus_spin' || etn === 'pick'
     })
       ? { isBonus: true, shouldStopOnBonus: true }
       : null,
@@ -331,11 +333,12 @@ export function parseBetResponse(response, betAmount) {
     }
   }
 
+  const effectiveBet = Number(betAmount) || 0
   const result = {
     success,
-    betAmount: Number(betAmount) || 0,
+    betAmount: effectiveBet,
     winAmount,
-    netResult: winAmount - (Number(betAmount) || 0),
+    netResult: winAmount - effectiveBet,
     balance,
     currencyCode,
     roundId,
@@ -343,6 +346,8 @@ export function parseBetResponse(response, betAmount) {
     shouldStopOnBonus: !!shouldStopOnBonus,
     bonusFeatureId: bonusFeatureId || undefined,
     scatterCount: scatterCount != null ? scatterCount : undefined,
+    /** Multiplikator = winAmount / betSize (beide in Minor Units) */
+    multiplier: winAmount > 0 && effectiveBet > 0 ? winAmount / effectiveBet : undefined,
   }
 
   if (!success) {

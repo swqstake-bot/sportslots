@@ -6,6 +6,8 @@ const PAGE_SIZE = 5
 const PROVIDER_MAP = {
   'hacksaw-gaming': 'hacksaw',
   'pragmatic-play': 'pragmatic',
+  'blueprint-gaming': 'blueprint',
+  'play-n-go': 'playngo',
   'no-limit-city': 'nolimit',
   'push-gaming': 'push',
   'relax-gaming': 'relax',

@@ -1,4 +1,12 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.75': [
+    '✨ Wallet: Balance-Updates per WebSocket (balanceUpdated) – Echtzeit statt Polling',
+    '✨ Slot: Multiplikator in Bet-Statistik (parseBetResponse)',
+    '✨ Slot: Game-Name-Slugs erweitert (Ali Baba, Aladdin, Ragnas Rock, etc.)',
+    '✨ Slot: Provider-Aliase prag, bg für Pragmatic/Blueprint',
+    '🐛 Hacksaw: Bonus-Erkennung für bonus_spin, pick ergänzt',
+    '🐛 Pragmatic: fs_total für Bonus-Detection',
+  ],
   '1.0.74': [
     '✨ Play: Gleicher Slot in verschiedenen Währungen (Stake Engine, Pragmatic, NoLimit)',
     '🐛 Stake Engine: Multiplikatoren/Gewinne korrekt (payoutMultiplier statt winAmount)',

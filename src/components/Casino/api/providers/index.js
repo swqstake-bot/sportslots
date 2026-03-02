@@ -132,12 +132,14 @@ const THUNDERKICK_WEBVIEW_PROVIDER = {
 const WEB_PROVIDERS = {
   hacksaw,
   pragmatic,
+  prag: pragmatic,
   stakeEngine,
   nolimit,
   avatarux,
   '1000lakes': stakeEngine, // Alias für 1000 Lakes Studios
   relax: genericProviders.relax,
   blueprint: genericProviders.blueprint,
+  bg: genericProviders.blueprint,
   endorphina: genericProviders.endorphina,
   thunderkick: THUNDERKICK_WEBVIEW_PROVIDER,
   netent: genericProviders.netent,

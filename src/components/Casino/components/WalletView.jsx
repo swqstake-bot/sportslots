@@ -1,6 +1,6 @@
 /**
  * Wallet – Crypto-Guthaben in USD.
- * Live-Balance via WebSocket (BalanceUpdated) + Polling-Fallback wie SSP.
+ * Live-Balance via WebSocket (balanceUpdated). Initial/periodisch via fetchUserBalances.
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { fetchUserBalances } from '../api/stakeWallet'

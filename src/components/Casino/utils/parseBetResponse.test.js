@@ -164,6 +164,19 @@ describe('parseBetResponse', () => {
     expect(result.bonusFeatureId).toBe('fs')
   })
 
+  it('should extract Hacksaw win from awa (minor units) and compute multiplier', () => {
+    const response = createResponse({
+      round: {
+        events: [
+          { etn: 'reveal', awa: '22000', c: { actions: [{ at: 'totalWin', data: { winAmount: '22000' } }] } }
+        ]
+      }
+    })
+    const result = parseBetResponse(response, 2200)
+    expect(result.winAmount).toBe(22000)
+    expect(result.multiplier).toBeCloseTo(10)
+  })
+
   it('should detect Fire My Laser Bonus via bonusFeatureWon in collapse events', () => {
     const response = createResponse({
       round: {
