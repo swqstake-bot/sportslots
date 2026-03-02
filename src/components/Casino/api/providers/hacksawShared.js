@@ -62,17 +62,30 @@ export async function sendHacksawKeepAlive(apiBase, session, opts = {}) {
 }
 
 /**
- * Prüft, ob die Response eine Spieler-Entscheidung erwartet (Donut Division etc.).
+ * Prüft, ob die Response eine Spieler-Entscheidung erwartet (Donut Division, Le Pharaoh/Le Bandit Pick etc.).
  * @param {object} round
  * @param {string} [slotSlug]
  * @param {boolean} [gambleOnBonus] - Soll gegambelt werden? (true=gamble, false=collect)
+ * @param {{ skipContinueIfBonusMinScatter?: number }} [options] - Bei 4-Scatter-Hunt: gamble für Upgrade-Chance
  * @returns {object|null} continueInstructions oder null
  */
-function getRequiredContinueAction(round, slotSlug = '', gambleOnBonus = false) {
+function getRequiredContinueAction(round, slotSlug = '', gambleOnBonus = false, options = {}) {
   if (!round?.events?.length) return null
   const events = round.events
   const hasFeatureExit = events.some((e) => String(e?.etn || '').toLowerCase() === 'feature_exit')
   if (hasFeatureExit) return null
+
+  // Pick-Event (Le Pharaoh, Le Bandit, Le Cowboy etc.): 3/4-Scatter → links/rechts wählen
+  // possibleActions z.B. ["play", "gamble"] – "gamble" = Upgrade (3→4, 4→5 bei Le Cowboy)
+  const pickEvent = events.find((e) => String(e?.etn || '').toLowerCase() === 'pick')
+  const possibleActions = round.possibleActions || []
+  if (pickEvent && Array.isArray(possibleActions) && possibleActions.length > 0) {
+    // 4-Scatter-Hunt: gamble bei 3er-Pick. 5-Scatter-Hunt (Le Cowboy): gamble bei 3er + 4er-Pick
+    const wantGamble = options.skipContinueIfBonusMinScatter >= 4 || gambleOnBonus
+    if (wantGamble && possibleActions.includes('gamble')) return { action: 'gamble' }
+    if (possibleActions.includes('play')) return { action: 'play' }
+    return { action: possibleActions[0] }
+  }
 
   // Bonus-Choice: feature_enter → Aktion gemäß bonusFeatureWon
   const featureEnter = events.find((e) => String(e?.etn || '').toLowerCase() === 'feature_enter')
@@ -80,8 +93,6 @@ function getRequiredContinueAction(round, slotSlug = '', gambleOnBonus = false) 
     const won = String(featureEnter.c.bonusFeatureWon || '').toLowerCase()
     
     // Bullets and Bounty: 3-Scatter Bonus (fs) hat Gamble-Option.
-    // Wenn gambleOnBonus=true -> "gamble"
-    // Wenn gambleOnBonus=false -> "play" (Collect)
     if (slotSlug.includes('bullets-and-bounty') && won === 'fs') {
       return { action: gambleOnBonus ? 'gamble' : 'play' }
     }
@@ -92,22 +103,21 @@ function getRequiredContinueAction(round, slotSlug = '', gambleOnBonus = false) 
     if (won === 'fs_1' || won === 'fs_2') return { action: won }
   }
 
-  // Kein Wild-Pick: Wir wählen immer warehouse, im Warehouse-Bonus gibt es keine links/rechts-Wahl.
-  // Events mit "wild" sind nur Grid-Win-Daten, kein Spieler-Input.
   return null
 }
 
 /**
- * Continue – win_presentation_complete oder Bonus-Choice (Donut Division: warehouse, Octo Attack: fs_1/fs_2).
+ * Continue – win_presentation_complete oder Bonus-Choice (Donut Division, Le Pharaoh Pick etc.).
  * @param {string} apiBase - HACKSAW_API_BASE
  * @param {{ token: string, sessionUuid: string, seq: number }} session
  * @param {string} roundId
  * @param {object} [prevResponse] - vorherige Response, um required action zu ermitteln
- * @param {string} [slotSlug] - Slug des Slots (für spezifische Entscheidungen)
+ * @param {string} [slotSlug] - Slug des Slots
  * @param {boolean} [gambleOnBonus] - Soll gegambelt werden?
+ * @param {{ skipContinueIfBonusMinScatter?: number }} [continueOptions] - Für Pick: gamble bei 4-Scatter-Hunt
  */
-export async function sendHacksawContinue(apiBase, session, roundId, prevResponse, slotSlug, gambleOnBonus) {
-  const instructions = prevResponse?.round ? getRequiredContinueAction(prevResponse.round, slotSlug, gambleOnBonus) : null
+export async function sendHacksawContinue(apiBase, session, roundId, prevResponse, slotSlug, gambleOnBonus, continueOptions = {}) {
+  const instructions = prevResponse?.round ? getRequiredContinueAction(prevResponse.round, slotSlug, gambleOnBonus, continueOptions) : null
   const continueInstructions = instructions ?? { action: 'win_presentation_complete' }
   const req = {
     seq: session.seq,

@@ -171,8 +171,8 @@ export async function sendKeepAlive(session) {
   return sendHacksawKeepAlive(HACKSAW_API_BASE, session, { treat404AsOk: true })
 }
 
-export async function sendContinue(session, roundId, prevResponse, slotSlug, gambleOnBonus) {
-  return sendHacksawContinue(HACKSAW_API_BASE, session, roundId, prevResponse, slotSlug, gambleOnBonus)
+export async function sendContinue(session, roundId, prevResponse, slotSlug, gambleOnBonus, continueOptions = {}) {
+  return sendHacksawContinue(HACKSAW_API_BASE, session, roundId, prevResponse, slotSlug, gambleOnBonus, continueOptions)
 }
 
 /**
@@ -224,40 +224,35 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     throw err
   }
 
-  // 2. Spezialfall: "General error" (statusCode 1) KANN bedeuten: "Bonus/Gamble wartet" (Round status 'started')
-  // Wir prüfen, ob eine offene Runde existiert, die wir fortsetzen müssen.
+  // 2. Spezialfall: "General error" (statusCode 1) KANN bedeuten: "Bonus/Pick wartet" (Round needs continue)
   if (data?.statusCode === 1) {
-    // Versuche Fortsetzung mit bekannter RoundID oder generisch
-    const roundIdsToTry = [session.openRoundId].filter(Boolean)
+    const roundIdsToTry = [data?.round?.roundId, session.openRoundId].filter(Boolean)
     if (roundIdsToTry.length === 0) roundIdsToTry.push(undefined)
+    const continueOpts = { skipContinueIfBonusMinScatter: options?.skipContinueIfBonusMinScatter }
 
     for (const rid of roundIdsToTry) {
       try {
-        const continueData = await sendContinue({ ...session, seq: session.seq }, rid, undefined, options?.slotSlug, options?.gambleOnBonus)
-        
+        const prevResp = data?.round?.roundId === rid ? data : undefined
+        const continueData = await sendContinue({ ...session, seq: session.seq }, rid, prevResp, options?.slotSlug, options?.gambleOnBonus, continueOpts)
+
         if (continueData?.statusCode === 0 && continueData?.round) {
           let cSeq = session.seq + 1
           let cData = continueData
-          
-          while (cData?.round?.status === 'wfwpc' && cData?.round?.roundId) {
-            cData = await sendContinue({ ...session, seq: cSeq }, cData.round.roundId, cData, options?.slotSlug, options?.gambleOnBonus)
+          while (cData?.round?.roundId && (cData?.round?.status === 'wfwpc' || (cData?.round?.status === 'started' && cData?.round?.possibleActions?.length > 0))) {
+            cData = await sendContinue({ ...session, seq: cSeq }, cData.round.roundId, cData, options?.slotSlug, options?.gambleOnBonus, continueOpts)
             cSeq += 1
           }
-          // Wenn die Runde immer noch "started" ist (z.B. Gamble-Entscheidung noch offen?), dann ist es ein Loop.
-          // Aber meistens liefert continueData dann den nächsten Schritt.
-          // Wir geben das Ergebnis zurück, damit die UI weitermacht.
           return { data: cData, nextSeq: cSeq }
         }
       } catch (e) {
-        // ...
+        // try next roundId
       }
     }
-    // Wenn alles fehlschlägt, weiter im Code (Fallback Logik unten)
   }
 
-  // Fallback für statusCode 1 (wenn obiger Block nichts gefunden hat)
+  // Fallback statusCode 1: versuche win_presentation_complete
   if (data?.statusCode === 1 && !data?.round?.roundId) {
-    // ... alter Code ...
+    const continueOpts = { skipContinueIfBonusMinScatter: options?.skipContinueIfBonusMinScatter }
     try {
       const continueReq = { seq: session.seq, sessionUuid: session.sessionUuid, continueInstructions: { action: 'win_presentation_complete' } }
       const cres = await safeFetch(`${HACKSAW_API_BASE}/bet`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(continueReq) })
@@ -266,8 +261,8 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
       if (cdata?.statusCode === 0 && cdata?.round) {
         let cSeq = session.seq + 1
         let cData = cdata
-        while (cData?.round?.status === 'wfwpc' && cData?.round?.roundId) {
-          cData = await sendContinue({ ...session, seq: cSeq }, cData.round.roundId, cData, options?.slotSlug, options?.gambleOnBonus)
+        while (cData?.round?.roundId && (cData?.round?.status === 'wfwpc' || (cData?.round?.status === 'started' && cData?.round?.possibleActions?.length > 0))) {
+          cData = await sendContinue({ ...session, seq: cSeq }, cData.round.roundId, cData, options?.slotSlug, options?.gambleOnBonus, continueOpts)
           cSeq += 1
         }
         return { data: cData, nextSeq: cSeq }
@@ -296,19 +291,26 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     return { data, baseData: data, nextSeq: currentSeq }
   }
 
-  if (data?.round?.status === 'wfwpc' && data?.round?.roundId) {
+  // Continue bei wfwpc ODER started+pick (Le Pharaoh/Le Bandit: links/rechts wählen)
+  // Nach dem Loop: aktuelle Response (currentData) enthält den finalen Gewinn (3er-Bonus, Gamble, etc.)
+  const needsContinue = (r) => r?.round?.roundId && (r?.round?.status === 'wfwpc' || (r?.round?.status === 'started' && r?.round?.possibleActions?.length > 0))
+  if (needsContinue(data)) {
+    const initialBonusScatter = parsed?.scatterCount ?? null
+    const continueOpts = { skipContinueIfBonusMinScatter: options?.skipContinueIfBonusMinScatter }
     let currentData = data
-    while (currentData?.round?.status === 'wfwpc' && currentData?.round?.roundId) {
+    while (needsContinue(currentData)) {
       const continueResult = await sendContinue(
         { ...session, seq: currentSeq },
         currentData.round.roundId,
         currentData,
         options?.slotSlug,
-        options?.gambleOnBonus
+        options?.gambleOnBonus,
+        continueOpts
       )
       currentData = continueResult
       currentSeq += 1
     }
+    return { data: currentData, nextSeq: currentSeq, initialBonusScatter }
   }
 
   return { data, nextSeq: currentSeq }

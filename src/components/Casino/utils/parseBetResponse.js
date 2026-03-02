@@ -300,7 +300,9 @@ export function parseBetResponse(response, betAmount) {
     const fid = ev?.c?.bonusFeatureWon || ev?.c?.bonusFeaturewon
     return isRealFreeSpin(fid)
   })
-  if (isBonus && isMiniFeature(bonusFeatureId) && !hasRealFsEnter) {
+  // Scatter-Trigger (3+) mit bfw "bonus" = echter Bonus (Le Pharaoh etc.), kein Mini-Feature
+  const isScatterTriggeredBonus = scatterCount != null && scatterCount >= 3 && String(bonusFeatureId || '').toLowerCase() === 'bonus'
+  if (isBonus && isMiniFeature(bonusFeatureId) && !hasRealFsEnter && !isScatterTriggeredBonus) {
     isBonus = false
   }
   shouldStopOnBonus = isBonus && (isRealFreeSpin(bonusFeatureId) || hasRealFsEnter || shouldStopOnBonus)
@@ -312,21 +314,18 @@ export function parseBetResponse(response, betAmount) {
     // Wir vertrauen winAmountDisplay meistens, aber bei Hacksaw Instant Bonus ist es sicherer, die Events zu filtern.
     winAmount = Number(response.round.winAmountDisplay)
   } else if (success && response?.round?.events) {
-    // Filtern der Events: Wenn Bonus erkannt (shouldStopOnBonus), ignorieren wir Future-Events (fs_..._reveal)
-    let filteredEvents = response.round.events
-    if (shouldStopOnBonus) {
-      // Alles nach dem "feature_enter" oder "bonusfeaturewon" Event könnte "Zukunft" sein.
-      // Sicherer: Wir ignorieren Events, die explizit FreeSpin-Reveals sind.
-      filteredEvents = filteredEvents.filter(ev => {
+    const events = response.round.events
+    const hasFeatureExit = events.some((ev) => String(ev?.etn || '').toLowerCase() === 'feature_exit')
+    // Nur filtern wenn Bonus GESTOPPT (nicht durchgespielt). Bei feature_exit = Bonus fertig → alle Events nutzen.
+    let filteredEvents = events
+    if (shouldStopOnBonus && !hasFeatureExit) {
+      filteredEvents = events.filter(ev => {
         const etn = String(ev?.etn || '').toLowerCase()
-        // Ignoriere fs_..._reveal Events (z.B. fs_2_reveal)
         if (etn.includes('_reveal') && etn.startsWith('fs')) return false
-        // Ignoriere feature_exit
         if (etn === 'feature_exit') return false
         return true
       })
     }
-    
     winAmount = extractWinFromEvents(filteredEvents)
     if (winAmount === 0) {
       winAmount = extractWinFromActions(filteredEvents)

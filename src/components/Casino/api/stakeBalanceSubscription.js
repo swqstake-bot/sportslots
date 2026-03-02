@@ -78,6 +78,13 @@ const HOUSEBETS_SUBSCRIPTION = `
           updatedAt
           currency
         }
+        ... on ThirdPartyBet {
+          id
+          active
+          amount
+          payout
+          currency
+        }
       }
       __typename
     }
@@ -152,10 +159,9 @@ export function subscribeToBetUpdates(accessToken, onUpdate) {
           const hb = result?.data?.houseBets
           if (!hb?.bet) return
           const { bet, game } = hb
-          // Nur echte Slot-Bets: CasinoBet (Stake-Slots), SoftswissBet (Stake Engine)
-          // Vault/Withdrawal/Transfer etc. ignorieren
           const tn = bet?.__typename || ''
-          if (tn !== 'CasinoBet' && tn !== 'SoftswissBet') return
+          // CasinoBet, SoftswissBet, ThirdPartyBet (Hacksaw etc.)
+          if (tn !== 'CasinoBet' && tn !== 'SoftswissBet' && tn !== 'ThirdPartyBet') return
           const amount = Number(bet?.amount) ?? 0
           if (amount <= 0) return
           const gameSlug = game?.slug || gameNameToSlug(game?.name) || ''
