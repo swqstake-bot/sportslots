@@ -644,6 +644,9 @@ export default function BonusHuntControl({
 
           const hitMulti = stopOnMulti && winAmount > 0 && effectiveBet > 0 && winAmount / effectiveBet >= stopOnMultiplier
 
+          // Bei Stopp auf Bonus: Win nicht in Statistik – der Bonus wird vom User selbst gespielt
+          const statWinAmount = shouldStopOnBonus ? 0 : winAmount
+
           const historyId = `${slot.slug}-${Date.now()}-${slotSpins}`
           pendingSpinsRef.current = [
             ...pendingSpinsRef.current,
@@ -656,7 +659,7 @@ export default function BonusHuntControl({
               slotSlug: slot.slug,
               slotName: slot.name,
               betAmount: effectiveBet,
-              winAmount,
+              winAmount: statWinAmount,
               isBonus: parsed.isBonus || (scatterForStat != null && scatterForStat >= 3),
               scatterCount: scatterForStat,
               balance: parsed.balance,
