@@ -401,7 +401,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         setSession(currentSession)
         spinsSinceRefreshRef.current = 0
       }
-      const result = await provider.placeBet(currentSession, betAmount, extraBet, false)
+      const result = await provider.placeBet(currentSession, betAmount, extraBet, false, { slotSlug: slot.slug })
       const { data, nextSeq, session: updatedSession } = result
       setLastResult(data)
       spinsSinceRefreshRef.current += 1
@@ -477,8 +477,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         }
 
         const placeBetOpts = autospinStopOnBonus && autospinMinScatter >= 1
-          ? { skipContinueIfBonusMinScatter: autospinMinScatter }
-          : {}
+          ? { slotSlug: slot.slug, skipContinueIfBonusMinScatter: autospinMinScatter }
+          : { slotSlug: slot.slug }
         const result = await provider.placeBet(currentSession, betAmount, extraBet, false, placeBetOpts)
         const { data, nextSeq, session: updatedSession } = result
         currentSession = updatedSession || { ...currentSession, seq: nextSeq }

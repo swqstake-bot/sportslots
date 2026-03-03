@@ -185,7 +185,8 @@ export async function sendContinue(session, roundId, prevResponse, slotSlug, gam
 export async function placeBet(session, betAmount, extraBet = false, autoplay = false, options = {}) {
   const bets = [{ betAmount: String(betAmount) }]
   if (extraBet) {
-    bets[0].buyBonus = 'mod_bonus'
+    const slug = (options?.slotSlug || '').toLowerCase()
+    bets[0].buyBonus = (slug.includes('six-six-six') || slug.includes('sixsixsix')) ? 'mod_blue' : 'mod_bonus'
   }
 
   const req = {
@@ -332,6 +333,11 @@ export function getImpliedScatterLevel(parsed, slotSlug = '') {
     const M = { fs: 3, fs_1: 3, fs_2: 4 }
     return M[bonusId] ?? null
   }
+  if (slug.includes('six-six-six') || slug.includes('sixsixsix')) {
+    // Six Six Six: 3/4-Scatter + Gamble → What the Hell (5-Scatter/Hidden Epic)
+    const M = { fs: 3, fs_1: 3, fs_2: 4, fs_3: 5, fs_5: 5, epic: 5, fs_epic: 5, what_the_hell: 5, whatthehell: 5 }
+    return M[bonusId] ?? null
+  }
   const M = { fs: 3, fs_1: 3, fs_2: 4 }
   return M[bonusId] ?? null
 }
@@ -357,6 +363,15 @@ export function shouldSkipBonus(parsed, options) {
     }
     if (OCTO_MAPPING.hasOwnProperty(bonusId)) {
       specialLevel = OCTO_MAPPING[bonusId]
+    }
+  } else if (slotSlug.includes('six-six-six') || slotSlug.includes('sixsixsix')) {
+    // Six Six Six: 3/4-Scatter + Gamble → What the Hell (5-Scatter/Hidden Epic)
+    const SIX_SIX_SIX_MAPPING = {
+      'fs': 3, 'fs_1': 3, 'fs_2': 4, 'fs_3': 5, 'fs_5': 5,
+      'epic': 5, 'fs_epic': 5, 'what_the_hell': 5, 'whatthehell': 5,
+    }
+    if (SIX_SIX_SIX_MAPPING.hasOwnProperty(bonusId)) {
+      specialLevel = SIX_SIX_SIX_MAPPING[bonusId]
     }
   } else if (slotSlug.includes('le-cowboy')) {
     // Le Cowboy: Trail (3), High Noon Saloon (4), Pistols at Dawn (5/Epic)

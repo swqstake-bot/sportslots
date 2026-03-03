@@ -7,12 +7,16 @@ const STORAGE_KEY = 'slotbot_slot_sets'
 const FAVORITES_KEY = 'slotbot_slot_favorites'
 const HAS_BONUS_KEY = 'slotbot_has_bonus_slugs'
 
+// Six Six Six: falsche Duplikate (richtige kommt dynamisch)
+const SIX_SIX_SIX_SLUGS = ['hacksaw-six-six-six', 'hacksaw-sixsixsix']
+
 export function loadSlotSets() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     const sets = raw ? JSON.parse(raw) : []
+    let changed = false
     // Migration: ensure 'slugs' property exists (from legacy 'slots')
-    return sets.map(s => {
+    const result = sets.map(s => {
       // Create a shallow copy to avoid mutating the original object if it comes from a cache (though JSON.parse creates new objects)
       const newSet = { ...s }
       
@@ -24,8 +28,18 @@ export function loadSlotSets() {
           newSet.slugs = []
         }
       }
+      // Migration: Six Six Six Duplikate entfernen
+      const before = newSet.slugs.length
+      newSet.slugs = newSet.slugs.filter((slug) => !SIX_SIX_SIX_SLUGS.includes(slug))
+      if (newSet.slugs.length !== before) changed = true
       return newSet
     })
+    if (changed) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(result))
+      } catch (_) {}
+    }
+    return result
   } catch {
     return []
   }
@@ -77,7 +91,15 @@ export function importSlotSets(jsonStr, merge = true) {
 export function loadFavorites() {
   try {
     const raw = localStorage.getItem(FAVORITES_KEY)
-    return raw ? JSON.parse(raw) : []
+    const list = raw ? JSON.parse(raw) : []
+    // Migration: Six Six Six Duplikate entfernen
+    const filtered = list.filter((slug) => !SIX_SIX_SIX_SLUGS.includes(slug))
+    if (filtered.length !== list.length) {
+      try {
+        localStorage.setItem(FAVORITES_KEY, JSON.stringify(filtered))
+      } catch (_) {}
+    }
+    return filtered
   } catch {
     return []
   }
@@ -96,7 +118,14 @@ export function toggleFavorite(slug) {
 export function loadHasBonusSlugs() {
   try {
     const raw = localStorage.getItem(HAS_BONUS_KEY)
-    return raw ? JSON.parse(raw) : []
+    const list = raw ? JSON.parse(raw) : []
+    const filtered = list.filter((slug) => !SIX_SIX_SIX_SLUGS.includes(slug))
+    if (filtered.length !== list.length) {
+      try {
+        localStorage.setItem(HAS_BONUS_KEY, JSON.stringify(filtered))
+      } catch (_) {}
+    }
+    return filtered
   } catch {
     return []
   }

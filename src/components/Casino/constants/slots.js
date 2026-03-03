@@ -58,7 +58,6 @@ export const SUPPORTED_SLOTS = [
   { slug: 'hacksaw-stormforged', name: 'Stormforged', providerId: 'hacksaw' },
   { slug: 'hacksaw-stack-em', name: 'Stack Em', providerId: 'hacksaw' },
   { slug: 'hacksaw-storm-summoning', name: 'Storm Summoning', providerId: 'hacksaw' },
-  { slug: 'hacksaw-six-six-six', name: 'Six Six Six', providerId: 'hacksaw' },
   { slug: 'hacksaw-slayers-inc', name: 'Slayer Inc', providerId: 'hacksaw' },
   { slug: 'hacksaw-wanted-dead-or-a-wild', name: 'Wanted Dead or a Wild', providerId: 'hacksaw' },
   // Stake Engine – Slots von Stakes eigener Engine
@@ -481,7 +480,6 @@ export const SUPPORTED_SLOTS = [
   { slug: 'hacksaw-temple-of-torment', name: 'Temple Of Torment', providerId: 'hacksaw' },
   { slug: 'hacksaw-franks-farm', name: 'Franks Farm', providerId: 'hacksaw' },
   { slug: 'hacksaw-rise-of-ymir', name: 'Rise Of Ymir', providerId: 'hacksaw' },
-  { slug: 'hacksaw-sixsixsix', name: 'Six Six Six', providerId: 'hacksaw' },
   { slug: 'hacksaw-marlin-masters-the-big-haul', name: 'Marlin Masters The Big Haul', providerId: 'hacksaw' },
   { slug: 'hacksaw-rocket-reels', name: 'Rocket Reels', providerId: 'hacksaw' },
   { slug: 'hacksaw-le-cowboy', name: 'Le Cowboy', providerId: 'hacksaw' },

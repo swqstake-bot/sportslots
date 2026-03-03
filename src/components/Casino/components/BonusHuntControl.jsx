@@ -361,7 +361,7 @@ export default function BonusHuntControl({
       const FALLBACK_RATES = { ars: 0.001, brl: 0.17, mxn: 0.05, eur: 1.07, ltc: 95, btc: 97000, eth: 3500, doge: 0.4, bch: 450, shib: 0.00002, xrp: 0.55, trx: 0.23, sol: 220, matic: 0.4, ada: 0.5, bnb: 680 }
       const amountAsMinor = rawAmount < 500 ? toMinor(rawAmount, curr) : rawAmount
       const pending = pendingSpinsRef.current
-      const tol = (v) => Math.max(1, Math.abs(v) * 0.05)
+      const tol = (v) => Math.max(1, Math.abs(v) * 0.08)
       const targetRate = (currencyRates[target] ?? FALLBACK_RATES[target]) || 0.001
       const toUsdFromTarget = (minor) => toUnits(minor, target) * targetRate
       const hbRate = ['usd', 'usdc', 'usdt'].includes(curr) ? 1 : (currencyRates[curr] ?? FALLBACK_RATES[curr] ?? 0)
@@ -372,11 +372,12 @@ export default function BonusHuntControl({
         const m3 = p.baseBet != null && Math.abs(p.baseBet - rawAmount) <= tol(rawAmount)
         const m4 = p.baseBet != null && Math.abs(p.baseBet - amountAsMinor) <= tol(amountAsMinor)
         const effUsd = toUsdFromTarget(p.effectiveBet)
-        const m5 = rawAmount < 500 && hbRate > 0 && Math.abs(effUsd - rawAmountUsd) <= Math.max(0.005, Math.abs(rawAmountUsd) * 0.15)
-        const m6 = p.baseBet != null && rawAmount < 500 && hbRate > 0 && Math.abs(toUsdFromTarget(p.baseBet) - rawAmountUsd) <= Math.max(0.005, Math.abs(rawAmountUsd) * 0.15)
+        const usdTol = (u) => Math.max(0.01, Math.abs(u) * 0.55)
+        const m5 = rawAmount < 500 && hbRate > 0 && Math.abs(effUsd - rawAmountUsd) <= usdTol(rawAmountUsd)
+        const m6 = p.baseBet != null && rawAmount < 500 && hbRate > 0 && Math.abs(toUsdFromTarget(p.baseBet) - rawAmountUsd) <= usdTol(rawAmountUsd)
         const ok = m1 || m2 || m3 || m4 || m5 || m6
         if (BONUS_HUNT_DEBUG && pending.length > 0) {
-          console.log('[BH houseBet] amountMatch', { effectiveBet: p.effectiveBet, rawAmount, effUsd, ok, m5, m6 })
+          console.log('[BH houseBet] amountMatch', { effectiveBet: p.effectiveBet, rawAmount, rawAmountUsd, effUsd, curr, target, ok, m5, m6 })
         }
         return ok
       }
@@ -409,10 +410,11 @@ export default function BonusHuntControl({
           console.log('[BH houseBet] NO MATCH → recent', {
             gameSlug,
             rawAmount,
+            rawAmountUsd,
             amountAsMinor,
-            rawPayout,
             curr,
-            pending: pending.map((p) => ({ slot: p.slotSlug, eff: p.effectiveBet, base: p.baseBet })),
+            target,
+            pending: pending.map((p) => ({ slot: p.slotSlug, eff: p.effectiveBet, effUsd: toUsdFromTarget(p.effectiveBet), base: p.baseBet })),
           })
         }
         recentHouseBetsRef.current = [

@@ -5,11 +5,13 @@
 export const EXTRA_BET_MULTIPLIER = 5
 const HACKSAW_DEFAULT_MULTIPLIER = 3
 
-/** Hacksaw: Standard ist 3×. Nur diese 3 haben 5×. Andere Provider: 5×. */
+/** Hacksaw: Standard ist 3×. Diese haben 5× (mod_bonus/mod_blue). */
 const HACKSAW_5X_SLOTS = new Set([
   'hacksaw-chaos-crew-2',
   'hacksaw-chaos-crew-3',
   'hacksaw-2-wild-2-die',
+  'hacksaw-six-six-six',
+  'hacksaw-sixsixsix',
 ])
 
 /** Slot-Overrides für andere Provider (z.B. 10×). Hacksaw nutzt HACKSAW_5X_SLOTS. */
@@ -19,6 +21,9 @@ export function getExtraBetMultiplier(slotSlug) {
   if (!slotSlug) return EXTRA_BET_MULTIPLIER
   const override = SLOT_EXTRA_BET_MULTIPLIERS[slotSlug]
   if (override != null && override >= 1) return override
+  if (String(slotSlug).startsWith('paperclip-')) {
+    return 3 // Paperclip: Ante = Extra Bet = 3×
+  }
   if (String(slotSlug).startsWith('hacksaw-')) {
     return HACKSAW_5X_SLOTS.has(slotSlug) ? 5 : HACKSAW_DEFAULT_MULTIPLIER
   }

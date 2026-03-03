@@ -178,9 +178,12 @@ function snapToNearestBetLevel(amount, betLevels) {
   return best
 }
 
-export async function placeBet(session, betAmount, extraBet, autoplay = false) {
-  const effectiveBet = getEffectiveBetAmount(betAmount, extraBet)
-  let amount = toStakeEngineAmount(effectiveBet, session?.currencyCode || 'eur')
+export async function placeBet(session, betAmount, extraBet, autoplay = false, options = {}) {
+  const slotSlug = (options?.slotSlug || '').toLowerCase()
+  const useAnte = extraBet && slotSlug.startsWith('paperclip-')
+  const effectiveBet = getEffectiveBetAmount(betAmount, extraBet, slotSlug || undefined)
+  const amountForApi = useAnte ? betAmount : effectiveBet
+  let amount = toStakeEngineAmount(amountForApi, session?.currencyCode || 'eur')
 
   const stepBet = session?.stepBet ?? 100_000
   const minBet = session?.minBet ?? 100_000
@@ -211,7 +214,8 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false) {
 
   const endUrl = buildRgsUrl(session.rgsUrl, '/wallet/end-round')
   const playUrl = buildRgsUrl(session.rgsUrl, '/wallet/play')
-  const playBody = { sessionID: session.sessionID, amount, mode: 'base', currency }
+  const mode = useAnte ? 'ANTE' : 'base'
+  const playBody = { sessionID: session.sessionID, amount, mode, currency }
   const t0 = Date.now()
   let playRes = await rgsPost(playUrl, playBody)
 
