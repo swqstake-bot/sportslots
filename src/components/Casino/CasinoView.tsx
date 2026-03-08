@@ -57,6 +57,7 @@ export default function CasinoView() {
   const [sharedSourceCurrency, setSharedSourceCurrency] = useState('usdc')
   const [sharedTargetCurrency, setSharedTargetCurrency] = useState('eur')
   const [sharedCryptoOnly, setSharedCryptoOnly] = useState(false)
+  const [globalControlsOpen, setGlobalControlsOpen] = useState(false)
   const [supportedCurrencies] = useState<{ value: string; label: string }[]>(ALL_CURRENCIES) // Removed unused setter
 
   // Filter currencies based on sharedCryptoOnly
@@ -323,13 +324,12 @@ export default function CasinoView() {
 
            {mode === 'play' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-                   <div className="xl:col-span-8">
-                     <div className="casino-card">
-                       <h2 className="casino-card-header">
-                         <span className="casino-card-header-accent"></span>
-                         Slot Selection
-                       </h2>
+              <div>
+                   <div className="casino-card">
+                     <h2 className="casino-card-header">
+                       <span className="casino-card-header-accent"></span>
+                       Slot Selection
+                     </h2>
                      <SlotSelectMulti
                        slots={webSlots}
                        selectedSlugs={selectedSlugs}
@@ -344,7 +344,7 @@ export default function CasinoView() {
                        disabled={false}
                      />
                      
-                     {/* Slot Sets Controls – modern button group */}
+                     {/* Slot Sets + Global Controls – eine kompakte Zeile */}
                      <div className="mt-4 flex flex-wrap gap-2 items-center">
                        <select 
                          value={loadedSetId} 
@@ -365,68 +365,55 @@ export default function CasinoView() {
                             <Button variant="danger" size="sm" className="text-xs px-3 py-1.5 rounded-md" onClick={(e) => handleDeleteSet(loadedSetId, e)}>Delete</Button>
                          )}
                        </div>
+                       <span className="text-[10px] text-[var(--text-muted)] px-1">|</span>
+                       {/* Global – kompakt inline */}
+                       <div className="flex gap-1 items-center rounded-md p-0.5 bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
+                         <Button onClick={handleStartAll} disabled={selectedSlotInstances.length === 0} size="sm" className="h-6 text-[10px] font-semibold py-0 px-2 bg-[var(--accent)] hover:opacity-95 text-[var(--bg-deep)]">
+                           Start
+                         </Button>
+                         <Button onClick={handleStopAll} disabled={selectedSlotInstances.length === 0} variant="danger" size="sm" className="h-6 text-[10px] font-semibold py-0 px-2">
+                           Stop
+                         </Button>
+                         <button
+                           type="button"
+                           onClick={() => setGlobalControlsOpen(o => !o)}
+                           className="h-6 w-6 flex items-center justify-center rounded text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)] transition-colors"
+                           title="Mehr"
+                         >
+                           {globalControlsOpen ? '▼' : '▸'}
+                         </button>
+                       </div>
+                       {globalControlsOpen && (
+                         <div className="flex flex-wrap gap-2 items-center pl-2 border-l border-[var(--border)] animate-in fade-in slide-in-from-left-2 duration-150">
+                           <Button onClick={handleApplyFirstSlotSettings} disabled={selectedSlotInstances.length < 2} variant="secondary" size="sm" className="h-6 text-[10px] py-0 px-2">
+                             Apply First
+                           </Button>
+                           <label className="flex items-center gap-1.5 text-[10px] cursor-pointer">
+                             <input type="checkbox" checked={useSharedCurrency} onChange={(e) => setUseSharedCurrency(e.target.checked)} className="w-3 h-3 rounded accent-[var(--accent)]" />
+                             <span>Shared</span>
+                           </label>
+                           {useSharedCurrency && (
+                             <span className="flex gap-1 items-center text-[10px]">
+                               <select value={sharedSourceCurrency} onChange={(e) => setSharedSourceCurrency(e.target.value)} className="h-6 text-[10px] bg-[var(--bg-deep)] border border-[var(--border)] rounded px-1.5 py-0 outline-none">
+                                 {displayedCurrencies.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                               </select>
+                               <span className="text-[var(--text-muted)]">→</span>
+                               <select value={sharedTargetCurrency} onChange={(e) => setSharedTargetCurrency(e.target.value)} className="h-6 text-[10px] bg-[var(--bg-deep)] border border-[var(--border)] rounded px-1.5 py-0 outline-none">
+                                 {displayedCurrencies.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                               </select>
+                               <label className="flex items-center gap-1 cursor-pointer">
+                                 <input type="checkbox" checked={sharedCryptoOnly} onChange={(e) => setSharedCryptoOnly(e.target.checked)} className="w-3 h-3 rounded accent-[var(--accent)]" />
+                                 <span>Crypto only</span>
+                               </label>
+                             </span>
+                           )}
+                         </div>
+                       )}
                      </div>
                      </div>
-                   
-                   <div className="xl:col-span-4">
-                     <div className="casino-card h-fit">
-                      <h3 className="casino-card-header">
-                        <span className="casino-card-header-accent"></span>
-                        Global Controls
-                      </h3>
-                      <div className="grid grid-cols-2 gap-3 mb-4">
-                         <Button onClick={handleStartAll} disabled={selectedSlotInstances.length === 0} className="w-full h-11 text-sm font-semibold bg-[var(--accent)] hover:opacity-95 text-[var(--bg-deep)] shadow-[0_2px_12px_rgba(96,165,250,0.3)] hover:shadow-[0_4px_16px_rgba(96,165,250,0.35)] transition-shadow">
-                           Start All
-                         </Button>
-                         <Button onClick={handleStopAll} disabled={selectedSlotInstances.length === 0} variant="danger" className="w-full h-11 text-sm font-semibold">
-                           Stop All
-                         </Button>
-                       </div>
-
-                       <Button 
-                         onClick={handleApplyFirstSlotSettings} 
-                         disabled={selectedSlotInstances.length < 2} 
-                         variant="secondary" 
-                         className="w-full mb-4 py-2.5 text-sm font-medium"
-                       >
-                         Apply First Slot Settings
-                       </Button>
-                       
-                       <div className="space-y-3 pt-4 border-t border-[var(--border)]">
-                         <label className="flex items-center gap-3 text-sm cursor-pointer hover:text-white transition-colors">
-                           <input type="checkbox" checked={useSharedCurrency} onChange={(e) => setUseSharedCurrency(e.target.checked)} className="w-4 h-4 rounded border-[var(--border)] accent-[var(--accent)]" />
-                           <span>Shared Currency</span>
-                         </label>
-                         
-                         {useSharedCurrency && (
-                           <div className="space-y-3 pl-7 animate-in fade-in slide-in-from-left-2">
-                             <div className="grid grid-cols-2 gap-2">
-                               <div>
-                                 <span className="text-xs text-[var(--text-muted)] block mb-1">Bet</span>
-                                 <select value={sharedSourceCurrency} onChange={(e) => setSharedSourceCurrency(e.target.value)} className="w-full text-sm bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-2.5 py-2 focus:ring-1 focus:ring-[var(--accent)] outline-none">
-                                    {displayedCurrencies.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                                 </select>
-                               </div>
-                               <div>
-                                 <span className="text-xs text-[var(--text-muted)] block mb-1">Display</span>
-                                 <select value={sharedTargetCurrency} onChange={(e) => setSharedTargetCurrency(e.target.value)} className="w-full text-sm bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-2.5 py-2 focus:ring-1 focus:ring-[var(--accent)] outline-none">
-                                    {displayedCurrencies.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                                 </select>
-                               </div>
-                             </div>
-                             <label className="flex items-center gap-3 text-sm cursor-pointer hover:text-white transition-colors">
-                               <input type="checkbox" checked={sharedCryptoOnly} onChange={(e) => setSharedCryptoOnly(e.target.checked)} className="w-4 h-4 rounded border-[var(--border)] accent-[var(--accent)]" />
-                               <span>Crypto Only</span>
-                             </label>
-                           </div>
-                         )}
-                       </div>
-                    </div>
-                   </div>
-              </div>
               </div>
 
-               {/* Slots Grid */}
+              {/* Slots Grid */}
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 {selectedSlotInstances.map((inst) => {
                   const slot = webSlots.find((s: any) => s.slug === inst.slug)

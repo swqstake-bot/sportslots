@@ -66,15 +66,26 @@ const STYLES = {
     borderRadius: 'var(--radius-sm)',
   },
   toggle: { background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--text-sm)' },
+  leaderboardCard: {
+    padding: 'var(--space-3)',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--accent)',
+    borderRadius: 'var(--radius-md)',
+    marginBottom: 'var(--space-3)',
+  },
+  leaderboardTitle: { fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 'var(--space-2)', textTransform: 'uppercase', letterSpacing: '0.05em' },
+  leaderboardRow: { display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-1)' },
+  rankBadge: { minWidth: 24, height: 24, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700 },
 }
 
 export default function ForumChallengeView({ accessToken = '', webSlots = [], onSelectChallenge }) {
   const [forumUrl, setForumUrl] = useState('')
   const [loading, setLoading] = useState(false)
-  const [progress, setProgress] = useState({ done: 0, total: 0 })
+  const [progress, setProgress] = useState({ done: 0, total: 0, label: '' })
   const [error, setError] = useState('')
   const [bets, setBets] = useState([])
   const [totalScraped, setTotalScraped] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
   const [manualOpen, setManualOpen] = useState(false)
   const [forumSlug, setForumSlug] = useState('')
   const [forumCurrency, setForumCurrency] = useState('usdc')
@@ -97,19 +108,20 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
     }
     setError('')
     setLoading(true)
-    setProgress({ done: 0, total: 0 })
+    setProgress({ done: 0, total: 0, label: '' })
     try {
       const result = await scrapeForumBets(url, accessToken, {
-        onProgress: (done, total) => setProgress({ done, total }),
+        onProgress: (done, total, label) => setProgress({ done, total, label: label || '' }),
       })
       setBets(result.bets)
       setTotalScraped(result.totalScraped)
+      setTotalPages(result.totalPages || 0)
     } catch (e) {
       setError(e?.message || 'Fehler beim Laden')
       setBets([])
     } finally {
       setLoading(false)
-      setProgress({ done: 0, total: 0 })
+      setProgress({ done: 0, total: 0, label: '' })
     }
   }, [forumUrl, accessToken])
 
@@ -129,6 +141,25 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
     }
     return null
   }, [bets])
+
+  /** Nach Multiplikator sortiert (höchster zuerst) – für Leaderboard + Bet-Liste */
+  const sortedBets = useMemo(() => {
+    return [...bets].sort((a, b) => (Number(b.payoutMultiplier) || 0) - (Number(a.payoutMultiplier) || 0))
+  }, [bets])
+
+  /** Höchster Multi im Thread – wer führt aktuell */
+  const topMulti = useMemo(() => {
+    if (sortedBets.length === 0) return null
+    const best = sortedBets[0]
+    return {
+      userName: best.userName,
+      payoutMultiplier: Number(best.payoutMultiplier) || 0,
+      gameName: best.gameName,
+      currency: best.currency,
+      amount: best.amount,
+      payout: best.payout,
+    }
+  }, [sortedBets])
 
   const handleApplyFromBet = useCallback(() => {
     if (!challengeGame || !onSelectChallenge) return
@@ -190,7 +221,7 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
           disabled={loading || !forumUrl.trim()}
           style={{ ...STYLES.btn, ...(loading || !forumUrl.trim() ? STYLES.btnDisabled : {}) }}
         >
-          {loading ? (progress.total ? `${progress.done}/${progress.total}` : 'Lädt…') : 'Laden'}
+          {loading ? (progress.label || (progress.total ? `${progress.done}/${progress.total}` : 'Lädt…')) : 'Laden'}
         </button>
       </div>
 
@@ -202,9 +233,35 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
 
       {bets.length > 0 && (
         <div style={{ marginTop: 'var(--space-2)' }}>
+          {/* Leaderboard: Höchster Multi */}
+          {topMulti && (
+            <div style={STYLES.leaderboardCard}>
+              <div style={STYLES.leaderboardTitle}>🏆 Höchster Multi im Thread</div>
+              <div style={{ ...STYLES.leaderboardRow, fontSize: '1.1rem', marginBottom: 0 }}>
+                <span style={{ ...STYLES.rankBadge, background: 'var(--accent)', color: 'var(--bg-deep)' }}>1</span>
+                <span style={{ fontWeight: 700, color: 'var(--text)' }}>{topMulti.userName}</span>
+                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{topMulti.payoutMultiplier.toFixed(2)}x</span>
+                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
+                  {topMulti.gameName} · {topMulti.currency?.toUpperCase()} {Number(topMulti.amount).toFixed(2)} → {Number(topMulti.payout).toFixed(2)}
+                </span>
+              </div>
+              {sortedBets.length > 1 && (
+                <div style={{ marginTop: 'var(--space-2)', maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                  {sortedBets.slice(1, 31).map((bet, i) => (
+                    <div key={`rank-${bet.iid}-${i}`} style={{ ...STYLES.leaderboardRow, marginBottom: 0, fontSize: 'var(--text-sm)' }}>
+                      <span style={{ ...STYLES.rankBadge, background: 'var(--bg-deep)', color: 'var(--text-muted)' }}>{i + 2}</span>
+                      <span style={{ color: 'var(--text)' }}>{bet.userName}</span>
+                      <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{Number(bet.payoutMultiplier).toFixed(2)}x</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
             <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
-              {bets.length} Bets{totalScraped > bets.length ? ` (von ${totalScraped} gefunden)` : ''}
+              {bets.length} Bets{totalScraped > bets.length ? ` (von ${totalScraped} gefunden)` : ''}{totalPages > 1 ? ` · ${totalPages} Seiten` : ''} · sortiert nach Multi
             </span>
             {challengeGame && (
               <>
@@ -220,7 +277,7 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
             )}
           </div>
           <div style={STYLES.betList}>
-            {bets.map((bet, i) => (
+            {sortedBets.map((bet, i) => (
               <div key={`${bet.iid}-${i}`} style={STYLES.betCard}>
                 <div>
                   {!challengeGame && <span style={{ fontWeight: 600, marginRight: 'var(--space-2)' }}>{bet.gameName}</span>}

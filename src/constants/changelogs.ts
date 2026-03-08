@@ -1,4 +1,9 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.83': [
+    '✨ Forum-Scraper: casino→house Fix, REST Bet-Preview Fallback, alle Seiten durchsuchen',
+    '✨ Forum: Top 30 Leaderboard, alle gefundenen Bets (nicht mehr 500 Limit), parallele Abfragen (3x)',
+    '🎨 Global Controls: Kompakt inline in Slot-Sets-Zeile, aufklappbar für Apply First / Shared Currency',
+  ],
   '1.0.82': [
     '🎨 App-Theme: AutoBet, Active Bets, BetSlip und RightSidebar auf --app-* Variablen umgestellt',
     '🎨 Fixture-Cards: Kompakteres Layout, kleinere Abstände',
