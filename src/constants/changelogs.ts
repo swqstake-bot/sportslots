@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.84': [
+    '🐛 Maze Quest / Stake Engine: Auszahlung korrekt – payoutMultiplier bevorzugt bei falschem winAmount-Format',
+    '🐛 Höchster Multi: Zusätzlich aus betHistory abgeleitet – Konsistenz mit BetList garantiert',
+  ],
   '1.0.83': [
     '✨ Forum-Scraper: casino→house Fix, REST Bet-Preview Fallback, alle Seiten durchsuchen',
     '✨ Forum: Top 30 Leaderboard, alle gefundenen Bets (nicht mehr 500 Limit), parallele Abfragen (3x)',
