@@ -1037,7 +1037,28 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           Session starten, dann Spin oder Autospin – Statistik und Spins erscheinen hier.
         </p>
       )}
-      <StatsDisplay stats={stats} currencyCode={stats.currencyCode || effectiveTarget} compact={compact} minimal={settingsCollapsed} />
+      <StatsDisplay
+        stats={(() => {
+          // Höchster Multi: auch aus betHistory ableiten, damit er mit der BetList übereinstimmt
+          const sessionBets = sessionStartAt ? betHistory.filter((b) => (b.addedAt ?? 0) >= sessionStartAt) : betHistory
+          let biggestMultiFromHistory = 0
+          for (const b of sessionBets) {
+            const bet = Number(b.betAmount) || 0
+            const win = Number(b.winAmount) || 0
+            if (bet > 0 && win > 0) {
+              const m = win / bet
+              if (m > biggestMultiFromHistory) biggestMultiFromHistory = m
+            }
+          }
+          const enrichedStats = biggestMultiFromHistory > (stats.biggestMultiplier || 0)
+            ? { ...stats, biggestMultiplier: biggestMultiFromHistory }
+            : stats
+          return enrichedStats
+        })()}
+        currencyCode={stats.currencyCode || effectiveTarget}
+        compact={compact}
+        minimal={settingsCollapsed}
+      />
       {betHistory.length > 0 && (() => {
         // Chart nur aus aktueller Session (sessionStartAt), sonst passt es nicht zu Stats
         const sessionBets = sessionStartAt ? betHistory.filter((b) => (b.addedAt ?? 0) >= sessionStartAt) : betHistory

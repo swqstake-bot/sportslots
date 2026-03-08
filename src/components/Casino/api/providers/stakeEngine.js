@@ -276,8 +276,17 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
   )
   // Stake Engine RGS nutzt payoutMultiplier (z.B. 1150 = 11.5x), nicht winAmount
   const payoutMult = Number(round?.payoutMultiplier ?? round?.payout_multiplier ?? 0)
-  if (winAmount === 0 && payoutMult > 0 && amount > 0) {
-    winAmount = Math.round((amount * payoutMult) / 100)
+  const fromPayoutMult = payoutMult > 0 && amount > 0 ? Math.round((amount * payoutMult) / 100) : 0
+  if (winAmount === 0 && fromPayoutMult > 0) {
+    winAmount = fromPayoutMult
+  } else if (fromPayoutMult > 0 && winAmount > 0) {
+    // Falls RGS sowohl winAmount als auch payoutMultiplier liefert: payoutMultiplier bevorzugen,
+    // da einige Slots (z.B. Maze Quest) winAmount in anderem Format liefern können.
+    const winInUnitsFromRaw = winAmount / 1_000_000
+    const curr = (playData?.balance?.currency || session?.currencyCode || 'eur').toLowerCase()
+    const isFiat = FIAT_CURRENCIES.includes(curr)
+    const wouldBeZero = isFiat && winInUnitsFromRaw < 0.001
+    if (wouldBeZero) winAmount = fromPayoutMult
   }
   const balanceObj = playData?.balance || {}
   const balanceRaw = balanceObj?.amount != null ? Number(balanceObj.amount) : null
