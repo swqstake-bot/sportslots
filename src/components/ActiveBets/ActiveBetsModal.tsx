@@ -6,8 +6,9 @@ import type { SportBet } from '../../store/userStore';
 import { useUiStore } from '../../store/uiStore';
 import { StakeApi } from '../../api/client';
 import { Queries } from '../../api/queries';
-import { formatAmount } from '../Casino/utils/formatAmount';
-import { getCashoutValue, getEffectiveOdds, getOpenLegsCount, isCashoutDisabledByCustomPrices } from '../../services/cashoutService';
+import { formatStakeAmount } from '../../utils/formatStakeAmount';
+import { getCashoutValue, getEffectiveOdds, getClosedLegsCount, isCashoutDisabledByCustomPrices } from '../../services/cashoutService';
+import { useCashoutOffers } from '../../hooks/useCashoutOffers';
 import { useAutoCashout } from '../../hooks/useAutoCashout';
 import { useBetHistory } from '../../hooks/useBetHistory';
 import { BetPreviewModal } from './BetPreviewModal';
@@ -83,6 +84,13 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     onAutoCashoutSuccess: () => showToast('Auto-Cashout ausgeführt', 'success'),
   });
 
+  const { refreshCashoutOffers } = useCashoutOffers({
+    activeBets,
+    setActiveBets,
+    onSingleBetProcessed: checkSingleBetAutoCashout,
+    enabled: true,
+  });
+
   const handleCashoutSelected = async () => {
     const ids = Array.from(selectedBetIds);
     if (ids.length === 0) return;
@@ -103,70 +111,6 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     }
     setSelectedBetIds(new Set());
   };
-
-  const refreshCashoutOffers = useCallback(async (source: SportBet[] = activeBets) => {
-    if (source.length === 0) return;
-    const next: SportBet[] = [];
-    const chunks: SportBet[][] = [];
-    
-    // Chunk size 1 to be safe, with delay
-    for (let i = 0; i < source.length; i += 1) {
-      chunks.push(source.slice(i, i + 1));
-    }
-
-    for (const chunk of chunks) {
-      const chunkPromises = chunk.map(async (b) => {
-        if (b?.customBet || isCashoutDisabledByCustomPrices(b)) {
-          return { ...b, cashoutDisabled: true, cashoutMultiplier: b.cashoutMultiplier || 0 };
-        }
-
-        try {
-          const iid = b?.bet?.iid;
-          if (!iid) return { ...b };
-
-          const preview = await StakeApi.query<{ bet?: { bet?: { payout?: number; cashoutMultiplier?: number } } }>(Queries.PreviewCashout, { iid });
-          const data = preview?.data?.bet?.bet;
-
-          if (data) {
-            const hasPayout = data.payout != null && data.payout > 0;
-            const hasMultiplier = data.cashoutMultiplier != null && data.cashoutMultiplier > 0;
-
-            if (hasPayout || hasMultiplier) {
-              const mult = hasMultiplier ? data.cashoutMultiplier! : (b.cashoutMultiplier ?? 0);
-              const value = hasPayout
-                ? data.payout!
-                : getCashoutValue({ ...b, cashoutMultiplier: mult });
-              const updatedBet: SportBet = {
-                ...b,
-                cashoutMultiplier: mult,
-                cashoutValue: value,
-                cashoutDisabled: false,
-              };
-              checkSingleBetAutoCashout(updatedBet);
-              return updatedBet;
-            }
-          }
-          return { ...b, cashoutMultiplier: b.cashoutMultiplier || 0 };
-        } catch (err) {
-          console.error(`Cashout check failed for ${b.id}`, err);
-          return { ...b };
-        }
-      });
-      
-      const chunkResults = await Promise.all(chunkPromises);
-      next.push(...chunkResults);
-      
-      // OPTIONAL: Update state incrementally to show progress?
-      // Updating state here might cause re-renders and re-trigger of effects.
-      // But it gives better UX. Let's do it safely.
-      // We need to merge 'next' (processed) with the remaining unprocessed bets?
-      // Or just wait.
-      
-      // Wait 3s between individual checks
-      await new Promise(r => setTimeout(r, 3000));
-    }
-    setActiveBets(next);
-  }, [setActiveBets, checkSingleBetAutoCashout]);
 
   useEffect(() => {
     refreshCashoutOffersRef.current = refreshCashoutOffers;
@@ -225,52 +169,6 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     }
     setPreviewBet(bet);
   }, [setActiveBets]);
-
-  const formatCurrency = (amount: number, currency: string) => {
-    // Stake sends raw amounts (e.g. 0.20 for $0.20), but formatAmount expects minor units for fiat (e.g. 20 cents)
-    // We need to multiply by 100 for fiat if formatAmount divides by 100.
-    // Check formatAmount implementation: "Fiat: /100, Crypto: unverändert"
-    // So if amount is 0.20 USD, formatAmount expects 20.
-    
-    // However, crypto amounts (BTC) are usually raw (e.g. 0.00001). formatAmount handles them as is?
-    // Let's check formatAmount logic: "const divideBy100 = isFiat(curr) ... const displayValue = divideBy100 ? n / 100 : n"
-    
-    // So for FIAT (USD, EUR, USDC, USDT), we need to feed it CENTS.
-    // Stake API returns MAJOR units (e.g. 0.20 USD).
-    // So we must MULTIPLY by 100 before calling formatAmount for FIAT.
-    
-    // BUT WAIT: USDC/USDT are considered FIAT in formatAmount helper? 
-    // "FIAT_CURRENCIES = [..., 'usdc', 'usdt', ...]" -> YES.
-    
-    // So for USD, USDC, USDT: Input 0.20 -> *100 -> 20 -> formatAmount -> /100 -> 0.20.
-    // For BTC: Input 0.0001 -> formatAmount -> 0.0001.
-    
-    const isFiatOrStable = ['usd', 'eur', 'jpy', 'usdc', 'usdt', 'brl', 'cad', 'cny', 'idr', 'inr', 'krw', 'mxn', 'php', 'pln', 'rub', 'try', 'vnd'].includes((currency || '').toLowerCase());
-    
-    // Zero decimal currencies (JPY, IDR, etc.) usually don't have cents, but Stake might send raw.
-    // formatAmount handles zero-decimal via ZERO_DECIMAL_CURRENCIES list.
-    // If we multiply by 100 for JPY (which is zero decimal), formatAmount won't divide back.
-    // ZERO_DECIMAL_CURRENCIES = ['idr', 'jpy', 'krw', 'vnd']
-    
-    // Logic:
-    // If it's a standard fiat (2 decimals): Stake sends 10.50 -> we pass 1050.
-    // If it's crypto: Stake sends 0.001 -> we pass 0.001.
-    
-    // Exception: ActiveBetsModal receives amounts from GraphQL which are already floats (e.g. 0.2).
-    // formatAmount is designed for minor units (integers) from database/slots?
-    
-    // Let's adjust:
-    let val = amount;
-    if (isFiatOrStable) {
-        // Check if it's a zero-decimal currency
-        const isZeroDecimal = ['idr', 'jpy', 'krw', 'vnd'].includes((currency || '').toLowerCase());
-        if (!isZeroDecimal) {
-            val = amount * 100;
-        }
-    }
-    
-    return `${formatAmount(val, currency)} ${(currency || 'UNK').toUpperCase()}`;
-  };
 
   const copyLink = (betId: string, iid?: string) => {
     // Construct URL based on old tool behavior
@@ -335,8 +233,9 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                 valB = getCashoutValue(b);
                 break;
             case 'openLegs':
-                valA = getOpenLegsCount(a);
-                valB = getOpenLegsCount(b);
+                // Sortieren nach Fortschritt: mehr erledigte Legs = besser (11/12 vor 11/11)
+                valA = getClosedLegsCount(a);
+                valB = getClosedLegsCount(b);
                 break;
             case 'createdAt':
             default:
@@ -390,17 +289,18 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
         )}
       </AnimatePresence>
       <motion.div
-        className="bg-stake-bg-card border border-stake-border rounded-lg shadow-2xl w-full max-w-4xl min-h-[50vh] max-h-[calc(100vh-11rem)] flex flex-col overflow-hidden shrink-0"
+        className="rounded-lg shadow-2xl w-full max-w-4xl min-h-[50vh] max-h-[calc(100vh-11rem)] flex flex-col overflow-hidden shrink-0"
+        style={{ background: 'var(--app-bg-card)', border: '1px solid var(--app-border)' }}
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}
         transition={{ duration: 0.2, ease: 'easeOut' }}
       >
         {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b border-stake-border bg-stake-bg-deep">
-          <h2 className="text-xl font-bold text-white flex items-center gap-3">
+        <div className="flex justify-between items-center p-4 border-b" style={{ borderColor: 'var(--app-border)', background: 'var(--app-bg-deep)' }}>
+          <h2 className="text-xl font-bold flex items-center gap-3" style={{ color: 'var(--app-text)' }}>
             {activeTab === 'active' ? 'Active Bets' : 'Finished Bets'}
-            <span className="text-sm font-normal text-stake-text-muted bg-stake-border px-2 py-0.5 rounded-full">
+            <span className="text-sm font-normal px-2 py-0.5 rounded-full" style={{ color: 'var(--app-text-muted)', background: 'var(--app-border)' }}>
               {activeTab === 'active' ? activeBets.length : finishedBets.length}
             </span>
           </h2>
@@ -408,7 +308,8 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
             <button
               onClick={activeTab === 'active' ? fetchActiveBets : fetchFinishedBets}
               disabled={activeTab === 'active' ? isLoadingActive : isLoadingFinished}
-              className="p-2 hover:bg-stake-border rounded-lg transition-colors text-stake-text-muted hover:text-white disabled:opacity-50"
+              className="p-2 rounded-lg transition-colors disabled:opacity-50 hover:opacity-90"
+              style={{ color: 'var(--app-text-muted)', background: 'transparent' }}
               title={activeTab === 'active' ? 'Refresh Active Bets' : 'Refresh Finished Bets'}
             >
               {(activeTab === 'active' ? isLoadingActive : isLoadingFinished) ? (
@@ -417,25 +318,23 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                 <span>↻</span>
               )}
             </button>
-            <button onClick={onClose} className="p-2 hover:bg-stake-border rounded-lg transition-colors text-stake-text-muted hover:text-white">
+            <button onClick={onClose} className="p-2 rounded-lg transition-colors hover:opacity-90" style={{ color: 'var(--app-text-muted)' }}>
               ✕
             </button>
           </div>
         </div>
 
-        <div className="flex border-b border-stake-border bg-stake-bg-deep">
+        <div className="flex border-b p-1" style={{ borderColor: 'var(--app-border)', background: 'var(--app-bg-deep)' }}>
           <button
             onClick={() => setActiveTab('active')}
-            className={`flex-1 py-3 font-bold text-xs transition-all relative uppercase tracking-wider ${
+            className={`flex-1 py-3 font-bold text-xs transition-all relative uppercase tracking-wider rounded-t-lg ${
               activeTab === 'active'
-                ? 'text-white bg-stake-bg-deep'
-                : 'text-stake-text-muted hover:text-white hover:bg-stake-bg-card/50'
+                ? ''
+                : 'hover:opacity-90'
             }`}
+            style={activeTab === 'active' ? { color: 'var(--app-text)', background: 'var(--app-bg-card)', boxShadow: 'inset 0 -2px 0 0 var(--app-accent)' } : { color: 'var(--app-text-muted)' }}
           >
             Active
-            {activeTab === 'active' && (
-              <div className="absolute bottom-0 left-0 w-full h-0.5 bg-stake-success shadow-[0_0_8px_rgba(0,231,1,0.6)]" />
-            )}
           </button>
           
           <AutoCashoutControls
@@ -449,22 +348,20 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
 
           <button
             onClick={() => setActiveTab('finished')}
-            className={`flex-1 py-3 font-bold text-xs transition-all relative uppercase tracking-wider ${
+            className={`flex-1 py-3 font-bold text-xs transition-all relative uppercase tracking-wider rounded-t-lg ${
               activeTab === 'finished'
-                ? 'text-white bg-stake-bg-deep'
-                : 'text-stake-text-muted hover:text-white hover:bg-stake-bg-card/50'
+                ? ''
+                : 'hover:opacity-90'
             }`}
+            style={activeTab === 'finished' ? { color: 'var(--app-text)', background: 'var(--app-bg-card)', boxShadow: 'inset 0 -2px 0 0 var(--app-accent)' } : { color: 'var(--app-text-muted)' }}
           >
             Finished
-            {activeTab === 'finished' && (
-              <div className="absolute bottom-0 left-0 w-full h-0.5 bg-stake-success shadow-[0_0_8px_rgba(0,231,1,0.6)]" />
-            )}
           </button>
         </div>
 
         {/* Sort bar */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-stake-border bg-stake-bg-deep/80 flex-wrap">
-          <span className="text-xs text-stake-text-muted uppercase tracking-wider">Sortieren:</span>
+        <div className="flex items-center gap-3 px-4 py-2 border-b flex-wrap" style={{ borderColor: 'var(--app-border)', background: 'color-mix(in srgb, var(--app-bg-deep) 80%, transparent)' }}>
+          <span className="text-xs uppercase tracking-wider" style={{ color: 'var(--app-text-muted)' }}>Sortieren:</span>
           <div className="flex flex-wrap gap-1.5">
             {[
               { key: 'createdAt', label: 'Datum' },
@@ -478,9 +375,13 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                 onClick={() => handleSort(key)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   sortField === key
-                    ? 'bg-stake-success/20 text-stake-success border border-stake-success/50'
-                    : 'bg-stake-border/50 text-stake-text-muted hover:text-white border border-transparent'
+                    ? 'border'
+                    : 'border border-transparent hover:opacity-90'
                 }`}
+                style={sortField === key
+                  ? { background: 'rgba(var(--app-accent-rgb), 0.15)', color: 'var(--app-accent)', borderColor: 'color-mix(in srgb, var(--app-accent) 50%, transparent)' }
+                  : { background: 'color-mix(in srgb, var(--app-border) 50%, transparent)', color: 'var(--app-text-muted)' }
+                }
               >
                 {label}
               </button>
@@ -488,7 +389,8 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
             <button
               type="button"
               onClick={() => setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'))}
-              className="p-1.5 rounded-lg bg-stake-border/50 text-stake-text-muted hover:text-white border border-transparent"
+              className="p-1.5 rounded-lg border border-transparent hover:opacity-90"
+              style={{ background: 'color-mix(in srgb, var(--app-border) 50%, transparent)', color: 'var(--app-text-muted)' }}
               title={sortDirection === 'asc' ? 'Aufsteigend (älteste zuerst)' : 'Absteigend (neueste zuerst)'}
             >
               {sortDirection === 'asc' ? '↑' : '↓'}
@@ -496,13 +398,13 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
           </div>
         </div>
 
-        {/* Card layout: collapsible sections, more whitespace */}
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-stake-bg-deep">
+        {/* Card layout */}
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden" style={{ background: 'var(--app-bg-deep)' }}>
           {(activeTab === 'active' ? isLoadingActive : isLoadingFinished) &&
           (activeTab === 'active' ? activeBets.length : finishedBets.length) === 0 ? (
             <BetTableSkeleton rows={10} />
           ) : (
-            <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-stake-border scrollbar-track-transparent p-5">
+            <div className="flex-1 overflow-auto scrollbar-thin p-5" style={{ scrollbarColor: 'var(--app-border) transparent' }}>
               {activeTab === 'active' ? (
                 <>
                   <CollapsibleSection
@@ -512,13 +414,13 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                     accent="live"
                   >
                     {liveBets.length === 0 ? (
-                      <p className="text-stake-text-dim text-sm py-2">Keine Live-Wetten.</p>
+                      <p className="text-sm py-2" style={{ color: 'var(--app-text-muted)' }}>Keine Live-Wetten.</p>
                     ) : (
                       liveBets.map((bet) => (
                         <BetListCard
                           key={bet.id}
                           bet={bet}
-                          formatCurrency={formatCurrency}
+                          formatCurrency={formatStakeAmount}
                           onCashout={handleCashout}
                           onPreview={handlePreviewBet}
                           onCopyLink={copyLink}
@@ -534,13 +436,13 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                     accent="upcoming"
                   >
                     {upcomingBets.length === 0 ? (
-                      <p className="text-stake-text-dim text-sm py-2">Keine anstehenden Wetten.</p>
+                      <p className="text-sm py-2" style={{ color: 'var(--app-text-muted)' }}>Keine anstehenden Wetten.</p>
                     ) : (
                       upcomingBets.map((bet) => (
                         <BetListCard
                           key={bet.id}
                           bet={bet}
-                          formatCurrency={formatCurrency}
+                          formatCurrency={formatStakeAmount}
                           onCashout={handleCashout}
                           onPreview={handlePreviewBet}
                           onCopyLink={copyLink}
@@ -559,13 +461,13 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                     accent="won"
                   >
                     {wonBets.length === 0 ? (
-                      <p className="text-stake-text-dim text-sm py-2">Keine gewonnenen Wetten.</p>
+                      <p className="text-sm py-2" style={{ color: 'var(--app-text-muted)' }}>Keine gewonnenen Wetten.</p>
                     ) : (
                       wonBets.map((bet) => (
                         <BetListCard
                           key={bet.id}
                           bet={bet}
-                          formatCurrency={formatCurrency}
+                          formatCurrency={formatStakeAmount}
                           onCashout={handleCashout}
                           onPreview={handlePreviewBet}
                           onCopyLink={copyLink}
@@ -581,13 +483,13 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                     accent="lost"
                   >
                     {lostBets.length === 0 ? (
-                      <p className="text-stake-text-dim text-sm py-2">Keine verlorenen Wetten.</p>
+                      <p className="text-sm py-2" style={{ color: 'var(--app-text-muted)' }}>Keine verlorenen Wetten.</p>
                     ) : (
                       lostBets.map((bet) => (
                         <BetListCard
                           key={bet.id}
                           bet={bet}
-                          formatCurrency={formatCurrency}
+                          formatCurrency={formatStakeAmount}
                           onCashout={handleCashout}
                           onPreview={handlePreviewBet}
                           onCopyLink={copyLink}
@@ -607,7 +509,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                         <BetListCard
                           key={bet.id}
                           bet={bet}
-                          formatCurrency={formatCurrency}
+                          formatCurrency={formatStakeAmount}
                           onCashout={handleCashout}
                           onPreview={handlePreviewBet}
                           onCopyLink={copyLink}
@@ -620,7 +522,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
               )}
               {(activeTab === 'active' ? activeBets.length : finishedBets.length) === 0 &&
                 !(activeTab === 'active' ? isLoadingActive : isLoadingFinished) && (
-                <div className="py-12 text-center text-stake-text-dim">
+                <div className="py-12 text-center" style={{ color: 'var(--app-text-muted)' }}>
                   <svg
                     className="w-14 h-14 mx-auto mb-3 opacity-50"
                     fill="none"
@@ -643,9 +545,9 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
           )}
         </div>
 
-        <div className="p-4 border-t border-stake-border bg-stake-bg-card flex justify-between items-center text-xs text-stake-text-muted gap-4">
+        <div className="p-4 border-t flex justify-between items-center text-xs gap-4" style={{ borderColor: 'var(--app-border)', background: 'var(--app-bg-card)', color: 'var(--app-text-muted)' }}>
             <span>{activeTab === 'active' ? `Total Active: ${activeBets.length}` : `Total Finished: ${finishedBets.length}`}</span>
-            <button onClick={onClose} className="px-4 py-2 bg-stake-success/20 hover:bg-stake-success/30 text-stake-success font-bold rounded-lg border border-stake-success/50 transition-colors uppercase tracking-wider shrink-0">
+            <button onClick={onClose} className="px-4 py-2 font-bold rounded-lg border transition-colors uppercase tracking-wider shrink-0 hover:opacity-90" style={{ background: 'rgba(var(--app-accent-rgb), 0.15)', color: 'var(--app-accent)', borderColor: 'color-mix(in srgb, var(--app-accent) 50%, transparent)' }}>
               Schließen
             </button>
         </div>

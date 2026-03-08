@@ -7,15 +7,17 @@ import { fetchSupportedCurrencies } from '../api/stakeChallenges'
 import { isFiat, isStable } from '../utils/formatAmount'
 import { getEffectiveBetAmount } from '../constants/bet'
 import { parseBetResponse } from '../utils/parseBetResponse'
-import { formatBetLabel } from '../utils/formatAmount'
+import { formatBetLabel, formatAmount } from '../utils/formatAmount'
 import StatsDisplay from './StatsDisplay'
 import BetList from './BetList'
 import LogViewer from './LogViewer'
 import { logApiCall, saveBonusLog, isSaveBonusLogsEnabled } from '../utils/apiLogger'
+import { saveSlotSpinSample, saveBonusSpinSample, hasEnoughSamplesForSlot } from '../utils/slotSpinSamples'
 import { notifyBonusHit } from '../utils/notifications'
 import { loadBetHistory, appendBet } from '../utils/betHistoryDb'
 import { getSlotCurrency, setSlotCurrency } from '../utils/slotCurrencyConfig'
 import { subscribeToBetUpdates } from '../api/stakeBalanceSubscription'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 
 const DEFAULT_BET_LEVELS = [
   1100, 2200, 4400, 6600, 8800, 11000, 13200, 15400, 17600, 19800,
@@ -24,21 +26,21 @@ const DEFAULT_BET_LEVELS = [
 ]
 
 const STYLES = {
-  section: { marginBottom: '1rem' },
-  label: { display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.35rem' },
-  row: { display: 'flex', gap: '0.75rem', flexWrap: 'wrap' },
+  section: { marginBottom: '0.5rem' },
+  label: { display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.2rem' },
+  row: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' },
   select: {
     flex: 1,
-    minWidth: 140,
-    padding: '0.6rem 0.75rem',
+    minWidth: 100,
+    padding: '0.4rem 0.5rem',
     background: 'var(--bg-elevated)',
     border: '1px solid var(--border)',
     borderRadius: 'var(--radius-md)',
     color: 'var(--text)',
-    fontSize: '0.9rem',
+    fontSize: '0.85rem',
   },
-  checkboxRow: { display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' },
-  checkbox: { width: 18, height: 18, accentColor: 'var(--accent)' },
+  checkboxRow: { display: 'flex', alignItems: 'center', gap: '0.35rem', margin: 0 },
+  checkbox: { width: 16, height: 16, accentColor: 'var(--accent)' },
   btn: {
     padding: '0.75rem 1.25rem',
     background: 'var(--accent)',
@@ -136,13 +138,16 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const [autospinStopOnMinutes, setAutospinStopOnMinutes] = useState(false)
   const [autospinStopMinutes, setAutospinStopMinutes] = useState(0)
   const [sessionStartAt, setSessionStartAt] = useState(null)
+  const [slotHasFullSamples, setSlotHasFullSamples] = useState(false)
   const [isAutospinning, setIsAutospinning] = useState(false)
   const [autospinProgress, setAutospinProgress] = useState(null)
   const autospinCancelRef = useRef(false)
   const sessionRef = useRef(null)
   const spinsSinceRefreshRef = useRef(0)
   const lastBalanceRef = useRef(null)
+  const slotHasFullSamplesRef = useRef(false)
   sessionRef.current = session
+  slotHasFullSamplesRef.current = slotHasFullSamples
   const [supportedCurrencies, setSupportedCurrencies] = useState(ALL_CURRENCIES)
 
   useEffect(() => {
@@ -294,6 +299,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
 
   useEffect(() => {
     if (!accessToken) return
+    // Stake Engine: RGS liefert bereits alle Daten über placeBet; houseBets würde Duplikate (1.000 + 0 VND) erzeugen
+    const isStakeEngine = slot.providerId === 'stakeEngine' || PROVIDERS_META[slot.providerId]?.aliasOf === 'stakeEngine'
+    if (isStakeEngine) return
     const sub = subscribeToBetUpdates(accessToken, (b) => {
       const slug = String(b?.gameSlug || '')
       if (!slug) return
@@ -327,7 +335,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     return () => {
       try { sub.disconnect() } catch (_) {}
     }
-  }, [accessToken, slot.slug, addToBetHistory])
+  }, [accessToken, slot.slug, slot.providerId, addToBetHistory])
 
   async function handleStartSession() {
     if (!provider?.startSession) {
@@ -362,6 +370,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         currencyCode: s?.currencyCode ?? null,
       })
       setSessionStartAt(Date.now())
+      const hasFull = await hasEnoughSamplesForSlot(slot.slug).catch(() => false)
+      setSlotHasFullSamples(hasFull)
+      slotHasFullSamplesRef.current = hasFull
       logApiCall({
         type: `${slot.providerId}/session`,
         endpoint: 'startSession',
@@ -420,6 +431,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           parsed: { isBonus: parsed.isBonus, scatterCount: parsed.scatterCount, bonusFeatureId: parsed.bonusFeatureId },
         })
       }
+      saveSlotSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, slotSlug: slot.slug }, response: data, skipIfFull: slotHasFullSamplesRef.current })
+      if (parsed.isBonus) saveBonusSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, slotSlug: slot.slug }, response: data })
       triggerLogRefresh()
     } catch (err) {
       const msg = err?.message || 'Spin fehlgeschlagen'
@@ -446,8 +459,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       return
     }
 
-    if (autospinCount < 1) {
-      setError('Mindestens 1 Spin eingeben.')
+    if (autospinCount < 0) {
+      setError('Anzahl Spins darf nicht negativ sein.')
       return
     }
     autospinCancelRef.current = false
@@ -461,7 +474,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     let aggTotalWagered = stats.totalWagered
     let aggTotalWon = stats.totalWon
 
-    while (spinsDone < autospinCount && !autospinCancelRef.current) {
+    while ((autospinCount === 0 || spinsDone < autospinCount) && !autospinCancelRef.current) {
       try {
         if (sessionRefreshSpins > 0 && spinsSinceRefresh >= sessionRefreshSpins) {
           let newSession
@@ -500,6 +513,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           })
           triggerLogRefresh()
         }
+        saveSlotSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, ...placeBetOpts }, response: data, skipIfFull: slotHasFullSamplesRef.current })
+        if (parsed.isBonus) saveBonusSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, ...placeBetOpts }, response: data })
 
         let winAmount = parsed.winAmount
         // Kein Balance-Delta-Fallback: Vault-Auszahlungen würden als Win erscheinen
@@ -509,7 +524,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           (parsed.scatterCount == null && parsed.isBonus)
         if (autospinStopOnBonus && (parsed.shouldStopOnBonus ?? parsed.isBonus) && bonusMeetsScatter) {
           lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
-          addToBetHistory({ ...parsed, winAmount })
+          addToBetHistory({ ...parsed, winAmount, stoppedBonus: true })
           setStats((prev) => ({
             ...prev,
             spins: prev.spins + 1,
@@ -682,7 +697,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         break
       }
 
-      if (spinsDone < autospinCount && !autospinCancelRef.current) {
+      if ((autospinCount === 0 || spinsDone < autospinCount) && !autospinCancelRef.current) {
         // Kein künstlicher Delay – Geschwindigkeit nur durch API/Netzwerk begrenzt
         await new Promise((r) => setTimeout(r, 0))
       }
@@ -690,7 +705,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
 
     setIsAutospinning(false)
     setAutospinProgress(null)
-    if (spinsDone === autospinCount && !autospinCancelRef.current) {
+    if (autospinCount > 0 && spinsDone === autospinCount && !autospinCancelRef.current) {
       setError('')
     }
   }
@@ -752,7 +767,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       setBetAmount(clamped)
     }
     if (s.extraBet != null) setExtraBet(!!s.extraBet)
-    if (s.autospinCount != null) setAutospinCount(Math.max(1, s.autospinCount))
+    if (s.autospinCount != null) setAutospinCount(Math.max(0, s.autospinCount))
     if (s.autospinStopOnBonus != null) setAutospinStopOnBonus(!!s.autospinStopOnBonus)
     if (s.autospinMinScatter != null) setAutospinMinScatter(s.autospinMinScatter)
     if (s.autospinStopOnMulti != null) setAutospinStopOnMulti(!!s.autospinStopOnMulti)
@@ -803,265 +818,124 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       <div style={{ display: 'flex', flexDirection: 'column', gap: settingsCollapsed ? '0.12rem' : (compact ? '0.28rem' : '1rem'), minWidth: 0, color: 'var(--text)' }}>
       {!settingsCollapsed && (
       <>
-      {!useSharedCurrency && (
-      <div style={{ ...STYLES.section, marginBottom: compact ? '0.3rem' : '1rem' }}>
-        <span style={{ ...STYLES.label, fontSize: compact ? '0.62rem' : '0.8rem' }}>Konto → Spielwährung</span>
-        <div style={STYLES.row}>
-          <select
-            value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'usdc')}
-            onChange={(e) => {
-              const v = e.target.value
-              setSourceCurrency(v)
-              setSlotCurrency(slot.slug, { source: v })
-            }}
-            style={STYLES.select}
-            title="Kontowährung"
-          >
-            {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-            {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-          </select>
-          <span style={{ alignSelf: 'center', color: 'var(--text-muted)' }}>→</span>
-          <select
-            value={allowedCurrencies.some((c) => c.value === targetCurrency) ? targetCurrency : (allowedCurrencies[0]?.value || 'eur')}
-            onChange={(e) => {
-              const v = e.target.value
-              setTargetCurrency(v)
-              setSlotCurrency(slot.slug, { target: v })
-            }}
-            style={STYLES.select}
-            title="Spielwährung"
-          >
-            {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-            {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-          </select>
-        </div>
-      </div>
-      )}
-
-      <div style={{ ...STYLES.section, marginBottom: compact ? '0.3rem' : '1rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: compact ? '1fr' : 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem' }}>
-          <div style={{ padding: '0.5rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', background: 'var(--bg-card)', color: 'var(--text)' }}>
-            <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>{providerMeta.name || providerBasic.name || providerId}</div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>ID: {providerId}</div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Impl: {providerBasic.impl || 'n/a'}</div>
-            {providerMeta.aliasOf && (
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Alias von: {providerMeta.aliasOf}</div>
-            )}
-            {providerMeta.betLevelsSource && (
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>BetLevels: {providerMeta.betLevelsSource}</div>
-            )}
-            {providerMeta.amountScale && (
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>AmountScale: {providerMeta.amountScale}</div>
-            )}
-            {Array.isArray(providerMeta.zeroDecimalCurrencies) && providerMeta.zeroDecimalCurrencies.length > 0 && (
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Zero-Decimals: {providerMeta.zeroDecimalCurrencies.join(', ')}</div>
-            )}
-            {providerMeta.instantBonus != null && (
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>InstantBonus: {providerMeta.instantBonus ? 'ja' : 'nein'}</div>
-            )}
+      <div style={{ ...STYLES.section, display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'flex-end' }}>
+        {!useSharedCurrency && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <select
+              value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'usdc')}
+              onChange={(e) => { const v = e.target.value; setSourceCurrency(v); setSlotCurrency(slot.slug, { source: v }) }}
+              style={{ ...STYLES.select, minWidth: 90, flex: 'none' }}
+              title="Kontowährung"
+            >
+              {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+              {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+            </select>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
+            <select
+              value={allowedCurrencies.some((c) => c.value === targetCurrency) ? targetCurrency : (allowedCurrencies[0]?.value || 'eur')}
+              onChange={(e) => { const v = e.target.value; setTargetCurrency(v); setSlotCurrency(slot.slug, { target: v }) }}
+              style={{ ...STYLES.select, minWidth: 90, flex: 'none' }}
+              title="Spielwährung"
+            >
+              {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+              {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+            </select>
           </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+          <select value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} style={{ ...STYLES.select, minWidth: 110, flex: 'none' }} title="Einsatz">
+            {betLevels.map((v) => <option key={v} value={v}>{formatBetLabel(v, effectiveTarget)}</option>)}
+          </select>
+          <label style={{ ...STYLES.checkboxRow, cursor: 'pointer', fontSize: '0.8rem' }}>
+            <input type="checkbox" id={`extraBet-${slot.slug}`} checked={extraBet} onChange={(e) => setExtraBet(e.target.checked)} style={STYLES.checkbox} />
+            <span>Extra</span>
+          </label>
         </div>
       </div>
 
-      <div style={{ ...STYLES.section, marginBottom: compact ? '0.3rem' : '1rem' }}>
-        <span style={{ ...STYLES.label, fontSize: compact ? '0.62rem' : '0.8rem' }}>
-          Einsatz (in {effectiveTarget.toUpperCase()})
-          {session?.betLevels?.length ? ' · aus Session' : ''}
-        </span>
-        <select
-          value={betAmount}
-          onChange={(e) => setBetAmount(Number(e.target.value))}
-          style={STYLES.select}
-        >
-          {betLevels.map((v) => (
-            <option key={v} value={v}>
-              {formatBetLabel(v, effectiveTarget)}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div style={STYLES.checkboxRow}>
-        <input
-          type="checkbox"
-          id={`extraBet-${slot.slug}`}
-          checked={extraBet}
-          onChange={(e) => setExtraBet(e.target.checked)}
-          style={STYLES.checkbox}
-        />
-        <label htmlFor={`extraBet-${slot.slug}`}>Extra Bet (mod_bonus)</label>
-      </div>
+      <details style={{ ...STYLES.section, fontSize: '0.75rem' }}>
+        <summary style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>Stake Engine / Debug</summary>
+        <div style={{ marginTop: '0.35rem', padding: '0.4rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-card)', fontSize: '0.72rem' }}>
+          {providerMeta.name || providerId} · ID: {providerId} · Impl: {providerBasic.impl || 'n/a'}
+          {providerMeta.betLevelsSource && ` · BetLevels: ${providerMeta.betLevelsSource}`}
+          {providerMeta.amountScale && ` · Scale: ${providerMeta.amountScale}`}
+          {Array.isArray(providerMeta.zeroDecimalCurrencies) && providerMeta.zeroDecimalCurrencies.length > 0 && ` · ZeroDec: ${providerMeta.zeroDecimalCurrencies.join(', ')}`}
+        </div>
+      </details>
 
       <div style={{ ...STYLES.section, marginTop: compact ? '0.2rem' : '0.75rem', marginBottom: compact ? '0.3rem' : '1rem' }}>
-        <span style={{ ...STYLES.label, fontSize: compact ? '0.62rem' : '0.8rem' }}>Autospin</span>
-        <div style={{ ...STYLES.row, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ ...STYLES.row, flexWrap: 'wrap', gap: '0.4rem' }}>
           <input
             type="number"
-            min={1}
-            max={9999}
+            min={0}
             value={autospinCount}
-            onChange={(e) => setAutospinCount(Math.max(1, parseInt(e.target.value) || 1))}
-            style={{ ...STYLES.select, width: 72, flex: 'none' }}
+            onChange={(e) => setAutospinCount(Math.max(0, parseInt(e.target.value) || 0))}
+            style={{ ...STYLES.select, width: 64, flex: 'none' }}
+            placeholder="0=∞"
+            title="0 = unendlich"
           />
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Spins</span>
-          <label style={{ ...STYLES.checkboxRow, margin: 0, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={autospinStopOnBonus}
-              onChange={(e) => setAutospinStopOnBonus(e.target.checked)}
-              style={STYLES.checkbox}
-            />
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', alignSelf: 'center' }}>Spins {autospinCount === 0 ? '(∞)' : ''}</span>
+          <label style={{ ...STYLES.checkboxRow, cursor: 'pointer', fontSize: '0.8rem' }}>
+            <input type="checkbox" checked={autospinStopOnBonus} onChange={(e) => setAutospinStopOnBonus(e.target.checked)} style={STYLES.checkbox} />
             Bei Bonus
           </label>
-          <select
-            value={autospinMinScatter}
-            onChange={(e) => setAutospinMinScatter(Number(e.target.value))}
-            style={{ ...STYLES.select, width: 100, marginLeft: '0.25rem' }}
-            disabled={!autospinStopOnBonus}
-            title="Hacksaw: nur bei mind. X Scatter stoppen"
-          >
+          <select value={autospinMinScatter} onChange={(e) => setAutospinMinScatter(Number(e.target.value))} style={{ ...STYLES.select, width: 72 }} disabled={!autospinStopOnBonus} title="Nur bei ≥X Scatter">
             <option value={0}>Jeder</option>
             <option value={3}>3+</option>
             <option value={4}>4+</option>
             <option value={5}>5</option>
           </select>
-          <label style={{ ...STYLES.checkboxRow, margin: 0, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={autospinStopOnMulti}
-              onChange={(e) => setAutospinStopOnMulti(e.target.checked)}
-              style={STYLES.checkbox}
-            />
-            Stop on Multi
+          <label style={{ ...STYLES.checkboxRow, cursor: 'pointer', fontSize: '0.8rem' }}>
+            <input type="checkbox" checked={autospinStopOnMulti} onChange={(e) => setAutospinStopOnMulti(e.target.checked)} style={STYLES.checkbox} />
+            Multi
             <input
               type="number"
               min={2}
-              max={1000}
               value={autospinStopMultiplier}
-              onChange={(e) => setAutospinStopMultiplier(Math.max(2, parseInt(e.target.value) || 2))}
-              style={{ ...STYLES.select, width: 56, marginLeft: '0.35rem' }}
+              onChange={(e) => { const raw = e.target.value; if (raw === '') setAutospinStopMultiplier(2); else { const v = parseInt(raw, 10); if (!Number.isNaN(v)) setAutospinStopMultiplier(v); } }}
+              onBlur={() => setAutospinStopMultiplier((p) => Math.max(2, p))}
+              style={{ ...STYLES.select, width: 48, marginLeft: '0.2rem' }}
               disabled={!autospinStopOnMulti}
             />
             ×
           </label>
-          <label style={{ ...STYLES.checkboxRow, margin: 0, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={autospinStopOnWin}
-              onChange={(e) => setAutospinStopOnWin(e.target.checked)}
-              style={STYLES.checkbox}
-            />
-            Stop on Win
-          </label>
-          <label style={{ ...STYLES.checkboxRow, margin: 0, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={autospinStopOnLoss}
-              onChange={(e) => setAutospinStopOnLoss(e.target.checked)}
-              style={STYLES.checkbox}
-            />
-            Stop on Loss
-          </label>
-          <label style={{ ...STYLES.checkboxRow, margin: 0, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={autospinStopOnStreak}
-              onChange={(e) => setAutospinStopOnStreak(e.target.checked)}
-              style={STYLES.checkbox}
-            />
-            Stop on
-            <select
-              value={autospinStopStreakType}
-              onChange={(e) => setAutospinStopStreakType(e.target.value)}
-              style={{ ...STYLES.select, width: 70, marginLeft: '0.25rem' }}
-              disabled={!autospinStopOnStreak}
-            >
-              <option value="win">Win</option>
-              <option value="loss">Loss</option>
-            </select>
-            <input
-              type="number"
-              min={1}
-              max={20}
-              value={autospinStopStreakCount}
-              onChange={(e) => setAutospinStopStreakCount(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
-              style={{ ...STYLES.select, width: 44, marginLeft: '0.25rem' }}
-              disabled={!autospinStopOnStreak}
-            />
-            -Streak
-          </label>
         </div>
-        <label style={{ ...STYLES.checkboxRow, marginTop: '0.5rem', cursor: 'pointer' }}>
-          <span style={{ fontSize: '0.9rem' }}>Session-Refresh nach</span>
-          <input
-            type="number"
-            min={0}
-            max={9999}
-            value={sessionRefreshSpins || ''}
-            onChange={(e) => setSessionRefreshSpins(Math.max(0, parseInt(e.target.value) || 0))}
-            placeholder="0"
-            style={{ ...STYLES.select, width: 56 }}
-          />
-          <span style={{ fontSize: '0.9rem' }}>Spins (0=nie)</span>
-        </label>
-        <label style={{ ...STYLES.checkboxRow, marginTop: '0.5rem', cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={autospinStopOnProfit}
-            onChange={(e) => setAutospinStopOnProfit(e.target.checked)}
-            style={STYLES.checkbox}
-          />
-          <span style={{ fontSize: '0.9rem' }}>Stop bei Profit ≥</span>
-          <input
-            type="number"
-            min={0}
-            value={autospinStopProfitValue || 0}
-            onChange={(e) => setAutospinStopProfitValue(Math.max(0, parseInt(e.target.value) || 0))}
-            style={{ ...STYLES.select, width: 80, marginLeft: '0.35rem' }}
-            disabled={!autospinStopOnProfit}
-          />
-          <span style={{ fontSize: '0.9rem' }}>{(stats.currencyCode || effectiveTarget).toUpperCase()}</span>
-        </label>
-        <label style={{ ...STYLES.checkboxRow, marginTop: '0.35rem', cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={autospinStopOnNetLoss}
-            onChange={(e) => setAutospinStopOnNetLoss(e.target.checked)}
-            style={STYLES.checkbox}
-          />
-          <span style={{ fontSize: '0.9rem' }}>Stop bei Loss ≥</span>
-          <input
-            type="number"
-            min={0}
-            value={autospinStopLossValue || 0}
-            onChange={(e) => setAutospinStopLossValue(Math.max(0, parseInt(e.target.value) || 0))}
-            style={{ ...STYLES.select, width: 80, marginLeft: '0.35rem' }}
-            disabled={!autospinStopOnNetLoss}
-          />
-          <span style={{ fontSize: '0.9rem' }}>{(stats.currencyCode || effectiveTarget).toUpperCase()}</span>
-        </label>
-        <label style={{ ...STYLES.checkboxRow, marginTop: '0.35rem', cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={autospinStopOnMinutes}
-            onChange={(e) => setAutospinStopOnMinutes(e.target.checked)}
-            style={STYLES.checkbox}
-          />
-          <span style={{ fontSize: '0.9rem' }}>Stop nach</span>
-          <input
-            type="number"
-            min={1}
-            max={600}
-            value={autospinStopMinutes || 0}
-            onChange={(e) => setAutospinStopMinutes(Math.max(1, parseInt(e.target.value) || 1))}
-            style={{ ...STYLES.select, width: 64, marginLeft: '0.35rem' }}
-            disabled={!autospinStopOnMinutes}
-          />
-          <span style={{ fontSize: '0.9rem' }}>Minuten</span>
-        </label>
+        <details style={{ marginTop: '0.35rem', fontSize: '0.8rem' }}>
+          <summary style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>Erweiterte Stopp-Optionen</summary>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.35rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--border)' }}>
+            <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }}>
+              <input type="checkbox" checked={autospinStopOnWin} onChange={(e) => setAutospinStopOnWin(e.target.checked)} style={STYLES.checkbox} />
+              Stop Win
+            </label>
+            <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }}>
+              <input type="checkbox" checked={autospinStopOnLoss} onChange={(e) => setAutospinStopOnLoss(e.target.checked)} style={STYLES.checkbox} />
+              Stop Loss
+            </label>
+            <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }}>
+              <input type="checkbox" checked={autospinStopOnStreak} onChange={(e) => setAutospinStopOnStreak(e.target.checked)} style={STYLES.checkbox} />
+              Streak <select value={autospinStopStreakType} onChange={(e) => setAutospinStopStreakType(e.target.value)} style={{ ...STYLES.select, width: 60, marginLeft: '0.2rem' }} disabled={!autospinStopOnStreak}><option value="win">Win</option><option value="loss">Loss</option></select>
+              <input type="number" min={1} value={autospinStopStreakCount} onChange={(e) => setAutospinStopStreakCount(Math.max(1, parseInt(e.target.value) || 1))} style={{ ...STYLES.select, width: 40, marginLeft: '0.2rem' }} disabled={!autospinStopOnStreak} />
+            </label>
+            <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }}>
+              Refresh <input type="number" min={0} value={sessionRefreshSpins || ''} onChange={(e) => setSessionRefreshSpins(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" style={{ ...STYLES.select, width: 48 }} /> Spins
+            </label>
+            <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }}>
+              <input type="checkbox" checked={autospinStopOnProfit} onChange={(e) => setAutospinStopOnProfit(e.target.checked)} style={STYLES.checkbox} />
+              Profit ≥ <input type="number" min={0} value={autospinStopProfitValue || 0} onChange={(e) => setAutospinStopProfitValue(Math.max(0, parseInt(e.target.value) || 0))} style={{ ...STYLES.select, width: 70 }} disabled={!autospinStopOnProfit} /> {(stats.currencyCode || effectiveTarget).toUpperCase()}
+            </label>
+            <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }}>
+              <input type="checkbox" checked={autospinStopOnNetLoss} onChange={(e) => setAutospinStopOnNetLoss(e.target.checked)} style={STYLES.checkbox} />
+              Loss ≥ <input type="number" min={0} value={autospinStopLossValue || 0} onChange={(e) => setAutospinStopLossValue(Math.max(0, parseInt(e.target.value) || 0))} style={{ ...STYLES.select, width: 70 }} disabled={!autospinStopOnNetLoss} /> {(stats.currencyCode || effectiveTarget).toUpperCase()}
+            </label>
+            <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }}>
+              <input type="checkbox" checked={autospinStopOnMinutes} onChange={(e) => setAutospinStopOnMinutes(e.target.checked)} style={STYLES.checkbox} />
+              Stop nach <input type="number" min={1} value={autospinStopMinutes || 0} onChange={(e) => setAutospinStopMinutes(Math.max(1, parseInt(e.target.value) || 1))} style={{ ...STYLES.select, width: 56, marginLeft: '0.2rem' }} disabled={!autospinStopOnMinutes} /> Min
+            </label>
+          </div>
+        </details>
       </div>
 
-      <div style={{ ...STYLES.row, marginTop: '1rem', gap: '0.5rem' }}>
+      <div style={{ ...STYLES.row, marginTop: '0.5rem', gap: '0.4rem' }}>
         <button
           onClick={handleStartSession}
           disabled={loading}
@@ -1157,7 +1031,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       {error && <div style={STYLES.error}>{error}</div>}
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: settingsCollapsed ? '0.17rem' : (compact ? '0.35rem' : '1rem'), minWidth: 0, color: 'var(--text)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: settingsCollapsed ? '0.17rem' : (compact ? '0.35rem' : '0.5rem'), minWidth: 0, color: 'var(--text)' }}>
       {!session && betHistory.length === 0 && (
         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
           Session starten, dann Spin oder Autospin – Statistik und Spins erscheinen hier.
@@ -1165,49 +1039,79 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       )}
       <StatsDisplay stats={stats} currencyCode={stats.currencyCode || effectiveTarget} compact={compact} minimal={settingsCollapsed} />
       {betHistory.length > 0 && (() => {
-        // Session-Netto pro Slot (0, net1, net1+net2, …) – slot-spezifisch
-        // Bei Bonus-Stopp: Gewinn nicht im Chart – Runde unvollständig bis Bonus durchgespielt
+        // Chart nur aus aktueller Session (sessionStartAt), sonst passt es nicht zu Stats
+        const sessionBets = sessionStartAt ? betHistory.filter((b) => (b.addedAt ?? 0) >= sessionStartAt) : betHistory
+        if (sessionBets.length === 0) return null
+        // Session-Netto: Y-Achse unten = Minus, oben = Plus
         let cum = 0
-        const cumNets = betHistory.map((b) => {
-          const win = b.isBonus ? 0 : (b.winAmount ?? 0)
-          const net = win - (b.betAmount ?? 0)
-          cum += net
+        const cumNets = sessionBets.map((b) => {
+          const win = (b.isBonus && b.stoppedBonus) ? 0 : (Number(b.winAmount) || 0)
+          const bet = Number(b.betAmount) || 0
+          cum += win - bet
           return cum
         })
         if (cumNets.length === 0) return null
-        const minV = Math.min(0, ...cumNets)
-        const maxV = Math.max(0, ...cumNets)
-        const range = maxV - minV || 1
-        const w = settingsCollapsed ? 120 : (compact ? 160 : 280)
-        const h = settingsCollapsed ? 20 : (compact ? 32 : 70)
-        const pad = 4
-        const divisor = cumNets.length > 1 ? cumNets.length - 1 : 1
-        const chartColors = ['var(--accent)', '#22c55e', '#f59e0b', '#8b5cf6']
+        const lastNet = cumNets[cumNets.length - 1]
+        const statsNet = (stats.totalWon ?? 0) - (stats.totalWagered ?? 0)
+        const useStatsAsReference = sessionStartAt && Math.abs(lastNet - statsNet) > Math.max(1, Math.abs(statsNet) * 0.01)
+        const currencyCode = stats.currencyCode || effectiveTarget
+        const chartColors = ['#00e701', '#22c55e', '#f59e0b', '#8b5cf6']
         const colorIndex = [...slot.slug].reduce((a, c) => a + c.charCodeAt(0), 0) % chartColors.length
         const strokeColor = chartColors[colorIndex]
+        const maxPoints = 200
+        const step = cumNets.length > maxPoints ? Math.ceil(cumNets.length / maxPoints) : 1
+        const chartData = [
+          { spin: 0, net: 0 },
+          ...cumNets
+            .map((net, i) => ({ spin: i + 1, net }))
+            .filter((_, i) => i % step === 0 || i === cumNets.length - 1),
+        ]
+        const minV = Math.min(0, ...cumNets)
+        const maxV = Math.max(0, ...cumNets)
+        const padding = Math.max(1, (maxV - minV) * 0.05) || 1
+        const chartHeight = settingsCollapsed ? 24 : (compact ? 38 : 80)
+        const innerChartH = Math.max(16, chartHeight - (settingsCollapsed ? 18 : (compact ? 22 : 36)))
         return (
-          <div style={{ marginTop: settingsCollapsed ? '0.12rem' : (compact ? '0.2rem' : '0.5rem'), padding: settingsCollapsed ? '0.12rem 0.2rem' : (compact ? '0.25rem 0.35rem' : '0.75rem'), background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: settingsCollapsed ? 4 : 6, minHeight: settingsCollapsed ? 24 : (compact ? 38 : 80), color: 'var(--text)' }}>
+          <div style={{ marginTop: settingsCollapsed ? '0.12rem' : (compact ? '0.2rem' : '0.5rem'), padding: settingsCollapsed ? '0.12rem 0.2rem' : (compact ? '0.25rem 0.35rem' : '0.75rem'), background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: settingsCollapsed ? 4 : 6, minHeight: chartHeight, color: 'var(--text)' }}>
             <div style={{ fontSize: settingsCollapsed ? '0.5rem' : (compact ? '0.58rem' : '0.85rem'), fontWeight: 600, marginBottom: settingsCollapsed ? '0.1rem' : '0.2rem', color: 'var(--text-muted)' }}>
               Session Netto · {slot.name}
+              {useStatsAsReference && lastNet !== statsNet && <span style={{ marginLeft: '0.5rem', color: 'var(--text-muted)', fontWeight: 400 }}>(Chart ≠ Stats)</span>}
             </div>
-            <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none meet" style={{ display: 'block', minHeight: settingsCollapsed ? 20 : (compact ? 32 : 70) }}>
-              <polyline
-                fill="none"
-                stroke={strokeColor}
-                strokeWidth={settingsCollapsed ? 0.8 : (compact ? 1 : 1.5)}
-                points={cumNets
-                  .map((v, i) => {
-                    const x = pad + (i / divisor) * (w - 2 * pad)
-                    const y = h - pad - ((v - minV) / range) * (h - 2 * pad)
-                    return `${x},${y}`
-                  })
-                  .join(' ')}
-              />
-            </svg>
+            <div style={{ width: '100%', height: innerChartH }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+                  <defs>
+                    <linearGradient id="sessionNettoGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={strokeColor} stopOpacity={0.35} />
+                      <stop offset="100%" stopColor={strokeColor} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="spin" hide domain={['dataMin', 'dataMax']} />
+                  <YAxis hide domain={[minV - padding, maxV + padding]} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#1a2c38', border: '1px solid var(--border)', borderRadius: 6, fontSize: '0.75rem', color: 'var(--text)' }}
+                    formatter={(val) => [formatAmount(Number(val), currencyCode), 'Netto']}
+                    labelFormatter={(spin) => `Spin ${spin}`}
+                  />
+                  <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" strokeOpacity={0.8} />
+                  <Area
+                    type="monotone"
+                    dataKey="net"
+                    stroke={strokeColor}
+                    strokeWidth={1.5}
+                    fill="url(#sessionNettoGradient)"
+                    fillOpacity={1}
+                    isAnimationActive={true}
+                    animationDuration={400}
+                    animationEasing="ease-out"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         )
       })()}
-      <BetList bets={betHistory.slice(-30)} currencyCode={stats.currencyCode || effectiveTarget} compact={compact} minimal={settingsCollapsed} />
+      <BetList bets={betHistory.slice(-30)} totalCount={betHistory.length} currencyCode={stats.currencyCode || effectiveTarget} compact={compact} minimal={settingsCollapsed} />
 
       {!compact && (
       <details style={{ marginTop: '0.5rem' }}>

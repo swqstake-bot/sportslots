@@ -9,84 +9,94 @@ export function RightSidebar() {
   const { outcomes } = useBetSlipStore();
 
   return (
-    <div className="flex flex-col border-l border-[#2f4553] h-full w-[360px] bg-[#0f212e] overflow-hidden shadow-2xl z-40 relative">
-      {/* Active Bets Modal */}
+    <div 
+      className="flex flex-col border-l h-full w-[360px] overflow-hidden shadow-2xl z-40 relative"
+      style={{ 
+        background: 'var(--app-bg-deep)', 
+        borderColor: 'var(--app-border)',
+        boxShadow: '-4px 0 24px rgba(0,0,0,0.35), 0 0 1px var(--app-border)'
+      }}
+    >
       {isActiveBetsModalOpen && <ActiveBetsModal onClose={toggleActiveBetsModal} />}
 
-      {/* Top Tabs */}
-      <div className="flex border-b border-[#2f4553] bg-[#0f212e]">
-        <button
-          onClick={() => setRightSidebarTab('activebets')}
-          className={`flex-1 py-4 font-bold text-sm transition-all relative uppercase tracking-wider ${
-            rightSidebarTab === 'activebets' 
-              ? 'text-white bg-[#0f212e]' 
-              : 'text-[#b1bad3] hover:text-white hover:bg-[#1a2c38]/50'
-          }`}
-        >
-          Active Bets
-          {rightSidebarTab === 'activebets' && (
-            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-[#00e701] shadow-[0_0_8px_rgba(0,231,1,0.6)]"></div>
-          )}
-        </button>
-        <button
-          onClick={() => setRightSidebarTab('autobet')}
-          className={`flex-1 py-4 font-bold text-sm transition-all relative uppercase tracking-wider ${
-            rightSidebarTab === 'autobet' 
-              ? 'text-white bg-[#0f212e]' 
-              : 'text-[#b1bad3] hover:text-white hover:bg-[#1a2c38]/50'
-          }`}
-        >
-          AutoBet
-          {rightSidebarTab === 'autobet' && (
-            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-[#00e701] shadow-[0_0_8px_rgba(0,231,1,0.6)]"></div>
-          )}
-        </button>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 overflow-hidden relative bg-[#0f212e]">
-         {rightSidebarTab === 'activebets' && (
-             <div className="h-full overflow-hidden">
-                 <ActiveBetsList />
-             </div>
-         )}
-         {rightSidebarTab === 'autobet' && (
-             <div className="h-full overflow-hidden">
-                 <AutoBetView />
-             </div>
-         )}
-      </div>
-
-      {/* Bet Slip (Bottom) */}
-      <div className={`border-t border-[#2f4553] bg-[#0f212e] flex flex-col transition-all duration-300 ease-in-out shadow-[0_-4px_20px_rgba(0,0,0,0.4)] ${isBetSlipExpanded ? 'h-[60%]' : 'h-20'}`}>
-          {/* Bet Slip Header / Toggle */}
-          <button 
-            onClick={toggleBetSlip}
-            className="w-full flex justify-between items-center p-6 bg-[#0f212e] hover:bg-[#1a2c38] transition-colors border-b border-[#2f4553] group"
+      <div 
+        className="flex border-b p-1"
+        style={{ background: 'var(--app-bg-deep)', borderColor: 'var(--app-border)' }}
+      >
+        {(['activebets', 'autobet'] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setRightSidebarTab(tab)}
+            className="flex-1 py-3 font-bold text-xs transition-all relative uppercase tracking-wider"
+            style={rightSidebarTab === tab
+              ? { color: 'var(--app-text)', background: 'var(--app-bg-card)', borderBottom: '2px solid var(--app-accent)' }
+              : { color: 'var(--app-text-muted)' }
+            }
           >
-              <div className="flex items-center gap-3">
-                  <span className="font-bold text-lg text-white group-hover:text-[#00e701] transition-colors uppercase tracking-wide">Bet Slip</span>
-                  {outcomes.length > 0 && (
-                      <span className="bg-[#00e701] text-[#0f212e] font-bold text-sm px-2.5 py-0.5 rounded-full shadow-sm">{outcomes.length}</span>
-                  )}
-              </div>
-              <div className="flex items-center gap-3 text-[#b1bad3] group-hover:text-white transition-colors">
-                  <span className="text-sm font-bold uppercase tracking-wider">{isBetSlipExpanded ? 'Minimize' : 'Expand'}</span>
-                  <svg 
-                    className={`w-4 h-4 transition-transform duration-300 ${isBetSlipExpanded ? 'rotate-180' : ''}`} 
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 15l7-7 7 7" />
-                  </svg>
-              </div>
+            {tab === 'activebets' ? 'Active Bets' : 'AutoBet'}
           </button>
-          
-          {/* Bet Slip Content */}
-          <div className="flex-1 overflow-hidden relative bg-[#1a2c38]">
-              <BetSlip />
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-hidden relative" style={{ background: 'var(--app-bg-deep)' }}>
+        {rightSidebarTab === 'activebets' && (
+          <div className="h-full overflow-hidden">
+            <ActiveBetsList />
           </div>
+        )}
+        {rightSidebarTab === 'autobet' && (
+          <div className="h-full overflow-hidden">
+            <AutoBetView />
+          </div>
+        )}
+      </div>
+
+      <div 
+        className={`flex flex-col transition-all duration-300 ease-in-out border-t ${isBetSlipExpanded ? 'h-[60%]' : 'h-20'}`}
+        style={{ 
+          background: 'var(--app-bg-deep)', 
+          borderColor: 'var(--app-border)',
+          boxShadow: '0 -4px 24px rgba(0,0,0,0.4)'
+        }}
+      >
+        <button 
+          onClick={toggleBetSlip}
+          className="w-full flex justify-between items-center p-5 transition-colors border-b group"
+          style={{ 
+            background: 'var(--app-bg-deep)', 
+            borderColor: 'var(--app-border)'
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <span 
+              className="font-bold text-lg uppercase tracking-wide transition-colors"
+              style={{ color: 'var(--app-text)' }}
+            >
+              Bet Slip
+            </span>
+            {outcomes.length > 0 && (
+              <span 
+                className="font-bold text-sm px-2.5 py-0.5 rounded-full"
+                style={{ background: 'var(--app-accent)', color: 'var(--app-bg-deep)', boxShadow: '0 0 12px var(--app-accent-glow)' }}
+              >
+                {outcomes.length}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3" style={{ color: 'var(--app-text-muted)' }}>
+            <span className="text-sm font-bold uppercase tracking-wider">{isBetSlipExpanded ? 'Einklappen' : 'Aufklappen'}</span>
+            <svg 
+              className={`w-4 h-4 transition-transform duration-300 ${isBetSlipExpanded ? 'rotate-180' : ''}`} 
+              fill="none" stroke="currentColor" viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 15l7-7 7 7" />
+            </svg>
+          </div>
+        </button>
+        
+        <div className="flex-1 overflow-hidden relative" style={{ background: 'var(--app-bg-card)' }}>
+          <BetSlip />
+        </div>
       </div>
     </div>
   );

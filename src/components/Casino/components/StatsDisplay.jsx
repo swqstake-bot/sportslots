@@ -3,22 +3,22 @@ import { formatAmount } from '../utils/formatAmount'
 
 const STYLES = {
   card: {
-    marginTop: '1rem',
-    padding: '1rem',
+    marginTop: '0.35rem',
+    padding: '0.5rem',
     background: 'var(--bg-elevated)',
     border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-lg)',
+    borderRadius: 'var(--radius-md)',
   },
   title: {
-    fontSize: '0.85rem',
+    fontSize: '0.75rem',
     fontWeight: 600,
-    marginBottom: '0.75rem',
+    marginBottom: '0.4rem',
     color: 'var(--text-muted)',
   },
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '0.5rem 1.5rem',
+    gap: '0.3rem 1rem',
   },
   item: {
     display: 'flex',

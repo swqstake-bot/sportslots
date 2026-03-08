@@ -25,19 +25,24 @@ export function Button({
     borderRadius: 'var(--radius-md)',
     fontWeight: 600,
     cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.6 : 1,
+    opacity: disabled ? 0.5 : 1,
     fontSize: 'var(--text-base)',
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    transition: 'all 0.2s',
+    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
   }
 
   const variants: Record<string, React.CSSProperties> = {
-    primary: { background: 'var(--accent)', color: 'var(--bg-deep)' },
+    primary: { 
+      background: 'var(--accent)', 
+      color: '#0A0A0F',
+      fontWeight: 600,
+      boxShadow: '0 2px 12px rgba(var(--accent-rgb), 0.4), 0 0 20px rgba(var(--accent-rgb), 0.15)',
+    },
     secondary: {
-      background: 'transparent',
-      color: 'var(--text-muted)',
+      background: 'var(--bg-elevated)',
+      color: 'var(--text)',
       border: '1px solid var(--border)',
       fontSize: 'var(--text-sm)',
     },
@@ -49,6 +54,7 @@ export function Button({
     danger: {
       background: 'var(--error)',
       color: 'white',
+      boxShadow: '0 2px 12px rgba(255, 51, 102, 0.35)',
     }
   }
 

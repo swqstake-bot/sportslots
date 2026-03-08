@@ -3,6 +3,7 @@
  * Nutzt gleiche Währung/Einsatz für alle.
  */
 import { useState, useRef, useEffect, useMemo } from 'react'
+import styles from './BonusHuntControl.module.css'
 import { getProvider } from '../api/providers'
 import { getImpliedScatterLevel } from '../api/providers/hacksaw'
 import { ALL_CURRENCIES, filterCurrenciesByProvider } from '../constants/currencies'
@@ -16,7 +17,9 @@ import { isSlotNoExtraBet, addSlotNoExtraBet } from '../utils/slotExtraBetMemory
 import { loadHasBonusSlugs, toggleHasBonusSlug, removeHasBonusSlug, clearHasBonusSlugs } from '../utils/slotSets'
 import { notifyBonusHit } from '../utils/notifications'
 import { saveBonusLog, isSaveBonusLogsEnabled, setSaveBonusLogsEnabled, exportBonusLogsAsFile, clearBonusLogs } from '../utils/apiLogger'
+import { saveSlotSpinSample, saveBonusSpinSample } from '../utils/slotSpinSamples'
 import { subscribeToBetUpdates } from '../api/stakeBalanceSubscription'
+import { PROVIDERS as PROVIDERS_META } from '../constants/providers'
 import { TipMenu } from '../../ui/TipMenu'
 
 const HUNT_BET_LEVELS = [
@@ -28,119 +31,6 @@ const CLOUDFLARE_MAX_RETRIES = 3
 function isCloudflareError(err) {
   const msg = (err?.message || '').toLowerCase()
   return msg.includes('just a moment') || msg.includes('cloudflare') || msg.includes('html statt json')
-}
-
-const STYLES = {
-  section: { marginBottom: '1rem' },
-  label: { display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.35rem' },
-  row: { display: 'flex', gap: '0.75rem', flexWrap: 'wrap' },
-  select: {
-    flex: 1,
-    minWidth: 120,
-    padding: '0.6rem 0.75rem',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--text)',
-    fontSize: '0.9rem',
-  },
-  btn: {
-    padding: '0.75rem 1.25rem',
-    background: 'var(--accent)',
-    color: 'var(--bg-deep)',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-  btnStop: { background: 'var(--error)' },
-  btnSecondary: {
-    padding: '0.5rem 1rem',
-    background: 'transparent',
-    color: 'var(--text-muted)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-sm)',
-    cursor: 'pointer',
-    fontSize: '0.85rem',
-  },
-  progressList: {
-    marginTop: '1rem',
-    padding: '0.75rem',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--text)',
-  },
-  progressItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.75rem',
-    padding: '0.5rem 0',
-    borderBottom: '1px solid var(--border)',
-    fontSize: '0.9rem',
-  },
-  progressItemLast: { borderBottom: 'none' },
-  progressCheck: { color: 'var(--success)', fontSize: '1.2rem' },
-  progressCross: { color: 'var(--error)', fontSize: '1.2rem' },
-  progressOpened: { color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: 600, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', marginRight: '0.25rem' },
-  progressSpinning: { color: 'var(--accent)' },
-  progressWait: { color: 'var(--text-muted)' },
-  statsCard: {
-    marginTop: '1rem',
-    padding: '1rem',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-lg)',
-    color: 'var(--text)',
-  },
-  statsTitle: { fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-muted)' },
-  balanceBadge: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    padding: '0.5rem 1rem',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-md)',
-    fontFamily: '"JetBrains Mono", monospace',
-    fontWeight: 600,
-    color: 'var(--text)',
-  },
-  chart: {
-    marginTop: '1rem',
-    padding: '1rem',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-lg)',
-    minHeight: 120,
-    color: 'var(--text)',
-  },
-  chartGrid: { stroke: 'var(--border)', strokeWidth: 0.5, opacity: 0.6 },
-  chartZeroLine: { stroke: 'var(--text-muted)', strokeWidth: 1, opacity: 0.5, strokeDasharray: '4 2' },
-  betList: {
-    marginTop: '1rem',
-    maxHeight: 200,
-    overflowY: 'auto',
-    fontFamily: '"JetBrains Mono", monospace',
-    fontSize: '0.8rem',
-    color: 'var(--text)',
-  },
-  betRow: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 4rem 4rem 4rem 2rem',
-    gap: '0.5rem',
-    padding: '0.25rem 0',
-    borderBottom: '1px solid var(--border)',
-  },
-  error: {
-    marginTop: '0.75rem',
-    padding: '0.6rem',
-    background: 'rgba(255, 82, 82, 0.1)',
-    border: '1px solid rgba(255, 82, 82, 0.3)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--error)',
-    fontSize: '0.85rem',
-  },
 }
 
 export default function BonusHuntControl({
@@ -385,26 +275,31 @@ export default function BonusHuntControl({
         (p) => slotMatchesHouseBet(p.slotSlug, gameSlug) && amountMatches(p)
       )
       if (idx >= 0) {
-        const { historyId } = pending[idx]
-        const stakeSendsMajor = rawAmount < 500
-        let payoutMinor
-        if (curr === target) {
-          payoutMinor = stakeSendsMajor ? toMinor(rawPayout, curr) : rawPayout
-        } else {
-          const payoutUsd = stakeSendsMajor ? rawPayout * hbRate : toUnits(rawPayout, curr) * hbRate
-          const payoutTargetMajor = targetRate > 0 ? payoutUsd / targetRate : 0
-          payoutMinor = toMinor(payoutTargetMajor, target)
-        }
-        if (BONUS_HUNT_DEBUG) console.log('[BH houseBet] MATCH → winUpdate', { historyId, gameSlug, rawPayout, curr, target, payoutMinor })
+        const { historyId, slotSlug } = pending[idx]
+        const matchedSlot = toRun.find((s) => s.slug === slotSlug)
+        const isStakeEngine = matchedSlot && (matchedSlot.providerId === 'stakeEngine' || PROVIDERS_META[matchedSlot.providerId]?.aliasOf === 'stakeEngine')
         pendingSpinsRef.current = pending.filter((_, i) => i !== idx)
-        setBetHistory((prev) =>
-          prev.map((e) => {
-            if (e.id !== historyId) return e
-            const existing = e.winAmount ?? 0
-            if (existing > 0 && payoutMinor <= 0) return e
-            return { ...e, winAmount: payoutMinor }
-          })
-        )
+        // Stake Engine: RGS liefert korrekte Daten; houseBets kann Duplikate/0x erzeugen → nicht überschreiben
+        if (!isStakeEngine) {
+          const stakeSendsMajor = rawAmount < 500
+          let payoutMinor
+          if (curr === target) {
+            payoutMinor = stakeSendsMajor ? toMinor(rawPayout, curr) : rawPayout
+          } else {
+            const payoutUsd = stakeSendsMajor ? rawPayout * hbRate : toUnits(rawPayout, curr) * hbRate
+            const payoutTargetMajor = targetRate > 0 ? payoutUsd / targetRate : 0
+            payoutMinor = toMinor(payoutTargetMajor, target)
+          }
+          if (BONUS_HUNT_DEBUG) console.log('[BH houseBet] MATCH → winUpdate', { historyId, gameSlug, rawPayout, curr, target, payoutMinor })
+          setBetHistory((prev) =>
+            prev.map((e) => {
+              if (e.id !== historyId) return e
+              const existing = e.winAmount ?? 0
+              if (existing > 0 && payoutMinor <= 0) return e
+              return { ...e, winAmount: payoutMinor }
+            })
+          )
+        }
       } else {
         if (BONUS_HUNT_DEBUG && pending.length > 0) {
           console.log('[BH houseBet] NO MATCH → recent', {
@@ -582,6 +477,8 @@ export default function BonusHuntControl({
             })
           }
 
+          saveSlotSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet: usedExtraBet, ...placeBetOpts }, response: data, skipIfFull: true })
+          if (parsed.isBonus) saveBonusSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet: usedExtraBet, ...placeBetOpts }, response: data })
           if (isSaveBonusLogsEnabled() && parsed.isBonus) {
             saveBonusLog({
               slotSlug: slot.slug,
@@ -800,10 +697,10 @@ export default function BonusHuntControl({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div className="bonushunt-root" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       {(selectedSlots.length >= 2 || (huntComplete && wheelSlots.length >= 2)) && (
-        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-          {huntComplete && <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--accent)' }}>Bonus Opening – Welchen Bonus als nächstes?</div>}
+        <div className="casino-card" style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '1.25rem' }}>
+          {huntComplete && <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.02em' }}>Bonus Opening – Welchen Bonus als nächstes?</div>}
           <SlotSlider
             slots={huntComplete ? wheelSlots : selectedSlots}
             bonusSlots={huntComplete ? wheelSlots.filter(slot => hasBonusSlugs.has(slot.slug)) : selectedSlots.filter(slot => hasBonusSlugs.has(slot.slug))}
@@ -824,41 +721,40 @@ export default function BonusHuntControl({
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', alignItems: 'start' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: 0, color: 'var(--text)' }}>
-        <div style={STYLES.section}>
-          <span style={STYLES.label}>Slots für Bonus Hunt (anklicken zum Auswählen)</span>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.5rem' }}>
-          <select
-            value={loadedSetId}
-            onChange={(e) => onLoadSlotSet?.(e.target.value)}
-            style={{ ...STYLES.select, width: 'auto', minWidth: 140 }}
-            disabled={isRunning}
-          >
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.25rem', alignItems: 'start' }}>
+      <div className="casino-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: 0 }}>
+        <h3 className="casino-card-header" style={{ marginBottom: '0.75rem' }}>
+          <span className="casino-card-header-accent"></span>
+          Slots & Einstellungen
+        </h3>
+        <div className={styles.section}>
+          <span className={styles.label}>Slots (anklicken zum Auswählen)</span>
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.35rem' }}>
+          <select value={loadedSetId} onChange={(e) => onLoadSlotSet?.(e.target.value)} className={styles.select} style={{ width: 'auto', minWidth: 120 }} disabled={isRunning}>
             <option value="">— Slot-Set laden —</option>
             {slotSets.map((s) => (
               <option key={s.id} value={s.id}>{s.name} ({(s.slugs || s.slots || []).length})</option>
             ))}
           </select>
-          <button type="button" onClick={() => onSaveSlotSet?.()} disabled={isRunning || selectedSlugs.length === 0} style={STYLES.btnSecondary}>
+          <button type="button" onClick={() => onSaveSlotSet?.()} disabled={isRunning || selectedSlugs.length === 0} className={styles.btnSecondary}>
             Speichern
           </button>
           {loadedSetId && (
-            <button type="button" onClick={() => onDeleteSlotSet?.()} disabled={isRunning} style={{ ...STYLES.btnSecondary, color: 'var(--error)' }}>
+            <button type="button" onClick={() => onDeleteSlotSet?.()} disabled={isRunning} className={styles.btnSecondary} style={{ color: 'var(--error)' }}>
               Löschen
             </button>
           )}
           <span style={{ flex: 1 }} />
-          <button type="button" onClick={selectAll} style={STYLES.btnSecondary} disabled={isRunning}>Alle</button>
-          <button type="button" onClick={selectNone} style={STYLES.btnSecondary} disabled={isRunning}>Keine</button>
-          <button type="button" onClick={handleUncheckAllBonus} style={{ ...STYLES.btnSecondary, color: 'var(--text)' }} disabled={isRunning}>Uncheck Bonus</button>
+          <button type="button" onClick={selectAll} className={styles.btnSecondary} disabled={isRunning}>Alle</button>
+          <button type="button" onClick={selectNone} className={styles.btnSecondary} disabled={isRunning}>Keine</button>
+          <button type="button" onClick={handleUncheckAllBonus} className={styles.btnSecondary} style={{ color: 'var(--text)' }} disabled={isRunning}>Uncheck Bonus</button>
           <button
             type="button"
             onClick={() => {
               const names = selectedSlots.map((s) => s.name || s.slug).join('\n')
               if (names) navigator.clipboard?.writeText(names)
             }}
-            style={{ ...STYLES.btnSecondary, padding: '0.35rem 0.5rem', fontSize: '0.75rem' }}
+            className={styles.btnSecondary} style={{ padding: '0.35rem 0.5rem', fontSize: '0.75rem' }}
             disabled={isRunning || selectedSlots.length === 0}
             title="Namen für WheelOfNames.com kopieren (ein Name pro Zeile)"
           >
@@ -875,208 +771,80 @@ export default function BonusHuntControl({
         />
         </div>
 
-        <div style={STYLES.section}>
-        <div style={{ marginBottom: '0.35rem' }}>
-          <span style={{ ...STYLES.label, marginBottom: 0 }}>Währung & Einsatz (für alle Slots)</span>
-        </div>
-        <div style={STYLES.row}>
-          <select
-            value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'usdc')}
-            onChange={(e) => setSourceCurrency(e.target.value)}
-            style={STYLES.select}
-            disabled={isRunning}
-          >
+        <div className={`${styles.section} ${styles.sectionBlock}`}>
+        <span className={styles.label} style={{ marginBottom: '0.5rem' }}>Währung & Einsatz</span>
+        <div className={styles.row} style={{ flexWrap: 'wrap', marginBottom: '0.35rem' }}>
+          <select value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'usdc')} onChange={(e) => setSourceCurrency(e.target.value)} className={styles.select} style={{ minWidth: 90, flex: 'none' }} disabled={isRunning}>
             {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
             {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
           </select>
-          <span style={{ alignSelf: 'center', color: 'var(--text-muted)' }}>→</span>
-          <select
-            value={allowedCurrencies.some((c) => c.value === targetCurrency) ? targetCurrency : (allowedCurrencies[0]?.value || 'eur')}
-            onChange={(e) => setTargetCurrency(e.target.value)}
-            style={STYLES.select}
-            disabled={isRunning}
-          >
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
+          <select value={allowedCurrencies.some((c) => c.value === targetCurrency) ? targetCurrency : (allowedCurrencies[0]?.value || 'eur')} onChange={(e) => setTargetCurrency(e.target.value)} className={styles.select} style={{ minWidth: 90, flex: 'none' }} disabled={isRunning}>
             {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
             {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
           </select>
-        </div>
-        <div style={{ ...STYLES.row, marginTop: '0.5rem' }}>
-          <select
-            value={betAmount}
-            onChange={(e) => setBetAmount(Number(e.target.value))}
-            style={STYLES.select}
-            disabled={isRunning}
-          >
-            {huntBetLevels.map((v) => (
-              <option key={v} value={v}>
-                {formatBetLabel(v, targetCurrency)}
-              </option>
-            ))}
+          <select value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} className={styles.select} style={{ minWidth: 100, flex: 'none' }} disabled={isRunning}>
+            {huntBetLevels.map((v) => <option key={v} value={v}>{formatBetLabel(v, targetCurrency)}</option>)}
           </select>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
-            <input
-              type="checkbox"
-              checked={extraBet}
-              onChange={(e) => setExtraBet(e.target.checked)}
-              disabled={isRunning}
-            />
-            Extra Bet (mod_bonus)
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+            <input type="checkbox" checked={extraBet} onChange={(e) => setExtraBet(e.target.checked)} disabled={isRunning} />
+            Extra
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
-            <input
-              type="checkbox"
-              checked={saveBonusLogs}
-              onChange={(e) => handleToggleBonusLogs(e.target.checked)}
-              disabled={isRunning}
-            />
-            Bonus-API-Log
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+            <input type="checkbox" checked={saveBonusLogs} onChange={(e) => handleToggleBonusLogs(e.target.checked)} disabled={isRunning} />
+            Bonus-Log
           </label>
-          <button
-            type="button"
-            onClick={() => exportBonusLogsAsFile()}
-            style={STYLES.btnSecondary}
-            disabled={isRunning}
-          >
-            Export Logs
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm('Bonus-Logs wirklich löschen?')) {
-                clearBonusLogs()
-              }
-            }}
-            style={{ ...STYLES.btnSecondary, color: 'var(--error)' }}
-            disabled={isRunning}
-            title="Löscht alle gespeicherten Bonus-Logs"
-          >
-            Löschen
-          </button>
+          <button type="button" onClick={() => exportBonusLogsAsFile()} className={styles.btnSecondary} disabled={isRunning}>Export</button>
+          <button type="button" onClick={() => { if (window.confirm('Bonus-Logs löschen?')) clearBonusLogs() }} className={styles.btnSecondary} style={{ color: 'var(--error)' }} disabled={isRunning}>Löschen</button>
         </div>
-        <div style={{ ...STYLES.row, marginTop: '0.75rem', gap: '1rem', flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
-            Max Spins pro Slot:
-            <input
-              type="number"
-              min={0}
-              max={9999}
-              value={maxSpinsPerSlot || ''}
-              onChange={(e) => setMaxSpinsPerSlot(Math.max(0, parseInt(e.target.value) || 0))}
-              placeholder="0=∞"
-              style={{ ...STYLES.select, width: 70 }}
-              disabled={isRunning}
-            />
+        <div className={styles.row} style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
+            Max Spins: <input type="number" min={0} value={maxSpinsPerSlot || ''} onChange={(e) => setMaxSpinsPerSlot(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0=∞" className={styles.select} style={{ width: 52 }} disabled={isRunning} title="0 = unendlich" />
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }} title="Stopp wenn Verlust in Währungseinheiten erreicht">
-            Stopp bei Verlust:
-            <input
-              type="number"
-              min={0}
-              value={maxLossLimit || ''}
-              onChange={(e) => setMaxLossLimit(Math.max(0, parseInt(e.target.value) || 0))}
-              placeholder="0=aus"
-              style={{ ...STYLES.select, width: 70 }}
-              disabled={isRunning}
-            />
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Stopp bei Verlust in Währung">
+            Verlust: <input type="number" min={0} value={maxLossLimit || ''} onChange={(e) => setMaxLossLimit(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 52 }} disabled={isRunning} />
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
-            <input
-              type="checkbox"
-              checked={stopOnMulti}
-              onChange={(e) => setStopOnMulti(e.target.checked)}
-              disabled={isRunning}
-              style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
-            />
-            Stop on Multi
-            <input
-              type="number"
-              min={2}
-              max={1000}
-              value={stopOnMultiplier}
-              onChange={(e) => setStopOnMultiplier(Math.max(2, parseInt(e.target.value) || 2))}
-              style={{ ...STYLES.select, width: 56 }}
-              disabled={isRunning || !stopOnMulti}
-            />
-            ×
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+            <input type="checkbox" checked={stopOnMulti} onChange={(e) => setStopOnMulti(e.target.checked)} disabled={isRunning} />
+            Multi <input type="number" min={2} value={stopOnMultiplier} onChange={(e) => setStopOnMultiplier(Math.max(2, parseInt(e.target.value) || 2))} className={styles.select} style={{ width: 44 }} disabled={isRunning || !stopOnMulti} />×
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }} title="Hacksaw: Bei 4+ werden nur 4/5-Scatter-Boni gesammelt (Stopp). 3er-Boni werden durchgespielt und weiter gejagt. Le Cowboy: Bei 5-Scatter-Hunt wird automatisch auf 5er gambelt.">
-            Stopp bei Scatter:
-            <select
-              value={minScatterForStop}
-              onChange={(e) => setMinScatterForStop(Number(e.target.value))}
-              style={{ ...STYLES.select, width: 100 }}
-              disabled={isRunning}
-            >
-              <option value={0}>Jeder Bonus</option>
-              <option value={3}>3+ Scatter</option>
-              <option value={4}>4+ Scatter</option>
-              <option value={5}>5 Scatter</option>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Scatter-Minimum für Bonus-Stopp">
+            Scatter: <select value={minScatterForStop} onChange={(e) => setMinScatterForStop(Number(e.target.value))} className={styles.select} style={{ width: 90 }} disabled={isRunning}>
+              <option value={0}>Jeder</option>
+              <option value={3}>3+</option>
+              <option value={4}>4+</option>
+              <option value={5}>5</option>
             </select>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }} title="Bei Bonus mit Gamble-Option (z.B. Bullets and Bounty): Ja = Gambeln, Nein = Collect">
-            <input
-              type="checkbox"
-              checked={gambleOption}
-              onChange={(e) => setGambleOption(e.target.checked)}
-              disabled={isRunning}
-              style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
-            />
-            Bonus Gamble
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Gamble bei Bonus">
+            <input type="checkbox" checked={gambleOption} onChange={(e) => setGambleOption(e.target.checked)} disabled={isRunning} />
+            Gamble
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
-            Session-Refresh nach:
-            <input
-              type="number"
-              min={0}
-              max={9999}
-              value={sessionRefreshSpins || ''}
-              onChange={(e) => setSessionRefreshSpins(Math.max(0, parseInt(e.target.value) || 0))}
-              placeholder="0=nie"
-              style={{ ...STYLES.select, width: 70 }}
-              disabled={isRunning}
-            />
-            Spins
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
+            Refresh: <input type="number" min={0} value={sessionRefreshSpins || ''} onChange={(e) => setSessionRefreshSpins(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 48 }} disabled={isRunning} />
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }} title="Mehrere Slots gleichzeitig huntieren (wie im SSP)">
-            <input
-              type="checkbox"
-              checked={parallelHuntEnabled}
-              onChange={(e) => setParallelHuntEnabled(e.target.checked)}
-              disabled={isRunning}
-              style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
-            />
-            Multihunt
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <input
-                type="range"
-                min={2}
-                max={30}
-                value={maxParallelSlots}
-                onChange={(e) => setMaxParallelSlots(Math.min(30, Math.max(2, parseInt(e.target.value) || 2)))}
-                style={{ width: 110 }}
-                disabled={isRunning || !parallelHuntEnabled}
-              />
-              <span style={{ fontSize: '0.8rem', minWidth: 18, textAlign: 'right' }}>{maxParallelSlots}</span>
-            </div>
-            Slots parallel
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Mehrere Slots parallel">
+            <input type="checkbox" checked={parallelHuntEnabled} onChange={(e) => setParallelHuntEnabled(e.target.checked)} disabled={isRunning} />
+            <input type="range" min={2} value={maxParallelSlots} onChange={(e) => setMaxParallelSlots(Math.max(2, parseInt(e.target.value) || 2))} style={{ width: 80 }} disabled={isRunning || !parallelHuntEnabled} />
+            <span style={{ minWidth: 16 }}>{maxParallelSlots}</span> parallel
           </label>
         </div>
         </div>
 
-        <div style={{ ...STYLES.row, flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div className={styles.row} style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
           {!isRunning ? (
             <>
-              <button onClick={() => runHunt()} style={STYLES.btn} disabled={selectedSlugs.length === 0}>
+              <button onClick={() => runHunt()} className={styles.btn} disabled={selectedSlugs.length === 0}>
                 Bonus Hunt starten ({selectedSlugs.length} Slot{selectedSlugs.length !== 1 ? 's' : ''})
               </button>
               {skippedCount > 0 && Object.keys(huntState).length > 0 && (
-                <button onClick={handleRetrySkipped} style={STYLES.btnSecondary}>
+                <button onClick={handleRetrySkipped} className={styles.btnSecondary}>
                   Erneut versuchen ({skippedCount} übrig)
                 </button>
               )}
             </>
           ) : (
-            <button onClick={stopHunt} style={{ ...STYLES.btn, ...STYLES.btnStop }}>
+            <button onClick={stopHunt} className={`${styles.btn} ${styles.btnStop}`}>
               Stoppen
             </button>
           )}
@@ -1089,7 +857,7 @@ export default function BonusHuntControl({
                   try { window.localStorage.setItem('bonus_hunt_debug', e.target.checked ? '1' : '0') } catch (_) {}
                   window.location.reload()
                 }}
-                style={{ width: 14, height: 14, marginRight: '0.25rem', accentColor: 'var(--accent)' }}
+                style={{ marginRight: '0.25rem' }}
               />
               Debug
             </label>
@@ -1097,10 +865,14 @@ export default function BonusHuntControl({
           </div>
         </div>
 
-        {error && <div style={STYLES.error}>{error}</div>}
+        {error && <div className={styles.error}>{error}</div>}
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: 0, color: 'var(--text)' }}>
+      <div className="casino-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', minWidth: 0 }}>
+        <h3 className="casino-card-header" style={{ marginBottom: 0 }}>
+          <span className="casino-card-header-accent"></span>
+          Fortschritt & Statistik
+        </h3>
       {Object.keys(huntState).length === 0 && !isRunning && (
         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
           Starte einen Bonus Hunt, um Fortschritt, Balance und Spins hier zu sehen.
@@ -1108,8 +880,8 @@ export default function BonusHuntControl({
       )}
       {(currentBalance != null || isRunning) && (
         <div style={{ marginTop: '1rem', marginBottom: '0.5rem' }}>
-          <span style={STYLES.label}>Kontostand</span>
-          <div style={STYLES.balanceBadge}>
+          <span className={styles.label}>Kontostand</span>
+          <div className={styles.balanceBadge}>
             {currentBalance != null
               ? formatWithUsd(currentBalance, currencyCode || targetCurrency || sourceCurrency)
               : '–'}
@@ -1118,8 +890,8 @@ export default function BonusHuntControl({
       )}
 
       {Object.keys(huntState).length > 0 && (
-        <div style={STYLES.progressList}>
-          <div style={STYLES.statsTitle}>
+        <div className={styles.progressList}>
+          <div className={styles.statsTitle}>
             Fortschritt {doneCount}/{Object.keys(huntState).length}
             {skippedCount > 0 && (
               <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: '0.5rem' }}>
@@ -1133,24 +905,21 @@ export default function BonusHuntControl({
             .map(({ slot, state }, i, arr) => (
               <div
                 key={slot.slug}
-                style={{
-                  ...STYLES.progressItem,
-                  ...(i === arr.length - 1 ? STYLES.progressItemLast : {}),
-                }}
+                className={`${styles.progressItem} ${i === arr.length - 1 ? styles.progressItemLast : ''}`.trim()}
               >
                 <span>
                   {wheelOpenedSlugs.has(slot.slug) ? (
-                    <span style={STYLES.progressOpened}>🎁 OPEN</span>
+                    <span className={styles.progressOpened}>🎁 OPEN</span>
                   ) : hasBonusSlugs.has(slot.slug) ? (
-                    <span style={STYLES.progressCheck}>✓</span>
+                    <span className={styles.progressCheck}>✓</span>
                   ) : state?.status === 'done' && !state?.skipped && !state?.error && !state?.balanceEmpty ? (
-                    <span style={STYLES.progressCheck}>✓</span>
+                    <span className={styles.progressCheck}>✓</span>
                   ) : state?.status === 'done' && (state?.skipped || state?.error || state?.balanceEmpty) ? (
-                    <span style={STYLES.progressCross}>✗</span>
+                    <span className={styles.progressCross}>✗</span>
                   ) : state?.status === 'spinning' ? (
-                    <span style={STYLES.progressSpinning}>⟳</span>
+                    <span className={styles.progressSpinning}>⟳</span>
                   ) : (
-                    <span style={STYLES.progressWait}>○</span>
+                    <span className={styles.progressWait}>○</span>
                   )}
                 </span>
                 <span style={{ flex: 1 }}>
@@ -1187,7 +956,6 @@ export default function BonusHuntControl({
                     checked={hasBonusSlugs.has(slot.slug)}
                     onChange={() => handleToggleHasBonus(slot.slug)}
                     disabled={isRunning}
-                    style={{ width: 16, height: 16, accentColor: 'var(--accent)' }}
                   />
                   hat Bonus
                 </label>
@@ -1233,7 +1001,7 @@ export default function BonusHuntControl({
         }
         const hasScatterData = scatterDist[3] + scatterDist[4] + scatterDist[5] > 0
         return (
-          <div style={STYLES.statsCard}>
+          <div className={styles.statsCard}>
             {huntComplete && (
               <div style={{
                 padding: '0.75rem',
@@ -1262,7 +1030,7 @@ export default function BonusHuntControl({
                 </div>
               </div>
             )}
-            <div style={STYLES.statsTitle}>Bonus Hunt Statistik</div>
+            <div className={styles.statsTitle}>Bonus Hunt Statistik</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', fontSize: '0.95rem', marginBottom: slotStats.length > 1 ? '1rem' : 0 }}>
               <span>Spins gesamt</span>
               <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{totalSpins}</span>
@@ -1293,7 +1061,7 @@ export default function BonusHuntControl({
             </div>
             {slotStats.length > 1 && (
               <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
-                <div style={{ ...STYLES.statsTitle, marginBottom: '0.5rem', display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', gap: '0.5rem 1rem', paddingRight: '0.5rem' }}>
+                <div className={styles.statsTitle} style={{ marginBottom: '0.5rem', display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', gap: '0.5rem 1rem', paddingRight: '0.5rem' }}>
                   <span>Slot</span>
                   <span>Spins</span>
                   <span>Max ×</span>
@@ -1333,7 +1101,7 @@ export default function BonusHuntControl({
       })()}
 
       {betHistory.length > 0 && (() => {
-        const chartColors = ['var(--accent)', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4']
+        const chartColors = ['#00d4ff', '#a3e635', '#fbbf24', '#a78bfa', '#fb7185', '#38bdf8']
         const slotKeys = [...new Set(betHistory.map((b) => b.slotSlug || b.slotName).filter(Boolean))]
         const slotNames = {}
         betHistory.forEach((b) => {
@@ -1343,12 +1111,12 @@ export default function BonusHuntControl({
 
         if (slotKeys.length === 0) return null
 
-        const padL = 44
-        const padR = 8
-        const padT = 8
-        const padB = 20
-        const w = 320
-        const h = 110
+        const padL = 48
+        const padR = 12
+        const padT = 14
+        const padB = 24
+        const w = 340
+        const h = 130
         const chartW = w - padL - padR
         const chartH = h - padT - padB
 
@@ -1368,29 +1136,23 @@ export default function BonusHuntControl({
             ? `M ${pts[0][0]},${pts[0][1]} L ${pts.slice(1).map(([x, y]) => `${x},${y}`).join(' ')} L ${pts[pts.length - 1][0]},${h - padB} L ${pts[0][0]},${h - padB} Z`
             : ''
           return (
-            <div style={STYLES.chart}>
-              <div style={{ ...STYLES.statsTitle, marginBottom: '0.5rem' }}>Balance ($) · {slotNames[slotKeys[0]] || slotKeys[0]}</div>
-              <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', minHeight: 110 }}>
+            <div className={styles.chart}>
+              <div className={styles.statsTitle} style={{ marginBottom: '0.75rem', color: 'rgba(255,255,255,0.9)' }}>Balance ($) · {slotNames[slotKeys[0]] || slotKeys[0]}</div>
+              <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', minHeight: 130 }}>
                 <defs>
                   <linearGradient id="bh-balance-fill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.2" />
-                    <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+                    <stop offset="0%" stopColor="#00d4ff" stopOpacity="0.25" />
+                    <stop offset="100%" stopColor="#00d4ff" stopOpacity="0" />
                   </linearGradient>
                 </defs>
-                <text x={padL - 4} y={padT + 4} fontSize="9" fill="var(--text-muted)" textAnchor="end">${maxB.toFixed(2)}</text>
-                <text x={padL - 4} y={h - padB - 4} fontSize="9" fill="var(--text-muted)" textAnchor="end">${minB.toFixed(2)}</text>
-                {[0.25, 0.5, 0.75].map((t) => padT + chartH * (1 - t)).map((y) => (
-                  <line key={y} x1={padL} x2={w - padR} y1={y} y2={y} style={STYLES.chartGrid} />
-                ))}
+                {[0, 0.25, 0.5, 0.75, 1].map((t) => {
+                  const y = padT + chartH * (1 - t)
+                  const val = minB + t * (maxB - minB)
+                  return <g key={t}><line x1={padL} x2={w - padR} y1={y} y2={y} className={styles.chartGrid} /><text x={padL - 6} y={y + 4} fontSize="10" fill="rgba(255,255,255,0.6)" textAnchor="end" fontFamily="system-ui">${val.toFixed(2)}</text></g>
+                })}
                 {areaPath && <path d={areaPath} fill="url(#bh-balance-fill)" />}
-                <polyline
-                  fill="none"
-                  stroke="var(--accent)"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  points={pts.map(([x, y]) => `${x},${y}`).join(' ')}
-                />
+                <polyline fill="none" stroke="#00d4ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" points={pts.map(([x, y]) => `${x},${y}`).join(' ')} />
+                {pts.map(([x, y], i) => <circle key={i} cx={x} cy={y} r="3" fill="#00d4ff" stroke="rgba(0,0,0,0.3)" strokeWidth="1" />)}
               </svg>
             </div>
           )
@@ -1418,45 +1180,48 @@ export default function BonusHuntControl({
         const zeroY = toChartY(0, minV, range)
 
         const showZero = minV < 0 && maxV > 0
+        const yTicks = [0, 0.25, 0.5, 0.75, 1]
         return (
-          <div style={STYLES.chart}>
-            <div style={{ ...STYLES.statsTitle, marginBottom: '0.5rem' }}>Kumulatives Netto pro Slot ($)</div>
-            <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', minHeight: 110 }}>
-              <text x={padL - 4} y={padT + 4} fontSize="9" fill="var(--text-muted)" textAnchor="end">${maxV.toFixed(2)}</text>
-              {showZero && <text x={padL - 4} y={zeroY + 4} fontSize="9" fill="var(--text-muted)" textAnchor="end">$0</text>}
-              <text x={padL - 4} y={h - padB - 4} fontSize="9" fill="var(--text-muted)" textAnchor="end">${minV.toFixed(2)}</text>
-              {[0.25, 0.5, 0.75].map((t) => padT + chartH * (1 - t)).map((y) => (
-                <line key={y} x1={padL} x2={w - padR} y1={y} y2={y} style={STYLES.chartGrid} />
-              ))}
-              {showZero && <line x1={padL} x2={w - padR} y1={zeroY} y2={zeroY} style={STYLES.chartZeroLine} />}
-                {slotKeys.map((key, idx) => {
-                  const pts = cumBySlot[key]
-                  if (!pts.length) return null
-                  const color = chartColors[idx % chartColors.length]
-                  const points = pts
-                    .map((p) => {
-                      const yUsd = toUsd(p.y, statsCurrency)
-                      const x = toChartX(p.x, divisor)
-                      const y = toChartY(yUsd, minV, range)
-                      return [x, y]
-                    })
-                  return (
+          <div className={`${styles.chart} ${styles.chartMultiSlot}`}>
+            <div className={styles.statsTitle} style={{ marginBottom: '0.75rem', color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>Kumulatives Netto pro Slot ($)</div>
+            <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', minHeight: 130 }}>
+              {yTicks.map((t) => {
+                const y = padT + chartH * (1 - t)
+                const val = minV + t * range
+                return <g key={t}><line x1={padL} x2={w - padR} y1={y} y2={y} className={styles.chartGrid} /><text x={padL - 6} y={y + 4} fontSize="10" fill="rgba(255,255,255,0.6)" textAnchor="end" fontFamily="system-ui">${val.toFixed(2)}</text></g>
+              })}
+              {showZero && <line x1={padL} x2={w - padR} y1={zeroY} y2={zeroY} className={styles.chartZeroLine} />}
+              {slotKeys.map((key, idx) => {
+                const pts = cumBySlot[key]
+                if (!pts.length) return null
+                const color = chartColors[idx % chartColors.length]
+                const points = pts.map((p) => {
+                  const yUsd = toUsd(p.y, statsCurrency)
+                  const x = toChartX(p.x, divisor)
+                  const y = toChartY(yUsd, minV, range)
+                  return [x, y]
+                })
+                return (
+                  <g key={key}>
                     <polyline
-                      key={key}
                       fill="none"
                       stroke={color}
-                      strokeWidth="2"
+                      strokeWidth="2.5"
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       points={points.map(([x, y]) => `${x},${y}`).join(' ')}
                     />
-                  )
-                })}
-              </svg>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1rem', marginTop: '0.75rem', fontSize: '0.75rem' }}>
+                    {points.map(([x, y], i) => (
+                      <circle key={i} cx={x} cy={y} r="3" fill={color} stroke="rgba(0,0,0,0.25)" strokeWidth="1" />
+                    ))}
+                  </g>
+                )
+              })}
+            </svg>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1rem', marginTop: '1rem' }}>
               {slotKeys.map((key, idx) => (
-                <span key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <span style={{ width: 10, height: 3, background: chartColors[idx % chartColors.length], borderRadius: 2 }} />
+                <span key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', padding: '0.3rem 0.6rem', borderRadius: 8, background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.9)' }}>
+                  <span style={{ width: 12, height: 12, borderRadius: '50%', background: chartColors[idx % chartColors.length], boxShadow: `0 0 8px ${chartColors[idx % chartColors.length]}80` }} />
                   {slotNames[key] || key}
                 </span>
               ))}
@@ -1470,26 +1235,23 @@ export default function BonusHuntControl({
           <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
             Spins ({betHistory.length})
           </summary>
-          <div style={STYLES.chart}>
-            <div style={{ ...STYLES.betRow, color: 'var(--text-muted)', fontSize: '0.7rem', borderBottom: '1px solid var(--border)' }}>
+          <div className={styles.chart}>
+            <div className={styles.betRow} style={{ color: 'var(--text-muted)', fontSize: '0.7rem', borderBottom: '1px solid var(--border)' }}>
               <span>Slot</span>
               <span>Einsatz</span>
               <span>Gewinn</span>
               <span>Netto</span>
               <span>×</span>
             </div>
-            <div style={STYLES.betList}>
-              {[...betHistory].reverse().slice(0, 30).map((b) => {
+            <div className={styles.betList}>
+              {[...betHistory].reverse().slice(0, 30).filter((b) => (b.betAmount ?? 0) !== 0 || (b.winAmount ?? 0) !== 0).map((b) => {
                 const displayWin = getDisplayWin(b)
                 const net = displayWin - b.betAmount
                 const mult = b.betAmount > 0 ? (displayWin / b.betAmount).toFixed(1) : '0'
                 return (
                   <div
                     key={b.id}
-                    style={{
-                      ...STYLES.betRow,
-                      ...(b.isBonus ? { background: 'rgba(255, 193, 7, 0.06)' } : {}),
-                    }}
+                    className={styles.betRow} style={b.isBonus ? { background: 'rgba(255, 193, 7, 0.06)' } : undefined}
                   >
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={b.slotName}>
                       {b.slotName}

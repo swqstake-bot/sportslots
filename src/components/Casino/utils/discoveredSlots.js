@@ -1,16 +1,32 @@
 /**
  * Slots, die beim Challenges-Scan neu gefunden wurden.
- * Persistiert in localStorage, um sie automatisch zur Slot-Liste hinzuzufügen.
+ * Werden lokal in localStorage persistiert (inkl. Icons/thumbnailUrl).
  */
-import { getWebReadySlots, PROVIDERS } from '../constants/slots'
+import { PROVIDERS } from '../constants/slots'
 
-const STORAGE_KEY = 'slotbot_discovered_slots'
+const DISCOVERED_SLOTS_KEY = 'slotbot_discovered_slots'
+
+export function loadDiscoveredSlots() {
+  try {
+    const raw = localStorage.getItem(DISCOVERED_SLOTS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+export function saveDiscoveredSlots(list) {
+  try {
+    localStorage.setItem(DISCOVERED_SLOTS_KEY, JSON.stringify(list))
+  } catch (_) {}
+}
 
 export function inferProviderId(slug) {
   if (!slug || typeof slug !== 'string') return 'stakeEngine'
   const s = slug.toLowerCase()
 
-  // Bekannte Provider-Prefixe
   if (s.startsWith('hacksaw-')) return 'hacksaw'
   if (s.startsWith('pragmatic-play-') || s.startsWith('pragmatic-')) return 'pragmatic'
   if (s.startsWith('nolimit-')) return 'nolimit'
@@ -36,70 +52,32 @@ export function inferProviderId(slug) {
   if (s.startsWith('popiplay-')) return 'popiplay'
   if (s.startsWith('helio-')) return 'helio'
   if (s.startsWith('samurai-')) return 'samurai'
-  
-  // Standard-Fallback
+
   return 'stakeEngine'
 }
 
 /**
- * @returns {Array<{ slug: string, name: string, providerId: string }>}
- */
-export function loadDiscoveredSlots() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-    const arr = JSON.parse(raw)
-    return Array.isArray(arr) ? arr : []
-  } catch {
-    return []
-  }
-}
-
-function saveDiscoveredSlots(slots) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(slots))
-  } catch (_) {}
-}
-
-/**
  * Fügt neue Slugs aus Challenges hinzu, die noch nicht in der Slot-Liste sind.
- * @param {Array<{ gameSlug?: string, gameName?: string }>} challenges
- * @returns {Array<{ slug: string, name: string, providerId: string }>} neu hinzugefügte
+ * @param {Array<{ gameSlug?: string, gameName?: string, thumbnailUrl?: string, game?: { slug?: string, name?: string, thumbnailUrl?: string } }>} challenges
+ * @param {Set<string>} knownSlugs - bereits bekannte Slugs (z.B. aus webSlots)
+ * @returns {Array<{ slug: string, name: string, providerId: string, thumbnailUrl?: string }>} neu hinzugefügte
  */
-export function addDiscoveredFromChallenges(challenges) {
+export function addDiscoveredFromChallenges(challenges, knownSlugs = new Set()) {
   if (!challenges?.length) return []
-  const base = getWebReadySlots()
-  const known = new Set(base.map((s) => s.slug))
-  const discovered = loadDiscoveredSlots()
-  for (const d of discovered) known.add(d.slug)
-
   const added = []
+
   for (const c of challenges) {
     const slug = c.gameSlug || c.game?.slug
-    if (!slug || known.has(slug)) continue
-    // if (slug.toLowerCase().startsWith('nolimit-')) continue // NoLimit jetzt unterstützt
+    if (!slug || knownSlugs.has(slug)) continue
+
     const providerId = inferProviderId(slug)
     if (PROVIDERS[providerId]?.impl !== 'web') continue
-    const name = c.gameName || c.game?.name || slug
-    discovered.push({ slug, name, providerId })
-    known.add(slug)
-    added.push({ slug, name, providerId })
-  }
-  if (added.length) saveDiscoveredSlots(discovered)
-  return added
-}
 
-/**
- * Merge von Basis-Slots und discovered.
- * @param {Array} baseSlots
- * @param {Array} discovered
- * @returns {Array}
- */
-export function mergeSlots(baseSlots, discovered) {
-  const bySlug = new Map()
-  for (const s of baseSlots || []) bySlug.set(s.slug, s)
-  for (const s of discovered || []) {
-    if (!bySlug.has(s.slug)) bySlug.set(s.slug, { ...s })
+    const name = c.gameName || c.game?.name || slug
+    const thumbnailUrl = c.thumbnailUrl || c.game?.thumbnailUrl
+    added.push({ slug, name, providerId, thumbnailUrl: thumbnailUrl || undefined })
+    knownSlugs.add(slug)
   }
-  return [...bySlug.values()]
+
+  return added
 }

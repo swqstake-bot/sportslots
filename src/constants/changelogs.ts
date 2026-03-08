@@ -1,4 +1,12 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.82': [
+    '🎨 App-Theme: AutoBet, Active Bets, BetSlip und RightSidebar auf --app-* Variablen umgestellt',
+    '🎨 Fixture-Cards: Kompakteres Layout, kleinere Abstände',
+    '🐛 Live-Badge: Nur bei echten Live-Spielen (matchStatus live/in_play), nicht bei Upcoming',
+    '🎨 Bonus-Hunt-Chart: Überarbeitetes Design (Hintergrund, Grid, Farben, Legende)',
+    '🎨 Slot-Icons: Größere Darstellung (42px)',
+    '⚙️ TipMenu aus AutoBet-Bereich entfernt',
+  ],
   '1.0.75': [
     '✨ Wallet: Balance-Updates per WebSocket (balanceUpdated) – Echtzeit statt Polling',
     '✨ Slot: Multiplikator in Bet-Statistik (parseBetResponse)',

@@ -74,3 +74,11 @@ export function getOpenLegsCount(bet: SportBet): number {
   if (!bet.outcomes || !Array.isArray(bet.outcomes)) return 0;
   return bet.outcomes.filter((o: any) => !isLegClosed(o)).length;
 }
+
+/**
+ * Anzahl Legs, die bereits erledigt sind (gewonnen/verloren). Für Sortierung: mehr erledigt = besser (11/12 vor 11/11).
+ */
+export function getClosedLegsCount(bet: SportBet): number {
+  const total = bet.outcomes?.length ?? 0;
+  return total - getOpenLegsCount(bet);
+}

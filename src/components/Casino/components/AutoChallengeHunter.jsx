@@ -6,7 +6,7 @@ import { parseBetResponse } from '../utils/parseBetResponse'
 import { Button } from './ui/Button'
 import { CURRENCY_GROUPS } from '../constants/currencies'
 import { notifyChallengeStart, requestNotificationPermission } from '../utils/notifications'
-import { addDiscoveredFromChallenges, loadDiscoveredSlots } from '../utils/discoveredSlots'
+import { addDiscoveredFromChallenges } from '../utils/discoveredSlots'
 
 const REFRESH_INTERVAL_MS = 2 * 60 * 1000 // 2 Minuten
 const PAGE_SIZE = 24 // Stake Default
@@ -189,11 +189,12 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       setChallenges(unique)
       setLastRefresh(Date.now())
 
-      // Neue Slots/Provider automatisch hinzufügen (wie im Challenge-Tab)
-      const addedSlots = addDiscoveredFromChallenges(unique)
+      // Neue Slots/Provider automatisch hinzufügen (Session-only)
+      const knownSlugs = new Set(webSlots.map((s) => s.slug))
+      const addedSlots = addDiscoveredFromChallenges(unique, knownSlugs)
       if (addedSlots.length > 0) {
         log(`${addedSlots.length} neue Slots/Provider entdeckt: ${addedSlots.map(s => s.name).join(', ')}`)
-        if (onDiscoveredSlots) onDiscoveredSlots()
+        if (onDiscoveredSlots) onDiscoveredSlots(addedSlots)
       }
 
       // Kombiniere vorhandene Slots mit neu entdeckten für diese Runde
@@ -334,13 +335,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
     let slot = webSlots.find(s => s.slug === challenge.gameSlug)
     if (!slot) {
-      // Versuch aus Discovered Slots zu laden (falls webSlots noch nicht updated)
-      const discovered = loadDiscoveredSlots()
-      slot = discovered.find(s => s.slug === challenge.gameSlug)
-    }
-    
-    if (!slot) {
-      slot = { slug: challenge.gameSlug, name: challenge.gameName || challenge.gameSlug, id: challenge.gameSlug }
+      slot = { slug: challenge.gameSlug, name: challenge.gameName || challenge.gameSlug, providerId: 'stakeEngine' }
     }
 
     runnersRef.current[challengeId] = { stop: false }
@@ -689,9 +684,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 <input
                   type="range"
                   min="1"
-                  max="30"
+                  max={9999}
                   value={maxParallel}
-                  onChange={(e) => setMaxParallel(parseInt(e.target.value, 10))}
+                  onChange={(e) => setMaxParallel(parseInt(e.target.value, 10) || 1)}
                   style={{ flex: 1 }}
                 />
                 <span style={{ fontSize: '0.8rem', minWidth: 16, textAlign: 'right' }}>{maxParallel}</span>
@@ -703,7 +698,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 <input
                   type="range"
                   min="1"
-                  max="20"
+                  max={9999}
                   value={pagesToLoad}
                   onChange={(e) => setPagesToLoad(parseInt(e.target.value, 10))}
                   style={{ flex: 1 }}

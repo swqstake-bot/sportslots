@@ -14,11 +14,14 @@ interface UiState {
   selectedSport: string | null;
   /** Live/Upcoming-Filter bei Sportansicht (z.B. Soccer) */
   sportFilterType: 'live' | 'upcoming';
+  /** Suchbegriff für Fixture-Namen (Sports) */
+  fixtureSearchQuery: string;
   rightSidebarTab: 'autobet' | 'activebets' | 'betslip';
   isBetSlipExpanded: boolean;
   isActiveBetsModalOpen: boolean;
   toast: ToastState;
 
+  setFixtureSearchQuery: (q: string) => void;
   setCurrentView: (view: 'sports' | 'casino') => void;
   setCasinoMode: (mode: 'play' | 'challenges' | 'bonushunt' | 'forum' | 'logs') => void;
   setSelectedSport: (sport: string | null) => void;
@@ -37,11 +40,13 @@ export const useUiStore = create<UiState>()(
       casinoMode: 'play',
       selectedSport: 'soccer',
       sportFilterType: 'upcoming',
+      fixtureSearchQuery: '',
       rightSidebarTab: 'activebets',
       isBetSlipExpanded: true,
       isActiveBetsModalOpen: false,
       toast: { message: null, type: 'info' },
 
+      setFixtureSearchQuery: (q) => set({ fixtureSearchQuery: q }),
       setCasinoMode: (mode) => set({ casinoMode: mode }),
       setCurrentView: (view) => set({ currentView: view }),
       setSelectedSport: (sport) => set({ selectedSport: sport }),

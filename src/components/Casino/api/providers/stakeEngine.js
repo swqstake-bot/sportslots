@@ -147,8 +147,13 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const authBalanceRaw = authBalance?.amount != null ? Number(authBalance.amount) : null
   const authCurrency = (authBalance?.currency || targetCurrency || 'eur').toLowerCase()
   const authBalanceUnits = authBalanceRaw != null ? authBalanceRaw / 1_000_000 : null
+  const authPkrFix = authCurrency === 'pkr'
   const initialBalance = authBalanceUnits != null
-    ? (ZERO_DECIMAL_CURRENCIES.includes(authCurrency) ? Math.round(authBalanceUnits) : Math.round(authBalanceUnits * 100))
+    ? (ZERO_DECIMAL_CURRENCIES.includes(authCurrency)
+      ? Math.round(authBalanceUnits)
+      : authPkrFix
+        ? Math.round(authBalanceUnits * 10000)
+        : Math.round(authBalanceUnits * 100))
     : null
 
   return {
@@ -278,14 +283,31 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
   const balanceRaw = balanceObj?.amount != null ? Number(balanceObj.amount) : null
   const respCurrency = (balanceObj?.currency || session?.currencyCode || 'EUR').toLowerCase()
   const balanceUnits = balanceRaw != null ? balanceRaw / 1_000_000 : null
+  // PKR: RGS nutzt 1 Einheit = 100 PKR (wie VND) – Balance/Win 100x zu klein
+  const pkrScaleFix = respCurrency === 'pkr'
   const balanceMinor = balanceUnits != null
-    ? (ZERO_DECIMAL_CURRENCIES.includes(respCurrency) ? Math.round(balanceUnits) : Math.round(balanceUnits * 100))
+    ? (ZERO_DECIMAL_CURRENCIES.includes(respCurrency)
+      ? Math.round(balanceUnits)
+      : pkrScaleFix
+        ? Math.round(balanceUnits * 10000)
+        : Math.round(balanceUnits * 100))
     : null
 
   const winInUnits = winAmount / 1_000_000
-  const winDisplay = ZERO_DECIMAL_CURRENCIES.includes(respCurrency)
-    ? Math.round(winInUnits)
-    : Math.round(winInUnits * 100)
+  let winDisplay
+  if (ZERO_DECIMAL_CURRENCIES.includes(respCurrency)) {
+    winDisplay = Math.round(winInUnits)
+    // VND: RGS liefert teils 1 Einheit = 100 VND (14→1400), teils bereits in VND (z.B. payoutMult-Pfad)
+    // Heuristik: winInUnits >= 1000 = bereits VND; sonst RGS-Format (×100)
+    if (respCurrency === 'vnd' && winDisplay > 0 && winDisplay < 1000) {
+      winDisplay = winDisplay * 100
+    }
+  } else {
+    winDisplay = Math.round(winInUnits * 100)
+    if (pkrScaleFix && winDisplay > 0) {
+      winDisplay = winDisplay * 100
+    }
+  }
 
   // parseBetResponse liest awa vom letzten Event – stellen wir sicher, dass der Gewinn drin steht
   const baseEvents = round?.events?.length ? round.events : []

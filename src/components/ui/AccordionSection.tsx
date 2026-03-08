@@ -15,17 +15,21 @@ export function AccordionSection({
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <section className="rounded-lg border border-stake-border bg-stake-bg-card overflow-hidden">
+    <section className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--app-border)', background: 'var(--app-bg-card)' }}>
       <button
         type="button"
         onClick={() => setIsOpen((o) => !o)}
-        className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-stake-bg-deep/40 transition-colors cursor-pointer"
+        className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors cursor-pointer"
+        style={{ color: 'var(--app-text)' }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.2)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
       >
-        <span className="font-bold text-white text-sm uppercase tracking-wider">
+        <span className="font-bold text-sm uppercase tracking-wider">
           {title}
         </span>
         <span
-          className={`shrink-0 text-stake-text-muted transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          className={`shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          style={{ color: 'var(--app-text-muted)' }}
           aria-hidden
         >
           ▼
@@ -40,7 +44,7 @@ export function AccordionSection({
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="px-4 pb-4 pt-0 border-t border-stake-border/60">
+            <div className="px-3 pb-3 pt-0" style={{ borderTop: '1px solid color-mix(in srgb, var(--app-border) 60%, transparent)' }}>
               {children}
             </div>
           </motion.div>

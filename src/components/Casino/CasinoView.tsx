@@ -9,8 +9,8 @@ import { SlotSelectMulti } from './components/SlotSelectGrouped'
 import { Button } from './components/ui/Button'
 import { Toast } from './components/Toast'
 import { useSlots } from './hooks/useSlots'
-import { loadDiscoveredSlots } from './utils/discoveredSlots'
 import { loadSlotSets, saveSlotSet, deleteSlotSet, exportSlotSets, importSlotSets, loadFavorites, toggleFavorite } from './utils/slotSets'
+import { loadDiscoveredSlots, saveDiscoveredSlots } from './utils/discoveredSlots'
 import { loadRecentBets } from './utils/betHistoryDb'
 import BetList from './components/BetList'
 import { ALL_CURRENCIES } from './constants/currencies'
@@ -34,8 +34,8 @@ export default function CasinoView() {
   const [token, setToken] = useState('')
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
-  const [discoveredSlots, setDiscoveredSlots] = useState(() => loadDiscoveredSlots())
-  const { slots: webSlots } = useSlots(token, discoveredSlots)
+  const [discoveredSlots, setDiscoveredSlots] = useState<{ slug: string; name: string; providerId: string; thumbnailUrl?: string }[]>(() => loadDiscoveredSlots())
+  const { slots: webSlots, loading: slotsLoading, error: slotsError } = useSlots(token, discoveredSlots)
   const [selectedSlotInstances, setSelectedSlotInstances] = useState<{ id: string; slug: string; sourceCurrency?: string; targetCurrency?: string }[]>([])
 
   const selectedSlugs = selectedSlotInstances.map((i) => i.slug)
@@ -292,26 +292,44 @@ export default function CasinoView() {
   }
 
   return (
-    <div className="casino-root min-h-screen bg-[#0f212e] text-[#b1bad3] font-sans">
-      <div className="p-6 space-y-8">
+    <div className="casino-root min-h-screen font-sans" style={{ background: 'var(--bg-deep)', color: 'var(--text)' }}>
+      <div className="p-6 lg:p-8 max-w-[1800px] mx-auto">
         
         {/* Content */}
-        <main className="animate-in fade-in duration-500">
+        <main className="animate-in fade-in duration-500 space-y-6">
            {error && (
-             <div className="bg-red-500/10 border border-red-500/50 text-red-500 p-4 rounded-lg mb-6">
-               {error}
+             <div className="casino-card border-l-4 border-l-[var(--error)] !bg-red-500/5">
+               <p className="text-sm font-medium text-[var(--error)]">{error}</p>
+             </div>
+           )}
+           {slotsError && !error && (
+             <div className="casino-card border-l-4 border-l-[var(--error)] !bg-red-500/5">
+               <p className="text-sm font-medium text-[var(--error)]">Slots: {slotsError}</p>
+             </div>
+           )}
+           {slotsLoading && token && (
+             <div className="space-y-2">
+               <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
+                 <div
+                   className="h-full min-w-[30%] rounded-full bg-[var(--accent)] opacity-80"
+                   style={{
+                     animation: 'slots-loading-shimmer 1.5s ease-in-out infinite',
+                   }}
+                 />
+               </div>
+               <p className="text-xs text-[var(--text-muted)]">Slots werden geladen…</p>
              </div>
            )}
 
            {mode === 'play' && (
-            <div className="space-y-8">
-              <div className="bg-[#0f212e]">
-                <div className="flex flex-col md:flex-row gap-8">
-                   <div className="flex-1">
-                     <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                       <span className="w-1.5 h-8 bg-[#00e676] rounded-full"></span>
-                       Slot Selection
-                     </h2>
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                   <div className="xl:col-span-8">
+                     <div className="casino-card">
+                       <h2 className="casino-card-header">
+                         <span className="casino-card-header-accent"></span>
+                         Slot Selection
+                       </h2>
                      <SlotSelectMulti
                        slots={webSlots}
                        selectedSlugs={selectedSlugs}
@@ -326,36 +344,41 @@ export default function CasinoView() {
                        disabled={false}
                      />
                      
-                     {/* Slot Sets Controls */}
-                     <div className="mt-6 flex flex-wrap gap-3 items-center">
+                     {/* Slot Sets Controls – modern button group */}
+                     <div className="mt-4 flex flex-wrap gap-2 items-center">
                        <select 
                          value={loadedSetId} 
-                         onChange={(e) => handleLoadSet(e.target.value)}
-                         className="bg-[#0f212e] border border-[#2f4553] rounded-lg px-4 py-2 text-base focus:ring-2 focus:ring-[#00e676] outline-none"
+                         onChange={(e) => handleLoadSet(e.target.value)} 
+                         className="bg-[var(--bg-deep)] border border-[var(--border)] rounded-[var(--radius-md)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--accent)] outline-none transition-all min-w-[120px]"
                        >
-                         <option value="">Select Set...</option>
+                         <option value="">Set...</option>
                          {slotSets.map(s => <option key={s.id} value={s.id}>{s.name} ({(s.slugs || []).length})</option>)}
                        </select>
-                       
-                       <Button variant="secondary" size="sm" className="text-base px-4 py-2" onClick={() => setSaveSlotSetOpen(true)}>Save Set</Button>
-                       <Button variant="secondary" size="sm" className="text-base px-4 py-2" onClick={handleExportSets}>Export</Button>
-                       <label className="cursor-pointer bg-[#2f4553] hover:bg-[#3d5566] text-white px-4 py-2 rounded-lg text-base transition-colors border border-[#2f4553]">
-                          Import
-                          <input type="file" accept=".json" onChange={handleImportSets} className="hidden" />
-                       </label>
-                       {loadedSetId && (
-                          <Button variant="danger" size="sm" className="text-base px-4 py-2" onClick={(e) => handleDeleteSet(loadedSetId, e)}>Delete</Button>
-                       )}
+                       <div className="flex gap-1.5 rounded-[var(--radius-md)] p-0.5 bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
+                         <Button variant="secondary" size="sm" className="text-xs px-3 py-1.5 rounded-md hover:bg-[var(--bg-elevated)]" onClick={() => setSaveSlotSetOpen(true)}>Save</Button>
+                         <Button variant="secondary" size="sm" className="text-xs px-3 py-1.5 rounded-md hover:bg-[var(--bg-elevated)]" onClick={handleExportSets}>Export</Button>
+                         <label className="cursor-pointer inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium rounded-md transition-all bg-[var(--bg-elevated)] text-[var(--text)] border border-transparent hover:bg-[var(--accent)] hover:text-[var(--bg-deep)] hover:border-transparent">
+                            Import
+                            <input type="file" accept=".json" onChange={handleImportSets} className="hidden" />
+                         </label>
+                         {loadedSetId && (
+                            <Button variant="danger" size="sm" className="text-xs px-3 py-1.5 rounded-md" onClick={(e) => handleDeleteSet(loadedSetId, e)}>Delete</Button>
+                         )}
+                       </div>
                      </div>
                      </div>
                    
-                   <div className="w-full md:w-[460px] bg-[#0f212e] p-6 rounded-xl border border-[#2f4553]">
-                      <h3 className="text-xl font-bold text-white mb-6 uppercase tracking-wider">Global Controls</h3>
-                      <div className="grid grid-cols-2 gap-4 mb-6">
-                         <Button onClick={handleStartAll} disabled={selectedSlotInstances.length === 0} className="w-full h-14 text-lg bg-[#00e676] hover:bg-[#00b859] text-[#0a0c0f] font-bold">
+                   <div className="xl:col-span-4">
+                     <div className="casino-card h-fit">
+                      <h3 className="casino-card-header">
+                        <span className="casino-card-header-accent"></span>
+                        Global Controls
+                      </h3>
+                      <div className="grid grid-cols-2 gap-3 mb-4">
+                         <Button onClick={handleStartAll} disabled={selectedSlotInstances.length === 0} className="w-full h-11 text-sm font-semibold bg-[var(--accent)] hover:opacity-95 text-[var(--bg-deep)] shadow-[0_2px_12px_rgba(96,165,250,0.3)] hover:shadow-[0_4px_16px_rgba(96,165,250,0.35)] transition-shadow">
                            Start All
                          </Button>
-                         <Button onClick={handleStopAll} disabled={selectedSlotInstances.length === 0} variant="danger" className="w-full h-14 text-lg">
+                         <Button onClick={handleStopAll} disabled={selectedSlotInstances.length === 0} variant="danger" className="w-full h-11 text-sm font-semibold">
                            Stop All
                          </Button>
                        </div>
@@ -364,43 +387,44 @@ export default function CasinoView() {
                          onClick={handleApplyFirstSlotSettings} 
                          disabled={selectedSlotInstances.length < 2} 
                          variant="secondary" 
-                         className="w-full mb-6 py-3"
+                         className="w-full mb-4 py-2.5 text-sm font-medium"
                        >
-                         Apply First Slot Settings to All
+                         Apply First Slot Settings
                        </Button>
                        
-                       <div className="space-y-5 pt-5 border-t border-[#2f4553]">
-                         <label className="flex items-center gap-4 text-lg cursor-pointer hover:text-white transition-colors">
-                           <input type="checkbox" checked={useSharedCurrency} onChange={(e) => setUseSharedCurrency(e.target.checked)} className="w-6 h-6 rounded bg-[#0f212e] border-[#2f4553] text-[#00e676] focus:ring-[#00e676]" />
+                       <div className="space-y-3 pt-4 border-t border-[var(--border)]">
+                         <label className="flex items-center gap-3 text-sm cursor-pointer hover:text-white transition-colors">
+                           <input type="checkbox" checked={useSharedCurrency} onChange={(e) => setUseSharedCurrency(e.target.checked)} className="w-4 h-4 rounded border-[var(--border)] accent-[var(--accent)]" />
                            <span>Shared Currency</span>
                          </label>
                          
                          {useSharedCurrency && (
-                           <div className="space-y-4 pl-10 animate-in fade-in slide-in-from-left-2">
-                             <div className="grid grid-cols-2 gap-5">
+                           <div className="space-y-3 pl-7 animate-in fade-in slide-in-from-left-2">
+                             <div className="grid grid-cols-2 gap-2">
                                <div>
-                                 <span className="text-sm text-[#9ca3af] block mb-2">Bet</span>
-                                 <select value={sharedSourceCurrency} onChange={(e) => setSharedSourceCurrency(e.target.value)} className="w-full text-base bg-[#0f212e] border border-[#2f4553] rounded p-3 focus:ring-1 focus:ring-[#00e676] outline-none">
+                                 <span className="text-xs text-[var(--text-muted)] block mb-1">Bet</span>
+                                 <select value={sharedSourceCurrency} onChange={(e) => setSharedSourceCurrency(e.target.value)} className="w-full text-sm bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-2.5 py-2 focus:ring-1 focus:ring-[var(--accent)] outline-none">
                                     {displayedCurrencies.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                                  </select>
                                </div>
                                <div>
-                                 <span className="text-sm text-[#9ca3af] block mb-2">Display</span>
-                                 <select value={sharedTargetCurrency} onChange={(e) => setSharedTargetCurrency(e.target.value)} className="w-full text-base bg-[#0f212e] border border-[#2f4553] rounded p-3 focus:ring-1 focus:ring-[#00e676] outline-none">
+                                 <span className="text-xs text-[var(--text-muted)] block mb-1">Display</span>
+                                 <select value={sharedTargetCurrency} onChange={(e) => setSharedTargetCurrency(e.target.value)} className="w-full text-sm bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-2.5 py-2 focus:ring-1 focus:ring-[var(--accent)] outline-none">
                                     {displayedCurrencies.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                                  </select>
                                </div>
                              </div>
-                             <label className="flex items-center gap-4 text-base cursor-pointer hover:text-white transition-colors">
-                               <input type="checkbox" checked={sharedCryptoOnly} onChange={(e) => setSharedCryptoOnly(e.target.checked)} className="w-5 h-5 rounded bg-[#0f212e] border-[#2f4553] text-[#00e676] focus:ring-[#00e676]" />
+                             <label className="flex items-center gap-3 text-sm cursor-pointer hover:text-white transition-colors">
+                               <input type="checkbox" checked={sharedCryptoOnly} onChange={(e) => setSharedCryptoOnly(e.target.checked)} className="w-4 h-4 rounded border-[var(--border)] accent-[var(--accent)]" />
                                <span>Crypto Only</span>
                              </label>
                            </div>
                          )}
                        </div>
                     </div>
-                 </div>
-               </div>
+                   </div>
+              </div>
+              </div>
 
                {/* Slots Grid */}
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -408,8 +432,8 @@ export default function CasinoView() {
                   const slot = webSlots.find((s: any) => s.slug === inst.slug)
                   if (!slot) return null
                   return (
+                    <div key={inst.id} className="casino-card overflow-hidden p-4">
                     <SlotControl
-                      key={inst.id}
                       ref={(el: any) => { slotControlRefsMap.current.set(inst.id, el) }}
                       slot={slot}
                       accessToken={token}
@@ -421,31 +445,51 @@ export default function CasinoView() {
                       initialTargetCurrency={inst.targetCurrency}
                       sharedCryptoOnly={sharedCryptoOnly}
                     />
+                    </div>
                   )
                 })}
               </div>
                
                {selectedSlotInstances.length === 0 && (
-                 <div className="text-center py-20 text-[#9ca3af] bg-[#0f212e] rounded-xl border border-[#2f4553] border-dashed">
-                   <div className="text-4xl mb-4 opacity-20">🎰</div>
-                   <p className="text-lg">Select slots to start playing</p>
+                 <div className="casino-card text-center py-20 border-dashed border-[var(--border-subtle)]">
+                   <div className="text-5xl mb-4 opacity-25">🎰</div>
+                   <p className="text-[var(--text-muted)] font-medium text-sm">Select slots to start playing</p>
+                   <p className="text-xs text-[var(--text-muted)] mt-1.5 opacity-70">Add slots from the list above</p>
                  </div>
                )}
              </div>
            )}
 
            {mode === 'challenges' && (
-             <div className="bg-[#0f212e] rounded-xl border border-[#2f4553] overflow-hidden p-6">
-               <h2 className="text-lg font-bold text-white mb-4">Auto Hunter</h2>
+             <div className="casino-card">
+               <h2 className="casino-card-header">
+                 <span className="casino-card-header-accent"></span>
+                 Auto Hunter
+               </h2>
                <AutoChallengeHunter 
                  accessToken={token} 
                  webSlots={webSlots as any}
-                 onDiscoveredSlots={() => setDiscoveredSlots(loadDiscoveredSlots())}
+                 onDiscoveredSlots={(added) => {
+                  setDiscoveredSlots(prev => {
+                    const bySlug = new Map(prev.map(s => [s.slug, { ...s }]))
+                    for (const s of added) {
+                      const ex = bySlug.get(s.slug)
+                      const merged = ex
+                        ? (s.thumbnailUrl ? { ...ex, thumbnailUrl: s.thumbnailUrl } : ex)
+                        : s
+                      bySlug.set(s.slug, merged)
+                    }
+                    const next = Array.from(bySlug.values())
+                    saveDiscoveredSlots(next)
+                    return next
+                  })
+                }}
                />
              </div>
            )}
 
            {mode === 'bonushunt' && (
+             <div className="bonushunt-wrapper">
              <BonusHuntControl 
                 accessToken={token} 
                 slots={webSlots as any}
@@ -468,6 +512,7 @@ export default function CasinoView() {
                onToggleFavorite={handleToggleFavorite}
                favorites={favorites}
              />
+             </div>
            )}
            
            {mode === 'forum' && (
@@ -480,8 +525,11 @@ export default function CasinoView() {
 
            {mode === 'logs' && (
              <div className="space-y-6">
-                <div className="bg-[#0f212e] p-6 rounded-xl border border-[#2f4553]">
-                   <h2 className="text-lg font-bold text-white mb-4">Recent Bets</h2>
+                <div className="casino-card">
+                   <h2 className="casino-card-header">
+                     <span className="casino-card-header-accent"></span>
+                     Recent Bets
+                   </h2>
                    <BetList bets={recentBets} currencyCode="usd" emptyMessage="No bets found" />
                 </div>
                 <LogViewer refreshKey={playLogRefreshKey} />
@@ -494,8 +542,8 @@ export default function CasinoView() {
       {/* Save Set Modal */}
       {saveSlotSetOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
-          <div className="bg-[#1a2c38] p-6 rounded-xl border border-[#2f4553] w-full max-w-md shadow-2xl scale-100 animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-xl font-bold text-white mb-4">Save Slot Set</h3>
+          <div className="casino-card w-full max-w-md shadow-[var(--shadow-elevated)] animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+            <h3 className="casino-card-header text-lg">Save Slot Set</h3>
             
             {saveSlotSetError && (
               <div className="bg-red-500/10 border border-red-500/50 text-red-500 p-3 rounded mb-4 text-sm">
@@ -511,7 +559,7 @@ export default function CasinoView() {
                   placeholder="My Best Slots" 
                   value={saveSlotSetName}
                   onChange={(e) => setSaveSlotSetName(e.target.value)}
-                  className="w-full bg-[#0f212e] border border-[#2f4553] rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-[#00e676] outline-none transition-all"
+                  className="w-full bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-4 py-3 text-[var(--text)] focus:ring-2 focus:ring-[var(--accent)] outline-none transition-all"
                   autoFocus
                   onKeyDown={(e) => { if (e.key === 'Enter') handleSaveSet(e) }}
                 />

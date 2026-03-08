@@ -9,6 +9,7 @@ import {
   isSaveBonusLogsEnabled,
   setSaveBonusLogsEnabled,
 } from '../utils/apiLogger'
+import { getSlotSpinSamples, clearSlotSpinSamples, exportSlotSpinSamplesAsFile } from '../utils/slotSpinSamples'
 
 const STYLES = {
   card: {
@@ -78,11 +79,13 @@ const STYLES = {
 export default function LogViewer({ refreshKey }) {
   const [logs, setLogs] = useState([])
   const [bonusLogs, setBonusLogs] = useState([])
+  const [spinSamples, setSpinSamples] = useState({})
   const [saveBonus, setSaveBonus] = useState(isSaveBonusLogsEnabled())
 
   useEffect(() => {
     setLogs(getApiLogs())
     setBonusLogs(getBonusLogsExport())
+    getSlotSpinSamples().then(setSpinSamples)
   }, [refreshKey])
 
   function handleSaveBonusChange(checked) {
@@ -113,6 +116,18 @@ export default function LogViewer({ refreshKey }) {
     if (confirm('Alle Bonus-Logs löschen?')) {
       clearBonusLogs()
       setBonusLogs([])
+    }
+  }
+
+  async function handleSpinSamplesRefresh() {
+    const data = await getSlotSpinSamples()
+    setSpinSamples(data)
+  }
+
+  async function handleSpinSamplesClear() {
+    if (confirm('Alle Slot Spin Samples löschen?')) {
+      await clearSlotSpinSamples()
+      setSpinSamples({})
     }
   }
 
@@ -289,6 +304,50 @@ export default function LogViewer({ refreshKey }) {
               ))
             )}
           </div>
+        </div>
+      </details>
+
+      <details style={{ marginTop: '1rem' }}>
+        <summary style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer' }}>
+          Slot Spin Samples ({Object.keys(spinSamples).length} Slots) – Auto-Lernen
+        </summary>
+        <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+          Pro Slot 1–2 Spins automatisch. Bei Bonus zusätzlich bis zu 5 Bonus-Samples (×-bonus) für Vergleiche Hacksaw/Pragmatic/StakeEngine.
+        </div>
+        <div style={{ ...STYLES.btnRow, marginBottom: '0.5rem' }}>
+          <button onClick={handleSpinSamplesRefresh} style={STYLES.btn}>Aktualisieren</button>
+          <button onClick={() => exportSlotSpinSamplesAsFile()} style={{ ...STYLES.btn, ...STYLES.btnPrimary }}>
+            Als JSON exportieren
+          </button>
+          <button onClick={handleSpinSamplesClear} style={STYLES.btn}>Löschen</button>
+        </div>
+        <div style={{ ...STYLES.logList, maxHeight: 240 }}>
+          {Object.keys(spinSamples).length === 0 ? (
+            <div style={{ padding: '0.75rem', color: 'var(--text-muted)' }}>
+              Keine Samples. Spiel einen Slot – es werden automatisch 1–2 Spins pro Slot gespeichert.
+            </div>
+          ) : (
+            Object.entries(spinSamples).map(([slug, entries]) => {
+              const isBonus = slug.endsWith('-bonus')
+              const baseName = entries?.[0]?.slotName || slug.replace(/-bonus$/, '')
+              return (
+              <div key={slug} style={STYLES.logEntry}>
+                <span style={{ ...STYLES.logType, fontWeight: 600 }}>{baseName}</span>
+                {isBonus && <span style={{ background: 'var(--accent)', color: 'var(--bg-deep)', padding: '0.1rem 0.35rem', borderRadius: 4, fontSize: '0.65rem', marginLeft: '0.35rem' }}>Bonus</span>}
+                <span style={{ color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
+                  · {entries?.length || 0} Sample(s)
+                </span>
+                {(entries || []).map((entry, i) => (
+                  <details key={i} style={{ ...STYLES.logDetails, marginTop: '0.35rem' }}>
+                    <summary>{entry.ts?.slice(11, 19)} – Sample {i + 1}</summary>
+                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: '0.25rem 0', fontSize: '0.68rem' }}>
+                      {JSON.stringify({ request: entry.request, response: entry.response }, null, 2)}
+                    </pre>
+                  </details>
+                ))}
+              </div>
+            )})
+          )}
         </div>
       </details>
     </div>

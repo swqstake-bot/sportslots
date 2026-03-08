@@ -67,7 +67,7 @@ function fmt(val, cc) {
   return formatAmount(val, cc)
 }
 
-export default function BetList({ bets, currencyCode, compact = false, minimal = false, showSlot = false, emptyMessage }) {
+export default function BetList({ bets, totalCount, currencyCode, compact = false, minimal = false, showSlot = false, emptyMessage }) {
   const cardStyle = minimal ? { ...STYLES.card, marginTop: '0.14rem', padding: '0.18rem' } : (compact ? { ...STYLES.card, marginTop: '0.28rem', padding: '0.3rem' } : STYLES.card)
   const listStyle = minimal ? { ...STYLES.list, maxHeight: 52, fontSize: '0.5rem', lineHeight: 1.15 } : (compact ? { ...STYLES.list, maxHeight: 85, fontSize: '0.58rem', lineHeight: 1.2 } : STYLES.list)
   const gridCols = showSlot ? '2rem 1.2fr 1fr 1fr 1fr 2rem' : '2rem 1fr 1fr 1fr 2rem'
@@ -91,7 +91,7 @@ export default function BetList({ bets, currencyCode, compact = false, minimal =
     <div style={cardStyle}>
       <div style={STYLES.header}>
         <span style={{ ...STYLES.title, fontSize: minimal ? '0.5rem' : (compact ? '0.58rem' : '0.8rem') }}>Spins</span>
-        <span style={{ ...STYLES.count, fontSize: minimal ? '0.48rem' : (compact ? '0.55rem' : '0.75rem') }}>{bets.length} Einträge</span>
+        <span style={{ ...STYLES.count, fontSize: minimal ? '0.48rem' : (compact ? '0.55rem' : '0.75rem') }}>{totalCount != null ? totalCount : bets.length} Einträge</span>
       </div>
       <div style={listStyle}>
         <div style={headerRowStyle}>
@@ -102,11 +102,16 @@ export default function BetList({ bets, currencyCode, compact = false, minimal =
           <span>Netto</span>
           <span>X</span>
         </div>
-        {[...bets].reverse().map((b, i) => {
+        {(() => {
+          const displayBets = bets.filter((b) => (b.betAmount ?? 0) !== 0 || (b.winAmount ?? 0) !== 0)
+          const count = totalCount != null ? totalCount : displayBets.length
+          return [...displayBets].reverse().map((b, i) => {
           const bet = b.betAmount ?? 0
           const win = b.winAmount ?? 0
           const net = win - bet
           const isBonus = b.isBonus
+          // Bei Stopp auf Bonus: Platzhalter "Bonus". Sonst Win anzeigen (auch bei durchgespieltem Bonus)
+          const showWin = !(isBonus && b.stoppedBonus)
           const multiplier = bet > 0 ? (win / bet).toFixed(1) : '0'
           return (
             <div
@@ -116,7 +121,7 @@ export default function BetList({ bets, currencyCode, compact = false, minimal =
                 ...(isBonus ? STYLES.rowBonus : {}),
               }}
             >
-              <span style={STYLES.num}>{bets.length - i}</span>
+              <span style={STYLES.num}>{count - i}</span>
               {showSlot && (
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={b.slotName || b.slotSlug}>
                   {b.slotName || b.slotSlug || '–'}
@@ -124,17 +129,18 @@ export default function BetList({ bets, currencyCode, compact = false, minimal =
               )}
               <span>{fmt(bet, cc)}{suffix}</span>
               <span style={win > 0 ? STYLES.win : {}}>
-                {isBonus ? ' Bonus' : `${fmt(win, cc)}${suffix}`}
+                {!showWin ? ' Bonus' : `${fmt(win, cc)}${suffix}`}
               </span>
               <span style={net >= 0 ? STYLES.win : STYLES.loss}>
-                {isBonus ? '–' : `${net >= 0 ? '+' : ''}${fmt(net, cc)}${suffix}`}
+                {!showWin ? '–' : `${net >= 0 ? '+' : ''}${fmt(net, cc)}${suffix}`}
               </span>
               <span style={win > 0 ? STYLES.win : {}} title={`${multiplier}× Einsatz`}>
-                {isBonus ? '–' : `${multiplier}×`}
+                {!showWin ? '–' : `${multiplier}×`}
               </span>
             </div>
           )
-        })}
+        })
+        })()}
       </div>
     </div>
   )

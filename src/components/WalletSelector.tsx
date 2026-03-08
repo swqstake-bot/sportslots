@@ -39,20 +39,22 @@ export function WalletSelector() {
     <div className="relative z-50" ref={dropdownRef}>
       <button 
         onClick={toggleDropdown}
-        className="flex items-center justify-between bg-[#0f212e] hover:bg-[#1a2c38] border border-[#2f4553] rounded-[4px] py-1.5 px-3 min-w-[160px] transition-all shadow-sm group h-10 gap-3"
+        className="flex items-center justify-between rounded-lg py-1.5 px-3 min-w-[160px] transition-all group h-10 gap-3 hover:bg-white/5"
+        style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0, 240, 255, 0.25)' }}
       >
         <div className="flex flex-col items-start leading-none">
-          <span className="text-[10px] font-bold text-[#b1bad3] uppercase tracking-wider group-hover:text-white transition-colors">Balance</span>
-          <span className="font-mono font-bold text-white group-hover:text-[#00e701] transition-colors text-sm tracking-tight">
+          <span className="text-[10px] font-bold uppercase tracking-wider transition-colors" style={{ color: 'var(--app-text-muted)' }}>Balance</span>
+          <span className="font-mono font-bold text-sm tracking-tight transition-colors group-hover:opacity-90" style={{ color: 'var(--app-text)' }}>
             {formatBalance(currentBalance, selectedCurrency)}
           </span>
         </div>
-        <div className="flex items-center gap-2 pl-3 border-l border-[#2f4553]/50 h-full">
-           <span className="uppercase text-[#00e701] font-bold text-xs tracking-wider">
+        <div className="flex items-center gap-2 pl-3 border-l h-full" style={{ borderColor: 'color-mix(in srgb, var(--app-border) 50%, transparent)' }}>
+           <span className="uppercase font-bold text-xs tracking-wider" style={{ color: 'var(--app-accent)' }}>
             {selectedCurrency}
           </span>
           <svg 
-            className={`w-2.5 h-2.5 text-[#b1bad3] transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} 
+            className={`w-2.5 h-2.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+            style={{ color: 'var(--app-text-muted)' }}
             fill="none" 
             stroke="currentColor" 
             viewBox="0 0 24 24"
@@ -63,44 +65,55 @@ export function WalletSelector() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 bg-[#1a2c38] border border-[#2f4553] rounded-[4px] shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 z-50">
-          <div className="p-3 bg-[#0f212e] border-b border-[#2f4553] flex justify-between items-center">
+        <div className="absolute right-0 mt-2 w-64 rounded-lg overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 z-50" style={{ background: 'rgba(15, 15, 25, 0.95)', backdropFilter: 'blur(12px)', border: '1px solid rgba(0, 240, 255, 0.2)', boxShadow: '0 8px 32px rgba(0,0,0,0.5), 0 0 24px rgba(0, 240, 255, 0.08)' }}>
+          <div className="p-3 border-b flex justify-between items-center" style={{ background: 'var(--app-bg-deep)', borderColor: 'var(--app-border)' }}>
              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Wallet</h3>
-             <button className="text-[10px] text-[#00e701] font-bold hover:underline">Manage</button>
+             <button className="text-[10px] font-bold hover:underline" style={{ color: 'var(--app-accent)' }}>Manage</button>
           </div>
           
-          <div className="max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-[#2f4553] scrollbar-track-transparent p-1 space-y-0.5">
+          <div className="max-h-[300px] overflow-y-auto scrollbar-thin p-1 space-y-0.5" style={{ scrollbarColor: 'var(--app-border) transparent' }}>
             {Object.keys(balances).length > 0 ? (
                Object.entries(balances).map(([currency, amount]) => (
                 <button
                   key={currency}
                   onClick={() => handleSelect(currency)}
-                  className={`w-full text-left px-3 py-2.5 rounded-[4px] flex justify-between items-center group transition-colors border border-transparent ${
-                    selectedCurrency === currency 
-                    ? 'bg-[#2f4553] border-[#2f4553] shadow-inner' 
-                    : 'hover:bg-[#0f212e] hover:border-[#2f4553]'
+                  className={`w-full text-left px-3 py-2.5 rounded-[4px] flex justify-between items-center group transition-colors border ${
+                    selectedCurrency === currency ? 'shadow-inner'                     : 'border-transparent hover:bg-[var(--app-bg-deep)] hover:border-[var(--app-border)]'
                   }`}
+                  style={selectedCurrency === currency 
+                    ? { background: 'var(--app-bg-elevated)', borderColor: 'var(--app-border)' } 
+                    : undefined
+                  }
                 >
                   <div className="flex items-center gap-3">
-                      <div className={`w-2 h-2 rounded-full shadow-[0_0_5px_currentColor] ${selectedCurrency === currency ? 'bg-[#00e701] text-[#00e701]' : 'bg-[#b1bad3] text-[#b1bad3]'}`}></div>
-                      <span className={`uppercase font-bold text-xs ${selectedCurrency === currency ? 'text-white' : 'text-[#b1bad3] group-hover:text-white'}`}>
+                      <div 
+                        className="w-2 h-2 rounded-full shadow-[0_0_5px_currentColor]"
+                        style={{ background: selectedCurrency === currency ? 'var(--app-accent)' : 'var(--app-text-muted)', color: selectedCurrency === currency ? 'var(--app-accent)' : 'var(--app-text-muted)' }}
+                      ></div>
+                      <span 
+                        className={`uppercase font-bold text-xs ${selectedCurrency === currency ? 'text-white' : 'group-hover:text-white'}`}
+                        style={selectedCurrency !== currency ? { color: 'var(--app-text-muted)' } : undefined}
+                      >
                           {currency}
                       </span>
                   </div>
-                  <span className={`font-mono text-xs font-bold ${selectedCurrency === currency ? 'text-[#00e701]' : 'text-[#b1bad3] group-hover:text-white'}`}>
+                  <span 
+                    className={`font-mono text-xs font-bold ${selectedCurrency === currency ? '' : 'group-hover:text-white'}`}
+                    style={{ color: selectedCurrency === currency ? 'var(--app-accent)' : 'var(--app-text-muted)' }}
+                  >
                       {formatBalance(amount, currency)}
                   </span>
                 </button>
               ))
             ) : (
-               <div className="p-4 text-center text-[#b1bad3] text-xs italic">No balances found</div>
+               <div className="p-4 text-center text-xs italic" style={{ color: 'var(--app-text-muted)' }}>No balances found</div>
             )}
           </div>
-           <div className="p-2 bg-[#0f212e] border-t border-[#2f4553] grid grid-cols-2 gap-2">
+           <div className="p-2 grid grid-cols-2 gap-2" style={{ background: 'var(--app-bg-deep)', borderTop: '1px solid var(--app-border)' }}>
               <button className="py-2.5 bg-[#1475e1] hover:bg-[#1464c0] text-white font-bold text-[10px] rounded-[4px] transition-colors shadow-lg uppercase tracking-wider">
                   Deposit
               </button>
-              <button className="py-2.5 bg-[#2f4553] hover:bg-[#3d5566] text-white font-bold text-[10px] rounded-[4px] transition-colors shadow-lg uppercase tracking-wider">
+              <button className="py-2.5 text-white font-bold text-[10px] rounded-[4px] transition-colors shadow-lg uppercase tracking-wider" style={{ background: 'var(--app-border)' }}>
                   Withdraw
               </button>
            </div>

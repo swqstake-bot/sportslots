@@ -1,0 +1,90 @@
+/**
+ * Sports – Design-System analog zu Casino (Glass, Neon, Cyberpunk)
+ * Nutzt --app-* Variablen (Sports-Mode: grüner Akzent #00ff88)
+ */
+
+/* Sports View Wrapper */
+.sports-view {
+  background: var(--app-bg-deep);
+  color: var(--app-text);
+  min-height: 100%;
+}
+
+/* Sports Header – Sticky, Glass */
+.sports-view .sports-header {
+  background: rgba(10, 10, 20, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--app-border);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* Sports Card – Fixture Cards (kompakt für Bot-Übersicht) */
+.sports-view .fixture-card {
+  background: var(--app-bg-card);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  min-height: 0;
+}
+
+.sports-view .fixture-card:hover {
+  border-color: var(--app-accent);
+  box-shadow: 0 0 12px var(--app-accent-glow);
+}
+
+/* Odds Button */
+.sports-view .odds-btn {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--app-border);
+  color: var(--app-text);
+  transition: all 0.15s ease;
+}
+
+.sports-view .odds-btn:hover {
+  background: var(--app-bg-elevated);
+  border-color: var(--app-accent);
+  box-shadow: 0 0 12px var(--app-accent-glow);
+}
+
+.sports-view .odds-btn.selected {
+  background: rgba(var(--app-accent-rgb), 0.15);
+  border-color: var(--app-accent);
+  color: var(--app-accent);
+  box-shadow: 0 0 14px var(--app-accent-glow), inset 0 0 20px rgba(var(--app-accent-rgb), 0.08);
+}
+
+/* Live Badge */
+.sports-view .live-badge {
+  background: rgba(255, 51, 102, 0.15);
+  border: 1px solid rgba(255, 51, 102, 0.5);
+  color: var(--app-error);
+  box-shadow: 0 0 10px rgba(255, 51, 102, 0.3);
+}
+
+/* Filter Toggle (Live/Upcoming) */
+.sports-view .filter-toggle {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--app-border);
+  border-radius: 9999px;
+}
+
+.sports-view .filter-toggle button {
+  color: var(--app-text-muted);
+}
+
+.sports-view .filter-toggle button:hover {
+  color: var(--app-text);
+}
+
+.sports-view .filter-toggle button.active {
+  background: var(--app-accent);
+  color: var(--app-bg-deep);
+  box-shadow: 0 0 16px var(--app-accent-glow);
+}
+
+/* Extra market outcome buttons (smaller) */
+.sports-view .odds-btn.selected {
+  border: 1px solid var(--app-accent);
+}

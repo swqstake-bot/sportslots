@@ -202,8 +202,9 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
           setChallenges(list)
           setRates(ratesMap)
           syncFromApiChallenges(list)
-          const added = addDiscoveredFromChallenges(list)
-          if (added.length && onDiscoveredSlots) onDiscoveredSlots()
+          const knownSlugs = new Set(webSlots.map((s) => s.slug))
+          const added = addDiscoveredFromChallenges(list, knownSlugs)
+          if (added.length && onDiscoveredSlots) onDiscoveredSlots(added)
         }
       })
       .catch((err) => {

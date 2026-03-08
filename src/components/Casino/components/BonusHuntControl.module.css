@@ -1,0 +1,249 @@
+/**
+ * BonusHuntControl – Styles ausgelagert für bessere Wartbarkeit.
+ * Nutzt Design-Tokens aus :root (--text-muted, --accent, --bg-elevated, etc.)
+ */
+
+.section {
+  margin-bottom: 1rem;
+}
+
+.section:last-of-type {
+  margin-bottom: 0;
+}
+
+.sectionBlock {
+  padding: 0.85rem 1rem;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: 1rem;
+}
+
+.sectionBlock:last-of-type {
+  margin-bottom: 0;
+}
+
+.label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.select {
+  flex: 1;
+  min-width: 100px;
+  padding: 0.5rem 0.65rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.85rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+/* Checkbox-Zeilen in Bonus Hunt – besserer Abstand */
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0.15rem 0;
+}
+
+.btn {
+  padding: 0.65rem 1.4rem;
+  background: var(--accent);
+  color: var(--bg-deep);
+  border: none;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: opacity 0.15s ease, transform 0.1s ease, box-shadow 0.2s ease;
+  box-shadow: 0 2px 12px rgba(var(--accent-rgb), 0.35);
+}
+
+.btn:hover:not(:disabled) {
+  opacity: 0.95;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 18px rgba(var(--accent-rgb), 0.45);
+}
+
+.btnStop {
+  background: var(--error);
+}
+
+.btnSecondary {
+  padding: 0.4rem 0.85rem;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.btnSecondary:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.progressList {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.progressItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.progressItemLast {
+  border-bottom: none;
+}
+
+.progressCheck {
+  color: var(--success);
+  font-size: 1.2rem;
+}
+
+.progressCross {
+  color: var(--error);
+  font-size: 1.2rem;
+}
+
+.progressOpened {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin-right: 0.25rem;
+}
+
+.progressSpinning {
+  color: var(--accent);
+}
+
+.progressWait {
+  color: var(--text-muted);
+}
+
+.statsCard {
+  margin-top: 0.75rem;
+  padding: 1rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.statsTitle {
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  color: var(--text-muted);
+}
+
+.balanceBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.chart {
+  margin-top: 0.5rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  min-height: 100px;
+  color: var(--text);
+  backdrop-filter: blur(8px);
+}
+
+.chartMultiSlot {
+  min-height: 150px;
+}
+
+/* SVG – light modern grid */
+.chartGrid {
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 0.5;
+}
+
+.chartZeroLine {
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 1;
+  stroke-dasharray: 6 4;
+}
+
+
+.betList {
+  margin-top: 1rem;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.betRow {
+  display: grid;
+  grid-template-columns: 1fr 4rem 4rem 4rem 2rem;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.error {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 82, 82, 0.08);
+  border: 1px solid rgba(255, 82, 82, 0.25);
+  border-radius: 8px;
+  color: var(--error);
+  font-size: 0.85rem;
+  font-weight: 500;
+}

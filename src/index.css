@@ -25,15 +25,15 @@
   --bg-deep: #0a0c0f;
   --bg-card: #151921;
   --bg-elevated: #1c222a;
-  --accent: #00e676;
-  --accent-rgb: 0, 230, 118;
+  --accent: #00e701;
+  --accent-rgb: 0, 231, 1;
   --accent-dim: #00b859;
-  --accent-glow: rgba(0, 230, 118, 0.15);
+  --accent-glow: rgba(0, 231, 1, 0.15);
   --text: #eef1f4;
   --text-muted: #9ca3af;
   --border: #2d3542;
   --error: #ff5252;
-  --success: #00e676;
+  --success: #00e701;
   /* Stake design tokens */
   --stake-success: #00e701;
   --stake-error: #ff4d4d;
@@ -55,6 +55,38 @@
   --success: #059669;
 }
 
+/* Futuristisches App-Theme 2026 – Cyberpunk/Neon */
+:root {
+  --font-heading: 'Orbitron', monospace;
+  --font-body: 'Exo 2', -apple-system, sans-serif;
+  --app-accent: #00F0FF;
+  --app-accent-rgb: 0, 240, 255;
+  --app-accent-alt: #FF00AA;
+  --app-accent-violet: #9D00FF;
+  --app-accent-glow: rgba(0, 240, 255, 0.25);
+  --app-success: #00ff88;
+  --app-error: #ff3366;
+  --app-warning: #fbbf24;
+  --app-bg-deep: #0A0A0F;
+  --app-bg-card: rgba(15, 15, 25, 0.85);
+  --app-bg-elevated: rgba(25, 25, 40, 0.9);
+  --app-border: rgba(0, 240, 255, 0.25);
+  --app-text: #e8ecf4;
+  --app-text-muted: #8890a8;
+}
+
+[data-app-mode="casino"] {
+  --app-accent: #00F0FF;
+  --app-accent-rgb: 0, 240, 255;
+  --app-accent-glow: rgba(0, 240, 255, 0.3);
+}
+
+[data-app-mode="sports"] {
+  --app-accent: #00ff88;
+  --app-accent-rgb: 0, 255, 136;
+  --app-accent-glow: rgba(0, 255, 136, 0.25);
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -62,9 +94,9 @@
 }
 
 body {
-  font-family: var(--font-sans);
-  background: var(--bg-deep);
-  color: var(--text);
+  font-family: var(--font-body, 'Exo 2', -apple-system, sans-serif);
+  background: var(--app-bg-deep, #0A0A0F);
+  color: var(--app-text, #e8ecf4);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
 }
@@ -252,6 +284,13 @@ a:focus-visible {
 /* Spinner */
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* HUD Puls-Glow (Running-Status) */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 16px rgba(0, 240, 255, 0.3); }
+  50% { box-shadow: 0 0 24px rgba(0, 240, 255, 0.5); }
+}
+.animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+
 /* Skeleton shimmer */
 @keyframes skeleton-shimmer {
   0%, 100% { background-position: 200% 0; }
@@ -260,25 +299,29 @@ a:focus-visible {
 
 @layer base {
   body {
-    @apply bg-[#0f212e] text-[#b1bad3] antialiased;
+    background: var(--app-bg-deep, #0A0A0F) !important;
+    color: var(--app-text, #e8ecf4) !important;
+    font-family: var(--font-body, 'Exo 2', sans-serif) !important;
+    -webkit-font-smoothing: antialiased;
   }
   
-  /* Custom Scrollbar */
+  /* Custom Scrollbar – Neon-Style */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
   
   ::-webkit-scrollbar-track {
-    @apply bg-[#0f212e];
+    background: rgba(10, 10, 15, 0.5);
   }
   
   ::-webkit-scrollbar-thumb {
-    @apply bg-[#2f4553] rounded-full;
+    background: rgba(0, 240, 255, 0.25);
+    border-radius: 999px;
   }
   
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-[#55657e];
+    background: rgba(0, 240, 255, 0.4);
   }
 }
 

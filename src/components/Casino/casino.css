@@ -1,38 +1,47 @@
-/* Scoped Theme colors for Casino */
+/* Casino – Futuristisches 2026 Cyberpunk-Theme */
 .casino-root {
-  --bg-deep: #0f212e;
-  --bg-card: #1a2c38;
-  --bg-elevated: #213743;
-  --accent: #00e676;
-  --accent-rgb: 0, 230, 118;
-  --accent-dim: #00b859;
-  --accent-glow: rgba(0, 230, 118, 0.15);
-  --text: #b1bad3;
-  --text-muted: #8890a0;
-  --border: #2f4553;
-  --error: #ff5252;
-  --success: #00e676;
-
-  /* Font variables (assuming they are defined globally or here) */
-  --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
-  --radius-md: 8px;
-  --transition-fast: 0.15s ease;
+  /* Base */
+  --bg-deep: #0A0A0F;
+  --bg-card: rgba(12, 12, 22, 0.9);
+  --bg-elevated: rgba(20, 20, 35, 0.95);
+  /* Neon-Akzente */
+  --accent: #00F0FF;
+  --accent-rgb: 0, 240, 255;
+  --accent-alt: #FF00AA;
+  --accent-violet: #9D00FF;
+  --accent-dim: #00c4cc;
+  --accent-glow: rgba(0, 240, 255, 0.2);
+  /* Semantic */
+  --text: #e8ecf4;
+  --text-muted: #8890a8;
+  --border: rgba(0, 240, 255, 0.2);
+  --border-subtle: rgba(0, 240, 255, 0.1);
+  --error: #ff3366;
+  --success: #00ff88;
+  --warning: #fbbf24;
+  /* Layout */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 20px rgba(0, 240, 255, 0.15);
+  --font-heading: 'Orbitron', monospace;
+  --font-sans: 'Exo 2', -apple-system, sans-serif;
+  --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   --focus-ring: 0 0 0 2px var(--bg-deep), 0 0 0 4px var(--accent);
 }
 
 .casino-root[data-theme='light'] {
-  --bg-deep: #e8ecf0;
+  --bg-deep: #f0f4f8;
   --bg-card: #ffffff;
-  --bg-elevated: #f1f5f9;
-  --accent: #059669;
-  --accent-rgb: 5, 150, 105;
-  --accent-dim: #047857;
-  --accent-glow: rgba(5, 150, 105, 0.15);
+  --bg-elevated: #f8fafc;
+  --accent: #0891b2;
+  --accent-rgb: 8, 145, 178;
   --text: #1e293b;
   --text-muted: #64748b;
-  --border: #cbd5e1;
-  --error: #dc2626;
-  --success: #059669;
+  --border: rgba(8, 145, 178, 0.3);
 }
 
 .casino-root {
@@ -41,18 +50,32 @@
   color: var(--text);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  position: relative;
 }
 
-/* Base form elements scoped */
+/* Subtile Grain-Textur (kaum sichtbar) */
+.casino-root::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  z-index: 0;
+}
+
+/* Base form elements */
 .casino-root select,
 .casino-root input[type='text'],
 .casino-root input[type='number'],
 .casino-root input[type='password'] {
   color: var(--text);
   background-color: var(--bg-elevated);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  padding: 0.5rem; /* Add padding as reset removed it */
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-family: var(--font-sans);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
@@ -62,12 +85,12 @@
 .casino-root input[type='password']:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-glow);
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
 .casino-root select:hover,
 .casino-root input:hover {
-  border-color: var(--text-muted);
+  border-color: var(--border);
 }
 
 .casino-root select option {
@@ -75,20 +98,149 @@
   color: var(--text);
 }
 
-/* Buttons scoped */
+/* Buttons */
 .casino-root button {
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+  transition: all var(--transition-fast);
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
 }
 
 .casino-root button:hover:not(:disabled) {
-  filter: brightness(1.08);
+  transform: translateY(-1px);
 }
 
 .casino-root button:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: translateY(0);
 }
 
 .casino-root button:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
+}
+
+/* Casino Card – Glassmorphism + Neon-Glow */
+.casino-root .casino-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  box-shadow: var(--shadow-card), var(--shadow-glow);
+  transition: all var(--transition-fast);
+  position: relative;
+  z-index: 1;
+}
+
+.casino-root .casino-card:hover {
+  border-color: var(--border);
+  box-shadow: var(--shadow-card), 0 0 24px rgba(0, 240, 255, 0.12);
+}
+
+.casino-root .casino-card-header {
+  font-family: var(--font-heading);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 1rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.casino-root .casino-card-header-accent {
+  width: 3px;
+  height: 1rem;
+  background: linear-gradient(180deg, var(--accent), var(--accent-violet));
+  border-radius: 2px;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+/* Bonus Hunt Wrapper */
+.casino-root .bonushunt-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+/* Slot pills – Neon-Glow Hover */
+.casino-root .slot-pill {
+  transition: all var(--transition-fast);
+}
+
+.casino-root .slot-pill:hover {
+  border-color: var(--accent) !important;
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.25);
+}
+
+.casino-root .slot-pill[data-selected='true'] {
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.2), inset 0 0 20px rgba(0, 240, 255, 0.05);
+}
+
+.casino-root .slot-pill[data-selected='true']:hover {
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.35), inset 0 0 20px rgba(0, 240, 255, 0.08);
+}
+
+/* Compact Slot Cards – Scale + Neon-Glow */
+.casino-root .slot-card-compact {
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+
+.casino-root .slot-card-compact:hover {
+  transform: scale(1.05);
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.3);
+}
+
+.casino-root .slot-card-compact[data-selected='true']:hover {
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.4);
+}
+
+/* Slots Loading Bar – Indeterminate Shimmer */
+@keyframes slots-loading-shimmer {
+  0%, 100% { transform: translateX(-100%); }
+  50% { transform: translateX(400%); }
+}
+
+/* Casino Checkboxen – größer, rund, Neon-Akzent */
+.casino-root input[type="checkbox"],
+.bonushunt-root input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  border: 2px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-elevated);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  flex-shrink: 0;
+}
+
+.casino-root input[type="checkbox"]:hover:not(:disabled),
+.bonushunt-root input[type="checkbox"]:hover:not(:disabled) {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.casino-root input[type="checkbox"]:checked,
+.bonushunt-root input[type="checkbox"]:checked {
+  background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230A0A0F' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 13l4 4L19 7'/%3E%3C/svg%3E") center/11px 11px no-repeat;
+  border-color: var(--accent);
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.4);
+}
+
+.casino-root input[type="checkbox"]:disabled,
+.bonushunt-root input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

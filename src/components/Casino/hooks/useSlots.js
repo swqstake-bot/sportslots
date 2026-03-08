@@ -1,19 +1,15 @@
 import { useState, useEffect, useMemo } from 'react'
 import { fetchStakeSlots } from '../api/stakeSlotsApi'
-import { SUPPORTED_SLOTS } from '../constants/slots'
 
-const STATIC_SLOTS = SUPPORTED_SLOTS
-
-function mergeSlots(staticList, dynamicList, discoveredList = []) {
+function mergeSlots(dynamicList, discoveredList = []) {
   const bySlug = new Map()
-  for (const s of staticList) {
+  for (const s of dynamicList) {
     bySlug.set(s.slug, { ...s })
   }
-  for (const s of dynamicList) {
-    if (!bySlug.has(s.slug)) bySlug.set(s.slug, { ...s })
-  }
   for (const s of discoveredList) {
-    if (!bySlug.has(s.slug)) bySlug.set(s.slug, { ...s })
+    const existing = bySlug.get(s.slug)
+    if (existing && s.thumbnailUrl) existing.thumbnailUrl = s.thumbnailUrl
+    else if (!bySlug.has(s.slug)) bySlug.set(s.slug, { ...s })
   }
   return Array.from(bySlug.values())
 }
@@ -33,11 +29,17 @@ export function useSlots(accessToken, discoveredSlots = []) {
     setLoading(true)
     setError('')
     fetchStakeSlots(accessToken)
-      .then((list) => { if (!cancelled) setDynamicSlots(list) })
+      .then((list) => {
+        if (!cancelled) {
+          setDynamicSlots(list)
+          if (list?.length) console.log('[Slots] useSlots: %d Slots geladen', list.length)
+        }
+      })
       .catch((e) => {
         if (!cancelled) {
           setDynamicSlots([])
           setError(e?.message || 'Slots laden fehlgeschlagen')
+          console.error('[Slots] useSlots Fehler:', e?.message)
         }
       })
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -45,7 +47,7 @@ export function useSlots(accessToken, discoveredSlots = []) {
   }, [accessToken])
 
   const webSlots = useMemo(
-    () => mergeSlots(STATIC_SLOTS, dynamicSlots, discoveredSlots),
+    () => mergeSlots(dynamicSlots, discoveredSlots),
     [dynamicSlots, discoveredSlots]
   )
   return { slots: webSlots, loading, error }
