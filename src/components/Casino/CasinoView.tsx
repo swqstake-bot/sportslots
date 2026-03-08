@@ -469,7 +469,7 @@ export default function CasinoView() {
                <AutoChallengeHunter 
                  accessToken={token} 
                  webSlots={webSlots as any}
-                 onDiscoveredSlots={(added) => {
+                 onDiscoveredSlots={(added: { slug: string; name: string; providerId: string; thumbnailUrl?: string }[]) => {
                   setDiscoveredSlots(prev => {
                     const bySlug = new Map(prev.map(s => [s.slug, { ...s }]))
                     for (const s of added) {
@@ -530,7 +530,7 @@ export default function CasinoView() {
                      <span className="casino-card-header-accent"></span>
                      Recent Bets
                    </h2>
-                   <BetList bets={recentBets} currencyCode="usd" emptyMessage="No bets found" />
+                   <BetList bets={recentBets} totalCount={recentBets?.length ?? 0} currencyCode="usd" emptyMessage="No bets found" />
                 </div>
                 <LogViewer refreshKey={playLogRefreshKey} />
              </div>

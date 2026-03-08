@@ -8,7 +8,7 @@ import { Queries } from '../api/queries';
  */
 export function useLiveFixtureCount(enabled: boolean, pollingIntervalMs = 15000) {
   const [count, setCount] = useState<number | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     if (!enabled) {

@@ -153,7 +153,7 @@ export function FixtureCard({
             <button
               key={outcome.id}
               type="button"
-              onClick={() => onOutcomeClick(outcome, mainMarket.name, fixture)}
+              onClick={() => onOutcomeClick(outcome, mainMarket.name ?? '', fixture)}
               className={`odds-btn flex-1 min-w-0 py-1 rounded flex flex-col items-center justify-center ${selected ? 'selected' : ''}`}
             >
               <span className="text-[7px] font-bold uppercase tracking-wider opacity-90">
