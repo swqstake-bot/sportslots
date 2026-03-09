@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Feedback / Sonstige Anfragen
+    url: https://github.com/swqstake-bot/sportslots/issues
+    about: Für allgemeines Feedback oder Fragen ein leeres Issue erstellen
