@@ -153,3 +153,17 @@ export async function clearSlotHistory(slotSlug) {
     req.onerror = () => reject(req.error)
   })
 }
+
+/**
+ * Alle Bet-History aller Slots löschen (z.B. beim App-Start).
+ */
+export async function clearAllBetHistory() {
+  const database = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(STORE_NAME, 'readwrite')
+    const store = tx.objectStore(STORE_NAME)
+    const req = store.clear()
+    req.onsuccess = () => resolve()
+    req.onerror = () => reject(req.error)
+  })
+}

@@ -283,6 +283,13 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     }
   }
 
+  // Alle anderen Fehler (Insufficient Funds, Invalid seq, Session timeout, etc.): sofort stoppen
+  if (data?.statusCode !== 0 && data?.statusCode !== undefined) {
+    const err = new Error(data?.statusMessage || `Bet fehlgeschlagen (Status ${data?.statusCode})`)
+    if (data?.statusCode === 20) err.sessionClosed = true
+    throw err
+  }
+
   const parsed = parseBetResponse(data, betAmount)
   let currentSeq = session.seq + 1
 
@@ -338,6 +345,11 @@ export function getImpliedScatterLevel(parsed, slotSlug = '') {
     const M = { fs: 3, fs_1: 3, fs_2: 4, fs_3: 5, fs_5: 5, epic: 5, fs_epic: 5, what_the_hell: 5, whatthehell: 5 }
     return M[bonusId] ?? null
   }
+  if (slug.includes('hand-of-anubis') || slug.includes('handofanubis')) {
+    // Hand of Anubis: 3 Scatter = underworld, 4 Scatter = judgment (Judgment Bonus)
+    const M = { fs: 3, fs_1: 3, fs_2: 4, underworld: 3, judgment: 4 }
+    return M[bonusId] ?? null
+  }
   const M = { fs: 3, fs_1: 3, fs_2: 4 }
   return M[bonusId] ?? null
 }
@@ -388,6 +400,16 @@ export function shouldSkipBonus(parsed, options) {
     }
     if (LE_COWBOY_MAPPING.hasOwnProperty(bonusId)) {
       specialLevel = LE_COWBOY_MAPPING[bonusId]
+    }
+  } else if (slotSlug.includes('hand-of-anubis') || slotSlug.includes('handofanubis')) {
+    // Hand of Anubis: 3 Scatter = underworld, 4 Scatter = judgment (Judgment Bonus)
+    const HAND_OF_ANUBIS_MAPPING = {
+      'fs': 3, 'fs_1': 3, 'fs_2': 4,
+      'underworld': 3,  // 3-Scatter Bonus
+      'judgment': 4,    // 4-Scatter Judgment Bonus
+    }
+    if (HAND_OF_ANUBIS_MAPPING.hasOwnProperty(bonusId)) {
+      specialLevel = HAND_OF_ANUBIS_MAPPING[bonusId]
     }
   } else {
     // Global/Legacy Mappings (falls nötig)

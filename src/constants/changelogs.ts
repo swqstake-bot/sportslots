@@ -1,4 +1,9 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.91': [
+    '🐛 Hacksaw: Autospin stoppt bei Insufficient Funds, Session timeout, Invalid seq',
+    '🐛 Hand of Anubis: Bonus-Erkennung (judgment=4 Scatter, underworld=3 Scatter)',
+    '✨ Slot-Statistik: Reset bei App-Start und beim Abwählen eines Slots',
+  ],
   '1.0.90': [
     '🎨 Login: Stylisches Design, Username/Passwort, Anmeldedaten speichern',
   ],

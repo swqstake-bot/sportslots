@@ -11,7 +11,7 @@ import { Toast } from './components/Toast'
 import { useSlots } from './hooks/useSlots'
 import { loadSlotSets, saveSlotSet, deleteSlotSet, exportSlotSets, importSlotSets, loadFavorites, toggleFavorite } from './utils/slotSets'
 import { loadDiscoveredSlots, saveDiscoveredSlots } from './utils/discoveredSlots'
-import { loadRecentBets } from './utils/betHistoryDb'
+import { loadRecentBets, clearAllBetHistory, clearSlotHistory } from './utils/betHistoryDb'
 import BetList from './components/BetList'
 import { ALL_CURRENCIES } from './constants/currencies'
 import { isFiat, isStable } from './utils/formatAmount'
@@ -78,6 +78,16 @@ export default function CasinoView() {
       }
     }
   }, [sharedCryptoOnly, sharedSourceCurrency, sharedTargetCurrency, displayedCurrencies])
+
+  // Beim App-Start: alte Slot-Statistiken löschen
+  useEffect(() => {
+    const key = 'slotbot_bet_history_cleared_this_session'
+    if (!sessionStorage.getItem(key)) {
+      clearAllBetHistory().catch(() => {}).finally(() => {
+        try { sessionStorage.setItem(key, '1') } catch { /* ignore */ }
+      })
+    }
+  }, [])
 
   // Initialize Session
   useEffect(() => {
@@ -188,12 +198,18 @@ export default function CasinoView() {
     setLoadedSetId(id)
     const set = slotSets.find(s => s.id === id)
     if (set && Array.isArray(set.slugs)) {
-      setSelectedSlotInstances(set.slugs.map((slug, i) => ({
-        id: `inst_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 9)}`,
-        slug,
-        sourceCurrency: sharedSourceCurrency,
-        targetCurrency: sharedTargetCurrency,
-      })))
+      const newSlugs = new Set(set.slugs)
+      setSelectedSlotInstances((prev) => {
+        prev.forEach((i) => {
+          if (!newSlugs.has(i.slug)) clearSlotHistory(i.slug).catch(() => {})
+        })
+        return set.slugs.map((slug, i) => ({
+          id: `inst_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 9)}`,
+          slug,
+          sourceCurrency: sharedSourceCurrency,
+          targetCurrency: sharedTargetCurrency,
+        }))
+      })
     }
   }
 
@@ -245,11 +261,14 @@ export default function CasinoView() {
   }
 
   const handleToggleSlot = useCallback((slug: string) => {
-    setSelectedSlotInstances((prev) =>
-      prev.some((i) => i.slug === slug)
-        ? prev.filter((i) => i.slug !== slug)
-        : [...prev, { id: `inst_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`, slug, sourceCurrency: sharedSourceCurrency, targetCurrency: sharedTargetCurrency }]
-    )
+    setSelectedSlotInstances((prev) => {
+      const removing = prev.some((i) => i.slug === slug)
+      if (removing) {
+        clearSlotHistory(slug).catch(() => {})
+        return prev.filter((i) => i.slug !== slug)
+      }
+      return [...prev, { id: `inst_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`, slug, sourceCurrency: sharedSourceCurrency, targetCurrency: sharedTargetCurrency }]
+    })
   }, [sharedSourceCurrency, sharedTargetCurrency])
 
   const handleAddInstance = useCallback((slug: string, source?: string | null, target?: string | null, blocked?: boolean) => {
@@ -270,7 +289,14 @@ export default function CasinoView() {
   }, [sharedSourceCurrency, sharedTargetCurrency])
 
   const handleRemoveInstance = useCallback((instanceId: string) => {
-    setSelectedSlotInstances((prev) => prev.filter((i) => i.id !== instanceId))
+    setSelectedSlotInstances((prev) => {
+      const removed = prev.find((i) => i.id === instanceId)
+      const next = prev.filter((i) => i.id !== instanceId)
+      if (removed && !next.some((i) => i.slug === removed.slug)) {
+        clearSlotHistory(removed.slug).catch(() => {})
+      }
+      return next
+    })
   }, [])
 
   const handleSelectChallenge = useCallback((challenge: { gameSlug: string; gameName?: string; currency?: string }) => {
@@ -489,7 +515,13 @@ export default function CasinoView() {
                   sourceCurrency: sharedSourceCurrency,
                   targetCurrency: sharedTargetCurrency,
                 })))}
-                onSelectNone={() => setSelectedSlotInstances([])}
+                onSelectNone={() => {
+                  setSelectedSlotInstances((prev) => {
+                    const slugsToClear = [...new Set(prev.map((i) => i.slug))]
+                    slugsToClear.forEach((s) => clearSlotHistory(s).catch(() => {}))
+                    return []
+                  })
+                }}
                 // @ts-expect-error - slotSets type mismatch
                 slotSets={slotSets}
                 loadedSetId={loadedSetId}
