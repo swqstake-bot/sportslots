@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.87': [
+    '✨ Slot-Statistik: Immer USD-Anzeige mit Wechselkurs-Umrechnung',
+  ],
   '1.0.86': [
     '✨ Slot: BetList & Stats ausschließlich aus houseBets WebSocket',
     '✨ Slot: Kontostand/Session Δ aus balanceUpdated WebSocket (wie Wallet)',
