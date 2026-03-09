@@ -13,5 +13,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getKeyAuthHwid: () => ipcRenderer.invoke('get-keyauth-hwid'),
     getSessionToken: () => ipcRenderer.invoke('get-session-token'),
     proxyRequest: (options: any) => ipcRenderer.invoke('proxy-request', options),
-    version: pkg.version
+    version: pkg.version,
+    // Slot Spin Samples – automatisches Lernen in Ordner
+    saveSlotSpinSample: (payload: { slotSlug: string; slotName?: string; providerId?: string; request: any; response: any }) =>
+        ipcRenderer.invoke('save-slot-spin-sample', payload),
+    getSlotSpinSamples: () => ipcRenderer.invoke('get-slot-spin-samples'),
+    getSpinSamplesDir: () => ipcRenderer.invoke('get-spin-samples-dir'),
+    clearSlotSpinSamples: () => ipcRenderer.invoke('clear-slot-spin-samples'),
 });

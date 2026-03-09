@@ -1,22 +1,17 @@
-import { app, BrowserWindow, session, ipcMain, net, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, net, session, shell } from 'electron';
+import https from 'node:https';
+import http from 'node:http';
 import updater from 'electron-updater';
 const { autoUpdater } = updater;
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
 import crypto from 'crypto';
 import os from 'os';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// Define paths for production/dev
-const DIST = path.join(__dirname, '../dist');
-const VITE_PUBLIC = app.isPackaged ? DIST : path.join(DIST, '../public');
+import { DIST, VITE_PUBLIC, SPIN_SAMPLES_DIR, VITE_DEV_SERVER_URL, ELECTRON_DIR } from './config.js';
+import { sessionData, captureSession } from './sessionCapture.js';
 
 let win: BrowserWindow | null;
 let loginWin: BrowserWindow | null;
-
-// VITE_DEV_SERVER_URL is passed via cross-env in package.json scripts
-const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 
 function createWindow() {
   win = new BrowserWindow({
@@ -24,7 +19,7 @@ function createWindow() {
     height: 800,
     icon: path.join(VITE_PUBLIC, 'icon.png'),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(ELECTRON_DIR, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: false,
@@ -95,14 +90,6 @@ function createLoginWindow() {
     });
 }
 
-// Session Store
-const sessionData = {
-  cookies: '',
-  userAgent: '',
-  cfClearance: '',
-  cfBm: '',
-};
-
 // --- Auto Updater Logic ---
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
@@ -163,30 +150,6 @@ ipcMain.handle('quit-and-install', () => {
     autoUpdater.quitAndInstall();
 });
 // --------------------------
-
-async function captureSession() {
-    try {
-        const cookies = await session.defaultSession.cookies.get({});
-        // Format cookies for the Cookie header
-        sessionData.cookies = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-        
-        const cf = cookies.find(c => c.name === 'cf_clearance');
-        if (cf) sessionData.cfClearance = cf.value;
-
-        const cfBm = cookies.find(c => c.name === '__cf_bm');
-        if (cfBm) sessionData.cfBm = cfBm.value;
-
-        sessionData.userAgent = session.defaultSession.getUserAgent();
-        
-        console.log('Session captured:', { 
-            cookieCount: cookies.length, 
-            hasCf: !!cf,
-            hasCfBm: !!cfBm
-        });
-    } catch (err) {
-        console.error('Failed to capture session:', err);
-    }
-}
 
 // IPC Handlers
 ipcMain.handle('login', () => {
@@ -286,6 +249,75 @@ ipcMain.handle('api-request', async (_event, payload) => {
     });
 });
 
+// Slot Spin Samples – automatisches Speichern pro Slot in Ordner
+ipcMain.handle('save-slot-spin-sample', async (_event, payload: { slotSlug: string; slotName?: string; providerId?: string; request: any; response: any }) => {
+  try {
+    const { slotSlug, slotName, providerId, request, response } = payload;
+    if (!slotSlug || typeof slotSlug !== 'string') return;
+    const slug = slotSlug.toLowerCase().replace(/[^a-z0-9-_]/g, '-').replace(/-+/g, '-');
+    if (!slug) return;
+
+    if (!fs.existsSync(SPIN_SAMPLES_DIR)) {
+      fs.mkdirSync(SPIN_SAMPLES_DIR, { recursive: true });
+    }
+
+    const filePath = path.join(SPIN_SAMPLES_DIR, `${slug}.json`);
+    const entry = {
+      ts: new Date().toISOString(),
+      slotName: slotName || null,
+      providerId: providerId || null,
+      request: request ?? null,
+      response: response ?? null,
+    };
+
+    let entries: any[] = [];
+    if (fs.existsSync(filePath)) {
+      try {
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        entries = JSON.parse(raw);
+      } catch {}
+    }
+    entries = [entry, ...entries].slice(0, 2);
+    fs.writeFileSync(filePath, JSON.stringify(entries, null, 2), 'utf-8');
+    console.log('[SlotSpinSamples] Saved:', slug, '→', filePath);
+  } catch (e) {
+    console.error('[SlotSpinSamples] Save failed:', e);
+  }
+});
+
+ipcMain.handle('get-slot-spin-samples', async () => {
+  try {
+    if (!fs.existsSync(SPIN_SAMPLES_DIR)) return {};
+    const files = fs.readdirSync(SPIN_SAMPLES_DIR).filter((f) => f.endsWith('.json'));
+    const result: Record<string, any[]> = {};
+    for (const f of files) {
+      const slug = f.replace(/\.json$/, '');
+      try {
+        const raw = fs.readFileSync(path.join(SPIN_SAMPLES_DIR, f), 'utf-8');
+        result[slug] = JSON.parse(raw);
+      } catch {}
+    }
+    return result;
+  } catch (e) {
+    console.error('[SlotSpinSamples] Read failed:', e);
+    return {};
+  }
+});
+
+ipcMain.handle('get-spin-samples-dir', () => SPIN_SAMPLES_DIR);
+
+ipcMain.handle('clear-slot-spin-samples', async () => {
+  try {
+    if (fs.existsSync(SPIN_SAMPLES_DIR)) {
+      for (const f of fs.readdirSync(SPIN_SAMPLES_DIR)) {
+        fs.unlinkSync(path.join(SPIN_SAMPLES_DIR, f));
+      }
+    }
+  } catch (e) {
+    console.error('[SlotSpinSamples] Clear failed:', e);
+  }
+});
+
 ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = {}, body = null }) => {
     return new Promise((resolve, reject) => {
         // Validation logic from SwaqSlotbot (Hauptslotprojekt)
@@ -349,22 +381,20 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
             return reject(new Error('Invalid url'));
         }
 
-        const request = net.request({
-            method,
-            url,
-            useSessionCookies: true,
-        });
-
-        // Apply headers based on type
-        const requestHeaders = { ...headers };
+        // Node https statt net.request – umgeht ERR_BLOCKED_BY_CLIENT (Adblocker/Session)
+        const requestHeaders: Record<string, string> = { ...headers };
 
         if (type === 'pragmatic') {
             try {
                 const urlObj = new URL(url);
                 const origin = `${urlObj.protocol}//${urlObj.host}`;
-                const referer = method === 'GET' ? url : `${origin}/gs2c/html5Game.do`;
-                requestHeaders['Origin'] = origin;
-                requestHeaders['Referer'] = referer;
+                if (method === 'GET' && url.includes('playGame.do')) {
+                    requestHeaders['Origin'] = 'https://stake.bet';
+                    requestHeaders['Referer'] = 'https://stake.bet/casino/home';
+                } else {
+                    requestHeaders['Origin'] = origin;
+                    requestHeaders['Referer'] = method === 'GET' ? url : `${origin}/gs2c/html5Game.do`;
+                }
                 if (body && method !== 'GET') {
                     requestHeaders['Content-Type'] = 'application/x-www-form-urlencoded';
                 }
@@ -380,52 +410,67 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
             const origin = `${urlObj.protocol}//${urlObj.host}`;
             requestHeaders['Origin'] = origin;
             requestHeaders['Referer'] = origin + '/';
-             if (!requestHeaders['Content-Type']) {
-                 requestHeaders['Content-Type'] = 'application/json';
-             }
+            if (!requestHeaders['Content-Type']) {
+                requestHeaders['Content-Type'] = 'application/json';
+            }
         } else if (type === 'rgs') {
-             if (!requestHeaders['Content-Type']) {
-                 requestHeaders['Content-Type'] = 'application/json';
-             }
-        }
-
-        Object.entries(requestHeaders).forEach(([k, v]) => {
-            if (v) request.setHeader(k, v as string);
-        });
-
-        if (!request.getHeader('User-Agent') && sessionData.userAgent) {
-            request.setHeader('User-Agent', sessionData.userAgent);
-        }
-
-        if (body) {
-            if (typeof body === 'object' && !Buffer.isBuffer(body)) {
-                request.write(JSON.stringify(body));
-            } else {
-                request.write(body);
+            if (!requestHeaders['Content-Type']) {
+                requestHeaders['Content-Type'] = 'application/json';
             }
         }
 
-        request.on('response', (response) => {
-            const chunks: any[] = [];
-            response.on('data', (chunk) => chunks.push(chunk));
-            response.on('end', () => {
-                const data = Buffer.concat(chunks).toString();
-                resolve({
-                    status: response.statusCode,
-                    statusText: response.statusMessage,
-                    headers: response.headers,
-                    data: data,
-                    finalUrl: (response as any).responseUrl || url
+        if (!requestHeaders['User-Agent'] && sessionData.userAgent) {
+            requestHeaders['User-Agent'] = sessionData.userAgent;
+        }
+
+        const bodyStr = body
+            ? (typeof body === 'object' && !Buffer.isBuffer(body) ? JSON.stringify(body) : body)
+            : undefined;
+
+        function doRequest(targetUrl: string, redirectCount = 0): void {
+            const urlParsed = new URL(targetUrl);
+            const isHttps = urlParsed.protocol === 'https:';
+            const client = isHttps ? https : http;
+            const opts: https.RequestOptions = {
+                method: redirectCount > 0 ? 'GET' : method,
+                hostname: urlParsed.hostname,
+                port: urlParsed.port || (isHttps ? 443 : 80),
+                path: urlParsed.pathname + urlParsed.search,
+                headers: redirectCount > 0 ? { ...requestHeaders, Origin: urlParsed.origin, Referer: targetUrl } : requestHeaders,
+            };
+
+            const req = client.request(opts, (res) => {
+                const chunks: Buffer[] = [];
+                res.on('data', (chunk: Buffer) => chunks.push(chunk));
+                res.on('end', () => {
+                    const data = Buffer.concat(chunks).toString();
+                    const loc = res.headers['location'] as string | undefined;
+                    if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && loc && redirectCount < 5) {
+                        const nextUrl = loc.startsWith('http') ? loc : new URL(loc, targetUrl).href;
+                        return doRequest(nextUrl, redirectCount + 1);
+                    }
+                    resolve({
+                        status: res.statusCode || 0,
+                        statusText: res.statusMessage || '',
+                        headers: res.headers,
+                        data,
+                        finalUrl: loc && res.statusCode && res.statusCode >= 300 && res.statusCode < 400
+                            ? (loc.startsWith('http') ? loc : new URL(loc, targetUrl).href)
+                            : targetUrl,
+                    });
                 });
             });
-        });
 
-        request.on('error', (error) => {
-            console.error('Proxy Request Error:', error);
-            reject(error);
-        });
+            req.on('error', (err) => {
+                console.error('Proxy Request Error:', err);
+                reject(err);
+            });
 
-        request.end();
+            if (bodyStr && redirectCount === 0) req.write(bodyStr);
+            req.end();
+        }
+
+        doRequest(url);
     });
 });
 
@@ -444,11 +489,14 @@ app.on('activate', () => {
 
 app.whenReady().then(() => {
     // Inject headers for requests to stake.com from Renderer (if any)
-    session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['*://stake.com/*', '*://*.stake.com/*'] }, (details, callback) => {
+    session.defaultSession.webRequest.onBeforeSendHeaders(
+      { urls: ['*://stake.com/*', '*://*.stake.com/*'] },
+      (details: { requestHeaders: Record<string, string> }, callback: (response: { requestHeaders: Record<string, string> }) => void) => {
         details.requestHeaders['Origin'] = 'https://stake.com';
         details.requestHeaders['Referer'] = 'https://stake.com/';
         callback({ requestHeaders: details.requestHeaders });
-    });
+      }
+    );
 
     createWindow();
 

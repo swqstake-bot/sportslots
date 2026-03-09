@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.89': [
+    '🐛 Pragmatic/Rabbit Heist: Einsatz-Mapping, Bet-Levels (VND/IDR/ARS 100–52M), houseBets, Kontostand',
+  ],
   '1.0.88': [
     '🐛 Fix: USD-Anzeige in Autospin-Labels (nicht mehr als Variable)',
   ],

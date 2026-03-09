@@ -133,6 +133,8 @@ const WEB_PROVIDERS = {
   hacksaw,
   pragmatic,
   prag: pragmatic,
+  'sexy-rabbit': pragmatic, // Rabbit Heist – gs2c wie Pragmatic
+  sexyrabbit: pragmatic,
   stakeEngine,
   nolimit,
   avatarux,

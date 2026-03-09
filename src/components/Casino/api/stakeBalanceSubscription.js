@@ -10,7 +10,8 @@ const BALANCE_UPDATED_SUBSCRIPTION = `
   }
 `
 
-/** GraphQL subscription für houseBets. Bet ist Union – Felder via Inline-Fragments. */
+/** GraphQL subscription für houseBets. Bet ist Union – Felder via Inline-Fragments.
+ * Hinweis: Stake sendet houseBets oft in Batches (mehrere auf einmal) – kein Delay auf unserer Seite. */
 const HOUSEBETS_SUBSCRIPTION = `
   subscription HouseBets {
     houseBets {
@@ -91,6 +92,9 @@ const HOUSEBETS_SUBSCRIPTION = `
   }
 `
 
+/** Debug: houseBets-Rohdaten in Konsole (DEV: true setzen zum Debuggen) */
+export const DEBUG_HOUSEBETS = false
+
 /** Edge-Cases wo API-Name von slug-Konvention abweicht */
 const GAME_NAME_SLUG_OVERRIDES = {
   "rogue's riches": 'rogues-riches',
@@ -156,26 +160,43 @@ export function subscribeToBetUpdates(accessToken, onUpdate) {
       { query: HOUSEBETS_SUBSCRIPTION },
       {
         next: (result) => {
+          if (DEBUG_HOUSEBETS) {
+            console.log('[houseBets] RAW:', JSON.stringify(result?.data?.houseBets ?? result, null, 2))
+          }
           const hb = result?.data?.houseBets
-          if (!hb?.bet) return
+          if (!hb?.bet) {
+            if (DEBUG_HOUSEBETS) console.log('[houseBets] SKIP: kein bet')
+            return
+          }
           const { bet, game } = hb
           const tn = bet?.__typename || ''
           // CasinoBet, SoftswissBet, ThirdPartyBet (Hacksaw etc.)
-          if (tn !== 'CasinoBet' && tn !== 'SoftswissBet' && tn !== 'ThirdPartyBet') return
+          if (tn !== 'CasinoBet' && tn !== 'SoftswissBet' && tn !== 'ThirdPartyBet') {
+            if (DEBUG_HOUSEBETS) console.log('[houseBets] SKIP: __typename=', tn, '(erwartet: CasinoBet|SoftswissBet|ThirdPartyBet)')
+            return
+          }
           const amount = Number(bet?.amount) ?? 0
-          if (amount <= 0) return
+          if (amount <= 0) {
+            if (DEBUG_HOUSEBETS) console.log('[houseBets] SKIP: amount<=0', { amount, bet })
+            return
+          }
           const gameSlug = game?.slug || gameNameToSlug(game?.name) || ''
           const name = (game?.name || '').toLowerCase()
-          if (/vault|wallet|transfer|deposit|withdraw/.test(name)) return
-          onUpdate({
+          if (/vault|wallet|transfer|deposit|withdraw/.test(name)) {
+            if (DEBUG_HOUSEBETS) console.log('[houseBets] SKIP: gefiltert (vault/wallet/transfer)', { name })
+            return
+          }
+          const payload = {
             id: bet?.id || hb?.iid || hb?.id,
             gameSlug,
             amount,
             payout: Number(bet?.payout) ?? 0,
             currency: (bet?.currency || '').toLowerCase(),
-            payoutMultiplier: Number(bet?.payoutMultiplier) ?? 0,
-            amountMultiplier: Number(bet?.amountMultiplier) ?? 0,
-          })
+            payoutMultiplier: Number(bet?.payoutMultiplier) || 0,
+            amountMultiplier: Number(bet?.amountMultiplier) || 0,
+          }
+          if (DEBUG_HOUSEBETS) console.log('[houseBets] OK → onUpdate:', payload)
+          onUpdate(payload)
         },
         error: (err) => {
           console.warn('[StakeBetWS] Subscription error:', err?.message || err)

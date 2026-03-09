@@ -47,6 +47,9 @@ const PROVIDER_MAP = {
   'creativecity': 'stakeEngine',
   'valkyrie': 'stakeEngine',
   'd-bush-gaming': 'stakeEngine',
+  'sexy-rabbit': 'pragmatic', // Rabbit Heist – gleiches gs2c/html5Game.do-Protokoll wie Pragmatic
+  'sexyrabbit': 'pragmatic',
+  'videoslots': 'pragmatic',
 }
 
 const SLUG_KURATOR_QUERY = `query SlugKuratorGroup($slug: String!, $limit: Int!, $offset: Int!, $sort: GameKuratorGroupGameSortEnum = popular7d, $filterIds: [String!], $locale: Locale = "en") {

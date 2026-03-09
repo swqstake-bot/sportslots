@@ -46,6 +46,9 @@ const PRAGMATIC_PROXY_POST = null
 const ZERO_DECIMAL_CURRENCIES = ['idr', 'jpy', 'krw', 'vnd']
 
 async function safeFetch(url, options = {}) {
+  if (!url || typeof url !== 'string') {
+    throw new Error('Session ungültig. Bitte Session neu starten.')
+  }
   if (window.electronAPI?.proxyRequest) {
     const { method = 'GET', headers = {}, body } = options
     if (method === 'POST' && !headers['Content-Type']) {
@@ -84,23 +87,20 @@ async function resolveGameUrl(config) {
     return trimmed
   }
 
-  // playGame.do?key=... – IMMER zuerst fetchen (Session aktivieren, ggf. Redirect mit echtem mgckey)
+  // playGame.do?key=... – ZWINGEND fetchen, um Token server-seitig zu aktivieren (ohne → doInit liefert "unlogged")
   let url = trimmed
-  
   try {
     const res = await safeFetch(url, { method: 'GET' })
     if (res.ok && res.url) {
       const finalParams = parseUrlParams(res.url)
       if (finalParams.mgckey && finalParams.symbol) return res.url
     }
-    
-    // Fallback: versuche key-Parameter aus playGame.do direkt zu parsen, falls Redirect nicht klappte
     const directParams = parseUrlParams(url)
-    if (directParams.mgckey && directParams.symbol && directParams.host) {
-       return url
-    }
+    if (directParams.mgckey && directParams.symbol && directParams.host) return url
   } catch (e) {
     logApiCall({ type: 'pragmatic/resolve', endpoint: url, request: null, response: null, error: String(e), durationMs: null })
+    const directParams = parseUrlParams(trimmed)
+    if (directParams.mgckey && directParams.symbol && directParams.host) return trimmed
     throw e
   }
   return null
@@ -141,16 +141,36 @@ function parsePragmaticResponse(text) {
 const PRAGMATIC_DEFAULT_BET_LEVELS = [500, 1000, 2000, 5000, 10000, 20000, 50000, 100000]
 // Big Bass Boom IDR: 1 Münze/Linie × 25 = 250 … 10 Münzen × 280.000 = 28 Mio
 const PRAGMATIC_DEFAULT_BET_LEVELS_BIGBASS = [250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000, 2800000, 28000000]
+// Staffelung wie Rabbit Heist: Min 100, Max 52M (VND/IDR direkt, ARS in Minor)
+const PRAGMATIC_WIDE_BET_LEVELS = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000, 2000000, 5000000, 10000000, 26000000, 52000000]
+
+/** Währungen wo doInit/bls oft falsche Range liefert – stattdessen VND-Style-Staffelung nutzen */
+const PRAGMATIC_WIDE_CURRENCIES = ['vnd', 'idr', 'ars']
 
 /**
  * Parst Bet-Levels aus doInit-Response (währungsabhängig).
- * Formate: bls=min,max | sc=0.2,0.5,1,... (EUR) oder sc=500,1000,... (IDR)
+ * Formate:
+ * - bls=min,max: c-Werte (Coin pro Linie). Wir konvertieren zu Beträgen = c × lines.
+ *   Für VND/IDR/ARS überspringen wir bls – doInit liefert oft USD/EUR-Range.
+ * - sc=0.2,0.5,1 (EUR): Werte × 100 = Minor (Cents)
+ * - sc=500,1000 (IDR/VND): Werte = Beträge direkt
+ *
+ * Bet-Levels sind immer in Minor-Einheiten (bzw. Währung für Zero-Dec) für korrekte UI-Anzeige.
+ * placeBet berechnet c = betAmount / lines.
  */
 function parseBetLevels(doInitText, targetCurrency, symbol = '') {
   if (!doInitText || typeof doInitText !== 'string') return PRAGMATIC_DEFAULT_BET_LEVELS
-  const isZeroDec = ZERO_DECIMAL_CURRENCIES.includes((targetCurrency || 'eur').toLowerCase())
+  const curr = (targetCurrency || 'eur').toLowerCase()
+  const isZeroDec = ZERO_DECIMAL_CURRENCIES.includes(curr)
+  const linesMatch = symbol?.match(/^vs(\d+)/i)
+  const lines = linesMatch ? parseInt(linesMatch[1], 10) : 20
 
-  // bls=min,max (Pragmatic-Standard)
+  // VND, IDR, ARS: doInit/bls liefert oft falsche Range. Real: Min 100, Max 52M (bzw. ARS in Minor)
+  if (PRAGMATIC_WIDE_CURRENCIES.includes(curr)) {
+    return PRAGMATIC_WIDE_BET_LEVELS
+  }
+
+  // bls=min,max: c-Werte (Coin pro Linie). Bet = c × lines → wir geben Beträge zurück.
   const blsMatch = doInitText.match(/[?&]bls=(\d+),(\d+)/)
   if (blsMatch) {
     const low = parseInt(blsMatch[1], 10)
@@ -158,10 +178,11 @@ function parseBetLevels(doInitText, targetCurrency, symbol = '') {
     if (low < high) {
       const steps = Math.min(12, high - low)
       const inc = Math.max(1, Math.floor((high - low) / steps))
-      const levels = []
-      for (let v = low; v <= high; v += inc) levels.push(v)
-      if (levels[levels.length - 1] !== high) levels.push(high)
-      return levels
+      const cValues = []
+      for (let v = low; v <= high; v += inc) cValues.push(v)
+      if (cValues[cValues.length - 1] !== high) cValues.push(high)
+      // Beträge = c × lines (Minor für Fiat, direkt für Zero-Dec)
+      return cValues.map((c) => c * lines)
     }
   }
 
@@ -261,6 +282,9 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   // Lines aus Symbol: vs20sugarrushx → 20, vs10bbboom → 10
   const linesMatch = symbol?.match(/^vs(\d+)/i)
   const lines = linesMatch ? parseInt(linesMatch[1], 10) : 20
+  const isZeroDec = ZERO_DECIMAL_CURRENCIES.includes((targetCurrency || 'eur').toLowerCase())
+  const bal = Number(parsed.balance) || 0
+  const initialBalance = bal ? (isZeroDec ? Math.round(bal) : Math.round(bal * 100)) : null
 
   return {
     mgckey,
@@ -272,15 +296,20 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     betLevels,
     lines,
     targetCurrency: (targetCurrency || 'eur').toLowerCase(),
+    initialBalance,
   }
 }
 
 async function postGameService(session, body) {
+  const url = session?.gameServiceUrl
+  if (!url || typeof url !== 'string') {
+    throw new Error('Session ungültig. Bitte Session neu starten.')
+  }
   const t0 = Date.now()
   const formBody = new URLSearchParams(body).toString()
   let res
   try {
-    res = await safeFetch(session.gameServiceUrl, {
+    res = await safeFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formBody,
@@ -299,15 +328,13 @@ export async function sendKeepAlive() {
   return { ok: true, data: null }
 }
 
-// IDR Sugar Rush etc.: c = Gesamteinsatz/20 (500 IDR → c=25)
-const IDR_C_MULTIPLIER = 20
-// Big Bass Boom: Einsatz pro Linie × Münzwert, c = Gesamteinsatz/Linien (250 IDR / 10 → c=25)
+// Big Bass Boom: c = Gesamteinsatz/Linien (min 25)
 const BIGBASS_SYMBOL = /bbboom/i
 
 /**
- * c = Einsatz in Pragmatic-Einheiten.
- * Big Bass: Gesamteinsatz = Linien × (Münzen/Linie × Münzwert), c = Gesamteinsatz/Linien (min 25)
- * Sugar Rush: c = Gesamteinsatz/20
+ * Pragmatic: Gesamteinsatz = c × l (Coin-Wert × Linien).
+ * c = betAmount / lines
+ * Bet-Levels sind immer in Minor (bzw. Währung für Zero-Dec).
  */
 export async function placeBet(session, betAmount, extraBet = false, autoplay = false) {
   if (session.na === 'b') {
@@ -315,33 +342,18 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
   }
   const curr = (session.targetCurrency || 'eur').toLowerCase()
   const isZeroDec = ZERO_DECIMAL_CURRENCIES.includes(curr)
-  const isFiat = ['eur', 'usd', 'brl', 'cad', 'cny', 'inr', 'mxn', 'php', 'pln', 'rub', 'try', 'ngn', 'ars', 'cop', 'pen', 'clp'].includes(curr)
-  
-  const b = Number(betAmount)
+
   const lines = session.lines || 20
-  let c
-  
-  if (curr === 'idr') {
-    if (BIGBASS_SYMBOL.test(session.symbol || '')) {
-      c = Math.round(b / lines) 
-    } else {
-      c = Math.round(b / IDR_C_MULTIPLIER)
-    }
-  } else if (isZeroDec) {
-    c = Math.round(b)
-  } else {
-    // b ist in Minor (Cents/Satoshis).
-    // Pragmatic erwartet c als Coin Value in Major Units (z.B. 0.01 für 1 Cent, oder 0.00000001 für 1 Satoshi)
-    const scale = isFiat ? 100 : 1e8
-    const c_minor = b / lines
-    // Wir runden nicht zu früh, sondern senden den Float (oder formatiert)
-    // Aber Pragmatic akzeptiert oft nur bestimmte Coin Values.
-    // Wir nehmen an, dass die BetLevels korrekt waren und c_minor "glatt" aufgeht (oder wir runden auf precision)
-    c = c_minor / scale
-  }
-  
-  const minC = BIGBASS_SYMBOL.test(session.symbol || '') && curr === 'idr' ? 25 : (isZeroDec ? 1 : 0.00000001)
-  const cVal = Math.max(minC, c)
+  const betLevels = session.betLevels || []
+  // Auf nächsten gültigen Bet-Level snappen
+  const snapped = betLevels.length
+    ? betLevels.reduce((prev, lv) => (Math.abs(lv - betAmount) < Math.abs(prev - betAmount) ? lv : prev))
+    : betAmount
+  const b = Number(snapped)
+
+  // Pragmatic: Gesamteinsatz = c × l. c = Coin-Wert pro Linie (in Minor bzw. Währung)
+  const minC = BIGBASS_SYMBOL.test(session.symbol || '') && curr === 'idr' ? 25 : 1
+  const cVal = Math.max(minC, Math.round(b / lines))
   const l = lines
 
   let currentSession = { ...session }
@@ -375,12 +387,15 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
   let firstSpinBalance = null
   let hadCascade = false
 
+  // vs20rabbit (Sexy Rabbit) erwartet sInfo=n, bl=0 (Bonus-Level); andere Pragmatic sInfo=t
+  const sInfo = (currentSession.symbol || '').toLowerCase().includes('vs20rabbit') ? 'n' : 't'
   const spinBody = {
     action: 'doSpin',
     symbol: currentSession.symbol,
     c: String(cVal),
     l: String(l),
-    sInfo: 't',
+    sInfo,
+    bl: '0',
     index: currentSession.index,
     counter: currentSession.counter,
     repeat: '0',
