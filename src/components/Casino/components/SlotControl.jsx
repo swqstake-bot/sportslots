@@ -16,7 +16,7 @@ import { saveSlotSpinSample, saveBonusSpinSample, hasEnoughSamplesForSlot } from
 import { notifyBonusHit } from '../utils/notifications'
 import { loadBetHistory, appendBet } from '../utils/betHistoryDb'
 import { getSlotCurrency, setSlotCurrency } from '../utils/slotCurrencyConfig'
-import { subscribeToBetUpdates } from '../api/stakeBalanceSubscription'
+import { subscribeToBetUpdates, subscribeToBalanceUpdates } from '../api/stakeBalanceSubscription'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 
 const DEFAULT_BET_LEVELS = [
@@ -169,23 +169,16 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     return () => { cancelled = true }
   }, [accessToken])
   const [sessionStartBalance, setSessionStartBalance] = useState(null)
-  // Stats ausschließlich aus betHistory ableiten (Single Source of Truth – BetList liefert korrekte Werte)
+  const [wsBalance, setWsBalance] = useState(null) // balanceUpdated WebSocket – gleiche Quelle wie Session Balance
+  // BetList + Stats ausschließlich aus WebSocket (houseBets) – Single Source of Truth
   const sessionBets = useMemo(
     () => (sessionStartAt ? betHistory.filter((b) => (b.addedAt ?? 0) >= sessionStartAt) : betHistory),
     [betHistory, sessionStartAt]
   )
   const stats = useMemo(() => {
-    let spins = 0
-    let totalWagered = 0
-    let totalWon = 0
-    let winCount = 0
-    let lossCount = 0
-    let biggestWin = 0
-    let biggestMultiplier = 0
-    let multiOver100xCount = 0
-    let multiOver100xSum = 0
-    let lastBalance = null
-    let lastCurrency = null
+    let spins = 0, totalWagered = 0, totalWon = 0, winCount = 0, lossCount = 0
+    let biggestWin = 0, biggestMultiplier = 0, multiOver100xCount = 0, multiOver100xSum = 0
+    let lastBalance = null, lastCurrency = null
     for (const b of sessionBets) {
       const bet = Number(b.betAmount) || 0
       const win = (b.isBonus && b.stoppedBonus) ? 0 : (Number(b.winAmount) || 0)
@@ -198,29 +191,19 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       if (bet > 0 && win > 0) {
         const m = win / bet
         if (m > biggestMultiplier) biggestMultiplier = m
-        if (m >= 100) {
-          multiOver100xCount += 1
-          multiOver100xSum += m
-        }
+        if (m >= 100) { multiOver100xCount += 1; multiOver100xSum += m }
       }
       if (b.balance != null) lastBalance = b.balance
       if (b.currencyCode) lastCurrency = b.currencyCode
     }
+    // currentBalance: balanceUpdated WebSocket (wie Session Balance/Wallet) – nicht aus houseBets
+    const currentBalance = wsBalance ?? lastBalance
     return {
-      spins,
-      totalWagered,
-      totalWon,
-      winCount,
-      lossCount,
-      biggestWin,
-      biggestMultiplier,
-      multiOver100xCount,
-      multiOver100xSum,
-      currentBalance: lastBalance,
-      sessionStartBalance: sessionStartBalance ?? null,
-      currencyCode: lastCurrency ?? null,
+      spins, totalWagered, totalWon, winCount, lossCount, biggestWin, biggestMultiplier,
+      multiOver100xCount, multiOver100xSum,
+      currentBalance, sessionStartBalance: sessionStartBalance ?? null, currencyCode: lastCurrency ?? null,
     }
-  }, [sessionBets, sessionStartBalance])
+  }, [sessionBets, sessionStartBalance, wsBalance])
 
   const allowedCurrencies = filterCurrenciesByProvider(supportedCurrencies, [slot]) || supportedCurrencies
   const cryptoOpts = allowedCurrencies.filter((c) => !isFiat(c.value) || isStable(c.value))
@@ -302,23 +285,31 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     })
   }, [slot.slug])
 
-  const updateStatsFromResult = useCallback((result, betAmt, useExtraBet = false) => {
-    const effectiveBet = getEffectiveBetAmount(betAmt, useExtraBet, slot?.slug)
-    const parsed = parseBetResponse(result, effectiveBet)
-    let winAmount = parsed.winAmount
+  // Nur lastBalanceRef – BetList/Stats kommen ausschließlich aus WebSocket (houseBets)
+  const updateStatsFromResult = useCallback((result) => {
+    const parsed = parseBetResponse(result, 0)
     lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
-    addToBetHistory({ ...parsed, winAmount })
-  }, [addToBetHistory])
+  }, [])
 
   useEffect(() => {
     if (!accessToken) return
-    // Stake Engine: RGS liefert bereits alle Daten über placeBet; houseBets würde Duplikate (1.000 + 0 VND) erzeugen
-    const isStakeEngine = slot.providerId === 'stakeEngine' || PROVIDERS_META[slot.providerId]?.aliasOf === 'stakeEngine'
-    if (isStakeEngine) return
+    const balanceSub = subscribeToBalanceUpdates(accessToken, (payload) => {
+      if (!payload?.currency) return
+      const curr = (payload.currency || '').toLowerCase()
+      if (curr === effectiveTarget.toLowerCase()) {
+        setWsBalance(payload.amount != null ? Number(payload.amount) : null)
+      }
+    })
+    return () => {
+      try { balanceSub.disconnect() } catch (_) {}
+    }
+  }, [accessToken, effectiveTarget])
+
+  useEffect(() => {
+    if (!accessToken) return
     const sub = subscribeToBetUpdates(accessToken, (b) => {
       const slug = String(b?.gameSlug || '')
       if (!slug) return
-      // Exakt oder slot.slug endet mit -gameSlug (z.B. hacksaw-le-bandit vs le-bandit)
       const matches = slug === slot.slug || slot.slug.endsWith('-' + slug)
       if (!matches) return
       const betAmount = Number(b?.amount) || 0
@@ -329,7 +320,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     return () => {
       try { sub.disconnect() } catch (_) {}
     }
-  }, [accessToken, slot.slug, slot.providerId, addToBetHistory])
+  }, [accessToken, slot.slug, addToBetHistory])
 
   async function handleStartSession() {
     if (!provider?.startSession) {
@@ -350,6 +341,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       lastBalanceRef.current = s?.initialBalance ?? null
       spinsSinceRefreshRef.current = 0
       setSessionStartBalance(s?.initialBalance ?? null)
+      setWsBalance(s?.initialBalance ?? null)
       setSessionStartAt(Date.now())
       const hasFull = await hasEnoughSamplesForSlot(slot.slug).catch(() => false)
       setSlotHasFullSamples(hasFull)
@@ -397,7 +389,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       const { data, nextSeq, session: updatedSession } = result
       setLastResult(data)
       spinsSinceRefreshRef.current += 1
-      updateStatsFromResult(data, betAmount, extraBet)
+      updateStatsFromResult(data)
       setSession((prev) => (updatedSession ? updatedSession : prev ? { ...prev, seq: nextSeq } : null))
       const effectiveBet = getEffectiveBetAmount(betAmount, extraBet, slot.slug)
       const parsed = parseBetResponse(data, effectiveBet)
@@ -506,6 +498,13 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         if (autospinStopOnBonus && (parsed.shouldStopOnBonus ?? parsed.isBonus) && bonusMeetsScatter) {
           lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
           addToBetHistory({ ...parsed, winAmount, stoppedBonus: true })
+          setStats((prev) => ({
+            ...prev,
+            spins: prev.spins + 1,
+            totalWagered: prev.totalWagered + effectiveBet,
+            ...(parsed.balance != null && { currentBalance: parsed.balance }),
+            ...(parsed.currencyCode && { currencyCode: parsed.currencyCode }),
+          }))
           setError(`Autospin gestoppt: Bonus${parsed.scatterCount != null ? ` (${parsed.scatterCount} Scatter)` : ''} getroffen nach ${spinsDone + 1} Spin(s)`)
           notifyBonusHit(slot.name, spinsDone + 1)
           triggerLogRefresh()
@@ -516,6 +515,17 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         if (autospinStopOnProfit && netAfter >= autospinStopProfitValue) {
           lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
           addToBetHistory({ ...parsed, winAmount })
+          setStats((prev) => ({
+            ...prev,
+            spins: prev.spins + 1,
+            totalWagered: prev.totalWagered + effectiveBet,
+            totalWon: prev.totalWon + winAmount,
+            winCount: prev.winCount + (winAmount > 0 ? 1 : 0),
+            lossCount: prev.lossCount + (winAmount > 0 ? 0 : 1),
+            biggestWin: Math.max(prev.biggestWin, winAmount),
+            ...(parsed.balance != null && { currentBalance: parsed.balance }),
+            ...(parsed.currencyCode && { currencyCode: parsed.currencyCode }),
+          }))
           setError(`Autospin gestoppt: Profit erreicht nach ${spinsDone + 1} Spin(s)`)
           triggerLogRefresh()
           break
@@ -523,6 +533,17 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         if (autospinStopOnNetLoss && netAfter <= -Math.max(0, autospinStopLossValue)) {
           lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
           addToBetHistory({ ...parsed, winAmount })
+          setStats((prev) => ({
+            ...prev,
+            spins: prev.spins + 1,
+            totalWagered: prev.totalWagered + effectiveBet,
+            totalWon: prev.totalWon + winAmount,
+            winCount: prev.winCount + (winAmount > 0 ? 1 : 0),
+            lossCount: prev.lossCount + (winAmount > 0 ? 0 : 1),
+            biggestWin: Math.max(prev.biggestWin, winAmount),
+            ...(parsed.balance != null && { currentBalance: parsed.balance }),
+            ...(parsed.currencyCode && { currencyCode: parsed.currencyCode }),
+          }))
           setError(`Autospin gestoppt: Loss-Limit erreicht nach ${spinsDone + 1} Spin(s)`)
           triggerLogRefresh()
           break
@@ -533,6 +554,20 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           if (mult >= autospinStopMultiplier) {
             lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
             addToBetHistory({ ...parsed, winAmount })
+            setStats((prev) => ({
+              ...prev,
+              spins: prev.spins + 1,
+              totalWagered: prev.totalWagered + effectiveBet,
+              totalWon: prev.totalWon + winAmount,
+              winCount: prev.winCount + 1,
+              biggestWin: Math.max(prev.biggestWin, winAmount),
+              biggestMultiplier: Math.max(prev.biggestMultiplier || 0, winAmount / effectiveBet),
+            ...(winAmount > 0 && effectiveBet > 0 && (winAmount / effectiveBet) >= 100
+              ? { multiOver100xCount: prev.multiOver100xCount + 1, multiOver100xSum: prev.multiOver100xSum + (winAmount / effectiveBet) }
+              : {}),
+              ...(parsed.balance != null && { currentBalance: parsed.balance }),
+              ...(parsed.currencyCode && { currencyCode: parsed.currencyCode }),
+            }))
             setError(`Autospin gestoppt: ${mult.toFixed(1)}× getroffen nach ${spinsDone + 1} Spin(s)`)
             triggerLogRefresh()
             break
@@ -551,6 +586,15 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         if (autospinStopOnWin && isWin) {
           lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
           addToBetHistory({ ...parsed, winAmount })
+          setStats((prev) => ({
+            ...prev,
+            spins: prev.spins + 1,
+            totalWagered: prev.totalWagered + effectiveBet,
+            totalWon: prev.totalWon + winAmount,
+            winCount: prev.winCount + 1,
+            ...(parsed.balance != null && { currentBalance: parsed.balance }),
+            ...(parsed.currencyCode && { currencyCode: parsed.currencyCode }),
+          }))
           setError(`Autospin gestoppt: Win nach ${spinsDone + 1} Spin(s)`)
           triggerLogRefresh()
           break
@@ -558,6 +602,14 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         if (autospinStopOnLoss && !isWin) {
           lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
           addToBetHistory({ ...parsed, winAmount })
+          setStats((prev) => ({
+            ...prev,
+            spins: prev.spins + 1,
+            totalWagered: prev.totalWagered + effectiveBet,
+            lossCount: prev.lossCount + 1,
+            ...(parsed.balance != null && { currentBalance: parsed.balance }),
+            ...(parsed.currencyCode && { currencyCode: parsed.currencyCode }),
+          }))
           setError(`Autospin gestoppt: Loss nach ${spinsDone + 1} Spin(s)`)
           triggerLogRefresh()
           break
@@ -565,6 +617,16 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         if (autospinStopOnMinutes && sessionStartAt && Math.floor((Date.now() - sessionStartAt) / 60000) >= Math.max(1, autospinStopMinutes || 0)) {
           lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
           addToBetHistory({ ...parsed, winAmount })
+          setStats((prev) => ({
+            ...prev,
+            spins: prev.spins + 1,
+            totalWagered: prev.totalWagered + effectiveBet,
+            totalWon: prev.totalWon + winAmount,
+            winCount: prev.winCount + (isWin ? 1 : 0),
+            lossCount: prev.lossCount + (isWin ? 0 : 1),
+            ...(parsed.balance != null && { currentBalance: parsed.balance }),
+            ...(parsed.currencyCode && { currencyCode: parsed.currencyCode }),
+          }))
           setError(`Autospin gestoppt: Zeitlimit erreicht nach ${spinsDone + 1} Spin(s)`)
           triggerLogRefresh()
           break
@@ -577,13 +639,23 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           if (hit) {
             lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
             addToBetHistory({ ...parsed, winAmount })
+            setStats((prev) => ({
+              ...prev,
+              spins: prev.spins + 1,
+              totalWagered: prev.totalWagered + effectiveBet,
+              totalWon: prev.totalWon + winAmount,
+              winCount: prev.winCount + (isWin ? 1 : 0),
+              lossCount: prev.lossCount + (isWin ? 0 : 1),
+              ...(parsed.balance != null && { currentBalance: parsed.balance }),
+              ...(parsed.currencyCode && { currencyCode: parsed.currencyCode }),
+            }))
             setError(`Autospin gestoppt: ${n}× ${autospinStopStreakType === 'win' ? 'Win' : 'Loss'}-Streak nach ${spinsDone + 1} Spin(s)`)
             triggerLogRefresh()
             break
           }
         }
 
-        updateStatsFromResult(data, betAmount, extraBet)
+        updateStatsFromResult(data)
         triggerLogRefresh()
         spinsDone += 1
         aggTotalWagered += effectiveBet
@@ -622,6 +694,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     setSession(null)
     setSessionStartAt(null)
     setSessionStartBalance(null)
+    setWsBalance(null)
     setError('')
   }
 
@@ -939,7 +1012,28 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           Session starten, dann Spin oder Autospin – Statistik und Spins erscheinen hier.
         </p>
       )}
-      <StatsDisplay stats={stats} currencyCode={stats.currencyCode || effectiveTarget} compact={compact} minimal={settingsCollapsed} />
+      <StatsDisplay
+        stats={(() => {
+          // Höchster Multi: auch aus betHistory ableiten, damit er mit der BetList übereinstimmt
+          const sessionBets = sessionStartAt ? betHistory.filter((b) => (b.addedAt ?? 0) >= sessionStartAt) : betHistory
+          let biggestMultiFromHistory = 0
+          for (const b of sessionBets) {
+            const bet = Number(b.betAmount) || 0
+            const win = Number(b.winAmount) || 0
+            if (bet > 0 && win > 0) {
+              const m = win / bet
+              if (m > biggestMultiFromHistory) biggestMultiFromHistory = m
+            }
+          }
+          const enrichedStats = biggestMultiFromHistory > (stats.biggestMultiplier || 0)
+            ? { ...stats, biggestMultiplier: biggestMultiFromHistory }
+            : stats
+          return enrichedStats
+        })()}
+        currencyCode={stats.currencyCode || effectiveTarget}
+        compact={compact}
+        minimal={settingsCollapsed}
+      />
       {betHistory.length > 0 && (() => {
         // Chart nur aus aktueller Session (sessionStartAt), sonst passt es nicht zu Stats
         const sessionBets = sessionStartAt ? betHistory.filter((b) => (b.addedAt ?? 0) >= sessionStartAt) : betHistory
