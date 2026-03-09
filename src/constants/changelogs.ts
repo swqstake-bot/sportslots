@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.90': [
+    '🎨 Login: Stylisches Design, Username/Passwort, Anmeldedaten speichern',
+  ],
   '1.0.89': [
     '🐛 Pragmatic/Rabbit Heist: Einsatz-Mapping, Bet-Levels (VND/IDR/ARS 100–52M), houseBets, Kontostand',
   ],
