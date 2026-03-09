@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.88': [
+    '🐛 Fix: USD-Anzeige in Autospin-Labels (nicht mehr als Variable)',
+  ],
   '1.0.87': [
     '✨ Slot-Statistik: Immer USD-Anzeige mit Wechselkurs-Umrechnung',
   ],
