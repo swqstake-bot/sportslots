@@ -16,7 +16,7 @@ const STAKEENGINE_MIN_DELAY_MS = 50
 function parseConfigFromUrl(config) {
   try {
     const url = typeof config === 'string' ? config : config?.url
-    // 1000 Lakes Studios nutzt oft die gleiche Engine/URL-Struktur, daher Prüfung erweitern
+    // 1000 Lakes Studios nutzt oft die gleiche Engine/URL-Struktur
     if (!url || (!url.includes('stake-engine') && !url.includes('1000lakes'))) return null
     const u = new URL(url)
     const sessionID = u.searchParams.get('sessionID')

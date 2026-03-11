@@ -36,9 +36,15 @@ export function formatAmount(value, currencyCode) {
 
 /**
  * Formatiert Betrag mit Währungssymbol für Einsatz-Dropdown
+ * @param {number} value - Betrag (Minor oder provider-spezifisch)
+ * @param {string} currencyCode
+ * @param {{ displayDivisor?: number }} opts - displayDivisor: z.B. 10000 für Claw Buster (100000 = $10)
  */
-export function formatBetLabel(value, currencyCode) {
-  const formatted = formatAmount(value, currencyCode)
+export function formatBetLabel(value, currencyCode, opts = {}) {
+  const divisor = opts?.displayDivisor
+  const formatted = divisor
+    ? (Number(value) / divisor).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : formatAmount(value, currencyCode)
   const cc = (currencyCode || '').toUpperCase()
   if (!cc) return String(value)
   if (cc === 'EUR') return `${formatted} €`

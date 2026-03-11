@@ -780,7 +780,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
           <select value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} style={{ ...STYLES.select, minWidth: 110, flex: 'none' }} title="Einsatz">
-            {betLevels.map((v) => <option key={v} value={v}>{formatBetLabel(v, effectiveTarget)}</option>)}
+            {betLevels.map((v) => <option key={v} value={v}>{formatBetLabel(v, effectiveTarget, (providerMeta?.betDisplayDivisor && (!Array.isArray(providerMeta?.betDisplayDivisorSlots) || providerMeta.betDisplayDivisorSlots.includes(slot?.slug))) ? { displayDivisor: providerMeta.betDisplayDivisor } : undefined)}</option>)}
           </select>
           <label style={{ ...STYLES.checkboxRow, cursor: 'pointer', fontSize: '0.8rem' }}>
             <input type="checkbox" id={`extraBet-${slot.slug}`} checked={extraBet} onChange={(e) => setExtraBet(e.target.checked)} style={STYLES.checkbox} />
@@ -931,7 +931,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       {settingsCollapsed && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.58rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-            {formatBetLabel(getEffectiveBetAmount(betAmount, extraBet, slot.slug), effectiveTarget)}
+            {formatBetLabel(getEffectiveBetAmount(betAmount, extraBet, slot.slug), effectiveTarget, (providerMeta?.betDisplayDivisor && (!Array.isArray(providerMeta?.betDisplayDivisorSlots) || providerMeta.betDisplayDivisorSlots.includes(slot?.slug))) ? { displayDivisor: providerMeta.betDisplayDivisor } : undefined)}
           </span>
           <button
             onClick={handleStopAutospin}

@@ -50,6 +50,8 @@ const PROVIDER_MAP = {
   'sexy-rabbit': 'pragmatic', // Rabbit Heist – gleiches gs2c/html5Game.do-Protokoll wie Pragmatic
   'sexyrabbit': 'pragmatic',
   'videoslots': 'pragmatic',
+  'clawbuster': 'clawbuster',
+  'clawbuster-gaming': 'clawbuster',
 }
 
 const SLUG_KURATOR_QUERY = `query SlugKuratorGroup($slug: String!, $limit: Int!, $offset: Int!, $sort: GameKuratorGroupGameSortEnum = popular7d, $filterIds: [String!], $locale: Locale = "en") {

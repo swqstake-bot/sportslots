@@ -28,6 +28,7 @@ export const PROVIDERS = {
   truelab: { id: 'truelab', name: 'Truelab', impl: 'backend' },
   twist: { id: 'twist', name: 'Twist Gaming', impl: 'web' },
   nolimit: { id: 'nolimit', name: 'Nolimit City', impl: 'web' },
+  clawbuster: { id: 'clawbuster', name: 'Claw Buster', impl: 'web' },
 }
 
 export function getWebReadySlots() {

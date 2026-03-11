@@ -42,6 +42,15 @@ export function logApiCall({ type, endpoint, request, response, error, durationM
   const logs = getLogs()
   logs.push(entry)
   saveLogs(logs)
+
+  // Zusätzlich in DevTools Console ausgeben
+  const logFn = error ? console.error : console.log
+  const prefix = `[${type}]`
+  if (error) {
+    logFn(prefix, error, { request: entry.request, response: entry.response, durationMs })
+  } else {
+    logFn(prefix, { request: entry.request, response: entry.response, durationMs })
+  }
 }
 
 function sanitizeForLog(obj) {

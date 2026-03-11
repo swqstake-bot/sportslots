@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net, session, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, net, session, shell, globalShortcut } from 'electron';
 import https from 'node:https';
 import http from 'node:http';
 import updater from 'electron-updater';
@@ -38,9 +38,14 @@ function createWindow() {
   } else {
     // Production
     win.loadFile(path.join(DIST, 'index.html'));
-    // Open DevTools in production for debugging if needed (can be removed later)
-    // win.webContents.openDevTools(); 
   }
+
+  // F12: DevTools öffnen/schließen (Dev + Production)
+  const toggleDevTools = () => {
+    win?.webContents.toggleDevTools();
+  };
+  globalShortcut.register('F12', toggleDevTools);
+  globalShortcut.register('CommandOrControl+Shift+I', toggleDevTools);
 
   win.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     console.error('Failed to load:', errorCode, errorDescription);
@@ -318,6 +323,49 @@ ipcMain.handle('clear-slot-spin-samples', async () => {
   }
 });
 
+// Claw Buster: Launcher-URL laden → Redirect zu clawbuster-cdn → secret aus URL extrahieren
+ipcMain.handle('clawbuster-extract-secret', async (_event, configUrl: string) => {
+  if (!configUrl || typeof configUrl !== 'string') return null;
+  return new Promise<string | null>((resolve) => {
+    const w = new BrowserWindow({
+      width: 1,
+      height: 1,
+      show: false,
+      webPreferences: {
+        contextIsolation: true,
+        sandbox: false,
+        webSecurity: false,
+      },
+    });
+    const timeout = setTimeout(() => {
+      console.warn('[clawbuster] extractClawbusterSecret: Timeout nach 15s');
+      w.destroy();
+      resolve(null);
+    }, 15000);
+    const onNavigate = (_e: Electron.Event, url: string) => {
+      try {
+        const u = new URL(url);
+        if (u.hostname.includes('clawbuster-cdn.com') || u.hostname.includes('clawbuster')) {
+          const secret = u.searchParams.get('secret');
+          clearTimeout(timeout);
+          w.destroy();
+          resolve(secret || null);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    w.webContents.on('did-navigate', onNavigate);
+    w.webContents.on('did-navigate-in-page', onNavigate);
+    w.loadURL(configUrl).catch((err) => {
+      console.warn('[clawbuster] extractClawbusterSecret: loadURL failed', err?.message);
+      clearTimeout(timeout);
+      w.destroy();
+      resolve(null);
+    });
+  });
+});
+
 ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = {}, body = null }) => {
     return new Promise((resolve, reject) => {
         // Validation logic from SwaqSlotbot (Hauptslotprojekt)
@@ -368,7 +416,8 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                 'nolimitcdn.com', 'nolimitcity.com', 'l0mpxqfj.xyz', 'thunderkick', 'relax',
                 'blueprint', 'endorphina', 'netent', 'gameart', 'push', 'btg', 'oak', 'redtiger',
                 'playngo', 'octoplay', 'peterandsons', 'shady', 'shuffle', 'titan', 'twist',
-                'popiplay', 'helio', 'samurai', '1000lakes', 'hacksawgaming.com', 'd1oa92ndvzdrfz.cloudfront.net'
+                'popiplay', 'helio', 'samurai', '1000lakes', 'hacksawgaming.com', 'd1oa92ndvzdrfz.cloudfront.net',
+                'api.clawbuster.com', 'clawbuster-cdn.com', 'gsplauncher.de'
             ];
             if (allowed.some(h => url.includes(h))) {
                 isAllowed = true;
@@ -479,6 +528,10 @@ app.on('window-all-closed', () => {
     app.quit();
     win = null;
   }
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
 });
 
 app.on('activate', () => {

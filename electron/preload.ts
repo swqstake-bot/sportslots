@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getKeyAuthHwid: () => ipcRenderer.invoke('get-keyauth-hwid'),
     getSessionToken: () => ipcRenderer.invoke('get-session-token'),
     proxyRequest: (options: any) => ipcRenderer.invoke('proxy-request', options),
+    extractClawbusterSecret: (configUrl: string) => ipcRenderer.invoke('clawbuster-extract-secret', configUrl),
     version: pkg.version,
     // Slot Spin Samples – automatisches Lernen in Ordner
     saveSlotSpinSample: (payload: { slotSlug: string; slotName?: string; providerId?: string; request: any; response: any }) =>

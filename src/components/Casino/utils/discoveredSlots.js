@@ -49,6 +49,7 @@ export function inferProviderId(slug) {
   if (s.startsWith('titan-')) return 'titan'
   if (s.startsWith('twist-')) return 'twist'
   if (s.startsWith('dbushgaming-')) return 'stakeEngine'
+  if (s.startsWith('clawbuster-')) return 'clawbuster'
   if (s.startsWith('sexyrabbit-') || s.startsWith('sexy-rabbit-') || s.startsWith('videoslots-')) return 'pragmatic' // Rabbit Heist – gs2c wie Pragmatic
   if (s.startsWith('popiplay-')) return 'popiplay'
   if (s.startsWith('helio-')) return 'helio'

@@ -1,6 +1,7 @@
 import * as hacksaw from './hacksaw'
 import * as pragmatic from './pragmatic'
 import * as stakeEngine from './stakeEngine'
+import * as clawbuster from './clawbuster'
 import * as avatarux from './avatarux'
 import * as nolimit from './nolimit'
 import * as genericProviders from './genericProviders'
@@ -136,6 +137,7 @@ const WEB_PROVIDERS = {
   'sexy-rabbit': pragmatic, // Rabbit Heist – gs2c wie Pragmatic
   sexyrabbit: pragmatic,
   stakeEngine,
+  clawbuster,
   nolimit,
   avatarux,
   '1000lakes': stakeEngine, // Alias für 1000 Lakes Studios

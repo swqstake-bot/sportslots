@@ -175,6 +175,14 @@ export const PROVIDERS = {
     sessionFields: ['token', 'gameId', 'host'],
     betLevelsSource: 'sessionConfig',
   },
+  clawbuster: {
+    id: 'clawbuster',
+    name: 'Claw Buster',
+    sessionFields: ['token', 'playUrl'],
+    betLevelsSource: 'sessionConfig',
+    betDisplayDivisorSlots: ['clawbuster-3-claws-of-leprechaun-gold-hold-and-win'],
+    betDisplayDivisor: 100,
+  },
   // aliases
   rt: { id: 'rt', name: 'Red Tiger alias', aliasOf: 'redtiger' },
   png: { id: 'png', name: 'Play’n GO alias', aliasOf: 'playngo' },
