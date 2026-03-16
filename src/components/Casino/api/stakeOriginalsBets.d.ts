@@ -5,3 +5,4 @@ export function minesReveal(params: { identifier: string; fields: number[] }): P
 export function minesCashout(params: { identifier: string }): Promise<{ id?: string; payout?: number } | null>
 export function placePlinkoBet(params: { amount: number; currency: string; rows: number; risk: string }): Promise<{ iid?: string; payout?: number } | null>
 export function placeKenoBet(params: { amount: number; currency: string; picks: number[]; risk: string }): Promise<{ iid?: string; payout?: number } | null>
+export function rotateSeedPair(seed?: string): Promise<{ ok: boolean }>

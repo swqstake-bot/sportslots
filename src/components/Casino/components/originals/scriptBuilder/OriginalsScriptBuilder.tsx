@@ -31,7 +31,9 @@ function optionsForExport(opts: ProfileOptions): Partial<ProfileOptions> {
   const keys = [...COMMON_OPTION_KEYS, ...(GAME_OPTION_KEYS[game] || [])]
   const out: Partial<ProfileOptions> = {}
   for (const k of keys) {
-    if (Object.prototype.hasOwnProperty.call(opts, k)) out[k] = opts[k]
+    if (Object.prototype.hasOwnProperty.call(opts, k)) {
+      ;(out as Record<string, unknown>)[k] = opts[k]
+    }
   }
   return out
 }
