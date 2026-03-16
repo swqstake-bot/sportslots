@@ -126,7 +126,11 @@ export default function OriginalsScriptBuilder() {
           </select>
         </div>
         <div>
-          <label className={labelCls}>+ on Loss %</label>
+          <label className={labelCls} title="Nur wenn Bei Win = + %">+ on Win %</label>
+          <input type="number" min="0" value={opts.increaseOnWin} onChange={(e) => updateOpt('increaseOnWin', Number(e.target.value))} className={inputCls} />
+        </div>
+        <div>
+          <label className={labelCls} title="Nur wenn Bei Loss = + %">+ on Loss %</label>
           <input type="number" min="0" value={opts.increaseOnLoss} onChange={(e) => updateOpt('increaseOnLoss', Number(e.target.value))} className={inputCls} />
         </div>
       </div>
