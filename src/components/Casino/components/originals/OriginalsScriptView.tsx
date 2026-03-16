@@ -97,6 +97,13 @@ export default function OriginalsScriptView() {
     }
   }, [addLog])
 
+  const handleResetStats = useCallback(() => {
+    setChartData([])
+    setLastStats(null)
+    setBetList([])
+    addLog('Statistik zurückgesetzt.')
+  }, [addLog])
+
   return (
     <div className="casino-card space-y-4">
       <h3 className="casino-card-header text-base">
@@ -121,8 +128,7 @@ export default function OriginalsScriptView() {
         </button>
       </div>
 
-      {subTab === 'run' && (
-        <div className="space-y-4">
+      <div className={`space-y-4 ${subTab !== 'run' ? 'hidden' : ''}`}>
           <p className="text-sm text-[var(--text-muted)]">
             <strong>Profil (.json)</strong> einfügen und Start – oder <strong>Script (.js)</strong> einfügen, dann wird die Konfig (game, Einsatz, …) extrahiert und als Session ausgeführt. <strong>Einsatz immer in USD</strong> (z. B. 0.01 = $0.01); bei anderer Währung wird zum Start umgerechnet.
           </p>
@@ -183,6 +189,9 @@ export default function OriginalsScriptView() {
                 Stop
               </Button>
             )}
+            <Button onClick={handleResetStats} variant="secondary" disabled={running}>
+              Reset Statistik
+            </Button>
           </div>
 
           {(chartData.length > 0 || lastStats) && (
@@ -250,10 +259,11 @@ export default function OriginalsScriptView() {
               ))}
             </div>
           )}
-        </div>
-      )}
+      </div>
 
-      {subTab === 'builder' && <OriginalsScriptBuilder />}
+      <div className={subTab !== 'builder' ? 'hidden' : ''}>
+        <OriginalsScriptBuilder />
+      </div>
     </div>
   )
 }

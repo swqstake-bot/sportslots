@@ -83,7 +83,7 @@ export async function runProfile(
   const stopOnB2bStreak = optBool('isStopOnB2bStreak', false) ? opt('stopOnB2bStreak', 0) : 0
   const onWin = (options.onWin as string) || 'reset'
   const onLoss = (options.onLoss as string) || 'reset'
-  const increaseOnLoss = opt('increaseOnLoss', 100)
+  const increaseOnLoss = opt('increaseOnLoss', 0)
   const seedChangeAfterRolls = optBool('isSeedChangeAfterRolls', false) ? opt('seedChangeAfterRolls', 0) : 0
   const increaseBetAfterSeedReset = opt('increaseBetAfterSeedReset', 0)
 

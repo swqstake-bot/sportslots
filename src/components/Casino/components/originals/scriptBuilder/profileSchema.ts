@@ -66,7 +66,7 @@ export const DEFAULT_PROFILE_OPTIONS: ProfileOptions = {
   onWin: 'reset',
   increaseOnWin: 0,
   onLoss: 'reset',
-  increaseOnLoss: 100,
+  increaseOnLoss: 0,
   stopOnProfit: 0,
   stopOnLoss: 0,
   isStopOnWinStreak: false,
