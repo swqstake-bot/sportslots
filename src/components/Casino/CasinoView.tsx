@@ -5,6 +5,7 @@ import LogViewer from './components/LogViewer'
 import BonusHuntControl from './components/BonusHuntControl'
 import AutoChallengeHunter from './components/AutoChallengeHunter'
 import ForumChallengeView from './components/ForumChallengeView'
+import OriginalsView from './components/OriginalsView'
 import { SlotSelectMulti } from './components/SlotSelectGrouped'
 import { Button } from './components/ui/Button'
 import { Toast } from './components/Toast'
@@ -346,6 +347,10 @@ export default function CasinoView() {
                </div>
                <p className="text-xs text-[var(--text-muted)]">Slots werden geladen…</p>
              </div>
+           )}
+
+           {mode === 'originals' && (
+             <OriginalsView accessToken={token} />
            )}
 
            {mode === 'play' && (
