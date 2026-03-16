@@ -75,6 +75,10 @@ export async function runProfile(
   let currentStreak = 0
   let lastWin = false
   let b2bCount = 0
+  let rollsInCurrentSeedBlock = 0
+  let blockIndex = 0
+  let lastRotatedOnLoss = false
+  let seedResetLossAmountTriggered = false
 
   const stopOnProfit = opt('stopOnProfit', 0)
   const stopOnLoss = opt('stopOnLoss', 0)
@@ -86,6 +90,9 @@ export async function runProfile(
   const increaseOnLoss = opt('increaseOnLoss', 0)
   const seedChangeAfterRolls = optBool('isSeedChangeAfterRolls', false) ? opt('seedChangeAfterRolls', 0) : 0
   const increaseBetAfterSeedReset = opt('increaseBetAfterSeedReset', 0)
+  const seedResetOnLossStreak = opt('seedResetOnLossStreak', 0)
+  const resetSeedOnLoss = optBool('resetSeedOnLoss', false)
+  const seedResetOnLossAmount = opt('seedResetOnLossAmount', 0)
 
   const applyWin = () => {
     if (onWin === 'none') return
@@ -105,20 +112,23 @@ export async function runProfile(
     let payout = 0
 
     if (seedChangeAfterRolls > 0) {
-      const tierIndex = Math.floor((rollNumber - 1) / seedChangeAfterRolls)
-      const isFirstBetOfBlock = (rollNumber - 1) % seedChangeAfterRolls === 0
+      const isFirstBetOfBlock = rollsInCurrentSeedBlock === 0
       if (isFirstBetOfBlock) {
-        try {
-          const rotated = await rotateSeedPair()
-          if (!rotated?.ok) callbacks.onLog?.('Seed-Rotation fehlgeschlagen (nächster Block nutzt alten Seed).')
-        } catch (e) {
-          callbacks.onLog?.('Seed-Rotation Fehler: ' + (e instanceof Error ? e.message : String(e)))
+        if (!lastRotatedOnLoss) {
+          try {
+            const rotated = await rotateSeedPair()
+            if (!rotated?.ok) callbacks.onLog?.('Seed-Rotation fehlgeschlagen (nächster Block nutzt alten Seed).')
+          } catch (e) {
+            callbacks.onLog?.('Seed-Rotation Fehler: ' + (e instanceof Error ? e.message : String(e)))
+          }
         }
+        lastRotatedOnLoss = false
         if (increaseBetAfterSeedReset > 0) {
-          currentBlockBase = initialBetSize + tierIndex * increaseBetAfterSeedReset
+          currentBlockBase = initialBetSize + blockIndex * increaseBetAfterSeedReset
           betSizeUsd = currentBlockBase
-          if (tierIndex > 0) callbacks.onSeedReset?.(tierIndex, betSizeUsd)
+          if (blockIndex > 0) callbacks.onSeedReset?.(blockIndex, betSizeUsd)
         }
+        blockIndex++
       }
     }
 
@@ -225,6 +235,60 @@ export async function runProfile(
       applyLoss()
     }
     lastWin = win
+
+    if (!win && seedResetOnLossStreak > 0 && -currentStreak >= seedResetOnLossStreak) {
+      try {
+        const rotated = await rotateSeedPair()
+        if (rotated?.ok) callbacks.onLog?.(`Seed-Rotation nach ${-currentStreak} Loss-Streak.`)
+        else callbacks.onLog?.('Seed-Rotation (Loss-Streak) fehlgeschlagen.')
+      } catch (e) {
+        callbacks.onLog?.('Seed-Rotation Fehler: ' + (e instanceof Error ? e.message : String(e)))
+      }
+    }
+
+    if (!win && resetSeedOnLoss) {
+      try {
+        const rotated = await rotateSeedPair()
+        if (rotated?.ok) {
+          if (seedChangeAfterRolls > 0) {
+            rollsInCurrentSeedBlock = 0
+            lastRotatedOnLoss = true
+          }
+          callbacks.onLog?.('Seed & Session nach Verlust zurückgesetzt.')
+        } else {
+          callbacks.onLog?.('Seed-Reset bei Verlust fehlgeschlagen.')
+        }
+      } catch (e) {
+        callbacks.onLog?.('Seed-Reset Fehler: ' + (e instanceof Error ? e.message : String(e)))
+      }
+    }
+
+    if (seedResetOnLossAmount > 0 && profit <= -seedResetOnLossAmount) {
+      if (!seedResetLossAmountTriggered) {
+        try {
+          const rotated = await rotateSeedPair()
+          if (rotated?.ok) {
+            if (seedChangeAfterRolls > 0) {
+              rollsInCurrentSeedBlock = 0
+              lastRotatedOnLoss = true
+            }
+            seedResetLossAmountTriggered = true
+            callbacks.onLog?.(`Seed & Session zurückgesetzt (Verlust ≥ $${seedResetOnLossAmount}).`)
+          } else {
+            callbacks.onLog?.('Seed-Reset bei Verlust (USD) fehlgeschlagen.')
+          }
+        } catch (e) {
+          callbacks.onLog?.('Seed-Reset Fehler: ' + (e instanceof Error ? e.message : String(e)))
+        }
+      }
+    } else if (profit > -seedResetOnLossAmount) {
+      seedResetLossAmountTriggered = false
+    }
+
+    if (seedChangeAfterRolls > 0) {
+      rollsInCurrentSeedBlock++
+      if (rollsInCurrentSeedBlock >= seedChangeAfterRolls) rollsInCurrentSeedBlock = 0
+    }
 
     callbacks.onBetPlaced?.({ iid: undefined, payout, amount: amountToPlace })
     callbacks.onStats?.({ bets: rollNumber, profit, wins, losses })

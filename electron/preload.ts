@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 import pkg from '../package.json' with { type: 'json' };
 
 contextBridge.exposeInMainWorld('electronAPI', {
+    getAppVersion: () => ipcRenderer.invoke('get-app-version') as Promise<string>,
+    version: pkg?.version ?? '',
     login: () => ipcRenderer.invoke('login'),
     // Expose invoke to allow calling 'api-request'
     invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
@@ -14,7 +16,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSessionToken: () => ipcRenderer.invoke('get-session-token'),
     proxyRequest: (options: any) => ipcRenderer.invoke('proxy-request', options),
     extractClawbusterSecret: (configUrl: string) => ipcRenderer.invoke('clawbuster-extract-secret', configUrl),
-    version: pkg.version,
     // Slot Spin Samples – automatisches Lernen in Ordner
     saveSlotSpinSample: (payload: { slotSlug: string; slotName?: string; providerId?: string; request: any; response: any }) =>
         ipcRenderer.invoke('save-slot-spin-sample', payload),

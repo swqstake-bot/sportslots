@@ -139,6 +139,8 @@ autoUpdater.on('update-downloaded', (info) => {
   win?.webContents.send('update-status', { status: 'downloaded', info });
 });
 
+ipcMain.handle('get-app-version', () => app.getVersion());
+
 ipcMain.handle('check-for-updates', () => {
     if (!app.isPackaged) {
         console.log('[Updater] Skipping check in dev mode');

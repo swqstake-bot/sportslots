@@ -16,7 +16,7 @@ const labelCls = 'block text-xs text-[var(--text-muted)] mb-0.5'
 const COMMON_OPTION_KEYS: (keyof ProfileOptions)[] = [
   'game', 'initialBetSize', 'betSize', 'onWin', 'increaseOnWin', 'onLoss', 'increaseOnLoss',
   'stopOnProfit', 'stopOnLoss', 'isStopOnWinStreak', 'stopOnWinStreak', 'isStopOnLossStreak', 'stopOnLossStreak', 'isStopOnB2bStreak', 'stopOnB2bStreak',
-  'isSeedChangeAfterRolls', 'seedChangeAfterRolls', 'increaseBetAfterSeedReset', 'isVaultAllProfits', 'vaultProfitsThreshold',
+  'isSeedChangeAfterRolls', 'seedChangeAfterRolls', 'increaseBetAfterSeedReset', 'seedResetOnLossStreak', 'resetSeedOnLoss', 'seedResetOnLossAmount', 'isVaultAllProfits', 'vaultProfitsThreshold',
 ]
 const GAME_OPTION_KEYS: Record<OriginalsGame, (keyof ProfileOptions)[]> = {
   keno: ['risk', 'numbers', 'randomNumbersFrom', 'randomNumbersTo', 'useHeatmapHotNumbers', 'heatmapHotNumbers', 'heatmapRange'],
@@ -180,6 +180,20 @@ export default function OriginalsScriptBuilder() {
         <div>
           <label className={labelCls} title="Nach jedem Block (z. B. 25 Bets): Einsatz um diesen USD-Betrag erhöhen">Einsatz + pro Block (USD, z. B. 0.01)</label>
           <input type="number" min="0" step="0.01" value={opts.increaseBetAfterSeedReset} onChange={(e) => updateOpt('increaseBetAfterSeedReset', Number(e.target.value))} className={inputCls} placeholder="0.01" />
+        </div>
+        <div>
+          <label className={labelCls} title="Nach X Verlusten in Folge: Seed auf Stake rotieren (0 = aus)">Seed bei Loss-Streak (0=aus)</label>
+          <input type="number" min="0" value={opts.seedResetOnLossStreak} onChange={(e) => updateOpt('seedResetOnLossStreak', Number(e.target.value))} className={inputCls} placeholder="0" />
+        </div>
+        <div>
+          <label className={labelCls} title="Wenn Session-Verlust ≥ diesen Betrag (USD): Seed rotieren, Session zurücksetzen">Seed-Reset bei Verlust (USD, 0=aus)</label>
+          <input type="number" min="0" step="0.01" value={opts.seedResetOnLossAmount ?? 0} onChange={(e) => updateOpt('seedResetOnLossAmount', Number(e.target.value))} className={inputCls} placeholder="0" />
+        </div>
+        <div className="flex items-end">
+          <label className="flex items-center gap-2 mt-3" title="Bei jedem Verlust: neuer Seed + Seed-Session (Block) startet von vorn">
+            <input type="checkbox" checked={opts.resetSeedOnLoss ?? false} onChange={(e) => updateOpt('resetSeedOnLoss', e.target.checked)} className="rounded accent-[var(--accent)]" />
+            <span className="text-xs">Reset Seed bei Verlust</span>
+          </label>
         </div>
       </div>
       {opts.isSeedChangeAfterRolls && opts.seedChangeAfterRolls > 0 && (

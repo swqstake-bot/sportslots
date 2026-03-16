@@ -3,7 +3,7 @@
  * plus Script Builder (Mechaniken → Profil exportieren).
  */
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { Button } from '../ui/Button'
 import { fetchCurrencyRates } from '../../api/stakeChallenges'
@@ -26,7 +26,14 @@ export default function OriginalsScriptView() {
   const [lastStats, setLastStats] = useState<{ bets: number; profit: number; wins: number; losses: number } | null>(null)
   const [chartData, setChartData] = useState<{ index: number; profit: number }[]>([])
   const [betList, setBetList] = useState<{ amount: number; payout: number; win: boolean }[]>([])
+  const [appVersion, setAppVersion] = useState<string>('…')
   const stopRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    const api = (window as any).electronAPI
+    if (api?.getAppVersion) api.getAppVersion().then((v: string) => setAppVersion(v ?? '…'))
+    else if (api?.version) setAppVersion(api.version)
+  }, [])
 
   const MAX_BET_LIST = 30
 
@@ -106,26 +113,33 @@ export default function OriginalsScriptView() {
 
   return (
     <div className="casino-card space-y-4">
-      <h3 className="casino-card-header text-base">
-        <span className="casino-card-header-accent" />
-        Script-Mode
+      <h3 className="casino-card-header text-base flex items-center justify-between gap-2">
+        <span className="flex items-center gap-2">
+          <span className="casino-card-header-accent" />
+          Script-Mode
+        </span>
+        <span className="text-xs font-mono text-[var(--text-muted)]" title="App-Version (vom Main-Prozess, korrekt nach Auto-Update)">
+          v{appVersion}
+        </span>
       </h3>
 
-      <div className="flex gap-2 p-1 rounded-lg bg-[var(--bg-deep)] border border-[var(--border-subtle)] w-fit">
-        <button
+      <div className="flex gap-2 w-fit">
+        <Button
           type="button"
+          variant={subTab === 'run' ? 'primary' : 'secondary'}
+          size="sm"
           onClick={() => setSubTab('run')}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${subTab === 'run' ? 'bg-[var(--accent)] text-[#0A0A0F]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'}`}
         >
           Script ausführen
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant={subTab === 'builder' ? 'primary' : 'secondary'}
+          size="sm"
           onClick={() => setSubTab('builder')}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${subTab === 'builder' ? 'bg-[var(--accent)] text-[#0A0A0F]' : 'text-[var(--text-muted)] hover:text-[var(--text)]'}`}
         >
           Script Builder
-        </button>
+        </Button>
       </div>
 
       <div className={`space-y-4 ${subTab !== 'run' ? 'hidden' : ''}`}>

@@ -69,23 +69,20 @@ function App() {
   const [changelogContent, setChangelogContent] = useState<string[]>([]);
 
   useEffect(() => {
-    // Check for version update
-    const currentVersion = (window as any).electronAPI?.version;
-    if (!currentVersion) return;
-
-    const lastSeenVersion = localStorage.getItem('app_last_seen_version');
-
-    if (currentVersion !== lastSeenVersion) {
-      // Version changed!
-      const changes = getChangelogForVersion(currentVersion);
-      // Show modal even if no specific notes, just to announce update
-      setChangelogVersion(currentVersion);
-      setChangelogContent(changes || []);
-      setShowChangelog(true);
-      
-      // Update last seen version
-      localStorage.setItem('app_last_seen_version', currentVersion);
-    }
+    // Version vom Main-Prozess (app.getVersion()) – stimmt auch nach Auto-Update
+    const api = (window as any).electronAPI;
+    const fetchVersion = api?.getAppVersion ? api.getAppVersion() : Promise.resolve(api?.version ?? '');
+    fetchVersion.then((currentVersion: string) => {
+      if (!currentVersion) return;
+      const lastSeenVersion = localStorage.getItem('app_last_seen_version');
+      if (currentVersion !== lastSeenVersion) {
+        const changes = getChangelogForVersion(currentVersion);
+        setChangelogVersion(currentVersion);
+        setChangelogContent(changes || []);
+        setShowChangelog(true);
+        localStorage.setItem('app_last_seen_version', currentVersion);
+      }
+    });
   }, []);
 
   const handleKeyAuthSuccess = () => {

@@ -24,6 +24,12 @@ export interface ProfileOptions {
   seedChangeAfterRolls: number
   /** Nach jedem Seed-Reset: Einsatz (USD) um diesen Betrag erhöhen (z. B. 0.01 = $0.01 pro Block). */
   increaseBetAfterSeedReset: number
+  /** Bei X Verlusten in Folge: Seed rotieren (0 = aus). */
+  seedResetOnLossStreak: number
+  /** Bei jedem Verlust: Seed rotieren und Seed-Session (Block) neu starten. */
+  resetSeedOnLoss: boolean
+  /** Wenn Session-Verlust ≥ diesen USD-Betrag: Seed rotieren + Session zurücksetzen (0 = aus). */
+  seedResetOnLossAmount: number
   isVaultAllProfits: boolean
   vaultProfitsThreshold: number
   // Keno
@@ -78,6 +84,9 @@ export const DEFAULT_PROFILE_OPTIONS: ProfileOptions = {
   isSeedChangeAfterRolls: false,
   seedChangeAfterRolls: 0,
   increaseBetAfterSeedReset: 0,
+  seedResetOnLossStreak: 0,
+  resetSeedOnLoss: false,
+  seedResetOnLossAmount: 0,
   isVaultAllProfits: false,
   vaultProfitsThreshold: 0,
   risk: 'medium',
