@@ -94,8 +94,9 @@ export async function runProfile(
   }
   const applyLoss = () => {
     if (onLoss === 'none') return
-    if (onLoss === 'reset') betSizeUsd = initialBetSize
-    else if (onLoss === 'martingale') betSizeUsd = betSizeUsd * 2
+    if (onLoss === 'reset') {
+      betSizeUsd = (seedChangeAfterRolls > 0 && increaseBetAfterSeedReset > 0) ? currentBlockBase : initialBetSize
+    } else if (onLoss === 'martingale') betSizeUsd = betSizeUsd * 2
     else if (onLoss === 'increase') betSizeUsd = betSizeUsd * (1 + increaseOnLoss / 100)
   }
 
