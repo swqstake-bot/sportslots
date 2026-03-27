@@ -708,9 +708,12 @@ export function useAutoBetEngine() {
             continue;
         }
 
-        // 6. Place Bet
+        // 6. Place Bet — kein #n/max bei „Placing“ (Zählung erst nach API-Erfolg, sonst irreführend)
         const totalOdds = selections.reduce((acc, s) => acc * s.odds, 1);
-        addLog(`Placing bet ${placedBetsCount.current + 1}/${maxBets}: ${selections.length} legs, Odds: ${totalOdds.toFixed(2)}`, 'info');
+        addLog(
+          `Placing bet: ${selections.length} legs, odds ${totalOdds.toFixed(2)}… (session cap ${maxBets})`,
+          'info'
+        );
 
         const outcomeIds = selections.map(s => s.outcomeId);
         const identifier = generateUUID();
@@ -853,7 +856,7 @@ export function useAutoBetEngine() {
                 localAvailableBalance -= loopCryptoAmount; // Deduct locally
                 betsInBatch++;
                 consecutiveFailures = 0; // Reset failure count
-                addLog(`Bet placed successfully! ID: ${betId} (${placedBetsCount.current}/${maxBets})`, 'success');
+                addLog(`Bet #${placedBetsCount.current}/${maxBets} placed successfully — ID: ${betId}`, 'success');
                 placedSlipSignatures.add(slipSignature(outcomeIds));
                 slipRotateOffset = (slipRotateOffset + Math.max(1, selections.length)) % rotN;
                 
@@ -915,9 +918,12 @@ export function useAutoBetEngine() {
                                     setShieldOdds(coverId, coverShieldOfferOdds);
                                 }
                                 addActiveBet(coverBetToAdd);
-                                addLog(`Cover Bet placed successfully! ID: ${coverId} (Shielded)`, 'success');
-                                placedBetsCount.current += 1; // Count towards total? Yes, it's a bet.
+                                placedBetsCount.current += 1;
                                 localAvailableBalance -= loopCryptoAmount;
+                                addLog(
+                                  `Bet #${placedBetsCount.current}/${maxBets} placed successfully (Cover Shield) — ID: ${coverId}`,
+                                  'success'
+                                );
                             } else {
                                 addLog('Cover Bet skipped: API returned no bet object (Shield might be unavailable).', 'warning');
                             }
