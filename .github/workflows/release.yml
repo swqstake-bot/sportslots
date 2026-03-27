@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version (z.B. 1.0.64) – nur bei manuellem Start'
-        required: true
-        default: '1.0.64'
+        description: 'Leer lassen = Version aus package.json (empfohlen für Auto-Update)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -27,16 +27,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set version from tag or input
+      - name: Set version from tag, input, or package.json
+        shell: pwsh
         run: |
           $evt = '${{ github.event_name }}'
           if ($evt -eq 'workflow_dispatch') {
-            $version = '${{ github.event.inputs.version }}'
+            $input = '${{ github.event.inputs.version }}'.Trim()
+            if ($input -ne '') {
+              npm pkg set version=$input
+              Write-Host "Building version $input (manual)"
+            } else {
+              $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+              Write-Host "Building version $v (from package.json)"
+            }
           } else {
             $version = '${{ github.ref_name }}' -replace '^v', ''
+            npm pkg set version=$version
+            Write-Host "Building version $version (from tag)"
           }
-          npm pkg set version=$version
-          echo "Building version $version"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

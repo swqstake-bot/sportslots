@@ -1,0 +1,45 @@
+# Ein Klick: Build + electron-builder --publish → GitHub Release + latest.yml
+# → Nutzer mit installierter App bekommen Update über electron-updater.
+# Vorher: package.json version bumpen & pushen, dann diesen Workflow starten.
+
+name: Update
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  publish:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Show version from package.json
+        shell: pwsh
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          Write-Host "Publishing StakeSportsElectron v$v → GitHub Releases (electron-updater)"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build and Publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build
