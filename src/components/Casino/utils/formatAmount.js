@@ -4,7 +4,11 @@
  * Fiat: /100, Crypto: unverändert
  */
 
-export const FIAT_CURRENCIES = ['eur', 'usd', 'usdc', 'usdt', 'ars', 'brl', 'mxn', 'cad', 'aud', 'clp', 'jpy', 'krw', 'inr', 'idr', 'php', 'pkr', 'pln', 'ngn', 'cny']
+/** 2-Dezimal-Fiat (Kopeken/Cent); mit Stake PROVIDER_CURRENCIES / stakeEngine FIAT abgleichen */
+export const FIAT_CURRENCIES = [
+  'eur', 'usd', 'usdc', 'usdt', 'ars', 'brl', 'mxn', 'cad', 'aud', 'clp', 'jpy', 'krw', 'inr', 'idr', 'php',
+  'pkr', 'pln', 'ngn', 'cny', 'rub', 'try', 'dkk', 'pen', 'cop',
+]
 // Ohne Dezimalstellen – Wert = Betrag direkt (1000 = 1000 IDR)
 export const ZERO_DECIMAL_CURRENCIES = ['idr', 'jpy', 'krw', 'vnd']
 

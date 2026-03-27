@@ -1,16 +1,43 @@
 /**
- * Hook für das Laden und Aktualisieren von Cashout-Angeboten für Sportwetten.
- * Ruft die Stake-API auf und aktualisiert die Wetten mit Cashout-Multiplikatoren.
+ * Holt die **aktuellen** Cashout-Daten von Stake (PreviewCashout) und schreibt sie in die Wettenliste.
+ * Ergänzt die Live-Liste, die `cashoutMultiplier` bereits tragen kann – kein „Raten“, sondern API-Abfrage.
  */
 
 import { useCallback, useEffect, useRef } from 'react';
 import { StakeApi } from '../api/client';
 import { Queries } from '../api/queries';
-import { getCashoutValue } from '../services/cashoutService';
+import { computeCashoutFromPreview } from '../services/cashoutService';
 import { isCashoutDisabledByCustomPrices } from '../services/cashoutService';
 import type { SportBet } from '../store/userStore';
+import { extractSportBetFromPreviewResponse, logPreviewCashoutDebug } from '../utils/previewCashoutResponse';
 
-const CHUNK_DELAY_MS = 3000;
+/** Pause zwischen Batches paralleler PreviewCashout-Calls (Rate limits). */
+const BATCH_DELAY_MS = 350;
+/** Wie viele Previews parallel (pro Batch). */
+const PARALLEL_BATCH_SIZE = 6;
+
+function hasLiveLeg(bet: SportBet): boolean {
+  return (bet.outcomes ?? []).some((o: any) => {
+    const es = o?.fixture?.eventStatus;
+    if (!es) return false;
+    const ms = String(es.matchStatus ?? '').toLowerCase();
+    if (ms === 'live' || ms === 'in_play' || ms === 'inplay') return true;
+    if (es.clock != null) return true;
+    return false;
+  });
+}
+
+/** Live zuerst, dann neueste – sichtbare Top-Scheine bekommen Cashout schneller. */
+function sortForCashoutPriority(bets: SportBet[]): SportBet[] {
+  return [...bets].sort((a, b) => {
+    const la = hasLiveLeg(a) ? 1 : 0;
+    const lb = hasLiveLeg(b) ? 1 : 0;
+    if (lb !== la) return lb - la;
+    const ta = new Date(a.createdAt).getTime();
+    const tb = new Date(b.createdAt).getTime();
+    return tb - ta;
+  });
+}
 
 export interface UseCashoutOffersOptions {
   activeBets: SportBet[];
@@ -34,25 +61,33 @@ async function processSingleBet(
   if (!iid) return { ...bet };
 
   try {
-    const preview = await StakeApi.query<{
-      bet?: { bet?: { payout?: number; cashoutMultiplier?: number } };
-    }>(Queries.PreviewCashout, { iid });
-    const data = preview?.data?.bet?.bet;
+    const preview = await StakeApi.query<{ bet?: unknown }>(Queries.PreviewCashout, { iid });
+    const root = preview?.data?.bet;
+    const data = extractSportBetFromPreviewResponse(root);
+    logPreviewCashoutDebug('batch', { betId: bet.id, iid }, preview, root, data);
 
     if (data) {
-      const hasPayout = data.payout != null && data.payout > 0;
-      const hasMultiplier = data.cashoutMultiplier != null && data.cashoutMultiplier > 0;
+      const payout = Number(data.payout);
+      const cm = Number(data.cashoutMultiplier);
+      const hasPayout = Number.isFinite(payout) && payout > 0;
+      const hasMultiplier = Number.isFinite(cm) && cm > 0;
 
       if (hasPayout || hasMultiplier) {
-        const mult = hasMultiplier ? data.cashoutMultiplier! : (bet.cashoutMultiplier ?? 0);
-        const value = hasPayout
-          ? data.payout!
-          : getCashoutValue({ ...bet, cashoutMultiplier: mult });
+        const stakeBet = bet.amount != null && Number(bet.amount) > 0 ? Number(bet.amount) : 0;
+        const stakePreview = data.amount != null && Number(data.amount) > 0 ? Number(data.amount) : 0;
+        let mult = hasMultiplier ? cm : (bet.cashoutMultiplier ?? 0);
+        if ((!mult || mult <= 0) && hasPayout && stakeBet > 0) {
+          mult = payout / stakeBet;
+        }
+        const value = computeCashoutFromPreview(bet, { ...data, cashoutMultiplier: mult });
+        const amountMerged =
+          stakeBet > 0 ? bet.amount : stakePreview > 0 ? stakePreview : bet.amount;
         return {
           ...bet,
+          ...(amountMerged != null && (bet.amount == null || Number(bet.amount) <= 0) ? { amount: amountMerged } : {}),
           cashoutMultiplier: mult,
           cashoutValue: value,
-          cashoutDisabled: false,
+          cashoutDisabled: data.cashoutDisabled === true,
         };
       }
     }
@@ -79,24 +114,20 @@ export function useCashoutOffers({
     async (source: SportBet[] = activeBets) => {
       if (!enabled || source.length === 0) return;
 
-      const next: SportBet[] = [];
+      const sorted = sortForCashoutPriority(source);
 
-      for (let i = 0; i < source.length; i++) {
+      for (let i = 0; i < sorted.length; i += PARALLEL_BATCH_SIZE) {
         if (!isMountedRef.current) return;
-        const chunk = source.slice(i, i + 1);
-        const results = await Promise.all(chunk.map(processSingleBet));
-        const updated = results[0];
-        if (updated) {
-          next.push(updated);
+        const batch = sorted.slice(i, i + PARALLEL_BATCH_SIZE);
+        const results = await Promise.all(batch.map(processSingleBet));
+        for (const updated of results) {
+          if (!updated || !isMountedRef.current) continue;
+          setActiveBets((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
           onSingleBetProcessed?.(updated);
         }
-        if (i < source.length - 1) {
-          await new Promise((r) => setTimeout(r, CHUNK_DELAY_MS));
+        if (i + PARALLEL_BATCH_SIZE < sorted.length) {
+          await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
         }
-      }
-
-      if (isMountedRef.current) {
-        setActiveBets(next);
       }
     },
     [activeBets, setActiveBets, onSingleBetProcessed, enabled]

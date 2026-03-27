@@ -5,6 +5,7 @@ import { StakeApi } from '../api/client';
 import { Queries } from '../api/queries';
 import { setShieldOdds } from '../store/shieldOddsCache';
 import { fetchCurrencyRates } from '../components/Casino/api/stakeChallenges';
+import { resolveTournamentScope } from '../utils/tournamentScope';
 
 // Helper to generate UUID for bets
 const generateUUID = () => {
@@ -22,6 +23,70 @@ const isEsport = (slug: string) => {
   const esports = ['esports', 'csgo','crossfire','cs2', 'dota2', 'league-of-legends', 'valorant', 'call-of-duty', 'rainbow-six', 'starcraft', 'fifa', 'nba2k','LoL', 'ecricket'];
   return esports.some(e => slug.toLowerCase().includes(e));
 };
+
+/** Anstoßzeit aus SportFixture (data Match/Outright); fehlt → +∞ damit ans Ende sortiert. */
+function getFixtureStartTimeMs(fixture: any): number {
+  const d = fixture?.data;
+  if (!d || typeof d !== 'object') return Number.MAX_SAFE_INTEGER;
+  const raw = (d as { startTime?: unknown; endTime?: unknown }).startTime ?? (d as { endTime?: unknown }).endTime;
+  if (raw == null || raw === '') return Number.MAX_SAFE_INTEGER;
+  const ms = typeof raw === 'number' ? raw : Date.parse(String(raw));
+  return Number.isFinite(ms) ? ms : Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * Upcoming: nächste Spiele zuerst (kein Zufall, sonst landen Scheine auf weit entfernten Partien).
+ * Live-only: weiter zufällig mischen. All: zuerst Live, dann Upcoming nach Anstoß.
+ */
+function sortSportBetCandidates(
+  candidates: Array<{ fixtureStartTimeMs?: number; isLive?: boolean }>,
+  gameType: 'live' | 'upcoming' | 'all',
+  forceUpcoming: boolean
+): void {
+  const upcomingOnly = forceUpcoming || gameType === 'upcoming';
+  const liveOnly = gameType === 'live' && !forceUpcoming;
+  if (liveOnly) {
+    candidates.sort(() => Math.random() - 0.5);
+    return;
+  }
+  if (upcomingOnly) {
+    candidates.sort(
+      (a, b) => (a.fixtureStartTimeMs ?? Number.MAX_SAFE_INTEGER) - (b.fixtureStartTimeMs ?? Number.MAX_SAFE_INTEGER)
+    );
+    return;
+  }
+  candidates.sort((a, b) => {
+    const aLive = a.isLive ? 0 : 1;
+    const bLive = b.isLive ? 0 : 1;
+    if (aLive !== bLive) return aLive - bLive;
+    return (a.fixtureStartTimeMs ?? Number.MAX_SAFE_INTEGER) - (b.fixtureStartTimeMs ?? Number.MAX_SAFE_INTEGER);
+  });
+}
+
+/**
+ * slugTournament.fixtureList expects SportSearchEnum; Stake uses `active` for open markets (see TournamentIndex),
+ * not `upcoming`. Passing `upcoming` can trigger API validation errors (e.g. error.number_less_equal).
+ */
+function mapTournamentFixtureListType(scanType: string): string {
+  if (scanType === 'live') return 'live';
+  return 'active';
+}
+
+const TOURNAMENT_FIXTURE_LIMIT_CAP = 50;
+
+/** Kanonische Signatur einer Kombination (Reihenfolge egal). */
+function slipSignature(outcomeIds: Array<string | number | undefined>): string {
+  return outcomeIds
+    .filter((x) => x != null && x !== '')
+    .map(String)
+    .sort()
+    .join('\u0000');
+}
+
+function clampTournamentFixtureLimit(scanLimit: number | undefined): number {
+  const n = scanLimit && scanLimit > 0 ? scanLimit : 50;
+  return Math.min(Math.max(1, n), TOURNAMENT_FIXTURE_LIMIT_CAP);
+}
 
 export function useAutoBetEngine() {
   const { isRunning, addLog, stop } = useAutoBetStore();
@@ -49,7 +114,21 @@ export function useAutoBetEngine() {
     processingRef.current = true;
     setIsProcessing(true);
     let scheduled150Retry = false;
-    addLog(`Starting AutoBet cycle... (Sport: ${settings.sportSlug}, GameType: ${settings.gameType})`, 'info');
+
+    const tournamentParsed = resolveTournamentScope(settings);
+    const startParts = [`Sport setting: ${settings.sportSlug}`, `GameType: ${settings.gameType}`];
+    if (tournamentParsed) {
+      startParts.push(
+        `Turnier: /sports/${tournamentParsed.sport}/${tournamentParsed.category}/${tournamentParsed.tournament}`
+      );
+    }
+    if (tournamentParsed && settings.fillUpEventMaxLegs) {
+      startParts.push('Event fill mode: max. Legs pro Turnier (Max Legs als Obergrenze)');
+    }
+    if (settings.fillUp) {
+      startParts.push('Fill-Up: bis 150 aktive Wetten');
+    }
+    addLog(`Starting AutoBet cycle… (${startParts.join(' · ')})`, 'info');
 
     if (placedBetsCount.current >= settings.numberOfBets && !settings.fillUp) {
       addLog(`Target number of bets reached (${settings.numberOfBets}). Stopping.`, 'success');
@@ -99,7 +178,12 @@ export function useAutoBetEngine() {
       if (isLimitReached) {
         if (settings.fillUp) {
             const waitMs = 60000 + Math.random() * 120000; // 1–3 min zufällig
-            addLog(`Active bets limit (150) reached. Fill Up: Pause ${Math.round(waitMs / 60000)} min, dann erneut scannen.`, 'warning');
+            const eventFillNote =
+              tournamentParsed && settings.fillUpEventMaxLegs ? ' · Event fill mode bleibt aktiv' : '';
+            addLog(
+              `Active bets limit (150) reached. Fill Up: Pause ${Math.round(waitMs / 60000)} min, dann erneut scannen.${eventFillNote}`,
+              'warning'
+            );
             processingRef.current = false;
             setIsProcessing(false);
             
@@ -148,10 +232,25 @@ export function useAutoBetEngine() {
       // Let's assume numberOfBets is still a safety cap per run, but for fillUp we might want to override it?
       // For now, let's stick to the logic: if 150 limit is NOT reached, we continue.
       
+      if (!tournamentParsed && settings.eventTournamentUrl?.trim()) {
+        addLog('Invalid Event URL: paste a Stake link containing /sports/{sport}/{category}/{tournament}', 'error');
+        stop();
+        processingRef.current = false;
+        setIsProcessing(false);
+        return;
+      }
+
       // 2. Determine Sports to Scan
       let sportsToScan: { name: string; slug: string; type?: string }[] = [];
 
-      if (settings.sportSlug === 'starting_soon') {
+      if (tournamentParsed) {
+        sportsToScan = [{ name: tournamentParsed.tournament, slug: tournamentParsed.sport }];
+        addLog(
+          `Lade Turnier: /sports/${tournamentParsed.sport}/${tournamentParsed.category}/${tournamentParsed.tournament}` +
+            (settings.fillUpEventMaxLegs ? ' · Event fill mode aktiv' : ''),
+          'info'
+        );
+      } else if (settings.sportSlug === 'starting_soon') {
         // "Starting Soon" uses a single mixed query, so we create a dummy "sport" entry to trigger the loop once
         sportsToScan = [{ name: 'Starting Soon', slug: 'starting_soon' }];
         addLog('Scanning "Starting Soon" fixtures (Mixed Sports)...', 'info');
@@ -191,6 +290,7 @@ export function useAutoBetEngine() {
       // 3. Fetch Fixtures for each sport
       const rejections = { status: 0, odds: 0, marketStatus: 0, outcomeStatus: 0, noMarkets: 0 };
       let consecutiveMarketInactive = 0; // Track consecutive inactive markets to trigger reload
+      let tournamentProcessed = false;
 
       for (const sport of sportsToScan) {
         // Check running state again between fetches
@@ -205,11 +305,50 @@ export function useAutoBetEngine() {
         const typesToFetch = forceUpcoming ? ['upcoming'] : (settings.gameType === 'all' ? ['live', 'upcoming'] : [settings.gameType]);
 
         for (const type of typesToFetch) {
+            if (tournamentParsed && tournamentProcessed) continue;
             if (!useAutoBetStore.getState().isRunning) break;
             try {
                 let fixtures: any[] = [];
 
-                if (sport.slug === 'starting_soon') {
+                if (tournamentParsed) {
+                    tournamentProcessed = true;
+                    const loadTournamentFixtures = async (group: string) => {
+                        const map = new Map<string, any>();
+                        const apiLimit = clampTournamentFixtureLimit(settings.scanLimit);
+                        for (const t of typesToFetch) {
+                            const apiType = mapTournamentFixtureListType(t);
+                            const fixtureRes = await StakeApi.query<any>(Queries.SlugTournamentFixtureList, {
+                                sport: tournamentParsed.sport,
+                                category: tournamentParsed.category,
+                                tournament: tournamentParsed.tournament,
+                                group,
+                                type: apiType,
+                                limit: apiLimit,
+                            });
+                            const slugTournament = fixtureRes.data?.slugTournament;
+                            if (!slugTournament) {
+                                addLog(
+                                    `slugTournament not found for ${tournamentParsed.sport}/${tournamentParsed.category}/${tournamentParsed.tournament} (API type: ${apiType}, group: ${group})`,
+                                    'warning'
+                                );
+                                continue;
+                            }
+                            for (const f of slugTournament.fixtureList || []) {
+                                if (f?.id) map.set(f.id, f);
+                            }
+                        }
+                        return Array.from(map.values()).slice(0, settings.scanLimit || 50);
+                    };
+                    fixtures = await loadTournamentFixtures('main');
+                    if (fixtures.length === 0 && tournamentParsed.sport === 'mma') {
+                        addLog('Tournament: no fixtures with group "main", retrying with "threeway"...', 'warning');
+                        fixtures = await loadTournamentFixtures('threeway');
+                    }
+                    addLog(
+                        `Tournament fixtures: ${fixtures.length} (API: ${typesToFetch.map(mapTournamentFixtureListType).join(', ')}, limit ≤${TOURNAMENT_FIXTURE_LIMIT_CAP})`,
+                        'info'
+                    );
+                } else if (sport.slug === 'starting_soon') {
                     // Special Query for Starting Soon (Mixed)
                     // Use FixtureList query which supports mixed sports
                     // "upcoming" type usually sorts by time
@@ -285,8 +424,8 @@ export function useAutoBetEngine() {
                     }
                 }
                 
-                // Event Filter (Keywords)
-                if (settings.eventFilter && settings.eventFilter.trim().length > 0) {
+                // Event Filter (Keywords) — skipped when a tournament URL scopes fixtures already
+                if (!tournamentParsed && settings.eventFilter && settings.eventFilter.trim().length > 0) {
                     const filterText = settings.eventFilter.toLowerCase();
                     const fixtureName = (fixture.name || '').toLowerCase();
                     const tournamentName = (fixture.tournament?.name || '').toLowerCase();
@@ -383,7 +522,8 @@ export function useAutoBetEngine() {
                                 outcomeName: outcome.name,
                                 odds: odds,
                                 sportSlug: sport.slug, // Track sport slug for mixing validation
-                                isLive: (fixture.status === 'live' || fixture.status === 'in_progress') // Explicitly check status
+                                isLive: (fixture.status === 'live' || fixture.status === 'in_progress'), // Explicitly check status
+                                fixtureStartTimeMs: getFixtureStartTimeMs(fixture),
                                 });
                             } else {
                                 rejections.odds++;
@@ -411,7 +551,10 @@ export function useAutoBetEngine() {
         }
       }
 
-      // 5. Shuffle and Pick
+      const forceUpcomingGlobal = settings.stakeShield?.enabled || settings.ignoreLiveGames;
+      sortSportBetCandidates(candidates, settings.gameType, forceUpcomingGlobal);
+
+      // 5. Pick (order: upcoming = nächster Anstoß zuerst; live-only = zufällig)
       if (candidates.length === 0) {
         addLog(`No suitable bets found in this scan. Rejections: Status=${rejections.status}, Market=${rejections.marketStatus}, Outcome=${rejections.outcomeStatus}. Retrying in 30s...`, 'info');
         
@@ -430,6 +573,10 @@ export function useAutoBetEngine() {
       
       // Use a local balance tracker to prevent overspending before the store updates
       let localAvailableBalance = currentBalance;
+      /** Nach Sortierung sonst immer dieselben ersten N Legs → gleiche Kombination. Rotieren + Duplikat-Check. */
+      let slipRotateOffset = 0;
+      /** Bereits in diesem AutoBet-Durchlauf platzierte outcomeId-Kombinationen (nicht erneut wählen). */
+      const placedSlipSignatures = new Set<string>();
 
       // Fill-up: place until 150 (API limit); otherwise cap by numberOfBets. Re-read settings each iteration.
       // WICHTIG: Bei fillUp NICHT auf placedBetsCount prüfen – der zählt nur diese Session und
@@ -478,21 +625,26 @@ export function useAutoBetEngine() {
             return;
         }
 
-        // Shuffle candidates for this specific bet
-        candidates.sort(() => Math.random() - 0.5);
+        const forceUpcomingLoop = currentSettings.stakeShield?.enabled || currentSettings.ignoreLiveGames;
+        sortSportBetCandidates(candidates, currentSettings.gameType, forceUpcomingLoop);
 
-        const selections: any[] = [];
-        const usedFixtures = new Set<string>();
         const minLegsToUse = currentSettings.stakeShield?.enabled 
             ? Math.max(currentSettings.minLegs, (currentSettings.stakeShield.legsThatCanLose || 0) + 1, 3) 
             : currentSettings.minLegs;
 
         const maxLegsToUse = Math.max(currentSettings.maxLegs, minLegsToUse);
 
-        const targetLegs = Math.min(
-            maxLegsToUse, 
-            Math.max(minLegsToUse, Math.floor(Math.random() * (maxLegsToUse - minLegsToUse + 1)) + minLegsToUse)
-        );
+        const uniqueFixtureCount = new Set(candidates.map((c) => c.fixtureId)).size;
+
+        let targetLegs: number;
+        if (currentSettings.fillUpEventMaxLegs && resolveTournamentScope(currentSettings)) {
+            targetLegs = Math.min(uniqueFixtureCount, currentSettings.maxLegs);
+        } else {
+            targetLegs = Math.min(
+                maxLegsToUse,
+                Math.max(minLegsToUse, Math.floor(Math.random() * (maxLegsToUse - minLegsToUse + 1)) + minLegsToUse)
+            );
+        }
 
         // Helper to check mixing compatibility
         const isCompatible = (newCand: any, currentSelections: any[]) => {
@@ -508,21 +660,51 @@ export function useAutoBetEngine() {
             return true;
         };
 
-        for (const cand of candidates) {
-            if (selections.length >= targetLegs) break;
-            if (usedFixtures.has(cand.fixtureId)) continue;
-            
-            // Check mixing
-            if (!isCompatible(cand, selections)) continue;
+        const rotLen = candidates.length;
+        const rotN = Math.max(1, rotLen);
 
-            selections.push(cand);
-            usedFixtures.add(cand.fixtureId);
+        const buildSelectionsFromOffset = (baseOffset: number) => {
+          const sel: any[] = [];
+          const used = new Set<string>();
+          const rotBase = rotLen > 0 ? baseOffset % rotLen : 0;
+          const rotatedCandidates =
+            rotLen === 0 ? [] : [...candidates.slice(rotBase), ...candidates.slice(0, rotBase)];
+          for (const cand of rotatedCandidates) {
+            if (sel.length >= targetLegs) break;
+            if (used.has(cand.fixtureId)) continue;
+            if (!isCompatible(cand, sel)) continue;
+            sel.push(cand);
+            used.add(cand.fixtureId);
+          }
+          return sel;
+        };
+
+        let selections = buildSelectionsFromOffset(slipRotateOffset);
+        let offsetTries = 0;
+        while (selections.length >= minLegsToUse && offsetTries < rotN) {
+          const sigTry = slipSignature(selections.map((s) => s.outcomeId));
+          if (!placedSlipSignatures.has(sigTry)) break;
+          offsetTries++;
+          slipRotateOffset = (slipRotateOffset + 1) % rotN;
+          selections = buildSelectionsFromOffset(slipRotateOffset);
         }
 
         if (selections.length < minLegsToUse) {
             addLog(`Could not form a valid bet slip with ${minLegsToUse} unique fixtures. Retrying selection...`, 'warning');
             consecutiveFailures++;
             await new Promise(r => setTimeout(r, 1000));
+            continue;
+        }
+
+        const slipSig = slipSignature(selections.map((s) => s.outcomeId));
+        if (placedSlipSignatures.has(slipSig)) {
+            addLog(
+              'Keine noch nicht vergebene Kombination in diesem Scan (alle Offsets probiert). Nächster Versuch…',
+              'warning'
+            );
+            slipRotateOffset = (slipRotateOffset + 1) % rotN;
+            consecutiveFailures++;
+            await new Promise((r) => setTimeout(r, 400));
             continue;
         }
 
@@ -672,6 +854,8 @@ export function useAutoBetEngine() {
                 betsInBatch++;
                 consecutiveFailures = 0; // Reset failure count
                 addLog(`Bet placed successfully! ID: ${betId} (${placedBetsCount.current}/${maxBets})`, 'success');
+                placedSlipSignatures.add(slipSignature(outcomeIds));
+                slipRotateOffset = (slipRotateOffset + Math.max(1, selections.length)) % rotN;
                 
                 // === Cover with Shield Logic ===
                 if (currentSettings.coverWithShield && betPlaced) {
@@ -748,8 +932,7 @@ export function useAutoBetEngine() {
                 }
                 // ==============================
 
-                // Small delay between bets to avoid rate limits
-                await new Promise(r => setTimeout(r, 250));
+                await new Promise((r) => setTimeout(r, 250));
             } else {
                 addLog('Bet placement failed (API returned null or error)', 'error');
                 console.error('Bet placement response:', betRes);
@@ -758,7 +941,16 @@ export function useAutoBetEngine() {
             }
 
         } catch (err: any) {
-            const msg = String(err?.message || err || '').toLowerCase();
+            const rawMsg = String(err?.message || err || '');
+            const msg = rawMsg.toLowerCase();
+            const isSameBetCooldown =
+              msg.includes('same bet') ||
+              (msg.includes('wait') && msg.includes('5') && msg.includes('second'));
+            if (isSameBetCooldown) {
+              addLog('Same-bet (API): rotiere Schein – keine identische Kombination erneut.', 'warning');
+              slipRotateOffset = (slipRotateOffset + 1) % Math.max(1, candidates.length);
+              continue;
+            }
             const is150Limit = msg.includes('150') && (msg.includes('active') || msg.includes('sport bet'));
             if (is150Limit) {
                 const currentSettings = useAutoBetStore.getState().settings;
@@ -775,9 +967,9 @@ export function useAutoBetEngine() {
                     return;
                 }
             }
-            addLog(`Error placing bet: ${err.message}`, 'error');
+            addLog(`Error placing bet: ${err?.message || rawMsg}`, 'error');
             consecutiveFailures++;
-            await new Promise(r => setTimeout(r, 2000));
+            await new Promise((r) => setTimeout(r, 2000));
         }
       }
       

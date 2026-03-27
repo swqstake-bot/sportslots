@@ -2,7 +2,7 @@
  * Wählbare Optionen für Originals (Stop Conditions, Games, Conditions, Presets).
  */
 
-export type OriginalsGameId = 'dice' | 'limbo' | 'mines' | 'plinko' | 'keno'
+export type OriginalsGameId = 'dice' | 'limbo' | 'mines' | 'plinko' | 'keno' | 'blackjack'
 
 export const ORIGINALS_GAMES: { id: OriginalsGameId; label: string }[] = [
   { id: 'dice', label: 'Dice' },
@@ -10,6 +10,7 @@ export const ORIGINALS_GAMES: { id: OriginalsGameId; label: string }[] = [
   { id: 'mines', label: 'Mines' },
   { id: 'plinko', label: 'Plinko' },
   { id: 'keno', label: 'Keno' },
+  { id: 'blackjack', label: 'Blackjack' },
 ]
 
 /** Stop-Condition-Typen (wählbar statt Freitext). */
@@ -99,6 +100,13 @@ export const SWITCH_CONDITIONS_BY_GAME: Record<OriginalsGameId, { value: SwitchC
     { value: 'kenoLossStreak', label: 'Keno Loss-Streak', needsValue: true },
     { value: 'lossStreak', label: 'Loss-Streak (allg.)', needsValue: true },
     { value: 'winStreak', label: 'Win-Streak (allg.)', needsValue: true },
+    { value: 'profitPct', label: 'Profit %', needsValue: true },
+    { value: 'lossPct', label: 'Loss %', needsValue: true },
+  ],
+  blackjack: [
+    { value: 'lossStreak', label: 'Loss-Streak (allg.)', needsValue: true },
+    { value: 'winStreak', label: 'Win-Streak (allg.)', needsValue: true },
+    { value: 'xBets', label: 'Nach X Bets', needsValue: true },
     { value: 'profitPct', label: 'Profit %', needsValue: true },
     { value: 'lossPct', label: 'Loss %', needsValue: true },
   ],

@@ -22,4 +22,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSlotSpinSamples: () => ipcRenderer.invoke('get-slot-spin-samples'),
     getSpinSamplesDir: () => ipcRenderer.invoke('get-spin-samples-dir'),
     clearSlotSpinSamples: () => ipcRenderer.invoke('clear-slot-spin-samples'),
+    saveSlotFirstWinIfNeeded: (payload: {
+        slotSlug: string;
+        slotName?: string;
+        providerId?: string;
+        providerGroupSlug?: string | null;
+        betAmountMinor?: number;
+        winAmountMinor?: number;
+        currency?: string;
+        multiplier?: number;
+        roundId?: string | null;
+        shareBetId?: string | null;
+        betAmountApiRaw?: number | null;
+        payoutApiRaw?: number | null;
+        payoutFromMultiplierApiRaw?: number | null;
+    }) =>
+        ipcRenderer.invoke(
+            'save-slot-first-win-if-needed',
+            payload
+        ) as Promise<{ saved: boolean; path?: string; csvPath?: string; slotCsvPath?: string }>,
+    getSlotFirstWinsDir: () => ipcRenderer.invoke('get-slot-first-wins-dir') as Promise<string>,
 });

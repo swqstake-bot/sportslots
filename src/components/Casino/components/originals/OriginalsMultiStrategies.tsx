@@ -83,6 +83,8 @@ export default function OriginalsMultiStrategies({ value = {}, onChange }: Origi
   const [switchEntries, setSwitchEntries] = useState(() => parseSwitchConfig(value.conditionalGameSwitch ?? ''))
   const hybrid = value.hybridStrategies ?? ''
 
+  // Sync lokale Switch-Regeln wenn Eltern-String conditionalGameSwitch sich ändert (klassisches props→state)
+  /* eslint-disable react-hooks/set-state-in-effect -- bewusst bei Prop-Wechsel zurücksetzen */
   useEffect(() => {
     const parsed = parseSwitchConfig(value.conditionalGameSwitch ?? '')
     const normalized = parsed.map((row) => {
@@ -92,6 +94,7 @@ export default function OriginalsMultiStrategies({ value = {}, onChange }: Origi
     })
     setSwitchEntries(normalized)
   }, [value.conditionalGameSwitch])
+  /* eslint-enable react-hooks/set-state-in-effect */
   const streakBased = value.streakBasedMode ?? false
   const heatMap = value.heatMapHotColdMode ?? false
 

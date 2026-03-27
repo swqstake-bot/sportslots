@@ -2,11 +2,113 @@
  * Stake Engine – Slots von Stake eigener Engine
  * z.B. blackcoffeestudios-big-lunker-bass-clusters
  * Verwendet startThirdPartySession + RGS wallet/play, wallet/end-round
- * Beträge: 6 Dezimalstellen (1.000.000 = 1 Einheit)
+ *
+ * Abgleich offizielles RGS (npm `stake-engine` / @stakeengine/ts-client README):
+ * - Doku: https://stake-engine.com/docs/rgs
+ * - Authenticate ≈ POST …/wallet/authenticate { sessionID }
+ * - Play      ≈ POST …/wallet/play     { sessionID, amount, mode, currency }
+ * - EndRound  ≈ POST …/wallet/end-round { sessionID }
+ * - `amount` in API-Rohwerten; README nennt das „API_MULTIPLIER“ / Bet-Level-Werte.
+ *   Hier: STAKE_ENGINE_API_MULTIPLIER = 1e6 (eine Währungseinheit).
+ *
+ * Abweichung zum Browser-SDK: Wir nutzen keine RGSClient({ url }) aus dem Spiel-iframe,
+ * sondern Session aus Stake `startThirdPartySession` + direkte RGS-URLs aus der Config-URL.
+ *
+ * Gewinn NICHT aus Wallet-Delta ableiten: Ein Konto hat eine gemeinsame Bilanz; bei mehreren
+ * parallelen Slots ändern andere Läufe den Saldo zwischen zwei Spins — dann ist
+ * (balanceNachher − balanceVorher + bet) für einen einzelnen Spin nicht mehr definiert.
  */
 import { startThirdPartySession } from '../stake'
 import { getEffectiveBetAmount } from '../../constants/bet'
 import { logApiCall } from '../../utils/apiLogger'
+
+/** RGS: ganzzahliger Betrag; 1.000.000 = 1,0 Währungseinheit (vgl. stake-engine API_MULTIPLIER). */
+export const STAKE_ENGINE_API_MULTIPLIER = 1_000_000
+
+/**
+ * RGS `payoutMultiplier`: oft Hundertstel (3900 = 39x, 1150 = 11.5x), teils Ganzzahl (39 = 39x).
+ * Vorher immer /100 → 39 wurde zu 0.39x.
+ */
+export function resolveStakeEnginePayoutMultiplier(payoutMult) {
+  const p = Number(payoutMult)
+  if (!Number.isFinite(p) || p <= 0) return 0
+  // Heuristik:
+  // - Häufig ist payoutMultiplier "hundertstel" (z.B. 3900 => 39x, 1150 => 11.5x)
+  // - Manchmal kommt er aber bereits als echte Multi zurück (z.B. 178.6 => 178.6x)
+  // - Teils auch als "echte" Ganzzahl (z.B. 839 => 839x)
+  //
+  // Wir unterscheiden deshalb:
+  // 1) Float-Werte (mit Dezimalstellen) behandeln wir als bereits echte Multi.
+  // 2) Sehr große Integer-Werte nehmen wir als hundertstel (>=1000 => /100).
+  // 3) Integer-Werte <1000 behandeln wir als echte Multi (keine /100).
+  const isFloat = !Number.isInteger(p)
+  if (p >= 100 && isFloat) return p
+  if (p >= 1000) return p / 100
+  return p
+}
+
+/**
+ * Effektiver Spin-Multiplikator für Hunter/Autospin.
+ * RGS `payoutMultiplier` ist oft Hundertstel (3900 → 39×), manchmal aber auch
+ * Ganzzahl für den echten Multi (839 → 839×). Nur API zu parsen macht aus 839 fälschlich 8,39×.
+ * `parseBetResponse` liefert win/bet in denselben Einheiten — das ist die zuverlässige Grundlage.
+ */
+export function effectiveSpinMultiplierFromParsed(payoutMultRaw, parsed) {
+  const raw = Number(payoutMultRaw ?? 0)
+  let fromApi = 0
+  if (raw > 0) fromApi = resolveStakeEnginePayoutMultiplier(raw)
+  const fromParsed =
+    parsed?.multiplier != null && Number.isFinite(parsed.multiplier) && parsed.multiplier > 0
+      ? parsed.multiplier
+      : 0
+  const bet = Number(parsed?.betAmount) || 0
+  const win = Number(parsed?.winAmount ?? 0)
+  let implied = 0
+  if (bet > 0 && win >= 0) {
+    const m = win / bet
+    if (Number.isFinite(m) && m >= 0) implied = m
+  }
+  return Math.max(fromApi, fromParsed, implied)
+}
+
+function winRawFromPayoutMultiplier(amountApi, payoutMult) {
+  if (payoutMult <= 0 || amountApi <= 0) return 0
+  const mult = resolveStakeEnginePayoutMultiplier(payoutMult)
+  return Math.round(amountApi * mult)
+}
+
+/**
+ * Colorful Play / viele RGS: Integer 100–999 ist oft Hundertstel der Multi (113 = 1,13×), nicht 113×.
+ * Ohne Abgleich würde resolveStakeEnginePayoutMultiplier(113) → 113× ergeben.
+ * Wenn `round.payout` (Roh) passt, nutzen wir die 1,13×-Variante.
+ */
+function winRawFromPayoutMultiplierDisambiguated(
+  amountApi,
+  payoutMult,
+  payoutFieldRaw,
+  hasAuthoritativePayout
+) {
+  const p = Number(payoutMult)
+  if (!Number.isFinite(p) || p <= 0 || amountApi <= 0) return 0
+  const primaryMult = resolveStakeEnginePayoutMultiplier(p)
+  let win = Math.round(amountApi * primaryMult)
+
+  if (!hasAuthoritativePayout || !Number.isFinite(payoutFieldRaw)) {
+    return win
+  }
+
+  if (Number.isInteger(p) && p >= 100 && p < 1000) {
+    const altMult = p / 100
+    const winAlt = Math.round(amountApi * altMult)
+    const errP = Math.abs(win - payoutFieldRaw)
+    const errA = Math.abs(winAlt - payoutFieldRaw)
+    const tol = Math.max(payoutFieldRaw, amountApi, 1) * 0.03
+    if (errA < errP && errA <= tol) {
+      return winAlt
+    }
+  }
+  return win
+}
 
 const ZERO_DECIMAL_CURRENCIES = ['idr', 'jpy', 'krw', 'vnd']
 // Fiat-Währungen haben meist 2 Dezimalstellen, Crypto meist 8
@@ -28,7 +130,7 @@ function parseConfigFromUrl(config) {
   }
 }
 
-/** Betrag in Stake Engine Format: 1.000.000 = 1 Einheit */
+/** Betrag in Stake Engine Format: STAKE_ENGINE_API_MULTIPLIER = 1 Einheit */
 function toStakeEngineAmount(betAmount, targetCurrency) {
   const curr = (targetCurrency || 'eur').toLowerCase()
   const isZeroDec = ZERO_DECIMAL_CURRENCIES.includes(curr)
@@ -44,7 +146,7 @@ function toStakeEngineAmount(betAmount, targetCurrency) {
     units = Number(betAmount) / 1e8
   }
   
-  return Math.round(units * 1_000_000)
+  return Math.round(units * STAKE_ENGINE_API_MULTIPLIER)
 }
 
 function buildRgsUrl(rgsBase, path) {
@@ -126,7 +228,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const configData = authData?.config || {}
   const betLevelsRaw = configData?.betLevels?.map((v) => Number(v)).filter((b) => b > 0) ?? []
   const betLevels = betLevelsRaw.map((v) => {
-    const units = v / 1_000_000
+    const units = v / STAKE_ENGINE_API_MULTIPLIER
     const curr = (targetCurrency || 'eur').toLowerCase()
     
     if (ZERO_DECIMAL_CURRENCIES.includes(curr)) {
@@ -146,14 +248,11 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const authBalance = authData?.balance
   const authBalanceRaw = authBalance?.amount != null ? Number(authBalance.amount) : null
   const authCurrency = (authBalance?.currency || targetCurrency || 'eur').toLowerCase()
-  const authBalanceUnits = authBalanceRaw != null ? authBalanceRaw / 1_000_000 : null
-  const authPkrFix = authCurrency === 'pkr'
+  const authBalanceUnits = authBalanceRaw != null ? authBalanceRaw / STAKE_ENGINE_API_MULTIPLIER : null
   const initialBalance = authBalanceUnits != null
-    ? (ZERO_DECIMAL_CURRENCIES.includes(authCurrency)
+    ? ZERO_DECIMAL_CURRENCIES.includes(authCurrency)
       ? Math.round(authBalanceUnits)
-      : authPkrFix
-        ? Math.round(authBalanceUnits * 10000)
-        : Math.round(authBalanceUnits * 100))
+      : Math.round(authBalanceUnits * 100)
     : null
 
   return {
@@ -166,6 +265,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     minBet,
     maxBet,
     initialBalance,
+    slotSlug: slotSlug || '',
   }
 }
 
@@ -183,8 +283,22 @@ function snapToNearestBetLevel(amount, betLevels) {
   return best
 }
 
+/** Letztes positives awa in round.events (Minor wie UI, oft zuverlässiger als round.payout bei Colorful Play). */
+function lastWinMinorFromRoundEvents(round) {
+  const evs = round?.events
+  if (!Array.isArray(evs) || evs.length === 0) return null
+  for (let i = evs.length - 1; i >= 0; i--) {
+    const awa = evs[i]?.awa
+    if (awa == null) continue
+    const n = Number(awa)
+    if (!Number.isFinite(n) || n <= 0) continue
+    return Math.round(n)
+  }
+  return null
+}
+
 export async function placeBet(session, betAmount, extraBet, autoplay = false, options = {}) {
-  const slotSlug = (options?.slotSlug || '').toLowerCase()
+  const slotSlug = (session?.slotSlug || options?.slotSlug || '').toLowerCase()
   const useAnte = extraBet && slotSlug.startsWith('paperclip-')
   const effectiveBet = getEffectiveBetAmount(betAmount, extraBet, slotSlug || undefined)
   const amountForApi = useAnte ? betAmount : effectiveBet
@@ -236,6 +350,11 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
   if (!playRes.ok) {
     const err = playData?.error || playRes.status
     const msg = playData?.message || ''
+    if (err === 'ERR_IPB' || String(err).includes('ERR_IPB')) {
+      const ex = new Error(`Stake Engine: ${err}`)
+      ex.insufficientBalance = true
+      throw ex
+    }
     if (err === 'ERR_IS' || String(err).includes('ERR_IS')) {
       const ex = new Error('Session abgelaufen. Bitte Session neu starten.')
       ex.sessionClosed = true
@@ -263,6 +382,11 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
       ex.sessionClosed = true
       throw ex
     }
+    if (err === 'ERR_IPB' || String(err).includes('ERR_IPB')) {
+      const ex = new Error(`Stake Engine: ${err}`)
+      ex.insufficientBalance = true
+      throw ex
+    }
     if (err === 'ERR_VAL' || String(err).includes('ERR_VAL')) {
       throw new Error(`Ungültiger Einsatz (ERR_VAL). Bitte Einsatz prüfen.`)
     }
@@ -271,18 +395,35 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
 
   const round = playData?.round || {}
   const roundStatus = round?.status || ''
+  // Viele Stake-Engine-/RGS-Antworten (u. a. Colorful Play, Black Coffee) liefern den Nettogewinn
+  // explizit als `round.payout` in derselben Rohskala wie `round.amount` — das ist zuverlässiger als
+  // nur winAmount / payoutMultiplier-Heuristik (besonders wenn winAmount fehlt oder abweicht).
+  const payoutFieldRaw =
+    round?.payout != null && round?.payout !== '' ? Number(round.payout) : NaN
+  const hasAuthoritativePayout = Number.isFinite(payoutFieldRaw) && payoutFieldRaw >= 0
+
   let winAmount = Number(
     round?.winAmount ?? round?.win ?? round?.outcome?.win ?? round?.result?.winAmount ?? 0
   )
-  // Stake Engine RGS nutzt payoutMultiplier (z.B. 1150 = 11.5x), nicht winAmount
+  // Stake Engine RGS: payoutMultiplier (Hundertstel oder Ganzzahl) → Win in API-Roh
   const payoutMult = Number(round?.payoutMultiplier ?? round?.payout_multiplier ?? 0)
-  const fromPayoutMult = payoutMult > 0 && amount > 0 ? Math.round((amount * payoutMult) / 100) : 0
-  if (winAmount === 0 && fromPayoutMult > 0) {
+  const fromPayoutMult =
+    payoutMult > 0 && amount > 0
+      ? winRawFromPayoutMultiplierDisambiguated(amount, payoutMult, payoutFieldRaw, hasAuthoritativePayout)
+      : 0
+
+  // Zuerst Multiplikator × Einsatz (entspricht meist der Stake-UI). `round.payout` kann bei Colorful Play
+  // / Shamrock u. a. höher liegen (Akkumulation, Feature-Summe) oder von der angezeigten Multi abweichen.
+  if (fromPayoutMult > 0 && payoutMult > 0) {
+    winAmount = fromPayoutMult
+  } else if (hasAuthoritativePayout) {
+    winAmount = payoutFieldRaw
+  } else if (winAmount === 0 && fromPayoutMult > 0) {
     winAmount = fromPayoutMult
   } else if (fromPayoutMult > 0 && winAmount > 0) {
     // Falls RGS sowohl winAmount als auch payoutMultiplier liefert: payoutMultiplier bevorzugen,
     // da einige Slots (z.B. Maze Quest) winAmount in anderem Format liefern können.
-    const winInUnitsFromRaw = winAmount / 1_000_000
+    const winInUnitsFromRaw = winAmount / STAKE_ENGINE_API_MULTIPLIER
     const curr = (playData?.balance?.currency || session?.currencyCode || 'eur').toLowerCase()
     const isFiat = FIAT_CURRENCIES.includes(curr)
     const wouldBeZero = isFiat && winInUnitsFromRaw < 0.001
@@ -291,18 +432,14 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
   const balanceObj = playData?.balance || {}
   const balanceRaw = balanceObj?.amount != null ? Number(balanceObj.amount) : null
   const respCurrency = (balanceObj?.currency || session?.currencyCode || 'EUR').toLowerCase()
-  const balanceUnits = balanceRaw != null ? balanceRaw / 1_000_000 : null
-  // PKR: RGS nutzt 1 Einheit = 100 PKR (wie VND) – Balance/Win 100x zu klein
-  const pkrScaleFix = respCurrency === 'pkr'
+  const balanceUnits = balanceRaw != null ? balanceRaw / STAKE_ENGINE_API_MULTIPLIER : null
   const balanceMinor = balanceUnits != null
-    ? (ZERO_DECIMAL_CURRENCIES.includes(respCurrency)
+    ? ZERO_DECIMAL_CURRENCIES.includes(respCurrency)
       ? Math.round(balanceUnits)
-      : pkrScaleFix
-        ? Math.round(balanceUnits * 10000)
-        : Math.round(balanceUnits * 100))
+      : Math.round(balanceUnits * 100)
     : null
 
-  const winInUnits = winAmount / 1_000_000
+  const winInUnits = winAmount / STAKE_ENGINE_API_MULTIPLIER
   let winDisplay
   if (ZERO_DECIMAL_CURRENCIES.includes(respCurrency)) {
     winDisplay = Math.round(winInUnits)
@@ -312,9 +449,22 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
       winDisplay = winDisplay * 100
     }
   } else {
+    // Wie EUR/INR: Major → Minor (Paisa/Cent); RGS-Roh ist bereits über STAKE_ENGINE_API_MULTIPLIER.
+    // Früher: extra ×100 für PKR — führte bei Valkyrie u. a. zu 100× zu hohen Won (USD).
     winDisplay = Math.round(winInUnits * 100)
-    if (pkrScaleFix && winDisplay > 0) {
-      winDisplay = winDisplay * 100
+  }
+
+  const colorfulOrBc =
+    slotSlug.startsWith('colorfulplay-') ||
+    slotSlug.startsWith('blackcoffeestudios-') ||
+    slotSlug.startsWith('paperclip-') ||
+    slotSlug.startsWith('uppercut-')
+  const awaMinor = lastWinMinorFromRoundEvents(round)
+  const betMinor = Number(betAmount) || 0
+  if (colorfulOrBc && awaMinor != null && awaMinor > 0 && betMinor > 0 && awaMinor <= betMinor * 500000) {
+    const diffRel = Math.abs(awaMinor - winDisplay) / Math.max(awaMinor, winDisplay, 1)
+    if (diffRel > 0.02) {
+      winDisplay = awaMinor
     }
   }
 
@@ -328,10 +478,25 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
     round: {
       ...round,
       status: round?.status || 'complete',
+      roundId: round?.roundId ?? round?.betID ?? round?.betId ?? round?.id,
       events: eventsWithWin,
       winAmountDisplay: winDisplay, // Explizit für parseBetResponse (Gleiche Einheiten wie balance)
     },
-    _stakeEngine: { raw: playData, balance: balanceObj, currency: respCurrency.toUpperCase() },
+    _stakeEngine: {
+      raw: playData,
+      balance: balanceObj,
+      currency: respCurrency.toUpperCase(),
+      /** Minor units (wie balance) — parseBetResponse nutzt das zuerst, damit Bonus-/Event-Logik nichts überschreibt */
+      winMinor: winDisplay,
+      /** Debug: gleiche Skala wie wallet/play `amount` (API-Roh) */
+      betAmountApiRaw: amount,
+      payoutApiRaw: hasAuthoritativePayout ? payoutFieldRaw : null,
+      payoutFromMultiplierApiRaw: fromPayoutMult > 0 ? fromPayoutMult : null,
+      /** Effektiver Multi (API-Roh: Win-Roh / Bet-Roh), nach Hundertstel-Disambiguierung */
+      payoutMultiplierEffective:
+        fromPayoutMult > 0 && amount > 0 ? fromPayoutMult / amount : null,
+      eventWinMinorLastAwa: awaMinor,
+    },
   }
   return {
     data,

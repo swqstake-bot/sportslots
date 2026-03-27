@@ -2,6 +2,7 @@
  * Slots, die beim Challenges-Scan neu gefunden wurden.
  * Werden lokal in localStorage persistiert (inkl. Icons/thumbnailUrl).
  */
+import { getStakeEngineGameSlugPrefixes, mapProviderSlugToProviderId } from '../api/stakeSlotsApi'
 import { PROVIDERS } from '../constants/slots'
 
 const DISCOVERED_SLOTS_KEY = 'slotbot_discovered_slots'
@@ -46,9 +47,21 @@ export function inferProviderId(slug) {
   if (s.startsWith('peter-sons-') || s.startsWith('peterandsons-')) return 'peterandsons'
   if (s.startsWith('shady-')) return 'shady'
   if (s.startsWith('shuffle-')) return 'shuffle'
+  /**
+   * Stake Engine / RGS: Präfixe aus PROVIDER_MAP (getStakeEngineGameSlugPrefixes).
+   * Muss vor `titan-` / `twist-` stehen (z. B. twist-gaming- vs twist-).
+   */
+  for (const p of getStakeEngineGameSlugPrefixes()) {
+    if (s.startsWith(p)) return 'stakeEngine'
+  }
+  /**
+   * Neue RGS-Studios: Spiel-Slug enthält *-gaming-* (nach relax-/push-/blueprint-… oben).
+   * Ohne manuelle Provider-Liste erweiterbar.
+   */
+  if (s.includes('-gaming-')) return 'stakeEngine'
+  if (s.startsWith('justslots-')) return 'justslots'
   if (s.startsWith('titan-')) return 'titan'
   if (s.startsWith('twist-')) return 'twist'
-  if (s.startsWith('dbushgaming-')) return 'stakeEngine'
   if (s.startsWith('clawbuster-')) return 'clawbuster'
   if (s.startsWith('sexyrabbit-') || s.startsWith('sexy-rabbit-') || s.startsWith('videoslots-')) return 'pragmatic' // Rabbit Heist – gs2c wie Pragmatic
   if (s.startsWith('popiplay-')) return 'popiplay'
@@ -58,9 +71,32 @@ export function inferProviderId(slug) {
   return 'stakeEngine'
 }
 
+function extractProviderGroupSlugFromChallenge(c) {
+  if (c.providerGroupSlug) return c.providerGroupSlug
+  const gg = c.game?.groupGames
+  if (!gg?.length) return null
+  const providerGroup = gg.find((g) => g?.group?.type === 'provider')
+  return providerGroup?.group?.slug || null
+}
+
+function resolveProviderIdFromChallenge(c) {
+  const pg = extractProviderGroupSlugFromChallenge(c)
+  if (pg) return mapProviderSlugToProviderId(pg)
+  const slug = c.gameSlug || c.game?.slug
+  return inferProviderId(slug)
+}
+
+function isDiscoverableWebProvider(providerId) {
+  const p = PROVIDERS[providerId]
+  if (p?.impl === 'web') return true
+  if (p && (p.impl === 'backend' || p.impl === 'webview')) return false
+  // Unbekannte Gruppen-Slugs werden in mapProviderSlugToProviderId als stakeEngine gemappt
+  return true
+}
+
 /**
  * Fügt neue Slugs aus Challenges hinzu, die noch nicht in der Slot-Liste sind.
- * @param {Array<{ gameSlug?: string, gameName?: string, thumbnailUrl?: string, game?: { slug?: string, name?: string, thumbnailUrl?: string } }>} challenges
+ * @param {Array<{ gameSlug?: string, gameName?: string, thumbnailUrl?: string, providerGroupSlug?: string, game?: { slug?: string, name?: string, thumbnailUrl?: string, groupGames?: Array<{ group?: { slug?: string, type?: string } }> } }>} challenges
  * @param {Set<string>} knownSlugs - bereits bekannte Slugs (z.B. aus webSlots)
  * @returns {Array<{ slug: string, name: string, providerId: string, thumbnailUrl?: string }>} neu hinzugefügte
  */
@@ -72,8 +108,8 @@ export function addDiscoveredFromChallenges(challenges, knownSlugs = new Set()) 
     const slug = c.gameSlug || c.game?.slug
     if (!slug || knownSlugs.has(slug)) continue
 
-    const providerId = inferProviderId(slug)
-    if (PROVIDERS[providerId]?.impl !== 'web') continue
+    const providerId = resolveProviderIdFromChallenge(c)
+    if (!isDiscoverableWebProvider(providerId)) continue
 
     const name = c.gameName || c.game?.name || slug
     const thumbnailUrl = c.thumbnailUrl || c.game?.thumbnailUrl

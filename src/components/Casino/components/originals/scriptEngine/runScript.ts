@@ -6,8 +6,8 @@ import { runProfile } from '../profileRunner/runProfile'
 
 export interface ScriptRunCallbacks {
   onLog?: (msg: string) => void
-  onBetPlaced?: (result: { iid?: string; payout?: number; amount?: number; error?: string }) => void
-  onStats?: (stats: { bets: number; profit: number; wins: number; losses: number }) => void
+  onBetPlaced?: (result: { iid?: string; payout?: number; amount?: number; error?: string; game?: string; betSizeUsd?: number; payoutUsd?: number; profitUsd?: number; multi?: number; b2bMulti?: number }) => void
+  onStats?: (stats: { bets: number; profit: number; wins: number; losses: number; totalWagered?: number }) => void
   onStopped?: () => void
   onSeedReset?: (tierIndex: number, newBetSizeUsd: number) => void
 }

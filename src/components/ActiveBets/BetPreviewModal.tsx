@@ -1,7 +1,7 @@
 import { BetGraph } from './BetGraph';
 import { MatchTracker } from './MatchTracker';
 import type { SportBet, SportBetOutcome } from '../../store/userStore';
-import { getCashoutValue, getEffectiveOdds } from '../../services/cashoutService';
+import { getCashoutValue, getEffectiveOdds, resolveCashoutMultiplierForBet } from '../../services/cashoutService';
 import { formatAmount } from '../Casino/utils/formatAmount';
 
 function getLegStatus(outcome: SportBetOutcome): 'won' | 'lost' | 'open' {
@@ -27,8 +27,13 @@ function formatCurrency(amount: number, currency: string): string {
 }
 
 export function BetPreviewModal({ bet, onClose, onCashout }: BetPreviewModalProps) {
+  const cashoutVal = getCashoutValue(bet);
+  const cashoutMult = resolveCashoutMultiplierForBet(bet);
+  const canShowCashoutUi =
+    bet.status === 'active' && !bet.cashoutDisabled && cashoutVal > 0 && cashoutMult > 0;
+
   const handleCashout = () => {
-    if (bet.cashoutMultiplier && onCashout) onCashout(bet.id, bet.cashoutMultiplier);
+    if (onCashout && cashoutMult > 0) onCashout(bet.id, cashoutMult);
   };
 
   return (
@@ -69,9 +74,22 @@ export function BetPreviewModal({ bet, onClose, onCashout }: BetPreviewModalProp
               {bet.status}
             </span>
           </div>
-          {bet.status === 'active' && getCashoutValue(bet) > 0 && (
-            <div className="mt-2 text-xs text-[#b1bad3]">
-              Aktueller Cashout: <span className="text-[#00e701] font-mono font-bold">{formatCurrency(getCashoutValue(bet), bet.currency)}</span>
+          {bet.status === 'active' && (
+            <div
+              className={`mt-3 rounded-lg border px-3 py-2.5 ${
+                cashoutVal > 0 && !bet.cashoutDisabled
+                  ? 'border-[#00e701]/40 bg-[#00e701]/10'
+                  : 'border-[#2f4553] bg-[#0f212e]'
+              }`}
+            >
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#b1bad3] mb-0.5">Cashout jetzt</div>
+              {cashoutVal > 0 && !bet.cashoutDisabled ? (
+                <div className="text-xl font-bold font-mono text-[#00e701] leading-tight">
+                  {formatCurrency(cashoutVal, bet.currency)}
+                </div>
+              ) : (
+                <div className="text-sm text-[#55657e]">Cashout wird von Stake geladen… (kurz warten oder Liste aktualisieren)</div>
+              )}
             </div>
           )}
         </div>
@@ -126,24 +144,25 @@ export function BetPreviewModal({ bet, onClose, onCashout }: BetPreviewModalProp
           })}
         </div>
 
-        {/* Graph + Cashout for active bets */}
-        {bet.status === 'active' && !bet.cashoutDisabled && bet.cashoutMultiplier && (
+        {/* Graph + Cashout-Button (sichtbar sobald Wert + Multiplikator verfügbar, nicht nur bei API-cashoutMultiplier) */}
+        {canShowCashoutUi && (
           <div className="p-4 border-t border-[#2f4553] bg-[#0f212e] shrink-0">
             <div className="mb-3 h-16 w-full bg-[#1a2c38] rounded overflow-hidden border border-[#2f4553]">
               <BetGraph
-                currentValue={bet.cashoutMultiplier}
-                maxValue={getEffectiveOdds(bet)}
+                currentValue={cashoutMult}
+                maxValue={Math.max(getEffectiveOdds(bet), cashoutMult, 1)}
                 label=""
-                color={bet.cashoutMultiplier > 1 ? '#00e701' : '#ffd700'}
+                color={cashoutMult > 1 ? '#00e701' : '#ffd700'}
                 height={64}
               />
             </div>
             {onCashout && (
               <button
+                type="button"
                 onClick={handleCashout}
-                className="w-full bg-[#00e701] hover:bg-[#00c201] text-[#0f212e] font-bold text-sm py-2.5 rounded border border-[#00e701] shadow-lg transition-all"
+                className="w-full bg-[#00e701] hover:bg-[#00c201] text-[#0f212e] font-bold text-base py-3 rounded border border-[#00e701] shadow-lg transition-all"
               >
-                Cashout {formatCurrency(getCashoutValue(bet), bet.currency)}
+                Auszahlen {formatCurrency(cashoutVal, bet.currency)}
               </button>
             )}
           </div>

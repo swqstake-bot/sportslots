@@ -11,6 +11,24 @@ export interface ElectronAPI {
   getSlotSpinSamples: () => Promise<Record<string, any[]>>;
   getSpinSamplesDir: () => Promise<string>;
   clearSlotSpinSamples: () => Promise<void>;
+  saveSlotFirstWinIfNeeded: (payload: {
+    slotSlug: string;
+    slotName?: string;
+    providerId?: string;
+    providerGroupSlug?: string | null;
+    betAmountMinor?: number;
+    winAmountMinor?: number;
+    currency?: string;
+    multiplier?: number;
+    roundId?: string | null;
+    shareBetId?: string | null;
+    betAmountApiRaw?: number | null;
+    payoutApiRaw?: number | null;
+    payoutFromMultiplierApiRaw?: number | null;
+  }) => Promise<{ saved: boolean; path?: string; csvPath?: string; slotCsvPath?: string }>;
+  getSlotFirstWinsDir: () => Promise<string>;
+  /** Telegram GramJS (Main-Prozess): siehe IPC-Namen in electron/main.ts */
+  on: (channel: string, callback: (...args: any[]) => void) => () => void;
 }
 
 declare global {

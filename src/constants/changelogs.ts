@@ -1,4 +1,5 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.103': ['challenge updated'],
   '1.0.91': [
     '🐛 Hacksaw: Autospin stoppt bei Insufficient Funds, Session timeout, Invalid seq',
     '🐛 Hand of Anubis: Bonus-Erkennung (judgment=4 Scatter, underworld=3 Scatter)',

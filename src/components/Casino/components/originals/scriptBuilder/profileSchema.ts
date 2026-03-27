@@ -8,7 +8,8 @@ export interface ProfileOptions {
   game: OriginalsGame
   initialBetSize: number
   betSize: number
-  onWin: 'reset' | 'martingale' | 'increase' | 'none'
+  /** Verhalten nach Win. `b2b` = nächster Einsatz = letzter Payout (Parlay). */
+  onWin: 'reset' | 'martingale' | 'increase' | 'b2b' | 'none'
   increaseOnWin: number
   onLoss: 'reset' | 'martingale' | 'increase' | 'none'
   increaseOnLoss: number

@@ -3,7 +3,7 @@
  * Stop Conditions wählbar (B2B, X Reds, …). Spiel-spezifische Blöcke nur bei activeGame.
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import type { OriginalsGameId } from './originalsConstants'
 import {
   STOP_CONDITION_OPTIONS,
@@ -230,16 +230,13 @@ export function OriginalsSettings({
   activeGame = 'dice',
 }: OriginalsSettingsProps) {
   const [open, setOpen] = useState(false)
-  const [s, setS] = useState<OriginalsSettingsState>({ ...defaultOriginalsSettings, ...value })
-
-  useEffect(() => {
-    setS({ ...defaultOriginalsSettings, ...value })
-  }, [value])
+  const s = useMemo(
+    () => ({ ...defaultOriginalsSettings, ...value }),
+    [value]
+  )
 
   const update = (next: Partial<OriginalsSettingsState>) => {
-    const n = { ...s, ...next }
-    setS(n)
-    onChange?.(n)
+    onChange?.({ ...s, ...next })
   }
 
   const inputCls = 'w-full bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--text)] focus:ring-2 focus:ring-[var(--accent)] outline-none'

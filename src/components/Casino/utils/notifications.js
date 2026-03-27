@@ -78,9 +78,25 @@ export function notifyBonusHit(slotName, spinCount) {
 /**
  * Benachrichtigung: Challenge gestartet.
  * @param {string} slotName
- * @param {number} targetMulti
+ * @param {number | null | undefined} targetMulti – null/undefined = Originals ohne festes Multi-Ziel
  */
 export function notifyChallengeStart(slotName, targetMulti) {
-  const msg = `Starte Challenge bei ${slotName} (Ziel: ${targetMulti}x)`
+  const openEnded =
+    targetMulti === null ||
+    targetMulti === undefined ||
+    targetMulti === '' ||
+    targetMulti === '—'
+  if (openEnded) {
+    notify(
+      'Challenge gestartet',
+      `Starte Originals-Challenge bei ${slotName} (offenes Ziel – Stop Loss / manuell)`,
+      { tag: 'slotbot-challenge-start' }
+    )
+    return
+  }
+  const n = Number(targetMulti)
+  const msg = Number.isFinite(n)
+    ? `Starte Challenge bei ${slotName} (Ziel: ${n}x)`
+    : `Starte Challenge bei ${slotName} (Ziel: ${targetMulti}x)`
   notify('Challenge gestartet', msg, { tag: 'slotbot-challenge-start' })
 }

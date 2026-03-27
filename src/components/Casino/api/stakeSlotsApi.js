@@ -45,13 +45,41 @@ const PROVIDER_MAP = {
   'blackcoffeestudios': 'stakeEngine',
   'evoslot': 'stakeEngine',
   'creativecity': 'stakeEngine',
+  // Some Creative City provider groups use a hyphenated slug.
+  'creative-city': 'stakeEngine',
   'valkyrie': 'stakeEngine',
+  '1000lakes': 'stakeEngine',
   'd-bush-gaming': 'stakeEngine',
+  'colorful-play': 'stakeEngine',
+  'colorful-play-gaming': 'stakeEngine',
+  'colorfulplay': 'stakeEngine',
+  'colorfulplaygaming': 'stakeEngine',
   'sexy-rabbit': 'pragmatic', // Rabbit Heist – gleiches gs2c/html5Game.do-Protokoll wie Pragmatic
   'sexyrabbit': 'pragmatic',
   'videoslots': 'pragmatic',
   'clawbuster': 'clawbuster',
   'clawbuster-gaming': 'clawbuster',
+}
+
+/**
+ * Spiel-Slug-Präfixe für Stake Engine / RGS, abgeleitet aus PROVIDER_MAP (value === 'stakeEngine').
+ * Neue Studios: nur Eintrag in PROVIDER_MAP — inferProviderId (discoveredSlots) bleibt synchron.
+ * Längste Präfixe zuerst, damit z. B. titan-gaming- vor titan- gewinnt.
+ */
+let cachedStakeEngineGameSlugPrefixes = null
+export function getStakeEngineGameSlugPrefixes() {
+  if (cachedStakeEngineGameSlugPrefixes) return cachedStakeEngineGameSlugPrefixes
+  const prefixes = new Set()
+  for (const [key, value] of Object.entries(PROVIDER_MAP)) {
+    if (value !== 'stakeEngine') continue
+    const k = String(key).toLowerCase()
+    prefixes.add(`${k}-`)
+    if (k === 'd-bush-gaming') {
+      prefixes.add('dbushgaming-')
+    }
+  }
+  cachedStakeEngineGameSlugPrefixes = Array.from(prefixes).sort((a, b) => b.length - a.length)
+  return cachedStakeEngineGameSlugPrefixes
 }
 
 const SLUG_KURATOR_QUERY = `query SlugKuratorGroup($slug: String!, $limit: Int!, $offset: Int!, $sort: GameKuratorGroupGameSortEnum = popular7d, $filterIds: [String!], $locale: Locale = "en") {
@@ -64,12 +92,29 @@ const SLUG_KURATOR_QUERY = `query SlugKuratorGroup($slug: String!, $limit: Int!,
   }
 }`
 
+/**
+ * Gleiche Logik wie mapGameToSlot – Provider-Gruppen-Slug von Stake → interne providerId.
+ * Bekannte Drittanbieter über PROVIDER_MAP; alles Unbekannte → stakeEngine (Stake RGS),
+ * damit Challenges / neue Studios ohne manuelle Liste meist lauffähig sind.
+ */
+export function mapProviderSlugToProviderId(providerSlug) {
+  if (!providerSlug) return 'stakeEngine'
+  const providerSlugKey = String(providerSlug).toLowerCase()
+  const normalizedProviderSlug = providerSlugKey.replace(/[^a-z0-9]/g, '')
+  const mapped =
+    PROVIDER_MAP[providerSlugKey] ||
+    PROVIDER_MAP[normalizedProviderSlug] ||
+    PROVIDER_MAP[providerSlugKey.replace(/-/g, '')]
+  if (mapped) return mapped
+  return 'stakeEngine'
+}
+
 function mapGameToSlot(game) {
   if (!game?.slug || game.isBlocked) return null
   const providerGroup = game.groupGames?.find((g) => g?.group?.type === 'provider')
   const providerSlug = providerGroup?.group?.slug
   if (!providerSlug) return null
-  const providerId = PROVIDER_MAP[providerSlug] || providerSlug
+  const providerId = mapProviderSlugToProviderId(providerSlug)
   return { slug: game.slug, name: game.name, providerId, thumbnailUrl: game.thumbnailUrl }
 }
 

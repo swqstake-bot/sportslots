@@ -12,7 +12,7 @@ import { runProfileJson, runScriptAsProfile } from './scriptEngine/runScript'
 
 type ScriptSubTab = 'run' | 'builder'
 
-const CURRENCIES = ['usdc', 'btc', 'eth', 'eur', 'usd']
+const CURRENCIES = ['usdc', 'usdt', 'btc', 'eth', 'eur', 'usd']
 
 export default function OriginalsScriptView() {
   const [subTab, setSubTab] = useState<ScriptSubTab>('run')
@@ -23,16 +23,22 @@ export default function OriginalsScriptView() {
   const [currency, setCurrency] = useState('usdc')
   const [running, setRunning] = useState(false)
   const [logLines, setLogLines] = useState<string[]>([])
-  const [lastStats, setLastStats] = useState<{ bets: number; profit: number; wins: number; losses: number } | null>(null)
+  const [lastStats, setLastStats] = useState<{ bets: number; profit: number; wins: number; losses: number; totalWagered?: number } | null>(null)
   const [chartData, setChartData] = useState<{ index: number; profit: number }[]>([])
-  const [betList, setBetList] = useState<{ amount: number; payout: number; win: boolean }[]>([])
+  const [betList, setBetList] = useState<{ game: string; betSizeUsd: number; payoutUsd: number; profitUsd: number; multi: number; b2bMulti: number; win: boolean }[]>([])
   const [appVersion, setAppVersion] = useState<string>('…')
   const stopRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     const api = (window as any).electronAPI
-    if (api?.getAppVersion) api.getAppVersion().then((v: string) => setAppVersion(v ?? '…'))
-    else if (api?.version) setAppVersion(api.version)
+    void (async () => {
+      if (api?.getAppVersion) {
+        const v = await api.getAppVersion()
+        setAppVersion(v ?? '…')
+      } else if (api?.version) {
+        setAppVersion(api.version)
+      }
+    })()
   }, [])
 
   const MAX_BET_LIST = 30
@@ -58,15 +64,29 @@ export default function OriginalsScriptView() {
     }
     const callbacks = {
       onLog: addLog,
-      onBetPlaced: (r: { error?: string; amount?: number; payout?: number }) => {
+      onBetPlaced: (r: { error?: string; game?: string; betSizeUsd?: number; payoutUsd?: number; profitUsd?: number; multi?: number; b2bMulti?: number }) => {
         if (r.error) addLog(r.error)
-        else if (r.amount != null && r.payout != null) {
-          setBetList((prev) => [...prev.slice(-(MAX_BET_LIST - 1)), { amount: r.amount!, payout: r.payout!, win: r.payout! > 0 }])
+        else {
+          const row = {
+            game: (r.game || '—').toUpperCase(),
+            betSizeUsd: Number(r.betSizeUsd ?? 0),
+            payoutUsd: Number(r.payoutUsd ?? 0),
+            profitUsd: Number(r.profitUsd ?? 0),
+            multi: Number(r.multi ?? 0),
+            b2bMulti: Number(r.b2bMulti ?? 0),
+            win: Number(r.payoutUsd ?? 0) > 0,
+          }
+          queueMicrotask(() => {
+            setBetList((prev) => [...prev.slice(-(MAX_BET_LIST - 1)), row])
+          })
         }
       },
-      onStats: (stats: { bets: number; profit: number; wins: number; losses: number }) => {
-        setLastStats(stats)
-        setChartData((prev) => [...prev.slice(-299), { index: stats.bets, profit: stats.profit }])
+      onStats: (stats: { bets: number; profit: number; wins: number; losses: number; totalWagered?: number }) => {
+        // Entkoppeln, um React-Reentrancy in schnellen Loops zu vermeiden
+        queueMicrotask(() => {
+          setLastStats(stats)
+          setChartData((prev) => [...prev.slice(-299), { index: stats.bets, profit: stats.profit }])
+        })
       },
       onStopped: () => setRunning(false),
       onSeedReset: (tier: number, newBet: number) => addLog(`Block ${tier} · neuer Einsatz: $${newBet.toFixed(2)} USD`),
@@ -144,7 +164,7 @@ export default function OriginalsScriptView() {
 
       <div className={`space-y-4 ${subTab !== 'run' ? 'hidden' : ''}`}>
           <p className="text-sm text-[var(--text-muted)]">
-            <strong>Profil (.json)</strong> einfügen und Start – oder <strong>Script (.js)</strong> einfügen, dann wird die Konfig (game, Einsatz, …) extrahiert und als Session ausgeführt. <strong>Einsatz immer in USD</strong> (z. B. 0.01 = $0.01); bei anderer Währung wird zum Start umgerechnet.
+            <strong>Profil (.json)</strong> einfügen und Start – oder <strong>Script (.js)</strong> einfügen, dann wird die Konfig (game, Einsatz, …) extrahiert und als Session ausgeführt. <strong>Einsatz immer in USD</strong> (z.B. 0.01 = $0.01); bei anderer Währung wird zum Start umgerechnet.
           </p>
           <div className="flex gap-2 items-center">
             <label className="text-xs text-[var(--text-muted)]">Währung</label>
@@ -225,10 +245,14 @@ export default function OriginalsScriptView() {
                 </div>
               )}
               {lastStats && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
                   <div className="p-2 rounded-lg bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
                     <span className="text-[var(--text-muted)] block text-xs">Bets</span>
                     <span className="font-medium text-[var(--text)]">{lastStats.bets}</span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
+                    <span className="text-[var(--text-muted)] block text-xs">Gewagert</span>
+                    <span className="font-medium text-[var(--text)]">{(lastStats.totalWagered ?? 0).toFixed(2)}</span>
                   </div>
                   <div className="p-2 rounded-lg bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
                     <span className="text-[var(--text-muted)] block text-xs">Wins / Losses</span>
@@ -249,21 +273,30 @@ export default function OriginalsScriptView() {
             </>
           )}
 
-          <div className="text-xs font-medium text-[var(--text-muted)] mb-1">Letzte 30 Wetten</div>
-          <ul className="max-h-40 overflow-y-auto rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-deep)]/50 divide-y divide-[var(--border-subtle)]">
-            {[...betList].reverse().map((b, i) => {
-              const multi = b.amount > 0 ? (b.payout ?? 0) / b.amount : 0
-              return (
-                <li key={i} className="px-2 py-1.5 flex justify-between text-xs">
-                  <span>Einsatz: {b.amount.toFixed(4)} → {multi.toFixed(2)}x</span>
-                  <span className={b.win ? 'text-emerald-400' : 'text-red-400'}>{b.win ? 'Win' : 'Loss'}</span>
-                </li>
-              )
-            })}
+          <div className="text-xs font-medium text-[var(--text-muted)] mb-1">Letzte 30 Bets</div>
+          <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-deep)]/50">
+            <div className="grid grid-cols-6 gap-2 px-2 py-2 text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--border-subtle)] sticky top-0 bg-[var(--bg-deep)]">
+              <div>Game</div>
+              <div className="text-right">BetSize ($)</div>
+              <div className="text-right">Payout ($)</div>
+              <div className="text-right">Multi</div>
+              <div className="text-right">B2B Multi</div>
+              <div className="text-right">Profit ($)</div>
+            </div>
+            {[...betList].reverse().map((b, i) => (
+              <div key={i} className="grid grid-cols-6 gap-2 px-2 py-1.5 text-xs border-b border-[var(--border-subtle)]/60">
+                <div className="font-mono text-[var(--text)]">{b.game}</div>
+                <div className="text-right font-mono text-[var(--text)]">{b.betSizeUsd.toFixed(2)}</div>
+                <div className={`text-right font-mono ${b.win ? 'text-emerald-400' : 'text-red-400'}`}>{b.payoutUsd.toFixed(2)}</div>
+                <div className="text-right font-mono text-[var(--text)]">{b.multi.toFixed(2)}x</div>
+                <div className="text-right font-mono text-[var(--text-muted)]">{b.b2bMulti > 0 ? `${b.b2bMulti.toFixed(2)}x` : '—'}</div>
+                <div className={`text-right font-mono ${b.profitUsd >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{b.profitUsd >= 0 ? '+' : ''}{b.profitUsd.toFixed(2)}</div>
+              </div>
+            ))}
             {betList.length === 0 && (
-              <li className="px-2 py-3 text-[var(--text-muted)] text-xs">Noch keine Wetten.</li>
+              <div className="px-2 py-3 text-[var(--text-muted)] text-xs">Noch keine Bets.</div>
             )}
-          </ul>
+          </div>
 
           {logLines.length > 0 && (
             <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-deep)] p-2 max-h-40 overflow-y-auto">

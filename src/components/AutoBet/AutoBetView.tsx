@@ -4,6 +4,8 @@ import { useUserStore } from '../../store/userStore';
 import { StakeApi } from '../../api/client';
 import { Queries } from '../../api/queries';
 import { AccordionSection } from '../ui/AccordionSection';
+import { TournamentEventPickFields } from './TournamentEventPickFields';
+import { hasTournamentScope } from '../../utils/tournamentScope';
 
 const STRATEGIES: AutoBetStrategy[] = [
   'Smart', 'Conservative', 'Aggressive', 'Balanced', 'Favorites', 'Underdogs', 'ValueHunter'
@@ -166,8 +168,37 @@ export function AutoBetView() {
                       </div>
                       <div>
                         <label className={labelClass} style={labelStyle}>Event Filter (Keywords)</label>
-                        <input type="text" value={settings.eventFilter || ''} onChange={(e) => updateSettings({ eventFilter: e.target.value })} className={inputClass} style={inputSelectStyle} placeholder="e.g. Night: Strickland" />
+                        <input type="text" value={settings.eventFilter || ''} onChange={(e) => updateSettings({ eventFilter: e.target.value })} className={inputClass} style={inputSelectStyle} placeholder="e.g. Night: Strickland" disabled={hasTournamentScope(settings)} />
+                        <p className="text-[10px] mt-1" style={{ color: 'var(--app-text-muted)' }}>Aus bei festem Turnier (Sport + Event oder URL).</p>
                       </div>
+
+                      <div>
+                        <h4 className="text-xs font-bold mb-2 uppercase tracking-wider" style={{ color: 'var(--app-text)' }}>Turnier / Event</h4>
+                        <TournamentEventPickFields
+                          settings={settings}
+                          updateSettings={updateSettings}
+                          selectClass={selectClass}
+                          inputClass={inputClass}
+                          inputSelectStyle={inputSelectStyle}
+                          labelClass={labelClass}
+                          labelStyle={labelStyle}
+                          variant="app"
+                        />
+                      </div>
+
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={settings.fillUpEventMaxLegs || false}
+                          onChange={(e) => updateSettings({ fillUpEventMaxLegs: e.target.checked })}
+                          className="w-4 h-4 rounded cursor-pointer"
+                          style={{ accentColor: 'var(--app-accent)', borderColor: 'var(--app-border)' }}
+                          disabled={!hasTournamentScope(settings)}
+                        />
+                        <span className="text-xs hover:opacity-90" style={{ color: 'var(--app-text-muted)' }}>
+                          Fill legs pro Event (alle verfügbaren Fights im Turnier, begrenzt durch Max Legs)
+                        </span>
+                      </label>
                     </div>
                   </AccordionSection>
 

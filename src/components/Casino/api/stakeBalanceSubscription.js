@@ -20,6 +20,7 @@ const HOUSEBETS_SUBSCRIPTION = `
       game {
         name
         icon
+        slug
         __typename
       }
       bet {
@@ -92,8 +93,46 @@ const HOUSEBETS_SUBSCRIPTION = `
   }
 `
 
-/** Debug: houseBets-Rohdaten in Konsole (DEV: true setzen zum Debuggen) */
+/** Optional: auf `true` setzen = immer detaillierte houseBets-Logs (sehr laut). */
+const DEBUG_HOUSEBETS_FORCE = false
+
+/** In DevTools: `localStorage.setItem('slotbot_debug_housebets','1'); location.reload()` — dann RAW/compact Logs. */
+const LS_DEBUG_HOUSEBETS = 'slotbot_debug_housebets'
+
+/**
+ * @returns {boolean} Roh-Payload (`[houseBets] RAW`), compact OK/SKIP, SlotControl-Multi-Debug
+ */
+export function isDebugHouseBetsEnabled() {
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem(LS_DEBUG_HOUSEBETS) === '1') return true
+  } catch (_) {}
+  return DEBUG_HOUSEBETS_FORCE
+}
+
+/** @deprecated Nutze isDebugHouseBetsEnabled() — berücksichtigt localStorage nicht. */
 export const DEBUG_HOUSEBETS = false
+
+/** Gleiche Origin wie die eingeloggte Stake-Session (Electron), sonst keine/ falsche houseBets-Events. */
+async function resolveStakeWebSocketUrl() {
+  try {
+    if (typeof window !== 'undefined' && window.electronAPI?.invoke) {
+      const u = await window.electronAPI.invoke('get-stake-ws-url')
+      if (typeof u === 'string' && /^wss:\/\//.test(u)) return u
+    }
+  } catch (_) {}
+  return 'wss://stake.com/_api/websockets'
+}
+
+/** Union-Member, die wir in der Subscription abfragen (Felder müssen passen). */
+const HOUSE_BETS_ALLOWED_TYPEN = new Set([
+  'CasinoBet',
+  'SoftswissBet',
+  'ThirdPartyBet',
+  'EvolutionBet',
+  'MultiplayerCrashBet',
+  'MultiplayerSlideBet',
+  'RacingBet',
+])
 
 /** Edge-Cases wo API-Name von slug-Konvention abweicht */
 const GAME_NAME_SLUG_OVERRIDES = {
@@ -131,17 +170,33 @@ function gameNameToSlug(name) {
  * @param {string} accessToken - Session token (von getSessionToken)
  * @param {function} onUpdate - callback(bet) mit { gameSlug, amount, payout, currency, id, ... }
  */
-export function subscribeToBetUpdates(accessToken, onUpdate) {
+export async function subscribeToBetUpdates(accessToken, onUpdate) {
   if (!accessToken?.trim()) {
     return { disconnect() {} }
   }
 
+  const wsUrl = await resolveStakeWebSocketUrl()
+
   let unsubscribe = null
   let client = null
+  let debugNextCount = 0
+  // Init-Log: hilft zu erkennen, ob die Subscription überhaupt startet
+  try {
+    const dbg = isDebugHouseBetsEnabled()
+    console.warn('[StakeBetWS] subscribeToBetUpdates init', {
+      hasToken: !!accessToken,
+      tokenLen: accessToken?.length,
+      wsUrl,
+      debug: dbg,
+      houseBetsDebugHint: dbg
+        ? 'aus (localStorage slotbot_debug_housebets löschen oder !=1, dann Reload)'
+        : 'ein: localStorage.setItem("slotbot_debug_housebets","1"); location.reload()',
+    })
+  } catch (_) {}
 
   try {
     client = createClient({
-      url: 'wss://stake.com/_api/websockets',
+      url: wsUrl,
       connectionParams: {
         accessToken,
         language: 'de',
@@ -160,34 +215,49 @@ export function subscribeToBetUpdates(accessToken, onUpdate) {
       { query: HOUSEBETS_SUBSCRIPTION },
       {
         next: (result) => {
-          if (DEBUG_HOUSEBETS) {
-            console.log('[houseBets] RAW:', JSON.stringify(result?.data?.houseBets ?? result, null, 2))
+          debugNextCount += 1
+          const doRawLog = isDebugHouseBetsEnabled() && debugNextCount <= 3
+          const doCompactLog = isDebugHouseBetsEnabled() && debugNextCount <= 20
+
+          if (doRawLog) {
+            console.warn('[houseBets] RAW:', JSON.stringify(result?.data?.houseBets ?? result, null, 2))
           }
           const hb = result?.data?.houseBets
           if (!hb?.bet) {
-            if (DEBUG_HOUSEBETS) console.log('[houseBets] SKIP: kein bet')
+            if (doCompactLog) console.warn('[houseBets] SKIP: kein bet')
             return
           }
           const { bet, game } = hb
           const tn = bet?.__typename || ''
-          // CasinoBet, SoftswissBet, ThirdPartyBet (Hacksaw etc.)
-          if (tn !== 'CasinoBet' && tn !== 'SoftswissBet' && tn !== 'ThirdPartyBet') {
-            if (DEBUG_HOUSEBETS) console.log('[houseBets] SKIP: __typename=', tn, '(erwartet: CasinoBet|SoftswissBet|ThirdPartyBet)')
+          // Ohne passendes Inline-Fragment fehlen Felder — Typ muss zur GraphQL-Query passen.
+          if (!HOUSE_BETS_ALLOWED_TYPEN.has(tn)) {
+            if (doCompactLog) console.warn('[houseBets] SKIP: __typename=', tn)
             return
           }
           const amount = Number(bet?.amount) ?? 0
           if (amount <= 0) {
-            if (DEBUG_HOUSEBETS) console.log('[houseBets] SKIP: amount<=0', { amount, bet })
+            if (doCompactLog) console.warn('[houseBets] SKIP: amount<=0', { amount, bet })
             return
           }
           const gameSlug = game?.slug || gameNameToSlug(game?.name) || ''
           const name = (game?.name || '').toLowerCase()
-          if (/vault|wallet|transfer|deposit|withdraw/.test(name)) {
-            if (DEBUG_HOUSEBETS) console.log('[houseBets] SKIP: gefiltert (vault/wallet/transfer)', { name })
+          const icon = (game?.icon || '').toLowerCase()
+          // Heuristik: "Vault" in echten Slot-Games (z.B. "Lokis Vault") darf NICHT rausgefiltert werden.
+          // Wir filtern nur echte "wallet/transfer/deposit/withdraw"-Systeme oder "vault"-UIs, die NICHT nach Slots aussehen.
+          const looksLikeSlotGame = icon.includes('provider-slots') || icon.includes('slots')
+          const isWalletLike = /wallet|transfer|deposit|withdraw/.test(name)
+          const isVaultUiButNotSlots = name.includes('vault') && !looksLikeSlotGame
+          if (isWalletLike || isVaultUiButNotSlots) {
+            if (doCompactLog) console.warn('[houseBets] SKIP: gefiltert (wallet/transfer/deposit/withdraw + vault-non-slots)', { name, icon })
             return
           }
           const payload = {
+            /** Union `bet.id` (oft RGS-/Provider-intern, z. B. 527… bei Third-Party) — nicht mit Share-`house:460…` verwechseln. */
             id: bet?.id || hb?.iid || hb?.id,
+            /** GraphQL `houseBets.iid` — Share-Identifier (z. B. house:… / casino:…), für Links wie FRIDA/Bet-Modal */
+            shareIid: hb?.iid != null && String(hb.iid).trim() !== '' ? String(hb.iid).trim() : null,
+            /** Top-Level `houseBets.id` — Fallback wenn `iid` fehlt */
+            houseTopId: hb?.id != null && String(hb.id).trim() !== '' ? String(hb.id).trim() : null,
             gameSlug,
             amount,
             payout: Number(bet?.payout) ?? 0,
@@ -195,7 +265,7 @@ export function subscribeToBetUpdates(accessToken, onUpdate) {
             payoutMultiplier: Number(bet?.payoutMultiplier) || 0,
             amountMultiplier: Number(bet?.amountMultiplier) || 0,
           }
-          if (DEBUG_HOUSEBETS) console.log('[houseBets] OK → onUpdate:', payload)
+          if (doCompactLog) console.warn('[houseBets] OK → onUpdate:', payload)
           onUpdate(payload)
         },
         error: (err) => {
@@ -226,17 +296,19 @@ export function subscribeToBetUpdates(accessToken, onUpdate) {
  * @param {string} accessToken - Session token (von getSessionToken)
  * @param {function} onUpdate - callback({ currency, amount })
  */
-export function subscribeToBalanceUpdates(accessToken, onUpdate) {
+export async function subscribeToBalanceUpdates(accessToken, onUpdate) {
   if (!accessToken?.trim()) {
     return { disconnect() {} }
   }
+
+  const wsUrl = await resolveStakeWebSocketUrl()
 
   let unsubscribe = null
   let client = null
 
   try {
     client = createClient({
-      url: 'wss://stake.com/_api/websockets',
+      url: wsUrl,
       connectionParams: {
         accessToken,
         language: 'de',

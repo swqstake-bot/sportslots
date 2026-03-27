@@ -7,11 +7,62 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'crypto';
 import os from 'os';
-import { DIST, VITE_PUBLIC, SPIN_SAMPLES_DIR, VITE_DEV_SERVER_URL, ELECTRON_DIR } from './config.js';
+import { DIST, VITE_PUBLIC, SPIN_SAMPLES_DIR, FIRST_SLOT_WINS_DIR, VITE_DEV_SERVER_URL, ELECTRON_DIR } from './config.js';
 import { sessionData, captureSession } from './sessionCapture.js';
+
+/** Stake-Session: bevorzugt stake.com, sonst stake.bet (Cookie vorhanden). */
+async function resolveStakeOrigin(): Promise<string> {
+    await captureSession();
+    try {
+        const forCom = await session.defaultSession.cookies.get({ url: 'https://stake.com' });
+        const forBet = await session.defaultSession.cookies.get({ url: 'https://stake.bet' });
+        const hasCom = forCom.some((c) => c.name === 'session' && String(c.value || '').length > 0);
+        const hasBet = forBet.some((c) => c.name === 'session' && String(c.value || '').length > 0);
+        if (hasBet && !hasCom) return 'https://stake.bet';
+    } catch {
+        /* ignore */
+    }
+    return 'https://stake.com';
+}
+
+function extractStakeJsonErrorMessage(parsed: unknown): string {
+    if (parsed == null) return 'Leere Antwort';
+    if (typeof parsed === 'string') return parsed.slice(0, 500);
+    if (typeof parsed !== 'object') return String(parsed);
+    const o = parsed as Record<string, unknown>;
+    if (typeof o.message === 'string' && o.message) return o.message;
+    if (typeof o.error === 'string' && o.error) return o.error;
+    if (o.error && typeof o.error === 'object' && o.error !== null && 'message' in (o.error as object)) {
+        const m = (o.error as { message?: string }).message;
+        if (typeof m === 'string' && m) return m;
+    }
+    if (Array.isArray(o.errors) && o.errors[0] && typeof o.errors[0] === 'object' && o.errors[0] !== null) {
+        const m = (o.errors[0] as { message?: string }).message;
+        if (typeof m === 'string' && m) return m;
+    }
+    if (typeof o.detail === 'string' && o.detail) return o.detail;
+    try {
+        return JSON.stringify(parsed).slice(0, 400);
+    } catch {
+        return 'HTTP-Fehler';
+    }
+}
+import {
+  telegramLogin,
+  submitAuthCode,
+  submitAuthPassword,
+  telegramStatus,
+  telegramFetchChannelMessages,
+  telegramLogout,
+  telegramStartListen,
+  telegramStopListen,
+  loadTelegramConfig,
+  saveTelegramConfig,
+} from './telegramUser.js';
 
 let win: BrowserWindow | null;
 let loginWin: BrowserWindow | null;
+const MAX_IPC_RESPONSE_BYTES = 8 * 1024 * 1024; // 8 MB safety cap for IPC responses
 
 function createWindow() {
   win = new BrowserWindow({
@@ -191,6 +242,12 @@ ipcMain.handle('get-session-token', async () => {
     return sessionTokenMatch ? sessionTokenMatch[1] : null;
 });
 
+/** WebSocket muss dieselbe Stake-Origin wie die Session nutzen (stake.bet vs stake.com). */
+ipcMain.handle('get-stake-ws-url', async () => {
+    const origin = await resolveStakeOrigin();
+    return origin.replace(/^https/, 'wss') + '/_api/websockets';
+});
+
 ipcMain.handle('api-request', async (_event, payload) => {
     const { query, variables, operationName } = payload;
     
@@ -222,27 +279,63 @@ ipcMain.handle('api-request', async (_event, payload) => {
         }
 
         request.on('response', (response) => {
-            let body = '';
+            const chunks: Buffer[] = [];
+            let total = 0;
+            let abortedForSize = false;
             response.on('data', (chunk) => {
-                body += chunk.toString();
+                const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+                total += buf.length;
+                if (total > MAX_IPC_RESPONSE_BYTES) {
+                    abortedForSize = true;
+                    request.abort();
+                    return;
+                }
+                chunks.push(buf);
             });
             response.on('end', () => {
-                try {
-                    if (response.statusCode >= 400) {
-                        console.error(`API Error ${response.statusCode}: ${body}`);
-                        // If 401/403, session might be expired
-                        if (response.statusCode === 401 || response.statusCode === 403) {
-                             console.log('Session expired or forbidden. Triggering re-login...');
-                             createLoginWindow();
-                             // Rejecting so the UI knows
-                             reject(new Error(`Session expired (${response.statusCode}). Login window opened.`));
-                             return;
-                        }
-                    }
-                    resolve(JSON.parse(body));
-                } catch (e) {
-                    reject(e);
+                if (abortedForSize) {
+                    reject(new Error(`API response too large (> ${MAX_IPC_RESPONSE_BYTES} bytes).`));
+                    return;
                 }
+                const body = Buffer.concat(chunks).toString();
+                const status = response.statusCode ?? 0;
+                const trimmed = body.trim();
+
+                if (status === 401 || status === 403) {
+                    console.error(`API Error ${status}: ${body.slice(0, 500)}`);
+                    console.log('Session expired or forbidden. Triggering re-login...');
+                    createLoginWindow();
+                    reject(new Error(`Session expired (${status}). Login window opened.`));
+                    return;
+                }
+
+                if (status === 429) {
+                    reject(new Error(`API rate limited (429). Bitte kurz warten und erneut versuchen.`));
+                    return;
+                }
+
+                let parsed: unknown;
+                try {
+                    parsed = JSON.parse(body);
+                } catch {
+                    const cf1015 = /1015|cloudflare/i.test(body);
+                    const hint = cf1015
+                        ? ' Cloudflare 1015: zu viele Requests oder Schutz – kurz warten, ggf. im Browser auf stake.com einloggen.'
+                        : '';
+                    const preview = trimmed.slice(0, 280);
+                    reject(
+                        new Error(
+                            `API antwortete nicht mit JSON (HTTP ${status}).${hint} Body: ${preview}`
+                        )
+                    );
+                    return;
+                }
+
+                if (status >= 400) {
+                    console.error(`API Error ${status}: ${body.slice(0, 500)}`);
+                }
+
+                resolve(parsed);
             });
         });
 
@@ -255,6 +348,126 @@ ipcMain.handle('api-request', async (_event, payload) => {
         request.end();
     });
 });
+
+/** Stake Originals REST (z. B. Blackjack) – POST mit Session-Cookies wie GraphQL. */
+ipcMain.handle(
+    'stake-casino-rest-post',
+    async (_event, payload: { path?: string; body?: unknown; referer?: string }) => {
+        const pathStr = String(payload?.path || '').trim();
+        if (!pathStr.startsWith('/_api/casino/')) {
+            return Promise.reject(new Error('Ungültiger Casino-REST-Pfad.'));
+        }
+        const origin = await resolveStakeOrigin();
+        const sessionTokenMatch = sessionData.cookies.match(/session=([^;]+)/);
+        const sessionToken = sessionTokenMatch ? sessionTokenMatch[1] : '';
+        if (!sessionToken) {
+            return Promise.reject(
+                new Error('Keine Stake-Session (Cookie session). Bitte einloggen und erneut starten.')
+            );
+        }
+        const bodyObj = payload?.body && typeof payload.body === 'object' ? payload.body : {};
+        const referer =
+            typeof payload?.referer === 'string' && payload.referer.trim().startsWith('http')
+                ? payload.referer.trim()
+                : `${origin}/casino/games/blackjack`;
+
+        return new Promise((resolve, reject) => {
+            const request = net.request({
+                method: 'POST',
+                url: origin + pathStr,
+                useSessionCookies: true,
+            });
+            request.setHeader('Content-Type', 'application/json');
+            request.setHeader('Accept', 'application/json');
+            request.setHeader('x-access-token', sessionToken);
+            request.setHeader('x-lockdown-token', `sl-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+            request.setHeader('Origin', origin);
+            request.setHeader('Referer', referer);
+            if (sessionData.userAgent) {
+                request.setHeader('User-Agent', sessionData.userAgent);
+            }
+
+            request.on('response', (response) => {
+                const chunks: Buffer[] = [];
+                let total = 0;
+                let abortedForSize = false;
+                response.on('data', (chunk) => {
+                    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+                    total += buf.length;
+                    if (total > MAX_IPC_RESPONSE_BYTES) {
+                        abortedForSize = true;
+                        request.abort();
+                        return;
+                    }
+                    chunks.push(buf);
+                });
+                response.on('end', () => {
+                    if (abortedForSize) {
+                        reject(new Error(`Casino-REST-Antwort zu groß (> ${MAX_IPC_RESPONSE_BYTES} bytes).`));
+                        return;
+                    }
+                    const body = Buffer.concat(chunks).toString();
+                    const status = response.statusCode ?? 0;
+                    const trimmed = body.trim();
+
+                    if (status === 401 || status === 403) {
+                        console.error(`Casino REST ${status}: ${body.slice(0, 500)}`);
+                        console.log('Session expired or forbidden. Triggering re-login...');
+                        createLoginWindow();
+                        reject(new Error(`Session expired (${status}). Login window opened.`));
+                        return;
+                    }
+
+                    if (status === 429) {
+                        reject(new Error(`API rate limited (429). Bitte kurz warten und erneut versuchen.`));
+                        return;
+                    }
+
+                    let parsed: unknown;
+                    try {
+                        parsed = JSON.parse(body);
+                    } catch {
+                        const cf1015 = /1015|cloudflare/i.test(body);
+                        const hint = cf1015
+                            ? ' Cloudflare 1015: zu viele Requests oder Schutz – kurz warten, ggf. im Browser auf stake.com einloggen.'
+                            : '';
+                        const preview = trimmed.slice(0, 280);
+                        reject(
+                            new Error(
+                                `Casino-REST antwortete nicht mit JSON (HTTP ${status}).${hint} Body: ${preview}`
+                            )
+                        );
+                        return;
+                    }
+
+                    if (status >= 400) {
+                        console.error(`Casino REST ${status}: ${body.slice(0, 500)}`);
+                        reject(new Error(`Casino-REST HTTP ${status}: ${extractStakeJsonErrorMessage(parsed)}`));
+                        return;
+                    }
+
+                    if (parsed && typeof parsed === 'object') {
+                        const po = parsed as Record<string, unknown>;
+                        if (Array.isArray(po.errors) && po.errors.length > 0) {
+                            reject(new Error(`Casino-REST: ${extractStakeJsonErrorMessage(parsed)}`));
+                            return;
+                        }
+                    }
+
+                    resolve(parsed);
+                });
+            });
+
+            request.on('error', (error) => {
+                console.error('Casino REST Network Error:', error);
+                reject(error);
+            });
+
+            request.write(JSON.stringify(bodyObj));
+            request.end();
+        });
+    }
+);
 
 // Slot Spin Samples – automatisches Speichern pro Slot in Ordner
 ipcMain.handle('save-slot-spin-sample', async (_event, payload: { slotSlug: string; slotName?: string; providerId?: string; request: any; response: any }) => {
@@ -282,7 +495,9 @@ ipcMain.handle('save-slot-spin-sample', async (_event, payload: { slotSlug: stri
       try {
         const raw = fs.readFileSync(filePath, 'utf-8');
         entries = JSON.parse(raw);
-      } catch {}
+      } catch {
+        /* ignore corrupt JSON */
+      }
     }
     entries = [entry, ...entries].slice(0, 2);
     fs.writeFileSync(filePath, JSON.stringify(entries, null, 2), 'utf-8');
@@ -302,7 +517,9 @@ ipcMain.handle('get-slot-spin-samples', async () => {
       try {
         const raw = fs.readFileSync(path.join(SPIN_SAMPLES_DIR, f), 'utf-8');
         result[slug] = JSON.parse(raw);
-      } catch {}
+      } catch {
+        /* ignore corrupt JSON */
+      }
     }
     return result;
   } catch (e) {
@@ -324,6 +541,150 @@ ipcMain.handle('clear-slot-spin-samples', async () => {
     console.error('[SlotSpinSamples] Clear failed:', e);
   }
 });
+
+function sanitizeSlotDirSegment(slug: string): string {
+  return String(slug || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+const FIRST_WINS_MASTER_CSV = 'first-wins.csv';
+const FIRST_WINS_CSV_HEADER =
+  'savedAt,slotSlug,slotName,providerId,providerGroupSlug,betAmountMinor,winAmountMinor,currency,multiplier,roundId,shareBetId,jsonPath';
+
+function csvEscapeCell(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  const s = String(v);
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function firstWinCsvLine(
+  doc: {
+    savedAt: string;
+    slotSlug: string;
+    slotName: string | null;
+    providerId: string | null;
+    providerGroupSlug: string | null;
+    betAmountMinor: number | null;
+    winAmountMinor: number;
+    currency: string | null;
+    multiplier: number | null;
+    roundId: string | null;
+    shareBetId: string | null;
+  },
+  jsonPathForCsv: string
+): string {
+  return [
+    doc.savedAt,
+    doc.slotSlug,
+    doc.slotName ?? '',
+    doc.providerId ?? '',
+    doc.providerGroupSlug ?? '',
+    doc.betAmountMinor ?? '',
+    doc.winAmountMinor,
+    doc.currency ?? '',
+    doc.multiplier ?? '',
+    doc.roundId ?? '',
+    doc.shareBetId ?? '',
+    jsonPathForCsv,
+  ]
+    .map(csvEscapeCell)
+    .join(',');
+}
+
+/** Master-Log unter slot-first-wins/first-wins.csv + pro Slot first-win.csv (Excel: UTF-8 BOM). */
+function writeFirstWinCsvFiles(
+  doc: Parameters<typeof firstWinCsvLine>[0],
+  jsonAbsPath: string,
+  slotDir: string
+): { masterCsvPath: string; slotCsvPath: string } {
+  const masterCsvPath = path.join(FIRST_SLOT_WINS_DIR, FIRST_WINS_MASTER_CSV);
+  const slotCsvPath = path.join(slotDir, 'first-win.csv');
+  const line = firstWinCsvLine(doc, jsonAbsPath) + '\n';
+  const BOM = '\uFEFF';
+
+  const masterExists = fs.existsSync(masterCsvPath);
+  if (!masterExists) {
+    fs.writeFileSync(masterCsvPath, BOM + FIRST_WINS_CSV_HEADER + '\n' + line, 'utf-8');
+  } else {
+    fs.appendFileSync(masterCsvPath, line, 'utf-8');
+  }
+
+  fs.writeFileSync(slotCsvPath, BOM + FIRST_WINS_CSV_HEADER + '\n' + line, 'utf-8');
+
+  return { masterCsvPath, slotCsvPath };
+}
+
+/** Erster Gewinn pro Slot: Ordner pro Spiel, eine Datei first-win.json (nur wenn noch nicht vorhanden). */
+ipcMain.handle(
+  'save-slot-first-win-if-needed',
+  async (
+    _event,
+    payload: {
+      slotSlug: string;
+      slotName?: string;
+      providerId?: string;
+      providerGroupSlug?: string | null;
+      betAmountMinor?: number;
+      winAmountMinor?: number;
+      currency?: string;
+      multiplier?: number;
+      roundId?: string | null;
+      shareBetId?: string | null;
+      /** RGS wallet/play Rohwerte (1e6-Skala) — Abgleich wenn Gewinn vs. UI zweifelhaft */
+      betAmountApiRaw?: number | null;
+      payoutApiRaw?: number | null;
+      payoutFromMultiplierApiRaw?: number | null;
+    }
+  ) => {
+    try {
+      const { slotSlug, winAmountMinor } = payload;
+      if (!slotSlug || typeof slotSlug !== 'string') return { saved: false };
+      const w = Number(winAmountMinor);
+      if (!Number.isFinite(w) || w <= 0) return { saved: false };
+
+      const dirSeg = sanitizeSlotDirSegment(slotSlug);
+      if (!dirSeg) return { saved: false };
+
+      if (!fs.existsSync(FIRST_SLOT_WINS_DIR)) {
+        fs.mkdirSync(FIRST_SLOT_WINS_DIR, { recursive: true });
+      }
+      const slotDir = path.join(FIRST_SLOT_WINS_DIR, dirSeg);
+      const filePath = path.join(slotDir, 'first-win.json');
+      if (fs.existsSync(filePath)) return { saved: false };
+
+      fs.mkdirSync(slotDir, { recursive: true });
+      const doc = {
+        savedAt: new Date().toISOString(),
+        slotSlug: dirSeg,
+        slotName: payload.slotName ?? null,
+        providerId: payload.providerId ?? null,
+        providerGroupSlug: payload.providerGroupSlug ?? null,
+        betAmountMinor: payload.betAmountMinor ?? null,
+        winAmountMinor: w,
+        currency: payload.currency ?? null,
+        multiplier: payload.multiplier ?? null,
+        roundId: payload.roundId ?? null,
+        shareBetId: payload.shareBetId ?? null,
+        betAmountApiRaw: payload.betAmountApiRaw ?? null,
+        payoutApiRaw: payload.payoutApiRaw ?? null,
+        payoutFromMultiplierApiRaw: payload.payoutFromMultiplierApiRaw ?? null,
+      };
+      fs.writeFileSync(filePath, JSON.stringify(doc, null, 2), 'utf-8');
+      const { masterCsvPath, slotCsvPath } = writeFirstWinCsvFiles(doc, filePath, slotDir);
+      console.log('[SlotFirstWin] Saved:', dirSeg, '→', filePath, '| CSV:', masterCsvPath);
+      return { saved: true, path: filePath, csvPath: masterCsvPath, slotCsvPath };
+    } catch (e) {
+      console.error('[SlotFirstWin] Save failed:', e);
+      return { saved: false };
+    }
+  }
+);
+
+ipcMain.handle('get-slot-first-wins-dir', () => FIRST_SLOT_WINS_DIR);
 
 // Claw Buster: Launcher-URL laden → Redirect zu clawbuster-cdn → secret aus URL extrahieren
 ipcMain.handle('clawbuster-extract-secret', async (_event, configUrl: string) => {
@@ -492,8 +853,19 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
 
             const req = client.request(opts, (res) => {
                 const chunks: Buffer[] = [];
-                res.on('data', (chunk: Buffer) => chunks.push(chunk));
+                let total = 0;
+                let abortedForSize = false;
+                res.on('data', (chunk: Buffer) => {
+                    total += chunk.length;
+                    if (total > MAX_IPC_RESPONSE_BYTES) {
+                        abortedForSize = true;
+                        req.destroy(new Error(`Proxy response too large (> ${MAX_IPC_RESPONSE_BYTES} bytes).`));
+                        return;
+                    }
+                    chunks.push(chunk);
+                });
                 res.on('end', () => {
+                    if (abortedForSize) return;
                     const data = Buffer.concat(chunks).toString();
                     const loc = res.headers['location'] as string | undefined;
                     if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && loc && redirectCount < 5) {
@@ -523,6 +895,64 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
 
         doRequest(url);
     });
+});
+
+// Telegram (GramJS): eigenes Konto / Kanal-Nachrichten laden
+ipcMain.handle('telegram-config-get', async () => loadTelegramConfig());
+ipcMain.handle(
+  'telegram-config-set',
+  async (_event, payload: { apiId: number; apiHash: string }) => {
+    if (!payload?.apiHash || typeof payload.apiId !== 'number') {
+      return { ok: false as const, error: 'Ungültige API-Daten.' };
+    }
+    saveTelegramConfig({ apiId: payload.apiId, apiHash: payload.apiHash.trim() });
+    return { ok: true as const };
+  }
+);
+ipcMain.handle(
+  'telegram-login',
+  async (
+    event,
+    payload: { phone: string; apiId: number; apiHash: string }
+  ) => {
+    const { phone, apiId, apiHash } = payload;
+    const notify = (channel: string, ...args: unknown[]) => {
+      event.sender.send(channel, ...args);
+    };
+    return telegramLogin({ apiId, apiHash: apiHash.trim() }, phone, notify);
+  }
+);
+ipcMain.handle('telegram-submit-auth-code', async (_event, code: string) => {
+  submitAuthCode(typeof code === 'string' ? code : '');
+});
+ipcMain.handle('telegram-submit-auth-password', async (_event, password: string) => {
+  submitAuthPassword(typeof password === 'string' ? password : '');
+});
+ipcMain.handle('telegram-status', async () => telegramStatus());
+ipcMain.handle(
+  'telegram-fetch-messages',
+  async (_event, payload: { channel: string; limit?: number }) => {
+    if (!payload?.channel || typeof payload.channel !== 'string') {
+      return { ok: false as const, error: 'Kanal fehlt.' };
+    }
+    return telegramFetchChannelMessages(payload.channel, payload.limit ?? 30);
+  }
+);
+ipcMain.handle('telegram-logout', async () => {
+  await telegramLogout();
+});
+
+ipcMain.handle('telegram-listen-start', async (event, payload: { channel: string }) => {
+  const ch = typeof payload?.channel === 'string' ? payload.channel.trim() : '';
+  if (!ch) return { ok: false as const, error: 'Kanal fehlt.' };
+  const notify = (channel: string, ...args: unknown[]) => {
+    if (!event.sender.isDestroyed()) event.sender.send(channel, ...args);
+  };
+  return telegramStartListen(ch, notify);
+});
+ipcMain.handle('telegram-listen-stop', async () => {
+  await telegramStopListen();
+  return { ok: true as const };
 });
 
 app.on('window-all-closed', () => {

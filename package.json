@@ -2,7 +2,7 @@
   "name": "stakesportselectron",
   "private": true,
   "type": "module",
-  "version": "1.0.102",
+  "version": "1.0.103",
   "description": "StakeSports Electron App",
   "author": "StakeSports",
   "repository": {
@@ -11,7 +11,7 @@
   },
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"tsc -p electron/tsconfig.json -w\" \"wait-on tcp:5176 && cross-env VITE_DEV_SERVER_URL=http://localhost:5176 electron .\"",
+    "dev": "tsc -p electron/tsconfig.json && concurrently -k \"vite\" \"tsc -p electron/tsconfig.json -w\" \"wait-on tcp:5176 && cross-env VITE_DEV_SERVER_URL=http://localhost:5176 electron .\"",
     "build:compile": "tsc -b && vite build && tsc -p electron/tsconfig.json",
     "package": "npm run build:compile && electron-packager . --overwrite --out=release-final --platform=win32 --arch=x64 --prune=true --asar --extra-resource=app-update.yml --ignore=\"^/(src|electron|tsconfig|vite\\.config|\\.git|\\.gitignore|README|LICENSE|builder-cache|release|release_old|release-packager|release-final)\"",
     "build": "npm run build:compile && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --publish always",
@@ -36,6 +36,7 @@
     "recharts": "^3.7.0",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.0",
+    "telegram": "^2.26.22",
     "zustand": "^5.0.11"
   },
   "devDependencies": {

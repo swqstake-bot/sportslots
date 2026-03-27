@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useAutoBetStore, type AutoBetStrategy } from '../../store/autoBetStore';
+import { TournamentEventPickFields } from './TournamentEventPickFields';
+import { hasTournamentScope } from '../../utils/tournamentScope';
 
 interface AutoBetModalProps {
   onClose: () => void;
@@ -151,7 +153,33 @@ export function AutoBetModal({ onClose }: AutoBetModalProps) {
                     onChange={(e) => updateSettings({ eventFilter: e.target.value })}
                     className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white focus:border-green-500 outline-none"
                     placeholder="All events"
+                    disabled={hasTournamentScope(settings)}
                   />
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <label className="block text-sm font-bold text-gray-400 mb-1">Turnier / Event</label>
+                  <TournamentEventPickFields
+                    settings={settings}
+                    updateSettings={updateSettings}
+                    selectClass="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white focus:border-green-500 outline-none appearance-none cursor-pointer"
+                    inputClass="w-full bg-gray-900 border border-gray-700 rounded p-2 text-xs font-mono text-white focus:border-green-500 outline-none"
+                    inputSelectStyle={{ background: '#111827', border: '1px solid #374151', color: '#fff' }}
+                    labelClass="block text-sm font-bold text-gray-400 mb-2"
+                    labelStyle={{}}
+                    variant="modal"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={settings.fillUpEventMaxLegs || false}
+                      onChange={(e) => updateSettings({ fillUpEventMaxLegs: e.target.checked })}
+                      className="form-checkbox h-5 w-5 text-green-500 rounded focus:ring-0 bg-gray-900 border-gray-700"
+                      disabled={!hasTournamentScope(settings)}
+                    />
+                    <span className="text-gray-300">Fill legs pro Event (alle Fights im Turnier, max. Legs beachten)</span>
+                  </label>
                 </div>
               </div>
 

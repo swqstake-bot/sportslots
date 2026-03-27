@@ -4,7 +4,36 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: 'favicon-ico-redirect',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          const url = req.url?.split('?')[0] ?? ''
+          if (url === '/favicon.ico') {
+            res.statusCode = 302
+            res.setHeader('Location', '/favicon.svg')
+            res.end()
+            return
+          }
+          next()
+        })
+      },
+      configurePreviewServer(server) {
+        server.middlewares.use((req, res, next) => {
+          const url = req.url?.split('?')[0] ?? ''
+          if (url === '/favicon.ico') {
+            res.statusCode = 302
+            res.setHeader('Location', '/favicon.svg')
+            res.end()
+            return
+          }
+          next()
+        })
+      },
+    },
+  ],
   base: command === 'serve' ? '/' : './',
   resolve: {
     alias: {

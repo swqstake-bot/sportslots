@@ -186,8 +186,8 @@ export function FixtureCard({
               className="overflow-hidden"
             >
               <div className="px-1.5 py-1.5 space-y-1 max-h-28 overflow-y-auto">
-                {extraMarkets.map((market) => (
-                    <div key={market.id || market.name || Math.random()} className="space-y-1">
+                {extraMarkets.map((market, mIdx) => (
+                    <div key={market.id || `${market.name ?? 'm'}-${mIdx}`} className="space-y-1">
                       <div className="text-[8px] font-bold uppercase tracking-wider" style={{ color: 'var(--app-text-muted)' }}>
                         {market.name || 'Market'}
                       </div>

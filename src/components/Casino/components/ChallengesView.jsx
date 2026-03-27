@@ -2,7 +2,7 @@
  * Challenges tab – list active & completed Stake challenges.
  * Completion-Tracking: API-Sync + lokale Speicherung.
  */
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { fetchAllChallenges, fetchCompletedChallenges, fetchCurrencyRates } from '../api/stakeChallenges'
 import { getCompletedChallengeIds, syncFromApiChallenges, markChallengeCompleted } from '../utils/challengeCompletion'
 import { addDiscoveredFromChallenges } from '../utils/discoveredSlots'
@@ -153,6 +153,11 @@ const TAB_COMPLETED = 'completed'
 const SORT_STORAGE_KEY = 'slotbot_challenges_sort'
 
 export default function ChallengesView({ accessToken, onSelectChallenge, webSlots = [], onDiscoveredSlots }) {
+  const onDiscoveredSlotsRef = useRef(onDiscoveredSlots)
+  onDiscoveredSlotsRef.current = onDiscoveredSlots
+  const webSlotsRef = useRef(webSlots)
+  webSlotsRef.current = webSlots
+
   const [challenges, setChallenges] = useState([])
   const [rates, setRates] = useState({})
   const [loading, setLoading] = useState(false)
@@ -202,9 +207,9 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
           setChallenges(list)
           setRates(ratesMap)
           syncFromApiChallenges(list)
-          const knownSlugs = new Set(webSlots.map((s) => s.slug))
+          const knownSlugs = new Set((webSlotsRef.current || []).map((s) => s.slug))
           const added = addDiscoveredFromChallenges(list, knownSlugs)
-          if (added.length && onDiscoveredSlots) onDiscoveredSlots(added)
+          if (added.length) onDiscoveredSlotsRef.current?.(added)
         }
       })
       .catch((err) => {
@@ -214,7 +219,7 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [accessToken, tab, onDiscoveredSlots])
+  }, [accessToken, tab])
 
   if (!accessToken) {
     return (

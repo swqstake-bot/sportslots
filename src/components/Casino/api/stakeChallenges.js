@@ -146,6 +146,7 @@ fragment Challenge on Challenge {
     name
     slug
     thumbnailUrl
+    groupGames { group { id slug type } }
   }
   creatorUser { ...UserTags }
   affiliateUser @include(if: $includeAffiliateData) { ...UserTags }
@@ -165,6 +166,13 @@ fragment UserTags on User {
 
 /** Stake-API erlaubt max. 24 pro Request (number_less_equal sonst). */
 const PAGE_SIZE = 24
+
+/** Provider-Gruppen-Slug (z. B. paperclip-gaming) aus Challenge.game — für Hunter-Filter. */
+export function extractProviderGroupSlug(game) {
+  if (!game?.groupGames?.length) return undefined
+  const providerGroup = game.groupGames.find((g) => g?.group?.type === 'provider')
+  return providerGroup?.group?.slug || undefined
+}
 
 /**
  * Fetch active Stake challenges (casino/slot challenges).
@@ -259,6 +267,7 @@ export async function fetchAllChallenges(accessToken) {
         gameSlug: c.game.slug,
         gameName: c.game.name,
         thumbnailUrl: c.game.thumbnailUrl,
+        providerGroupSlug: extractProviderGroupSlug(c.game),
       }))
       
     all.push(...mapped)
@@ -302,6 +311,7 @@ export async function fetchCompletedChallenges(accessToken) {
         gameName: c.game.name,
         thumbnailUrl: c.game.thumbnailUrl,
         completedAt: c.completedAt,
+        providerGroupSlug: extractProviderGroupSlug(c.game),
       }))
 
     all.push(...mapped)

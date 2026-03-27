@@ -7,7 +7,7 @@ import { Queries } from './api/queries';
 import { Sidebar } from './components/Sidebar';
 import { FixtureList } from './components/FixtureList';
 import { RightSidebar } from './components/RightSidebar';
-import { useUserStore } from './store/userStore';
+import { useUserStore, type SportBet } from './store/userStore';
 import { useAutoBetStore } from './store/autoBetStore';
 import { useUiStore } from './store/uiStore';
 import { WalletSelector } from './components/WalletSelector';
@@ -19,6 +19,11 @@ import { UpdaterNotification } from './components/UpdaterNotification';
 import { ChangelogModal } from './components/ui/ChangelogModal';
 import { GlobalToast } from './components/ui/GlobalToast';
 import { getChangelogForVersion } from './constants/changelogs';
+
+/** Pro GraphQL-Request: Stake validiert `activeSportBets(limit)` mit Obergrenze (typisch ≤50; höhere Werte → error.number_less_equal). */
+const ACTIVE_SPORT_BETS_PAGE_SIZE = 50;
+/** Max. Anzahl Einträge für Header/Sidebar (mehrere Seiten à PAGE_SIZE). */
+const ACTIVE_SPORT_BETS_MAX_TOTAL = 150;
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -113,16 +118,9 @@ function App() {
       const userData = userRes.data.user;
       setUser(userData);
 
-      // 2. Fetch Balances & Active Bets
+      // 2. Balances + aktive Wetten (Wetten in Seiten à max. ACTIVE_SPORT_BETS_PAGE_SIZE — sonst number_less_equal)
       try {
-        const [balanceRes, betsRes] = await Promise.all([
-          StakeApi.query(Queries.FetchBalances),
-          StakeApi.query<any>(Queries.FetchActiveSportBets, {
-            limit: 10,
-            offset: 0,
-            name: userData.name
-          })
-        ]);
+        const balanceRes = await StakeApi.query(Queries.FetchBalances);
 
         if (balanceRes.data?.user?.balances) {
           setBalancesFromApi(balanceRes.data.user.balances);
@@ -131,9 +129,26 @@ function App() {
             // Don't set dummy balances, let store handle empty state
         }
 
-        if (betsRes.data?.user?.activeSportBets) {
-          setActiveBets(betsRes.data.user.activeSportBets);
+        const merged: SportBet[] = [];
+        const seen = new Set<string>();
+        for (let offset = 0; offset < ACTIVE_SPORT_BETS_MAX_TOTAL; offset += ACTIVE_SPORT_BETS_PAGE_SIZE) {
+          const betsRes = await StakeApi.query<{
+            user?: { activeSportBets?: SportBet[] };
+          }>(Queries.FetchActiveSportBets, {
+            limit: ACTIVE_SPORT_BETS_PAGE_SIZE,
+            offset,
+            name: userData.name,
+          });
+          const batch = betsRes.data?.user?.activeSportBets ?? [];
+          for (const b of batch) {
+            if (b?.id && !seen.has(b.id)) {
+              seen.add(b.id);
+              merged.push(b);
+            }
+          }
+          if (batch.length < ACTIVE_SPORT_BETS_PAGE_SIZE) break;
         }
+        setActiveBets(merged);
       } catch (innerErr) {
           console.error("Error fetching balances/bets", innerErr);
       }

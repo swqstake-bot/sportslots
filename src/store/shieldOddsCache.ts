@@ -14,14 +14,18 @@ function load(): Record<string, number> {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') return parsed;
     }
-  } catch (_) {}
+  } catch {
+    /* ignore parse errors */
+  }
   return {};
 }
 
 function save() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cache));
-  } catch (_) {}
+  } catch {
+    /* ignore quota */
+  }
 }
 
 export function getShieldOdds(betId: string): number | undefined {

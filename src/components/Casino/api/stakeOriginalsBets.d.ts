@@ -6,3 +6,5 @@ export function minesCashout(params: { identifier: string }): Promise<{ id?: str
 export function placePlinkoBet(params: { amount: number; currency: string; rows: number; risk: string }): Promise<{ iid?: string; payout?: number } | null>
 export function placeKenoBet(params: { amount: number; currency: string; picks: number[]; risk: string }): Promise<{ iid?: string; payout?: number } | null>
 export function rotateSeedPair(seed?: string): Promise<{ ok: boolean }>
+export function stakeBlackjackBet(params: { amount: number; currency: string; identifier?: string }): Promise<unknown>
+export function stakeBlackjackNext(params: { action: string; identifier?: string }): Promise<unknown>

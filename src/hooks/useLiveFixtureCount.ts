@@ -12,7 +12,6 @@ export function useLiveFixtureCount(enabled: boolean, pollingIntervalMs = 15000)
 
   useEffect(() => {
     if (!enabled) {
-      setCount(null);
       return;
     }
 
@@ -36,5 +35,5 @@ export function useLiveFixtureCount(enabled: boolean, pollingIntervalMs = 15000)
     };
   }, [enabled, pollingIntervalMs]);
 
-  return count;
+  return enabled ? count : null;
 }

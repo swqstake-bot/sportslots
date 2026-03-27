@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { StakeApi } from '../api/client';
 import { Queries } from '../api/queries';
 import type { SportBet } from '../store/userStore';
-import { getCashoutValue } from '../services/cashoutService';
+import { getCashoutValue, resolveCashoutMultiplierForBet } from '../services/cashoutService';
 
 export interface UseAutoCashoutOptions {
   enabled: boolean;
@@ -42,7 +42,7 @@ export function useAutoCashout({
       const valueUsd = cashoutValue * rate;
       if (valueUsd < target) return;
 
-      const multiplierToUse = bet.cashoutMultiplier ?? 0;
+      const multiplierToUse = resolveCashoutMultiplierForBet(bet);
       if (multiplierToUse <= 0) return;
 
       try {
@@ -75,7 +75,7 @@ export function useAutoCashout({
       const valueUsd = cashoutValue * rate;
       if (valueUsd < target) continue;
 
-      const multiplierToUse = b.cashoutMultiplier ?? 0;
+      const multiplierToUse = resolveCashoutMultiplierForBet(b);
       if (multiplierToUse <= 0) continue;
 
       try {

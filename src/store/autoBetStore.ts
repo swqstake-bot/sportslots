@@ -26,6 +26,16 @@ export interface AutoBetSettings {
   currency: string; // Currency to use
   numberOfBets: number;
   eventFilter: string;
+  /** Picker: sport slug from Sport list — then load tournaments */
+  eventTournamentSport: string;
+  /** Category slug (e.g. ufc) */
+  eventTournamentCategory: string;
+  /** Tournament slug (e.g. ufc-fight-night-...) */
+  eventTournamentSlug: string;
+  /** Optional fallback: paste full Stake URL; clears picker when set */
+  eventTournamentUrl: string;
+  /** With tournament scope: each bet uses as many legs as distinct fixtures (capped by Max Legs), not random Min–Max */
+  fillUpEventMaxLegs: boolean;
   scanLimit?: number;
   enabled: boolean;
   
@@ -72,6 +82,11 @@ const DEFAULT_SETTINGS: AutoBetSettings = {
   currency: 'usd',
   numberOfBets: 10,
   eventFilter: '',
+  eventTournamentSport: '',
+  eventTournamentCategory: '',
+  eventTournamentSlug: '',
+  eventTournamentUrl: '',
+  fillUpEventMaxLegs: false,
   enabled: false,
   fillUp: false,
   coverWithShield: false,
@@ -113,7 +128,9 @@ export const useAutoBetStore = create<AutoBetState>()(
               'autobet_logs_backup',
               JSON.stringify({ savedAt: Date.now(), logs: next.slice(0, 50) })
             );
-          } catch (_) {}
+          } catch {
+            /* ignore quota / private mode */
+          }
           return { logs: next };
         }),
 

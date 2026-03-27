@@ -29,11 +29,14 @@ export default function OriginalsBetHistory({
 }: OriginalsBetHistoryProps) {
   const limited = useMemo(() => bets.slice(-maxBets), [bets, maxBets])
   const chartData = useMemo(() => {
+    const out: { index: number; profit: number }[] = []
     let cum = 0
-    return limited.map((b, i) => {
+    for (let i = 0; i < limited.length; i++) {
+      const b = limited[i]
       cum += (b.payout || 0) - b.amount
-      return { index: i + 1, profit: cum }
-    })
+      out.push({ index: i + 1, profit: cum })
+    }
+    return out
   }, [limited])
   const stats = useMemo(() => {
     const wins = limited.filter((b) => b.win).length

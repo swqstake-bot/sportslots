@@ -1,9 +1,9 @@
 /**
- * Stake Originals – Platzieren von Wetten (Dice, Limbo, Mines, Plinko, Keno).
- * Komplett unabhängig von Slots. Nutzt Stake GraphQL; Mutations-Namen/Schema
+ * Stake Originals – Platzieren von Wetten (Dice, Limbo, Mines, Plinko, Keno, Packs).
+ * Komplett unabhängig von Slots / RGS. Nutzt Stake GraphQL; Mutations-Namen/Schema
  * ggf. aus Stake Network-Tab beim Platzieren einer Wette ermitteln.
  *
- * FRIDA BetData: diceRoll, limboBet, minesBet, plinkoBet, kenoBet (Response-Typen).
+ * FRIDA BetData: diceRoll, limboBet, minesBet, plinkoBet, kenoBet; Packs (UI) = GraphQL casesBet.
  */
 
 import { StakeApi } from '../../../api/client'
@@ -108,6 +108,39 @@ const KENO_BET_MUTATION = `mutation KenoBet($amount: Float!, $currency: Currency
     currency
     game
     updatedAt
+  }
+}`
+
+/** Map UI → CasesDifficultyEnum (Network-Tab bei Bedarf prüfen). */
+function toCasesDifficultyEnum(difficulty) {
+  const d = String(difficulty || 'medium').toLowerCase()
+  if (d === 'easy' || d === 'medium' || d === 'hard' || d === 'expert') return d
+  return 'medium'
+}
+
+/** Packs (Stake UI „Packs“) = Mutation casesBet; state nur über Fragment CasinoGamePacks. */
+const CASES_BET_MUTATION = `mutation CasesBet($amount: Float!, $currency: CurrencyEnum!, $identifier: String!, $difficulty: CasesDifficultyEnum!) {
+  casesBet(amount: $amount, currency: $currency, identifier: $identifier, difficulty: $difficulty) {
+    id
+    active
+    currency
+    amount
+    payout
+    payoutMultiplier
+    amountMultiplier
+    updatedAt
+    game
+    state {
+      __typename
+      ... on CasinoGamePacks {
+        cards {
+          id
+          isNew
+          multiplier
+        }
+        cardsCollected
+      }
+    }
   }
 }`
 
@@ -243,6 +276,26 @@ export async function placeKenoBet({ amount, currency, picks, risk }) {
   return bet ? { ...bet, iid: bet.id } : null
 }
 
+/**
+ * Packs (Stake Original) – GraphQL casesBet (slug „packs“ im Kurator).
+ * @param {number} amount – Einsatz in Währungseinheiten (Float)
+ * @param {string} currency – z. B. usdt
+ * @param {string} identifier – aus casesBet-Variables im Network (Session/Kette)
+ * @param {string} [difficulty] – easy | medium | hard | expert
+ */
+export async function placePacksBet({ amount, currency, identifier, difficulty }) {
+  const variables = {
+    amount: Number(amount),
+    currency: (currency || 'usdc').toLowerCase(),
+    identifier: String(identifier || '').trim(),
+    difficulty: toCasesDifficultyEnum(difficulty),
+  }
+  if (!variables.identifier) return null
+  const res = await StakeApi.mutate(CASES_BET_MUTATION, variables)
+  const bet = res?.data?.casesBet
+  return bet ? { ...bet, iid: bet.id } : null
+}
+
 /** Rotate seed pair (neuer Client-Seed auf Stake). Bei „Seed nach X Rolls“ vor jedem neuen Block aufrufen. */
 const ROTATE_SEED_PAIR_MUTATION = `mutation RotateSeedPair($seed: String!) {
   rotateSeedPair(seed: $seed) {
@@ -276,4 +329,43 @@ export async function rotateSeedPair(seed) {
   const variables = { seed: seed || randomClientSeed() }
   const res = await StakeApi.mutate(ROTATE_SEED_PAIR_MUTATION, variables)
   return { ok: !!res?.data?.rotateSeedPair }
+}
+
+const BJ_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'
+function randomBlackjackIdentifier() {
+  let s = ''
+  for (let i = 0; i < 21; i++) s += BJ_CHARS[Math.floor(Math.random() * BJ_CHARS.length)]
+  return s
+}
+
+/**
+ * Stake Originals Blackjack – REST `/_api/casino/blackjack/bet` (Session wie GraphQL).
+ * @returns Roh-JSON mit `blackjackBet`
+ */
+export async function stakeBlackjackBet({ amount, currency, identifier }) {
+  const api = typeof window !== 'undefined' ? window.electronAPI : null
+  if (!api?.invoke) throw new Error('Electron API nicht verfügbar (stake-casino-rest-post).')
+  const id = identifier != null && String(identifier).trim() ? String(identifier).trim() : randomBlackjackIdentifier()
+  return api.invoke('stake-casino-rest-post', {
+    path: '/_api/casino/blackjack/bet',
+    body: {
+      identifier: id,
+      amount: Number(amount),
+      currency: String(currency || 'usdc').toLowerCase(),
+    },
+  })
+}
+
+/**
+ * @param {string} action – hit | stand | double | split | insurance | noInsurance (Insurance ablehnen)
+ * @returns Roh-JSON mit `blackjackNext`
+ */
+export async function stakeBlackjackNext({ action, identifier }) {
+  const api = typeof window !== 'undefined' ? window.electronAPI : null
+  if (!api?.invoke) throw new Error('Electron API nicht verfügbar (stake-casino-rest-post).')
+  const id = identifier != null && String(identifier).trim() ? String(identifier).trim() : randomBlackjackIdentifier()
+  return api.invoke('stake-casino-rest-post', {
+    path: '/_api/casino/blackjack/next',
+    body: { action: String(action), identifier: id },
+  })
 }

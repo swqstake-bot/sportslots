@@ -20,6 +20,9 @@ export const VITE_PUBLIC = app.isPackaged ? DIST : path.join(DIST, '../public');
 /** Slot-Spin-Samples-Verzeichnis (userData) */
 export const SPIN_SAMPLES_DIR = path.join(app.getPath('userData'), 'slot-spin-samples');
 
+/** Erster gespeicherter Gewinn pro Slot: userData/slot-first-wins/<slug>/first-win.json */
+export const FIRST_SLOT_WINS_DIR = path.join(app.getPath('userData'), 'slot-first-wins');
+
 /** Vite Dev-Server-URL (via cross-env gesetzt) */
 export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'] as string | undefined;
 

@@ -1,6 +1,11 @@
 /**
- * Pure business logic for sport bet cashout estimation.
- * Used by useAutoCashout and ActiveBetsModal; unit-testable.
+ * Cashout-Anzeige für Sportwetten.
+ *
+ * **Aktueller Cashout** kommt von Stake (GraphQL): `cashoutValue` aus PreviewCashout, oder
+ * `amount * cashoutMultiplier` aus der Active-Bets-Liste – das ist kein Modell, sondern die gleiche Basis
+ * wie auf dem offiziellen Schein.
+ *
+ * Nur wenn diese Felder fehlen, greift ein alter Heuristik-Fallback (`estimateCashoutValue`).
  */
 import type { SportBet } from '../store/userStore';
 import { getShieldOdds } from '../store/shieldOddsCache';
@@ -10,7 +15,8 @@ const TYPE_FACTOR_SINGLE = 0.93;
 const TYPE_FACTOR_MULTI = 0.61;
 
 /**
- * Computes estimated cashout value from stake, multiplier, potential payout and bet type.
+ * Nur Fallback, wenn Stake **keinen** brauchbaren `cashoutMultiplier` / `cashoutValue` liefert.
+ * Kein Ersatz für den echten Live-Cashout vom Schein – bitte `getCashoutValue` bevorzugen.
  */
 export function estimateCashoutValue(bet: SportBet): number {
   if (!bet.cashoutMultiplier || !bet.amount || bet.cashoutMultiplier <= 0) return 0;
@@ -40,11 +46,49 @@ export function getEffectiveOdds(bet: SportBet): number {
 }
 
 /**
- * Returns the cashout value to use: explicit bet.cashoutValue or estimated.
+ * **Aktueller Cashout-Betrag** (wie auf dem Stake-Schein), soweit die API ihn liefert.
+ *
+ * Reihenfolge: (1) `cashoutValue` von PreviewCashout, (2) `Einsatz × cashoutMultiplier` aus der Wetten-Liste
+ * (Stake aktualisiert das laufend), (3) nur in seltenen Fällen der interne Fallback `estimateCashoutValue`.
  */
 export function getCashoutValue(bet: SportBet): number {
   if (bet.cashoutValue != null && bet.cashoutValue > 0) return bet.cashoutValue;
+  if (bet.amount && bet.cashoutMultiplier != null && bet.cashoutMultiplier > 0) {
+    return bet.amount * bet.cashoutMultiplier;
+  }
   return estimateCashoutValue(bet);
+}
+
+/**
+ * PreviewCashout liefert oft `payout: 0` (noch nicht „locked“), aber `cashoutMultiplier` > 0.
+ * Der Listen-`bet` hat manchmal kein `amount` – dann Einsatz aus der Preview (`data.amount`) nutzen.
+ */
+export function computeCashoutFromPreview(
+  bet: SportBet,
+  data: { payout?: number; cashoutMultiplier?: number; amount?: number }
+): number {
+  const payout = Number(data.payout);
+  if (Number.isFinite(payout) && payout > 0) return payout;
+
+  const mult = Number(data.cashoutMultiplier);
+  if (!Number.isFinite(mult) || mult <= 0) return 0;
+
+  const stakeBet = bet.amount != null && Number(bet.amount) > 0 ? Number(bet.amount) : 0;
+  const stakePreview = data.amount != null && Number(data.amount) > 0 ? Number(data.amount) : 0;
+  const stake = stakeBet > 0 ? stakeBet : stakePreview;
+
+  if (stake > 0) return stake * mult;
+
+  return getCashoutValue({ ...bet, cashoutMultiplier: mult, amount: stakeBet || stakePreview || bet.amount });
+}
+
+/** Für Cashout-Mutation: API-Multiplikator, sonst Verhältnis Cashout-Wert / Einsatz (wenn Preview nur payout liefert). */
+export function resolveCashoutMultiplierForBet(bet: SportBet): number {
+  const m = bet.cashoutMultiplier ?? 0;
+  if (m > 0) return m;
+  const v = getCashoutValue(bet);
+  if (bet.amount && bet.amount > 0 && v > 0) return v / bet.amount;
+  return 0;
 }
 
 /**

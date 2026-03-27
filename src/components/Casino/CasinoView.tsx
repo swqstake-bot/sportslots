@@ -4,6 +4,7 @@ const SlotControl = SlotControlJS as any
 import LogViewer from './components/LogViewer'
 import BonusHuntControl from './components/BonusHuntControl'
 import AutoChallengeHunter from './components/AutoChallengeHunter'
+import TelegramChallengeHunter from './components/TelegramChallengeHunter'
 import ForumChallengeView from './components/ForumChallengeView'
 import OriginalsView from './components/OriginalsView'
 import { SlotSelectMulti } from './components/SlotSelectGrouped'
@@ -37,7 +38,17 @@ export default function CasinoView() {
   const [error, setError] = useState('')
   const [discoveredSlots, setDiscoveredSlots] = useState<{ slug: string; name: string; providerId: string; thumbnailUrl?: string }[]>(() => loadDiscoveredSlots())
   const { slots: webSlots, loading: slotsLoading, error: slotsError } = useSlots(token, discoveredSlots)
-  const [selectedSlotInstances, setSelectedSlotInstances] = useState<{ id: string; slug: string; sourceCurrency?: string; targetCurrency?: string }[]>([])
+  const [selectedSlotInstances, setSelectedSlotInstances] = useState<
+    {
+      id: string
+      slug: string
+      sourceCurrency?: string
+      targetCurrency?: string
+      challengeTargetMultiplier?: number
+      challengeTargetMultipliers?: number[]
+      minBetUsd?: number
+    }[]
+  >([])
 
   const selectedSlugs = selectedSlotInstances.map((i) => i.slug)
   const { casinoMode: mode, setCasinoMode: setMode } = useUiStore()
@@ -51,7 +62,25 @@ export default function CasinoView() {
   const [, setImportError] = useState('')
   const [favorites, setFavorites] = useState(() => loadFavorites())
   const slotControlRefsMap = useRef(new Map())
+  /** Pro inst.id stabiler ref-Callback – vermeidet null/ref-Reattach bei jedem Parent-Render. */
+  const slotControlRefCallbacks = useRef(new Map<string, (el: any) => void>())
   const [playLogRefreshKey, setPlayLogRefreshKey] = useState(0)
+
+  const handlePlayLogUpdate = useCallback(() => {
+    setPlayLogRefreshKey((k) => k + 1)
+  }, [])
+
+  const getSlotControlRef = useCallback((instanceId: string) => {
+    let cb = slotControlRefCallbacks.current.get(instanceId)
+    if (!cb) {
+      cb = (el: any) => {
+        if (el) slotControlRefsMap.current.set(instanceId, el)
+        else slotControlRefsMap.current.delete(instanceId)
+      }
+      slotControlRefCallbacks.current.set(instanceId, cb)
+    }
+    return cb
+  }, [])
   const [recentBets, setRecentBets] = useState<any[]>([])
   // const [lastBet, setLastBet] = useState<any>(null) // Unused
   const [useSharedCurrency, setUseSharedCurrency] = useState(false)
@@ -289,6 +318,24 @@ export default function CasinoView() {
     ])
   }, [sharedSourceCurrency, sharedTargetCurrency])
 
+  /** Stabil, damit Kinder (Challenges / Auto Hunter) nicht bei jedem Render neu laden (useEffect-Deps). */
+  const handleDiscoveredSlots = useCallback(
+    (added: { slug: string; name: string; providerId: string; thumbnailUrl?: string }[]) => {
+      setDiscoveredSlots((prev) => {
+        const bySlug = new Map(prev.map((s) => [s.slug, { ...s }]))
+        for (const s of added) {
+          const ex = bySlug.get(s.slug)
+          const merged = ex ? (s.thumbnailUrl ? { ...ex, thumbnailUrl: s.thumbnailUrl } : ex) : s
+          bySlug.set(s.slug, merged)
+        }
+        const next = Array.from(bySlug.values())
+        saveDiscoveredSlots(next)
+        return next
+      })
+    },
+    []
+  )
+
   const handleRemoveInstance = useCallback((instanceId: string) => {
     setSelectedSlotInstances((prev) => {
       const removed = prev.find((i) => i.id === instanceId)
@@ -300,7 +347,12 @@ export default function CasinoView() {
     })
   }, [])
 
-  const handleSelectChallenge = useCallback((challenge: { gameSlug: string; gameName?: string; currency?: string }) => {
+  const handleSelectChallenge = useCallback((challenge: {
+    gameSlug: string
+    gameName?: string
+    currency?: string
+    targetMultiplier?: number
+  }) => {
       if (!challenge?.gameSlug) return
       setMode('play')
       setSelectedSlotInstances((prev) => {
@@ -310,6 +362,9 @@ export default function CasinoView() {
             slug: challenge.gameSlug,
             sourceCurrency: sharedSourceCurrency,
             targetCurrency: challenge.currency || sharedTargetCurrency,
+            ...(challenge.targetMultiplier != null && Number.isFinite(Number(challenge.targetMultiplier))
+              ? { challengeTargetMultiplier: Number(challenge.targetMultiplier) }
+              : {}),
           }]
       })
       setToast(`Challenge ausgewählt: ${challenge.gameName || challenge.gameSlug}`)
@@ -452,16 +507,24 @@ export default function CasinoView() {
                   return (
                     <div key={inst.id} className="casino-card overflow-hidden p-4">
                     <SlotControl
-                      ref={(el: any) => { slotControlRefsMap.current.set(inst.id, el) }}
+                      ref={getSlotControlRef(inst.id)}
                       slot={slot}
                       accessToken={token}
-                      onLogUpdate={() => setPlayLogRefreshKey(k => k + 1)}
+                      onLogUpdate={handlePlayLogUpdate}
                       initialExpanded={selectedSlotInstances.length <= 2}
                       useSharedCurrency={useSharedCurrency}
                       sharedSourceCurrency={inst.sourceCurrency || sharedSourceCurrency}
                       sharedTargetCurrency={inst.targetCurrency || sharedTargetCurrency}
                       initialTargetCurrency={inst.targetCurrency}
                       sharedCryptoOnly={sharedCryptoOnly}
+                      challengeTargetMultipliers={
+                        inst.challengeTargetMultipliers?.length
+                          ? inst.challengeTargetMultipliers
+                          : inst.challengeTargetMultiplier != null
+                            ? [inst.challengeTargetMultiplier]
+                            : undefined
+                      }
+                      initialMinBetUsd={inst.minBetUsd}
                     />
                     </div>
                   )
@@ -487,21 +550,21 @@ export default function CasinoView() {
                <AutoChallengeHunter 
                  accessToken={token} 
                  webSlots={webSlots as any}
-                 onDiscoveredSlots={(added: { slug: string; name: string; providerId: string; thumbnailUrl?: string }[]) => {
-                  setDiscoveredSlots(prev => {
-                    const bySlug = new Map(prev.map(s => [s.slug, { ...s }]))
-                    for (const s of added) {
-                      const ex = bySlug.get(s.slug)
-                      const merged = ex
-                        ? (s.thumbnailUrl ? { ...ex, thumbnailUrl: s.thumbnailUrl } : ex)
-                        : s
-                      bySlug.set(s.slug, merged)
-                    }
-                    const next = Array.from(bySlug.values())
-                    saveDiscoveredSlots(next)
-                    return next
-                  })
-                }}
+                 onDiscoveredSlots={handleDiscoveredSlots}
+               />
+             </div>
+           )}
+
+           {mode === 'telegram' && (
+             <div className="casino-card">
+               <h2 className="casino-card-header">
+                 <span className="casino-card-header-accent"></span>
+                 Telegram Hunter
+               </h2>
+               <TelegramChallengeHunter
+                 accessToken={token}
+                 webSlots={webSlots as any}
+                 onDiscoveredSlots={handleDiscoveredSlots}
                />
              </div>
            )}

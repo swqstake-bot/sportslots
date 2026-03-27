@@ -46,6 +46,12 @@ const STYLES = {
   },
 }
 
+/** Session-Geldbeträge aus SlotControl stats sind USD-Cent (toUsdCents), nicht Slot-Zielwährung. */
+function formatUsdCentsLine(value) {
+  if (value == null || !Number.isFinite(Number(value))) return '–'
+  return `${formatAmount(Number(value), 'usd')} USD`
+}
+
 export default function StatsDisplay({ stats, currencyCode, compact = false, minimal = false }) {
   const displayStats = useMemo(() => {
     if (!stats || stats.spins === 0) return null
@@ -78,15 +84,13 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
     )
   }
 
-  const format = (v) => {
-    const formatted = formatAmount(v, currencyCode)
-    const cc = (currencyCode || '').toUpperCase()
-    return cc ? `${formatted} ${cc}` : formatted
-  }
-
   return (
     <div style={cardStyle}>
       <div style={titleStyle}>Statistik</div>
+      <div style={{ fontSize: minimal ? '0.5rem' : (compact ? '0.58rem' : '0.65rem'), color: 'var(--text-muted)', marginBottom: compact ? '0.2rem' : '0.35rem' }}>
+        Einsatz/Gewinn/Netto/Kontostand: Näherung in USD (intern USD-Cent)
+        {currencyCode ? ` · Spiel: ${String(currencyCode).toUpperCase()}` : ''}
+      </div>
       <div style={{ ...STYLES.grid, gap: minimal ? '0.12rem 0.4rem' : (compact ? '0.2rem 0.6rem' : '0.5rem 1.5rem') }}>
         <div style={STYLES.item}>
           <span style={STYLES.label}>Spins</span>
@@ -94,11 +98,11 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
         </div>
         <div style={STYLES.item}>
           <span style={STYLES.label}>Gesamteinsatz</span>
-          <span style={valueStyle}>{format(displayStats.totalWagered)}</span>
+          <span style={valueStyle}>{formatUsdCentsLine(displayStats.totalWagered)}</span>
         </div>
         <div style={STYLES.item}>
           <span style={STYLES.label}>Gewinne gesamt</span>
-          <span style={valueStyle}>{format(displayStats.totalWon)}</span>
+          <span style={valueStyle}>{formatUsdCentsLine(displayStats.totalWon)}</span>
         </div>
         <div style={STYLES.item}>
           <span style={STYLES.label}>Netto</span>
@@ -108,7 +112,7 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
               ...(displayStats.netResult >= 0 ? STYLES.valuePositive : STYLES.valueNegative),
             }}
           >
-            {displayStats.netResult >= 0 ? '+' : ''}{format(displayStats.netResult)}
+            {displayStats.netResult >= 0 ? '+' : ''}{formatUsdCentsLine(displayStats.netResult)}
           </span>
         </div>
         <div style={STYLES.item}>
@@ -120,7 +124,7 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
         <div style={STYLES.item}>
           <span style={STYLES.label}>Größter Gewinn</span>
           <span style={{ ...valueStyle, ...STYLES.valuePositive }}>
-            {format(displayStats.biggestWin)}
+            {formatUsdCentsLine(displayStats.biggestWin)}
           </span>
         </div>
         {(displayStats.biggestMultiplier > 0) && (
@@ -133,7 +137,7 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
         )}
         <div style={STYLES.item}>
           <span style={STYLES.label}>Kontostand</span>
-          <span style={valueStyle}>{format(displayStats.currentBalance)} {currencyCode?.toUpperCase()}</span>
+          <span style={valueStyle}>{formatUsdCentsLine(displayStats.currentBalance)}</span>
         </div>
         {(displayStats.multiOver100xCount > 0 || displayStats.multiOver100xSum > 0) && (
         <div style={STYLES.item}>
@@ -152,7 +156,7 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
               ...((displayStats.currentBalance - displayStats.sessionStartBalance) >= 0 ? STYLES.valuePositive : STYLES.valueNegative),
             }}
           >
-            {format((displayStats.currentBalance - displayStats.sessionStartBalance))}
+            {formatUsdCentsLine(displayStats.currentBalance - displayStats.sessionStartBalance)}
           </span>
         </div>
         )}

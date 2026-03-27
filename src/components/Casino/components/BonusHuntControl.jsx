@@ -235,7 +235,7 @@ export default function BonusHuntControl({
     } catch (_) {}
     const slotMatchesHouseBet = (slotSlug, gameSlug) =>
       !gameSlug ? false : slotSlug === gameSlug || slotSlug.endsWith('-' + gameSlug)
-    houseBetSubRef.current = subscribeToBetUpdates(accessToken, (b) => {
+    houseBetSubRef.current = await subscribeToBetUpdates(accessToken, (b) => {
       const gameSlug = String(b?.gameSlug || '').toLowerCase()
       const hbCurrency = (b?.currency || '').toLowerCase()
       const target = (targetCurrency || 'eur').toLowerCase()

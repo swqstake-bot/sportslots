@@ -7,7 +7,7 @@ import { useUiStore } from '../../store/uiStore';
 import { StakeApi } from '../../api/client';
 import { Queries } from '../../api/queries';
 import { formatStakeAmount } from '../../utils/formatStakeAmount';
-import { getCashoutValue, getEffectiveOdds, getClosedLegsCount, isCashoutDisabledByCustomPrices } from '../../services/cashoutService';
+import { computeCashoutFromPreview, getCashoutValue, getEffectiveOdds, getClosedLegsCount, isCashoutDisabledByCustomPrices, resolveCashoutMultiplierForBet } from '../../services/cashoutService';
 import { useCashoutOffers } from '../../hooks/useCashoutOffers';
 import { useAutoCashout } from '../../hooks/useAutoCashout';
 import { useBetHistory } from '../../hooks/useBetHistory';
@@ -16,6 +16,7 @@ import { AutoCashoutControls } from './AutoCashoutControls';
 import { BetTableSkeleton } from '../ui/BetTableSkeleton';
 import { CollapsibleSection } from './CollapsibleSection';
 import { BetListCard } from './BetListCard';
+import { extractSportBetFromPreviewResponse, logPreviewCashoutDebug } from '../../utils/previewCashoutResponse';
 
 function hasLiveLeg(bet: SportBet): boolean {
   return (bet.outcomes ?? []).some((o: any) => {
@@ -51,7 +52,8 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     userName,
     refreshIntervalMs: 120_000,
     onActiveFetched: (bets) => {
-      setTimeout(() => refreshCashoutOffersRef.current(bets), 2000);
+      // Schneller erste Cashout-Previews; Updates laufen inkrementell (useCashoutOffers)
+      setTimeout(() => refreshCashoutOffersRef.current(bets), 400);
     },
   });
 
@@ -99,9 +101,10 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     // Cashout is per bet.
     for (const id of ids) {
       const bet = activeBets.find(b => b.id === id);
-      if (bet && bet.cashoutMultiplier && !bet.cashoutDisabled) {
+      const mult = bet ? resolveCashoutMultiplierForBet(bet) : 0;
+      if (bet && mult > 0 && !bet.cashoutDisabled) {
          try {
-           await handleCashout(id, bet.cashoutMultiplier);
+           await handleCashout(id, mult);
          } catch (e) {
            console.error(`Failed to cashout ${id}`, e);
          }
@@ -144,19 +147,31 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     const iid = bet?.bet?.iid;
     if (bet.status === 'active' && iid && !bet?.customBet && !isCashoutDisabledByCustomPrices(bet)) {
       try {
-        const preview = await StakeApi.query<{ bet?: { bet?: { payout?: number; cashoutMultiplier?: number } } }>(Queries.PreviewCashout, { iid });
-        const data = preview?.data?.bet?.bet;
+        const preview = await StakeApi.query<{ bet?: unknown }>(Queries.PreviewCashout, { iid });
+        const rootBet = preview?.data?.bet;
+        const data = extractSportBetFromPreviewResponse(rootBet);
+        logPreviewCashoutDebug('modalClick', { betId: bet.id, iid }, preview, rootBet, data);
         if (data) {
-          const hasPayout = data.payout != null && data.payout > 0;
-          const hasMultiplier = data.cashoutMultiplier != null && data.cashoutMultiplier > 0;
+          const payout = Number(data.payout);
+          const cm = Number(data.cashoutMultiplier);
+          const hasPayout = Number.isFinite(payout) && payout > 0;
+          const hasMultiplier = Number.isFinite(cm) && cm > 0;
           if (hasPayout || hasMultiplier) {
-            const mult = hasMultiplier ? data.cashoutMultiplier! : (bet.cashoutMultiplier ?? 0);
-            const value = hasPayout ? data.payout! : getCashoutValue({ ...bet, cashoutMultiplier: mult });
+            const stakeBet = bet.amount != null && Number(bet.amount) > 0 ? Number(bet.amount) : 0;
+            const stakePreview = data.amount != null && Number(data.amount) > 0 ? Number(data.amount) : 0;
+            let mult = hasMultiplier ? cm : (bet.cashoutMultiplier ?? 0);
+            if ((!mult || mult <= 0) && hasPayout && stakeBet > 0) {
+              mult = payout / stakeBet;
+            }
+            const value = computeCashoutFromPreview(bet, { ...data, cashoutMultiplier: mult });
+            const amountMerged =
+              stakeBet > 0 ? bet.amount : stakePreview > 0 ? stakePreview : bet.amount;
             const updatedBet: SportBet = {
               ...bet,
+              ...(amountMerged != null && (bet.amount == null || Number(bet.amount) <= 0) ? { amount: amountMerged } : {}),
               cashoutMultiplier: mult,
               cashoutValue: value,
-              cashoutDisabled: false,
+              cashoutDisabled: data.cashoutDisabled === true,
             };
             setActiveBets((prev) => prev.map((b) => (b.id === bet.id ? updatedBet : b)));
             setPreviewBet(updatedBet);
@@ -194,7 +209,8 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
 
   const sortedBets = React.useMemo(() => {
     const source = activeTab === 'active' ? activeBets : finishedBets;
-    return [...source].sort((a, b) => {
+    const deduped = Array.from(new Map(source.map((b) => [b.id, b])).values());
+    return [...deduped].sort((a, b) => {
         let valA: any = a;
         let valB: any = b;
 

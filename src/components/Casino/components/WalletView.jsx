@@ -172,16 +172,27 @@ export default function WalletView({ accessToken, compact = false, hideTitle = f
 
   useEffect(() => {
     if (!accessToken) return
-    const sub = subscribeToBalanceUpdates(accessToken, (payload) => {
+    let cancelled = false
+    let sub = null
+    subscribeToBalanceUpdates(accessToken, (payload) => {
       if (!payload?.currency) return
       setLiveBalances((prev) => ({
         ...prev,
         [payload.currency]: payload.amount,
       }))
+    }).then((s) => {
+      if (cancelled) {
+        try {
+          s?.disconnect?.()
+        } catch (_) {}
+        return
+      }
+      sub = s
     })
     return () => {
+      cancelled = true
       try {
-        sub.disconnect()
+        sub?.disconnect?.()
       } catch (_) {}
     }
   }, [accessToken])

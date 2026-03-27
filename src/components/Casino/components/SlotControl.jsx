@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo, forwardRef, useImperativeHandle, useSyncExternalStore } from 'react'
 import { getProvider } from '../api/providers'
 import { PROVIDERS as PROVIDERS_BASIC } from '../constants/slots'
 import { PROVIDERS as PROVIDERS_META } from '../constants/providers'
@@ -16,7 +16,8 @@ import { saveSlotSpinSample, saveBonusSpinSample, hasEnoughSamplesForSlot } from
 import { notifyBonusHit } from '../utils/notifications'
 import { loadBetHistory, appendBet } from '../utils/betHistoryDb'
 import { getSlotCurrency, setSlotCurrency } from '../utils/slotCurrencyConfig'
-import { subscribeToBetUpdates, subscribeToBalanceUpdates, DEBUG_HOUSEBETS } from '../api/stakeBalanceSubscription'
+import { subscribeToBetUpdates, subscribeToBalanceUpdates, isDebugHouseBetsEnabled } from '../api/stakeBalanceSubscription'
+import { subscribeHunterSlotTargets, getHunterSlotTargetsSnapshot } from '../utils/hunterSlotTargetsBridge'
 import { fetchCurrencyRates } from '../api/stakeChallenges'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 
@@ -85,7 +86,26 @@ const STYLES = {
 // Platzhalter für Pragmatic (Sugar Rush 1000 IDR: 500, 1000, 2000, …)
 const SESSION_DEPENDENT_BET_LEVELS = [500, 1000, 2000, 5000, 10000, 20000, 50000, 100000]
 
-const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact = false, onLogUpdate, useSharedCurrency = false, sharedSourceCurrency, sharedTargetCurrency, initialTargetCurrency, initialBetHint, initialExpanded = false, sharedCryptoOnly = false }, ref) {
+const EMPTY_TARGET_MULTIS = []
+
+function formatTargetMultiLabel(n) {
+  const x = Number(n)
+  if (!Number.isFinite(x) || x <= 0) return ''
+  return Number.isInteger(x) ? String(x) : x.toFixed(2).replace(/\.?0+$/, '')
+}
+
+const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact = false, onLogUpdate, useSharedCurrency = false, sharedSourceCurrency, sharedTargetCurrency, initialTargetCurrency, initialBetHint, initialMinBetUsd, initialExpanded = false, sharedCryptoOnly = false, challengeTargetMultipliers }, ref) {
+  const hunterBridgeTargets = useSyncExternalStore(
+    subscribeHunterSlotTargets,
+    () => getHunterSlotTargetsSnapshot()[slot.slug] ?? EMPTY_TARGET_MULTIS,
+    () => EMPTY_TARGET_MULTIS
+  )
+  const challengeTargetLabels = useMemo(() => {
+    const fromProp = Array.isArray(challengeTargetMultipliers) ? challengeTargetMultipliers : []
+    const merged = [...new Set([...hunterBridgeTargets, ...fromProp].map(Number).filter((n) => Number.isFinite(n) && n > 0))].sort((a, b) => a - b)
+    return merged.map(formatTargetMultiLabel).filter(Boolean)
+  }, [hunterBridgeTargets, challengeTargetMultipliers])
+
   const provider = getProvider(slot.providerId)
   const [expanded, setExpanded] = useState(initialExpanded)
   const baseBetLevels =
@@ -125,6 +145,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const [autospinStopOnBonus, setAutospinStopOnBonus] = useState(true)
   const [autospinMinScatter, setAutospinMinScatter] = useState(0) // 0=Jeder Bonus, 3/4/5=nur mind. X Scatter
   const [autospinStopOnMulti, setAutospinStopOnMulti] = useState(false)
+  /** Multi-Stopp nur, wenn effektiver Einsatz ~0,10 USD (9–11 USD-Cent); sonst weiterdrehen bis Ziel-Multi bei $0,10 */
+  const [autospinStopMultiOnlyAt010Usd, setAutospinStopMultiOnlyAt010Usd] = useState(true)
   const [autospinStopMultiplier, setAutospinStopMultiplier] = useState(10)
   const [autospinStopOnWin, setAutospinStopOnWin] = useState(false)
   const [autospinStopOnLoss, setAutospinStopOnLoss] = useState(false)
@@ -150,6 +172,47 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   sessionRef.current = session
   slotHasFullSamplesRef.current = slotHasFullSamples
   const [supportedCurrencies, setSupportedCurrencies] = useState(ALL_CURRENCIES)
+
+  const BEST_BET_ID_STORAGE_KEY = 'slotbot_hunter_best_betid_by_slug'
+  const [bestBetId, setBestBetId] = useState(null)
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(BEST_BET_ID_STORAGE_KEY)
+      const map = raw ? JSON.parse(raw) : {}
+      const v = map?.[slot.slug]
+      setBestBetId(typeof v === 'string' && v.trim() ? v : null)
+    } catch {
+      setBestBetId(null)
+    }
+
+    const t = setInterval(() => {
+      try {
+        const raw = localStorage.getItem(BEST_BET_ID_STORAGE_KEY)
+        const map = raw ? JSON.parse(raw) : {}
+        const v = map?.[slot.slug]
+        setBestBetId(typeof v === 'string' && v.trim() ? v : null)
+      } catch {
+        setBestBetId(null)
+      }
+    }, 2000)
+
+    return () => clearInterval(t)
+  }, [slot.slug])
+
+  // Mount log: hilft sicherzustellen, dass die konkrete SlotControl Instanz im UI wirklich läuft.
+  // (Wichtig für deine Frage "keine Subscription-Logs sichtbar".)
+  useEffect(() => {
+    try {
+      console.warn('[SlotControl] mount', {
+        slotSlug: slot?.slug,
+        providerId: slot?.providerId,
+        hasAccessToken: !!accessToken,
+        tokenLen: accessToken?.length,
+      })
+    } catch (_) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slot?.slug])
 
   useEffect(() => {
     if (!accessToken) {
@@ -229,10 +292,27 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
 
   useEffect(() => {
     if (initialBetHint != null && initialBetHint > 0) return
+    if (initialMinBetUsd != null && initialMinBetUsd > 0) return
     const levels = session?.betLevels?.length ? session.betLevels : betLevels
     const idx = Math.min(4, Math.max(0, levels.length - 1))
     setBetAmount(levels[idx] ?? 5000)
-  }, [slot.slug, session?.betLevels, betLevels, initialBetHint])
+  }, [slot.slug, session?.betLevels, betLevels, initialBetHint, initialMinBetUsd])
+
+  /** Mindesteinsatz aus Telegram/Challenge (USD) → kleinstes Level ≥ diesem USD-Wert */
+  useEffect(() => {
+    if (initialBetHint != null && initialBetHint > 0) return
+    if (initialMinBetUsd == null || initialMinBetUsd <= 0) return
+    const minCents = Math.round(Number(initialMinBetUsd) * 100)
+    if (!Number.isFinite(minCents) || minCents <= 0) return
+    const levels = session?.betLevels?.length ? session.betLevels : baseBetLevels
+    const sorted = [...levels].sort((a, b) => a - b)
+    const curr = effectiveTarget
+    const pick = sorted.find((lvl) => {
+      const uc = toUsdCents(lvl, curr)
+      return typeof uc === 'number' && Number.isFinite(uc) && uc >= minCents
+    })
+    if (pick != null) setBetAmount(pick)
+  }, [initialBetHint, initialMinBetUsd, slot.slug, session?.betLevels, betLevels, baseBetLevels, effectiveTarget, toUsdCents])
 
   useEffect(() => {
     setSession(null)
@@ -325,40 +405,126 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
 
   useEffect(() => {
     if (!accessToken) return
-    const balanceSub = subscribeToBalanceUpdates(accessToken, (payload) => {
+    let cancelled = false
+    let balanceSub = null
+    subscribeToBalanceUpdates(accessToken, (payload) => {
       if (!payload?.currency) return
       const curr = (payload.currency || '').toLowerCase()
       if (curr === effectiveTarget.toLowerCase()) {
         setWsBalance(payload.amount != null ? Number(payload.amount) : null)
       }
+    }).then((s) => {
+      if (cancelled) {
+        try {
+          s?.disconnect?.()
+        } catch (_) {}
+        return
+      }
+      balanceSub = s
     })
     return () => {
-      try { balanceSub.disconnect() } catch (_) {}
+      cancelled = true
+      try {
+        balanceSub?.disconnect?.()
+      } catch (_) {}
     }
   }, [accessToken, effectiveTarget])
 
   useEffect(() => {
     if (!accessToken) return
-    if (fillBetHistoryFromPlaceBet && !DEBUG_HOUSEBETS) return // placeBet füllt BetList; bei Debug trotzdem subscriben
-    const sub = subscribeToBetUpdates(accessToken, (b) => {
+    if (fillBetHistoryFromPlaceBet && !isDebugHouseBetsEnabled()) return // placeBet füllt BetList; bei Debug trotzdem subscriben
+
+    // Init-Log: hilft zu erkennen, ob der Subscription-Setup in dieser SlotControl Instanz wirklich läuft
+    try {
+      console.warn('[SlotControl] houseBets subscription init', {
+        slot: slot.slug,
+        providerId: slot.providerId,
+        fillBetHistoryFromPlaceBet,
+        debugHouseBets: isDebugHouseBetsEnabled(),
+        effectiveTarget,
+      })
+    } catch (_) {}
+
+    // Drossel: nur wenige Treffer pro Slot in die Konsole
+    let slotMatchDebugCount = 0
+
+    let cancelled = false
+    let sub = null
+    subscribeToBetUpdates(accessToken, (b) => {
       const slug = String(b?.gameSlug || '')
-      if (DEBUG_HOUSEBETS) {
-        const matches = slug && (slug === slot.slug || slot.slug.endsWith('-' + slug))
-        console.log('[houseBets→SlotControl]', { gameSlug: b?.gameSlug, slotSlug: slot.slug, matches, addToBet: !fillBetHistoryFromPlaceBet, amount: b?.amount, payout: b?.payout })
+      const matches = slug && (slug === slot.slug || slot.slug.endsWith('-' + slug))
+      const shouldLog = isDebugHouseBetsEnabled() && matches && slotMatchDebugCount < 20
+      if (shouldLog) {
+        slotMatchDebugCount += 1
+        console.warn('[houseBets→SlotControl]', {
+          gameSlug: b?.gameSlug,
+          slotSlug: slot.slug,
+          matches,
+          addToBet: !fillBetHistoryFromPlaceBet,
+          amount: b?.amount,
+          payout: b?.payout,
+        })
       }
       if (fillBetHistoryFromPlaceBet) return
       if (!slug) return
-      const matches = slug === slot.slug || slot.slug.endsWith('-' + slug)
       if (!matches) return
       const curr = (b?.currency || 'usd').toLowerCase()
-      // houseBets liefert amount/payout in Major Units (z.B. 0.028 XRP) – konvertieren zu Minor
-      const betAmount = toMinor(Number(b?.amount) || 0, curr)
-      const winAmount = toMinor(Number(b?.payout) || 0, curr)
+      // houseBets liefert amount/payout in Major Units (z.B. 0.028 XRP).
+      // Problemfall: Je nach Bet-Typ ist `payout` entweder "net win" oder "total payout (incl. stake)".
+      // Falls vorhanden, nutzen wir `payoutMultiplier`, um die richtige Interpretation zu wählen,
+      // damit Profit/Win und Multi konsistent sind (BetList + Stats).
+      const betAmountMajor = Number(b?.amount) || 0
+      const payoutMajorRaw = Number(b?.payout) || 0
+      const payoutMultiplier = Number(b?.payoutMultiplier) || 0
+
+      let payoutMajorToUse = payoutMajorRaw
+      if (betAmountMajor > 0 && payoutMultiplier > 0 && payoutMajorRaw >= 0) {
+        const derivedFromRaw = payoutMajorRaw / betAmountMajor
+        const derivedFromNetPlusStake = (payoutMajorRaw + betAmountMajor) / betAmountMajor
+        // Wenn `payout` eigentlich net win ist, sollte net+stake deutlich näher an `payoutMultiplier` liegen.
+        const tol = 0.02 // 2% Toleranz, weil rounding/Definitionen Bet-spezifisch sein können
+        const rawDist = Math.abs(derivedFromRaw - payoutMultiplier)
+        const netStakeDist = Math.abs(derivedFromNetPlusStake - payoutMultiplier)
+        if (netStakeDist + tol < rawDist) payoutMajorToUse = payoutMajorRaw + betAmountMajor
+
+        if (isDebugHouseBetsEnabled() && shouldLog) {
+          const chosenDerived = betAmountMajor > 0 ? payoutMajorToUse / betAmountMajor : null
+          console.warn('[houseBets→SlotControl][dbg-multi]', {
+            slotSlug: slot.slug,
+            gameSlug: b?.gameSlug,
+            currency: b?.currency,
+            id: b?.id,
+            amount: betAmountMajor,
+            payoutRaw: payoutMajorRaw,
+            payoutMultiplier,
+            derivedFromRaw,
+            derivedFromNetPlusStake,
+            rawDist,
+            netStakeDist,
+            payoutMajorToUse,
+            chosenDerived,
+          })
+        }
+      }
+
+      const betAmount = toMinor(betAmountMajor, curr)
+      const winAmount = toMinor(payoutMajorToUse, curr)
       const currencyCode = (b?.currency || '').toUpperCase() || null
       addToBetHistory({ betAmount, winAmount, isBonus: false, balance: undefined, currencyCode, roundId: b?.id })
+    }).then((s) => {
+      if (cancelled) {
+        try {
+          s?.disconnect?.()
+        } catch (_) {}
+        return
+      }
+      sub = s
     })
     return () => {
-      try { sub.disconnect() } catch (_) {}
+      cancelled = true
+      try {
+        sub?.disconnect?.()
+      } catch (_) {}
     }
   }, [accessToken, slot.slug, addToBetHistory, fillBetHistoryFromPlaceBet])
 
@@ -485,8 +651,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     let spinsSinceRefresh = 0
     let winStreak = 0
     let lossStreak = 0
-    let aggTotalWagered = stats.totalWagered
-    let aggTotalWon = stats.totalWon
+    // Summen in USD-Cent (wie stats.totalWagered / totalWon) – konsistent mit Autospin Profit/Loss-Schwellen (ganze USD × 100)
+    let aggWageredUsdCents = stats.totalWagered
+    let aggWonUsdCents = stats.totalWon
 
     while ((autospinCount === 0 || spinsDone < autospinCount) && !autospinCancelRef.current) {
       try {
@@ -533,6 +700,15 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         let winAmount = parsed.winAmount
         // Kein Balance-Delta-Fallback: Vault-Auszahlungen würden als Win erscheinen
 
+        const betCurr = (parsed.currencyCode || effectiveTarget || 'usd').toLowerCase()
+        const betUsdCentsRaw = toUsdCents(effectiveBet, betCurr)
+        const winUsdCentsRaw = toUsdCents(winAmount, betCurr)
+        const betUsdCents = typeof betUsdCentsRaw === 'number' && Number.isFinite(betUsdCentsRaw) ? betUsdCentsRaw : 0
+        const winUsdCents = typeof winUsdCentsRaw === 'number' && Number.isFinite(winUsdCentsRaw) ? winUsdCentsRaw : 0
+        const netAfterUsdCents = (aggWonUsdCents + winUsdCents) - (aggWageredUsdCents + betUsdCents)
+        const profitThresholdUsdCents = Math.max(0, autospinStopProfitValue) * 100
+        const lossThresholdUsdCents = Math.max(0, autospinStopLossValue) * 100
+
         const bonusMeetsScatter = autospinMinScatter <= 0 ||
           (parsed.scatterCount != null && parsed.scatterCount >= autospinMinScatter) ||
           (parsed.scatterCount == null && parsed.isBonus)
@@ -545,15 +721,14 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           break
         }
 
-        const netAfter = (aggTotalWon + winAmount) - (aggTotalWagered + effectiveBet)
-        if (autospinStopOnProfit && netAfter >= autospinStopProfitValue) {
+        if (autospinStopOnProfit && netAfterUsdCents >= profitThresholdUsdCents) {
           lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
           addToBetHistory({ ...parsed, winAmount })
           setError(`Autospin gestoppt: Profit erreicht nach ${spinsDone + 1} Spin(s)`)
           triggerLogRefresh()
           break
         }
-        if (autospinStopOnNetLoss && netAfter <= -Math.max(0, autospinStopLossValue)) {
+        if (autospinStopOnNetLoss && netAfterUsdCents <= -lossThresholdUsdCents) {
           lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
           addToBetHistory({ ...parsed, winAmount })
           setError(`Autospin gestoppt: Loss-Limit erreicht nach ${spinsDone + 1} Spin(s)`)
@@ -563,10 +738,16 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
 
         if (autospinStopOnMulti && winAmount > 0 && effectiveBet > 0) {
           const mult = winAmount / effectiveBet
-          if (mult >= autospinStopMultiplier) {
+          const stakeOkForMultiStop =
+            !autospinStopMultiOnlyAt010Usd ||
+            (betUsdCents >= 9 && betUsdCents <= 11)
+          if (mult >= autospinStopMultiplier && stakeOkForMultiStop) {
             lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
             addToBetHistory({ ...parsed, winAmount })
-            setError(`Autospin gestoppt: ${mult.toFixed(1)}× getroffen nach ${spinsDone + 1} Spin(s)`)
+            const stakeHint = autospinStopMultiOnlyAt010Usd ? ' (~$0,10 Einsatz)' : ''
+            setError(
+              `Autospin gestoppt: ${mult.toFixed(1)}× (≥${autospinStopMultiplier}×)${stakeHint} nach ${spinsDone + 1} Spin(s)`
+            )
             triggerLogRefresh()
             break
           }
@@ -619,8 +800,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         updateStatsFromResult(data, betAmount, extraBet)
         triggerLogRefresh()
         spinsDone += 1
-        aggTotalWagered += effectiveBet
-        aggTotalWon += winAmount
+        aggWageredUsdCents += betUsdCents
+        aggWonUsdCents += winUsdCents
         setAutospinProgress(spinsDone)
       } catch (err) {
         const msg = err?.message || 'Spin fehlgeschlagen'
@@ -669,6 +850,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       autospinStopOnBonus,
       autospinMinScatter,
       autospinStopOnMulti,
+      autospinStopMultiOnlyAt010Usd,
       autospinStopMultiplier,
       autospinStopOnWin,
       autospinStopOnLoss,
@@ -707,6 +889,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     if (s.autospinStopOnBonus != null) setAutospinStopOnBonus(!!s.autospinStopOnBonus)
     if (s.autospinMinScatter != null) setAutospinMinScatter(s.autospinMinScatter)
     if (s.autospinStopOnMulti != null) setAutospinStopOnMulti(!!s.autospinStopOnMulti)
+    if (s.autospinStopMultiOnlyAt010Usd != null) setAutospinStopMultiOnlyAt010Usd(!!s.autospinStopMultiOnlyAt010Usd)
     if (s.autospinStopMultiplier != null) setAutospinStopMultiplier(s.autospinStopMultiplier)
     if (s.autospinStopOnWin != null) setAutospinStopOnWin(!!s.autospinStopOnWin)
     if (s.autospinStopOnLoss != null) setAutospinStopOnLoss(!!s.autospinStopOnLoss)
@@ -728,7 +911,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     startAutospin: handleAutospin,
     getSettings,
     applySettings,
-  }), [accessToken, slot.slug, effectiveSource, effectiveTarget, provider, betLevels, baseBetLevels, session?.betLevels, sourceCurrency, targetCurrency, betAmount, extraBet, autospinCount, autospinStopOnBonus, autospinMinScatter, autospinStopOnMulti, autospinStopMultiplier, autospinStopOnWin, autospinStopOnLoss, autospinStopOnStreak, autospinStopStreakCount, autospinStopStreakType, sessionRefreshSpins])
+  }), [accessToken, slot.slug, effectiveSource, effectiveTarget, provider, betLevels, baseBetLevels, session?.betLevels, sourceCurrency, targetCurrency, betAmount, extraBet, autospinCount, autospinStopOnBonus, autospinMinScatter, autospinStopOnMulti, autospinStopMultiOnlyAt010Usd, autospinStopMultiplier, autospinStopOnWin, autospinStopOnLoss, autospinStopOnStreak, autospinStopStreakCount, autospinStopStreakType, sessionRefreshSpins])
 
   if (!provider) {
     return (
@@ -752,8 +935,56 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       alignItems: 'start',
     }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: settingsCollapsed ? '0.12rem' : (compact ? '0.28rem' : '1rem'), minWidth: 0, color: 'var(--text)' }}>
+      {settingsCollapsed && challengeTargetLabels.length > 0 && (
+        <div
+          style={{ fontSize: '0.58rem', fontWeight: 600, color: 'var(--accent)', lineHeight: 1.2 }}
+          title="Challenge-Ziel-Multiplikator (Auto Hunter / Auswahl)"
+        >
+          {slot.name} · Ziel {challengeTargetLabels.join(' · ')}×
+        </div>
+      )}
       {!settingsCollapsed && (
       <>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', marginBottom: compact ? '0.25rem' : '0.4rem' }}>
+        <span style={{ fontWeight: 700, fontSize: compact ? '0.88rem' : '1.02rem', lineHeight: 1.2, color: 'var(--text)' }}>{slot.name}</span>
+        {challengeTargetLabels.length > 0 && (
+          <span
+            title="Challenge-Ziel-Multiplikator (Auto Hunter / Auswahl)"
+            style={{
+              fontSize: '0.72rem',
+              fontWeight: 600,
+              padding: '0.15rem 0.55rem',
+              background: 'rgba(0, 231, 170, 0.12)',
+              border: '1px solid var(--accent)',
+              borderRadius: 6,
+              color: 'var(--accent)',
+            }}
+          >
+            Ziel: {challengeTargetLabels.join(' · ')}×
+          </span>
+        )}
+        {bestBetId && (
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                if (navigator?.clipboard?.writeText) {
+                  navigator.clipboard.writeText(bestBetId).catch(() => {})
+                  setError('')
+                } else {
+                  setError('Clipboard nicht verfügbar')
+                }
+              } catch {
+                setError('Clipboard Fehler')
+              }
+            }}
+            style={{ ...STYLES.btnSecondary, padding: '0.2rem 0.45rem', fontSize: '0.68rem', marginLeft: '0.25rem' }}
+            title="Beste Bet-ID kopieren (aus ChallengeHunter best Multi)"
+          >
+            Copy Best ID
+          </button>
+        )}
+      </div>
       <div style={{ ...STYLES.section, display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'flex-end' }}>
         {!useSharedCurrency && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -821,7 +1052,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             <option value={4}>4+</option>
             <option value={5}>5</option>
           </select>
-          <label style={{ ...STYLES.checkboxRow, cursor: 'pointer', fontSize: '0.8rem' }}>
+          <label style={{ ...STYLES.checkboxRow, cursor: 'pointer', fontSize: '0.8rem' }} title="Stopp nur, wenn Ziel-Multi bei ca. 0,10 USD Einsatz erreicht wird (nicht bei höherem Einsatz)">
             <input type="checkbox" checked={autospinStopOnMulti} onChange={(e) => setAutospinStopOnMulti(e.target.checked)} style={STYLES.checkbox} />
             Multi
             <input
@@ -834,6 +1065,16 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
               disabled={!autospinStopOnMulti}
             />
             ×
+          </label>
+          <label style={{ ...STYLES.checkboxRow, cursor: 'pointer', fontSize: '0.75rem', opacity: autospinStopOnMulti ? 1 : 0.45 }} title="Nur stoppen, wenn der effektive Einsatz ~0,10 USD entspricht (9–11 USD-Cent nach Umrechnung)">
+            <input
+              type="checkbox"
+              checked={autospinStopMultiOnlyAt010Usd}
+              onChange={(e) => setAutospinStopMultiOnlyAt010Usd(e.target.checked)}
+              style={STYLES.checkbox}
+              disabled={!autospinStopOnMulti}
+            />
+            nur ~$0,10
           </label>
         </div>
         <details style={{ marginTop: '0.35rem', fontSize: '0.8rem' }}>

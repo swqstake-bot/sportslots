@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MatchTracker } from './MatchTracker';
 import type { SportBet } from '../../store/userStore';
-import { getCashoutValue, getEffectiveOdds, getOpenLegsCount } from '../../services/cashoutService';
+import { getCashoutValue, getEffectiveOdds, getOpenLegsCount, resolveCashoutMultiplierForBet } from '../../services/cashoutService';
 
 interface BetListCardProps {
   bet: SportBet;
@@ -59,10 +59,12 @@ export function BetListCard({
   const displayStatus = isCashout ? 'Cashout' : isLostLike ? 'Verloren' : bet.status;
 
   const handleCashout = async () => {
-    if (!bet.cashoutMultiplier || bet.cashoutDisabled) return;
+    if (bet.cashoutDisabled) return;
+    const mult = resolveCashoutMultiplierForBet(bet);
+    if (mult <= 0) return;
     setIsCashingOut(true);
     try {
-      await onCashout(bet.id, bet.cashoutMultiplier);
+      await onCashout(bet.id, mult);
     } finally {
       setIsCashingOut(false);
     }
@@ -105,7 +107,7 @@ export function BetListCard({
                 <>
                   {formatCurrency(bet.amount, bet.currency)} →{' '}
                   <span className="font-mono font-semibold" style={{ color: 'var(--app-accent)' }}>
-                    {bet.cashoutMultiplier != null && bet.cashoutMultiplier > 0 && !bet.cashoutDisabled
+                    {!bet.cashoutDisabled && getCashoutValue(bet) > 0
                       ? formatCurrency(getCashoutValue(bet), bet.currency)
                       : '–'}
                   </span>
@@ -227,11 +229,10 @@ export function BetListCard({
         </AnimatePresence>
       </div>
 
-      {/* Cashout CTA – only when active and available */}
+      {/* Cashout CTA – show when we have a cashout value (Preview or estimate) */}
       {bet.status === 'active' &&
         !bet.cashoutDisabled &&
-        bet.cashoutMultiplier != null &&
-        bet.cashoutMultiplier > 0 && (
+        getCashoutValue(bet) > 0 && (
           <div className="border-t px-5 py-4" style={{ borderColor: 'var(--app-border)', background: 'rgba(0,0,0,0.15)' }}>
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <div>

@@ -161,7 +161,13 @@ export function parseBetResponse(response, betAmount) {
     ? Number(response.accountBalance.balance)
     : null
   const currencyCode = response?.accountBalance?.currencyCode || null
-  const roundId = response?.round?.roundId ?? response?.round?.id ?? response?.roundId ?? null
+  const roundId =
+    response?.round?.roundId ??
+    response?.round?.id ??
+    response?.round?.betID ??
+    response?.round?.betId ??
+    response?.roundId ??
+    null
 
   // DETEKTION VOR DEM WIN-EXTRAHIEREN LAUFEN LASSEN
   // Grund: Wenn wir einen Bonus erkennen, müssen wir ggf. Events ignorieren (Instant Bonus Win Bug)
@@ -309,11 +315,22 @@ export function parseBetResponse(response, betAmount) {
 
   // WIN EXTRACTION MIT BONUS-FILTER
   let winAmount = 0
-  if (success && response?.round?.winAmountDisplay != null) {
+  let usedStakeEngineWinMinor = false
+  const seWinMinor = response?._stakeEngine?.winMinor
+  // stakeEngine.placeBet setzt winMinor in Minor-Units — zuerst nutzen, damit round.state/Events/Bonus-Heuristiken
+  // den Gewinn nicht überschreiben (Colorful Play / Black Coffee liefern oft große `state`-Arrays).
+  if (success && response?._stakeEngine != null && seWinMinor !== undefined && seWinMinor !== null) {
+    const n = Number(seWinMinor)
+    if (Number.isFinite(n)) {
+      winAmount = n
+      usedStakeEngineWinMinor = true
+    }
+  }
+  if (success && !usedStakeEngineWinMinor && response?.round?.winAmountDisplay != null) {
     // Stake Engine liefert oft den korrekten End-Betrag (Vorsicht: bei Instant Bonus könnte auch hier schon alles drin sein?)
     // Wir vertrauen winAmountDisplay meistens, aber bei Hacksaw Instant Bonus ist es sicherer, die Events zu filtern.
     winAmount = Number(response.round.winAmountDisplay)
-  } else if (success && response?.round?.events) {
+  } else if (success && !usedStakeEngineWinMinor && response?.round?.events) {
     const events = response.round.events
     const hasFeatureExit = events.some((ev) => String(ev?.etn || '').toLowerCase() === 'feature_exit')
     // Nur filtern wenn Bonus GESTOPPT (nicht durchgespielt). Bei feature_exit = Bonus fertig → alle Events nutzen.

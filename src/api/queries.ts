@@ -419,6 +419,26 @@ export const Queries = {
   ${FixturePreview}
   ${SportGroupTemplates}`,
 
+  TournamentTableList: `query TournamentTableList($sport: String!) {
+    slugSport(sport: $sport) {
+      id
+      name
+      slug
+      categoryList(limit: 100, type: active) {
+        id
+        name
+        slug
+        fixtureCount(type: active)
+        tournamentList(limit: 50, type: active) {
+          id
+          name
+          slug
+          fixtureCount(type: active)
+        }
+      }
+    }
+  }`,
+
   FetchFixtureMarkets: `query FetchFixtureMarkets($fixture: String!, $groups: [String!]!) {
     slugFixture(fixture: $fixture) {
       id
@@ -430,6 +450,24 @@ export const Queries = {
     }
   }
   ${SportGroupWithMarkets}`,
+
+  SlugTournamentFixtureList: `query SlugTournamentFixtureList($sport: String!, $category: String!, $tournament: String!, $group: String!, $type: SportSearchEnum!, $limit: Int!) {
+    slugTournament(sport: $sport, category: $category, tournament: $tournament) {
+      id
+      name
+      slug
+      fixtureList(type: $type, limit: $limit) {
+        ...FixturePreview
+        ...UfcFrontRowSeat
+        groups(groups: [$group], status: [active, suspended, deactivated]) {
+          ...SportGroupTemplates
+        }
+      }
+    }
+  }
+  ${FixturePreview}
+  ${UfcFrontRowSeat}
+  ${SportGroupTemplates}`,
 
   SportIndex: `query SportIndex($sport: String!, $group: String!, $type: SportSearchEnum = popular, $limit: Int = 10) {
     slugSport(sport: $sport) {
@@ -530,6 +568,7 @@ export const Queries = {
   }
   ${SportBetPreview_SportBet}`,
 
+  /** `bet.bet` = Union `BetBet` – SGM/Multi oft `SportsbookXMultiBet` oder `SwishBet`, nicht `SportBet`. */
   PreviewCashout: `query PreviewCashout($iid: String!) {
     bet(iid: $iid) {
       ... on Bet {
@@ -540,6 +579,23 @@ export const Queries = {
             amount
             currency
             payout
+            cashoutDisabled
+          }
+          ... on SportsbookXMultiBet {
+            id
+            cashoutMultiplier
+            amount
+            currency
+            payout
+            cashoutDisabled
+          }
+          ... on SwishBet {
+            id
+            cashoutMultiplier
+            amount
+            currency
+            payout
+            cashoutDisabled
           }
         }
       }

@@ -15,6 +15,23 @@ const FINISHED_STATUSES = [
   'cashoutPending',
 ];
 
+/** Liste liefert oft keinen Cashout – Preview-Werte nicht bei jedem Poll verlieren. */
+function mergePreviewCashoutFields(server: SportBet, prev: SportBet | undefined): SportBet {
+  if (!prev) return server;
+  const merged = { ...server };
+  const pv = Number(prev.cashoutValue);
+  const sv = Number(merged.cashoutValue);
+  if (Number.isFinite(pv) && pv > 0 && (!Number.isFinite(sv) || sv <= 0)) {
+    merged.cashoutValue = prev.cashoutValue;
+  }
+  const pm = Number(prev.cashoutMultiplier);
+  const sm = Number(merged.cashoutMultiplier);
+  if (Number.isFinite(pm) && pm > 0 && (!Number.isFinite(sm) || sm <= 0)) {
+    merged.cashoutMultiplier = prev.cashoutMultiplier;
+  }
+  return merged;
+}
+
 export interface UseBetHistoryOptions {
   userName: string | undefined;
   refreshIntervalMs?: number;
@@ -33,6 +50,8 @@ export function useBetHistory({
   const [usdRates, setUsdRates] = useState<Record<string, number>>({});
   const onActiveFetchedRef = useRef(onActiveFetched);
   onActiveFetchedRef.current = onActiveFetched;
+  const loadingActiveRef = useRef(false);
+  const loadingFinishedRef = useRef(false);
 
   const fetchUsdRates = useCallback(async () => {
     try {
@@ -52,7 +71,8 @@ export function useBetHistory({
 
   const fetchActiveBets = useCallback(async () => {
     if (!userName) return;
-    if (isLoadingActive) return;
+    if (loadingActiveRef.current) return;
+    loadingActiveRef.current = true;
     setIsLoadingActive(true);
     try {
       let offset = 0;
@@ -72,18 +92,23 @@ export function useBetHistory({
         await new Promise((r) => setTimeout(r, 300));
       }
       const unique = Array.from(new Map(all.map((b) => [b.id, b])).values());
-      setActiveBets(unique);
+      setActiveBets((prev) => {
+        const prevById = new Map(prev.map((b) => [b.id, b]));
+        return unique.map((b) => mergePreviewCashoutFields(b, prevById.get(b.id)));
+      });
       if (unique.length > 0) onActiveFetchedRef.current?.(unique);
     } catch (err) {
       console.error('Error fetching active bets:', err);
     } finally {
       setIsLoadingActive(false);
+      loadingActiveRef.current = false;
     }
   }, [userName]);
 
   const fetchFinishedBets = useCallback(async () => {
     if (!userName) return;
-    if (isLoadingFinished) return;
+    if (loadingFinishedRef.current) return;
+    loadingFinishedRef.current = true;
     setIsLoadingFinished(true);
     try {
       let offset = 0;
@@ -110,6 +135,7 @@ export function useBetHistory({
       console.error('Error fetching finished bets:', err);
     } finally {
       setIsLoadingFinished(false);
+      loadingFinishedRef.current = false;
     }
   }, [userName]);
 
