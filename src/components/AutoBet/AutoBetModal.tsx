@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAutoBetStore, type AutoBetStrategy } from '../../store/autoBetStore';
 import { TournamentEventPickFields } from './TournamentEventPickFields';
+import { EventMarketsScanner } from './EventMarketsScanner';
 import { hasTournamentScope } from '../../utils/tournamentScope';
 
 interface AutoBetModalProps {
@@ -8,7 +9,14 @@ interface AutoBetModalProps {
 }
 
 const STRATEGIES: AutoBetStrategy[] = [
-  'Smart', 'Conservative', 'Aggressive', 'Balanced', 'Favorites', 'Underdogs', 'ValueHunter'
+  'Smart',
+  'Conservative',
+  'Aggressive',
+  'Balanced',
+  'Favorites',
+  'Underdogs',
+  'ValueHunter',
+  'RandomOdds',
 ];
 
 export function AutoBetModal({ onClose }: AutoBetModalProps) {
@@ -161,6 +169,15 @@ export function AutoBetModal({ onClose }: AutoBetModalProps) {
                   <TournamentEventPickFields
                     settings={settings}
                     updateSettings={updateSettings}
+                    selectClass="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white focus:border-green-500 outline-none appearance-none cursor-pointer"
+                    inputClass="w-full bg-gray-900 border border-gray-700 rounded p-2 text-xs font-mono text-white focus:border-green-500 outline-none"
+                    inputSelectStyle={{ background: '#111827', border: '1px solid #374151', color: '#fff' }}
+                    labelClass="block text-sm font-bold text-gray-400 mb-2"
+                    labelStyle={{}}
+                    variant="modal"
+                  />
+                  <EventMarketsScanner
+                    settings={settings}
                     selectClass="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white focus:border-green-500 outline-none appearance-none cursor-pointer"
                     inputClass="w-full bg-gray-900 border border-gray-700 rounded p-2 text-xs font-mono text-white focus:border-green-500 outline-none"
                     inputSelectStyle={{ background: '#111827', border: '1px solid #374151', color: '#fff' }}

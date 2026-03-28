@@ -1,7 +1,22 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type AutoBetStrategy = 'Smart' | 'Conservative' | 'Aggressive' | 'Balanced' | 'Favorites' | 'Underdogs' | 'Diverse' | 'ValueHunter' | 'Momentum' | 'Martingale' | 'Fibonacci' | 'Kelly' | 'Value';
+export type AutoBetStrategy =
+  | 'Smart'
+  | 'Conservative'
+  | 'Aggressive'
+  | 'Balanced'
+  | 'Favorites'
+  | 'Underdogs'
+  | 'Diverse'
+  | 'ValueHunter'
+  | 'Momentum'
+  | 'Martingale'
+  | 'Fibonacci'
+  | 'Kelly'
+  | 'Value'
+  /** Zufällige Auswahl unter Kandidaten, deren Quoten bereits zwischen Min und Max liegen */
+  | 'RandomOdds';
 
 export interface AutoBetLog {
   id: string;

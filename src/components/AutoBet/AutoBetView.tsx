@@ -5,10 +5,18 @@ import { StakeApi } from '../../api/client';
 import { Queries } from '../../api/queries';
 import { AccordionSection } from '../ui/AccordionSection';
 import { TournamentEventPickFields } from './TournamentEventPickFields';
+import { EventMarketsScanner } from './EventMarketsScanner';
 import { hasTournamentScope } from '../../utils/tournamentScope';
 
 const STRATEGIES: AutoBetStrategy[] = [
-  'Smart', 'Conservative', 'Aggressive', 'Balanced', 'Favorites', 'Underdogs', 'ValueHunter'
+  'Smart',
+  'Conservative',
+  'Aggressive',
+  'Balanced',
+  'Favorites',
+  'Underdogs',
+  'ValueHunter',
+  'RandomOdds',
 ];
 
 export function AutoBetView() {
@@ -177,6 +185,15 @@ export function AutoBetView() {
                         <TournamentEventPickFields
                           settings={settings}
                           updateSettings={updateSettings}
+                          selectClass={selectClass}
+                          inputClass={inputClass}
+                          inputSelectStyle={inputSelectStyle}
+                          labelClass={labelClass}
+                          labelStyle={labelStyle}
+                          variant="app"
+                        />
+                        <EventMarketsScanner
+                          settings={settings}
                           selectClass={selectClass}
                           inputClass={inputClass}
                           inputSelectStyle={inputSelectStyle}

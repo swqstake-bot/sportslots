@@ -6,6 +6,7 @@ import { Queries } from '../api/queries';
 import { setShieldOdds } from '../store/shieldOddsCache';
 import { fetchCurrencyRates } from '../components/Casino/api/stakeChallenges';
 import { resolveTournamentScope } from '../utils/tournamentScope';
+import { MAIN_FIXTURE_MARKET_GROUP_SLUGS } from '../constants/fixtureMarketGroups';
 
 // Helper to generate UUID for bets
 const generateUUID = () => {
@@ -63,6 +64,59 @@ function sortSportBetCandidates(
   });
 }
 
+function shuffleInPlace<T>(arr: T[]): void {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+/** RandomOdds: Kandidaten sind schon im Min–Max-Quotenbereich; Reihenfolge zufällig statt Anstoß/Live-Sortierung. */
+function applyCandidateOrder(
+  strategy: string,
+  candidates: Array<{ fixtureStartTimeMs?: number; isLive?: boolean }>,
+  gameType: 'live' | 'upcoming' | 'all',
+  forceUpcoming: boolean
+): void {
+  if (strategy === 'RandomOdds') {
+    shuffleInPlace(candidates);
+    return;
+  }
+  sortSportBetCandidates(candidates, gameType, forceUpcoming);
+}
+
+/**
+ * Baut einen Schein mit zufälliger Spiel- und Zeilenauswahl (nicht „erste passende Zeilen“ in Sortierreihenfolge).
+ * Verhindert, dass bei vielen Outcomes pro Spiel die Rotation nur minimal springt und fast dieselben 13er entstehen.
+ */
+function buildSlipRandomized(
+  candidates: any[],
+  targetLegs: number,
+  isCompatible: (newCand: any, currentSelections: any[]) => boolean
+): any[] {
+  const byFixture = new Map<string, any[]>();
+  for (const c of candidates) {
+    if (!byFixture.has(c.fixtureId)) byFixture.set(c.fixtureId, []);
+    byFixture.get(c.fixtureId)!.push(c);
+  }
+  const sel: any[] = [];
+  const usedFixtures = new Set<string>();
+  for (let leg = 0; leg < targetLegs; leg++) {
+    const eligible: { fixtureId: string; outs: any[] }[] = [];
+    for (const [fid, outs] of byFixture) {
+      if (usedFixtures.has(fid)) continue;
+      const compatible = outs.filter((o) => isCompatible(o, sel));
+      if (compatible.length) eligible.push({ fixtureId: fid, outs: compatible });
+    }
+    if (eligible.length === 0) break;
+    const bucket = eligible[Math.floor(Math.random() * eligible.length)];
+    const pick = bucket.outs[Math.floor(Math.random() * bucket.outs.length)];
+    sel.push(pick);
+    usedFixtures.add(bucket.fixtureId);
+  }
+  return sel;
+}
+
 /**
  * slugTournament.fixtureList expects SportSearchEnum; Stake uses `active` for open markets (see TournamentIndex),
  * not `upcoming`. Passing `upcoming` can trigger API validation errors (e.g. error.number_less_equal).
@@ -116,7 +170,11 @@ export function useAutoBetEngine() {
     let scheduled150Retry = false;
 
     const tournamentParsed = resolveTournamentScope(settings);
-    const startParts = [`Sport setting: ${settings.sportSlug}`, `GameType: ${settings.gameType}`];
+    const startParts = [
+      `Sport setting: ${settings.sportSlug}`,
+      `GameType: ${settings.gameType}`,
+      `Strategie: ${settings.strategy}`,
+    ];
     if (tournamentParsed) {
       startParts.push(
         `Turnier: /sports/${tournamentParsed.sport}/${tournamentParsed.category}/${tournamentParsed.tournament}`
@@ -449,7 +507,7 @@ export function useAutoBetEngine() {
                         // Fetch details to find more markets (undercards)
                         // Use a broad list of groups to cover most sports
                         // Removed 'all' to avoid potential conflict, focused on specific market groups
-                        const groupList = ['main', 'match', 'score', 'quarters', 'halves', 'innings', 'sets', 'rounds', 'points', 'goals', 'corners', 'cards', 'player_props', 'fight_lines', 'method_of_victory'];
+                        const groupList = [...MAIN_FIXTURE_MARKET_GROUP_SLUGS];
                         
                         // Only fetch details if we really need them (e.g. if main groups are empty or we want deep markets)
                         // For now, always fetch to ensure we see everything as requested
@@ -552,7 +610,7 @@ export function useAutoBetEngine() {
       }
 
       const forceUpcomingGlobal = settings.stakeShield?.enabled || settings.ignoreLiveGames;
-      sortSportBetCandidates(candidates, settings.gameType, forceUpcomingGlobal);
+      applyCandidateOrder(settings.strategy, candidates, settings.gameType, forceUpcomingGlobal);
 
       // 5. Pick (order: upcoming = nächster Anstoß zuerst; live-only = zufällig)
       if (candidates.length === 0) {
@@ -573,8 +631,6 @@ export function useAutoBetEngine() {
       
       // Use a local balance tracker to prevent overspending before the store updates
       let localAvailableBalance = currentBalance;
-      /** Nach Sortierung sonst immer dieselben ersten N Legs → gleiche Kombination. Rotieren + Duplikat-Check. */
-      let slipRotateOffset = 0;
       /** Bereits in diesem AutoBet-Durchlauf platzierte outcomeId-Kombinationen (nicht erneut wählen). */
       const placedSlipSignatures = new Set<string>();
 
@@ -626,7 +682,7 @@ export function useAutoBetEngine() {
         }
 
         const forceUpcomingLoop = currentSettings.stakeShield?.enabled || currentSettings.ignoreLiveGames;
-        sortSportBetCandidates(candidates, currentSettings.gameType, forceUpcomingLoop);
+        applyCandidateOrder(currentSettings.strategy, candidates, currentSettings.gameType, forceUpcomingLoop);
 
         const minLegsToUse = currentSettings.stakeShield?.enabled 
             ? Math.max(currentSettings.minLegs, (currentSettings.stakeShield.legsThatCanLose || 0) + 1, 3) 
@@ -660,33 +716,20 @@ export function useAutoBetEngine() {
             return true;
         };
 
-        const rotLen = candidates.length;
-        const rotN = Math.max(1, rotLen);
+        const rotN = Math.max(1, candidates.length);
+        const maxPickAttempts = Math.max(100, rotN * 4);
 
-        const buildSelectionsFromOffset = (baseOffset: number) => {
-          const sel: any[] = [];
-          const used = new Set<string>();
-          const rotBase = rotLen > 0 ? baseOffset % rotLen : 0;
-          const rotatedCandidates =
-            rotLen === 0 ? [] : [...candidates.slice(rotBase), ...candidates.slice(0, rotBase)];
-          for (const cand of rotatedCandidates) {
-            if (sel.length >= targetLegs) break;
-            if (used.has(cand.fixtureId)) continue;
-            if (!isCompatible(cand, sel)) continue;
-            sel.push(cand);
-            used.add(cand.fixtureId);
+        let selections: any[] = [];
+        let pickAttempts = 0;
+        while (pickAttempts < maxPickAttempts) {
+          selections = buildSlipRandomized(candidates, targetLegs, isCompatible);
+          if (selections.length < minLegsToUse) {
+            pickAttempts++;
+            continue;
           }
-          return sel;
-        };
-
-        let selections = buildSelectionsFromOffset(slipRotateOffset);
-        let offsetTries = 0;
-        while (selections.length >= minLegsToUse && offsetTries < rotN) {
           const sigTry = slipSignature(selections.map((s) => s.outcomeId));
           if (!placedSlipSignatures.has(sigTry)) break;
-          offsetTries++;
-          slipRotateOffset = (slipRotateOffset + 1) % rotN;
-          selections = buildSelectionsFromOffset(slipRotateOffset);
+          pickAttempts++;
         }
 
         if (selections.length < minLegsToUse) {
@@ -699,10 +742,9 @@ export function useAutoBetEngine() {
         const slipSig = slipSignature(selections.map((s) => s.outcomeId));
         if (placedSlipSignatures.has(slipSig)) {
             addLog(
-              'Keine noch nicht vergebene Kombination in diesem Scan (alle Offsets probiert). Nächster Versuch…',
+              'Keine noch nicht vergebene Kombination in diesem Scan (Zufallsversuche erschöpft). Nächster Versuch…',
               'warning'
             );
-            slipRotateOffset = (slipRotateOffset + 1) % rotN;
             consecutiveFailures++;
             await new Promise((r) => setTimeout(r, 400));
             continue;
@@ -858,7 +900,6 @@ export function useAutoBetEngine() {
                 consecutiveFailures = 0; // Reset failure count
                 addLog(`Bet #${placedBetsCount.current}/${maxBets} placed successfully — ID: ${betId}`, 'success');
                 placedSlipSignatures.add(slipSignature(outcomeIds));
-                slipRotateOffset = (slipRotateOffset + Math.max(1, selections.length)) % rotN;
                 
                 // === Cover with Shield Logic ===
                 if (currentSettings.coverWithShield && betPlaced) {
@@ -953,8 +994,7 @@ export function useAutoBetEngine() {
               msg.includes('same bet') ||
               (msg.includes('wait') && msg.includes('5') && msg.includes('second'));
             if (isSameBetCooldown) {
-              addLog('Same-bet (API): rotiere Schein – keine identische Kombination erneut.', 'warning');
-              slipRotateOffset = (slipRotateOffset + 1) % Math.max(1, candidates.length);
+              addLog('Same-bet (API): neuer Zufalls-Schein – keine identische Kombination erneut.', 'warning');
               continue;
             }
             const is150Limit = msg.includes('150') && (msg.includes('active') || msg.includes('sport bet'));
