@@ -3,7 +3,14 @@
  * Dependency Injection statt React-Closures.
  */
 import { getProvider } from '../api/providers'
-import { placePacksBet } from '../api/stakeOriginalsBets'
+import {
+  placeDiceBet,
+  placeKenoBet,
+  placeLimboBet,
+  placeMinesBet,
+  placePacksBet,
+  placePlinkoBet,
+} from '../api/stakeOriginalsBets'
 import { isFiat, formatAmount, toUnits, toMinor, ZERO_DECIMAL_CURRENCIES } from '../utils/formatAmount'
 import { parseBetResponse } from '../utils/parseBetResponse'
 import { CURRENCY_GROUPS, PROVIDER_CURRENCIES } from '../constants/currencies'
@@ -72,6 +79,73 @@ const SESSION_PROBE_DELAY_MS = 400
 export const HUNTER_SPIN_DELAY_MS = 150
 export const HUNTER_SPIN_ERROR_RETRY_MS = 2000
 const AUTO_PROBE_EXCLUDED_CURRENCIES = new Set(['usdc', 'usdt'])
+const DIRECT_ORIGINALS_SLUGS = new Set(['packs', 'dice', 'limbo', 'mines', 'plinko', 'keno'])
+
+function getPlinkoRiskForChallenge(challenge) {
+  const hint = String(challenge?.originalsObjective || '').toLowerCase()
+  if (/\bhigh\b/.test(hint)) return 'high'
+  if (/\bmedium\b/.test(hint)) return 'medium'
+  if (/\blow\b/.test(hint)) return 'low'
+  const target = Number(challenge?.targetMultiplier)
+  if (Number.isFinite(target) && target >= 1000) return 'high'
+  if (Number.isFinite(target) && target >= 100) return 'medium'
+  return 'low'
+}
+
+async function placeDirectOriginalsBet(gSlug, amountFloat, currency, challenge) {
+  const slug = String(gSlug || '').toLowerCase()
+  if (slug === 'packs') {
+    const identifier = String(challenge?.casesBetIdentifier || '').trim()
+    if (!identifier) throw new Error('casesBet: identifier fehlt')
+    return placePacksBet({
+      amount: amountFloat,
+      currency,
+      identifier,
+      difficulty: challenge?.casesBetDifficulty || 'medium',
+    })
+  }
+  if (slug === 'limbo') {
+    const target = Number(challenge?.targetMultiplier)
+    return placeLimboBet({
+      amount: amountFloat,
+      currency,
+      targetMultiplier: Number.isFinite(target) && target > 1 ? target : 2,
+    })
+  }
+  if (slug === 'dice') {
+    return placeDiceBet({
+      amount: amountFloat,
+      currency,
+      rollUnder: 49.5,
+      rollOver: false,
+    })
+  }
+  if (slug === 'plinko') {
+    const risk = getPlinkoRiskForChallenge(challenge)
+    return placePlinkoBet({
+      amount: amountFloat,
+      currency,
+      rows: 16,
+      risk,
+    })
+  }
+  if (slug === 'keno') {
+    return placeKenoBet({
+      amount: amountFloat,
+      currency,
+      picks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      risk: 'low',
+    })
+  }
+  if (slug === 'mines') {
+    return placeMinesBet({
+      amount: amountFloat,
+      currency,
+      mineCount: 3,
+    })
+  }
+  throw new Error(`Originals direct not supported: ${slug}`)
+}
 
 function computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd) {
   let targetBetUnits = minBetUsd / rate
@@ -242,9 +316,10 @@ export async function runTelegramChallengeSession(ctx) {
   }
 
   try {
-    const isPacksOriginal = gSlug === 'packs'
-    const provider = isPacksOriginal ? null : await getProvider(slot.providerId)
-    if (!provider && !isPacksOriginal) throw new Error(`Kein Provider für ${slot.providerId}`)
+    const isDirectOriginals = DIRECT_ORIGINALS_SLUGS.has(String(gSlug || '').toLowerCase())
+    const isPacksOriginal = String(gSlug || '').toLowerCase() === 'packs'
+    const provider = isDirectOriginals ? null : await getProvider(slot.providerId)
+    if (!provider && !isDirectOriginals) throw new Error(`Kein Provider für ${slot.providerId}`)
 
     const sCurr = sourceCurrency.toLowerCase()
     const providerId = isPacksOriginal ? 'stakeEngine' : slot.providerId || 'stakeEngine'
@@ -256,10 +331,10 @@ export async function runTelegramChallengeSession(ctx) {
     let rate
     let betAmount
 
-    // Packs/Originals: immer in Source-Währung setzen (echte Wallet-Balance),
+    // Originals direkt per Stake GraphQL: immer in Source-Währung setzen (echte Wallet-Balance),
     // sonst kann ein "insufficientBalance" auftreten, wenn z.B. USD gewählt ist,
     // aber das Guthaben in USDT/XRP liegt.
-    if (isPacksOriginal) {
+    if (isDirectOriginals) {
       tCurr = sCurr
       session = { betLevels: [] }
       rate = getRateForCurrency(rates, tCurr)
@@ -267,11 +342,11 @@ export async function runTelegramChallengeSession(ctx) {
       const computed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
       betAmount = computed.betAmount
       log(
-        `Packs fixed currency: ${sCurr.toUpperCase()} -> ${tCurr.toUpperCase()} (immer Source); effektiv ~$${computed.usdAt.toFixed(2)} (Min $${minBetUsd})`
+        `Originals direct currency: ${sCurr.toUpperCase()} -> ${tCurr.toUpperCase()} (immer Source); effektiv ~$${computed.usdAt.toFixed(2)} (Min $${minBetUsd})`
       )
     }
 
-    if (autoOptimalTargetCurrency) {
+    if (autoOptimalTargetCurrency && !isDirectOriginals) {
       const allowed = getAllowedTargetCurrenciesForSlot(providerId)
       const probeAllowed = allowed.filter((c) => !AUTO_PROBE_EXCLUDED_CURRENCIES.has(String(c).toLowerCase()))
       const allowedFiat = probeAllowed.filter((c) => isFiat(c))
@@ -370,28 +445,32 @@ export async function runTelegramChallengeSession(ctx) {
         let win
         let safeMulti
 
-        if (isPacksOriginal) {
+        if (isDirectOriginals) {
           const amountFloat = toUnits(betAmount, tCurr)
-          const packsBet = await placePacksBet({
-            amount: amountFloat,
-            currency: tCurr,
-            identifier: casesBetIdentity,
-            difficulty: casesBetDifficulty,
-          })
-          if (!packsBet) throw new Error('Packs/Cases: keine Antwort (casesBet)')
-          const stakeRet = Number(packsBet.amount)
-          const payoutRet = Number(packsBet.payout)
+          const directBet = await placeDirectOriginalsBet(
+            gSlug,
+            amountFloat,
+            tCurr,
+            {
+              targetMultiplier: challenge?.targetMultiplier,
+              casesBetIdentifier: casesBetIdentity,
+              casesBetDifficulty,
+            }
+          )
+          if (!directBet) throw new Error('Originals: keine gültige Bet-Antwort')
+          const stakeRet = Number(directBet.amount)
+          const payoutRet = Number(directBet.payout)
           if (!Number.isFinite(stakeRet) || !Number.isFinite(payoutRet)) {
-            throw new Error('Packs: ungültige Bet-Antwort')
+            throw new Error('Originals: ungültige Bet-Antwort')
           }
           data = {
             statusCode: 0,
             accountBalance: { balance: null, currencyCode: tCurr },
             round: {
-              roundId: packsBet.id,
+              roundId: directBet.id,
               winAmountDisplay: toMinor(payoutRet, tCurr),
             },
-            _stakeEngine: { raw: { casesBet: packsBet, packsBet } },
+            _stakeEngine: { raw: { originalBet: directBet, casesBet: isPacksOriginal ? directBet : null, packsBet: isPacksOriginal ? directBet : null } },
           }
           parsed = parseBetResponse(data, betAmount)
           win = parsed.winAmount || 0
@@ -403,13 +482,13 @@ export async function runTelegramChallengeSession(ctx) {
             won: t.won + Math.max(0, netSpinUsd),
             lost: t.lost + Math.max(0, -netSpinUsd),
           }))
-          const payoutMultRaw = Number(packsBet.payoutMultiplier ?? 0)
+          const payoutMultRaw = Number(directBet.payoutMultiplier ?? 0)
           safeMulti = effectiveSpinMultiplierFromParsed(payoutMultRaw, parsed)
           if (!Number.isFinite(safeMulti) || safeMulti <= 0) {
             safeMulti = stakeRet > 0 ? payoutRet / stakeRet : 0
           }
-          if (chainCasesBetIdentifier !== false && packsBet?.id) {
-            casesBetIdentity = String(packsBet.id)
+          if (isPacksOriginal && chainCasesBetIdentifier !== false && directBet?.id) {
+            casesBetIdentity = String(directBet.id)
           }
         } else {
           const result = await provider.placeBet(session, betAmount, false, false)

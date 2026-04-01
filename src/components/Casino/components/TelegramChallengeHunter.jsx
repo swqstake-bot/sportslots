@@ -27,6 +27,7 @@ const TG_CASES_BET_ID_KEY = 'slotbot_tg_cases_bet_identifier_v1'
 const TG_CASES_BET_CHAIN_KEY = 'slotbot_tg_cases_bet_chain_identifier_v1'
 const TG_CASES_BET_DIFFICULTY_KEY = 'slotbot_tg_cases_bet_difficulty_v1'
 const CASES_DIFFICULTY_OPTIONS = ['easy', 'medium', 'hard', 'expert']
+const DIRECT_ORIGINALS_SLUGS = new Set(['packs', 'dice', 'limbo', 'mines', 'plinko', 'keno'])
 
 function getRateForCurrency(rates, tCurr) {
   const c = (tCurr || '').toLowerCase()
@@ -94,6 +95,7 @@ function getElectronApi() {
 
 function buildTelegramChallenge(parsed, game, messageKey) {
   const id = `tg_${messageKey}_${game.slug}`.replace(/[^a-zA-Z0-9_-]/g, '_')
+  const isOriginalBySlug = DIRECT_ORIGINALS_SLUGS.has(String(game?.slug || '').toLowerCase())
   const originalsOpenEnded = shouldUseOriginalsOpenEnded(parsed)
   const tgt = originalsOpenEnded ? 0 : pickPrimaryTargetMultiplier(parsed)
   const defaultMin =
@@ -113,7 +115,7 @@ function buildTelegramChallenge(parsed, game, messageKey) {
     minBetUsd: minBet,
     targetMultiplier: tgt,
     originalsOpenEnded,
-    isOriginalsChallenge: !!parsed.isOriginalsChallenge,
+    isOriginalsChallenge: !!parsed.isOriginalsChallenge || isOriginalBySlug,
     originalsObjective: parsed.originalsObjectiveHint || null,
     packsHints:
       game.slug === 'packs' ? parsePacksChallengeHints(parsed.originalsObjectiveHint || '') : null,
@@ -344,10 +346,11 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
       for (const g of p.games) {
         if (!known.has(g.slug)) {
           known.add(g.slug)
+          const isOriginal = !!p.isOriginalsChallenge || DIRECT_ORIGINALS_SLUGS.has(String(g.slug || '').toLowerCase())
           added.push({
             slug: g.slug,
             name: g.name,
-            providerId: g.slug === 'packs' ? 'stakeOriginals' : 'stakeEngine',
+            providerId: isOriginal || g.slug === 'packs' ? 'stakeOriginals' : 'stakeEngine',
           })
         }
       }
@@ -394,10 +397,12 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
       const gName = challenge.gameName || challenge.game?.name || gSlug
       let slot = (webSlotsRef.current || []).find((s) => s.slug === gSlug)
       if (!slot) {
+        const isOriginal =
+          !!challenge?.isOriginalsChallenge || DIRECT_ORIGINALS_SLUGS.has(String(gSlug || '').toLowerCase())
         slot = {
           slug: gSlug,
           name: gName || gSlug,
-          providerId: gSlug === 'packs' ? 'stakeOriginals' : 'stakeEngine',
+          providerId: isOriginal || gSlug === 'packs' ? 'stakeOriginals' : 'stakeEngine',
         }
       }
 

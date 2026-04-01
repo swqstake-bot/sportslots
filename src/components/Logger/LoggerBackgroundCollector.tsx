@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { subscribeToBetUpdates } from '../Casino/api/stakeBalanceSubscription';
+import { Queries } from '../../api/queries';
 
 function mapLoggerEntry(b: any) {
   const slug = String(b?.gameSlug || '').toLowerCase();
@@ -28,6 +29,32 @@ function mapLoggerEntry(b: any) {
   };
 }
 
+async function enrichSportsBetFromIid(entry: any) {
+  const iid = String(entry?.iid || entry?.houseId || '').trim();
+  const needsEnrichment = entry?.category === 'sports' && (!entry?.currency || entry?.amount == null || entry?.payout == null);
+  if (!needsEnrichment || !iid) return entry;
+  try {
+    const res = await window.electronAPI.invoke('api-request', {
+      query: Queries.PreviewCashout,
+      variables: { iid },
+      operationName: 'PreviewCashout',
+    });
+    const bet = res?.data?.bet?.bet;
+    if (!bet || typeof bet !== 'object') return entry;
+    const amount = Number((bet as any).amount);
+    const payout = Number((bet as any).payout);
+    const currencyRaw = String((bet as any).currency || '').toLowerCase();
+    return {
+      ...entry,
+      amount: Number.isFinite(amount) ? amount : entry.amount,
+      payout: Number.isFinite(payout) ? payout : entry.payout,
+      currency: currencyRaw || entry.currency,
+    };
+  } catch {
+    return entry;
+  }
+}
+
 export default function LoggerBackgroundCollector() {
   useEffect(() => {
     let cancelled = false;
@@ -53,7 +80,10 @@ export default function LoggerBackgroundCollector() {
       }
       const sub = await subscribeToBetUpdates(token, (b: any) => {
         const entry = mapLoggerEntry(b);
-        window.electronAPI.saveLoggerBet(entry).catch(() => {});
+        enrichSportsBetFromIid(entry)
+          .then((enriched) => window.electronAPI.saveLoggerBet(enriched))
+          .catch(() => window.electronAPI.saveLoggerBet(entry))
+          .catch(() => {});
       });
       if (cancelled) {
         try {
