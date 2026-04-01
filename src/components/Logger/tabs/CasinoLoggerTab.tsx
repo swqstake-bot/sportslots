@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { formatDate, formatNum, getBetMultiplier, toUsd } from '../loggerUtils';
+import { formatBetIdForCopy, formatDate, formatNum, getBetMultiplier, toUsd } from '../loggerUtils';
 import type { LoggerBetEntry } from '../loggerUtils';
 import { loadDiscoveredSlots } from '../../Casino/utils/discoveredSlots';
 
@@ -192,18 +192,20 @@ export default function CasinoLoggerTab({
 
   const handleCopyId = async () => {
     if (!gameDetails) return;
+    const copied = formatBetIdForCopy(gameDetails.houseId);
     try {
-      await navigator.clipboard.writeText(String(gameDetails.houseId));
-      setCopyState('House ID copied');
+      await navigator.clipboard.writeText(copied);
+      setCopyState(`Copied: ${copied}`);
     } catch {
       setCopyState('Copy failed');
     }
   };
 
   const handleCopyHouseId = async (value: string) => {
+    const copied = formatBetIdForCopy(value);
     try {
-      await navigator.clipboard.writeText(value);
-      setHouseIdCopyState(`Copied: ${value}`);
+      await navigator.clipboard.writeText(copied);
+      setHouseIdCopyState(`Copied: ${copied}`);
       setTimeout(() => setHouseIdCopyState(''), 1800);
     } catch {
       setHouseIdCopyState('Copy failed');

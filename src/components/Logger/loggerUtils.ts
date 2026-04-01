@@ -85,3 +85,10 @@ export function formatDate(iso?: string | null): string {
   const d = new Date(iso);
   return d.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
 }
+
+export function formatBetIdForCopy(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (raw.toLowerCase().startsWith('house:')) return `casino:${raw.slice(6)}`;
+  return raw;
+}

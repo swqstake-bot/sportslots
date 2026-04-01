@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { formatDate, formatNum, getBetMultiplier, toUsd } from '../loggerUtils';
+import { useMemo, useState } from 'react';
+import { formatBetIdForCopy, formatDate, formatNum, getBetMultiplier, toUsd } from '../loggerUtils';
 import type { LoggerBetEntry } from '../loggerUtils';
 
 const MAX_VISIBLE_BETS = 500;
@@ -12,6 +12,7 @@ interface SportsLoggerTabProps {
 }
 
 export default function SportsLoggerTab({ bets, currencyRates, subscriptionStatus, subscriptionError }: SportsLoggerTabProps) {
+  const [copyState, setCopyState] = useState('');
   const latestBets = useMemo(
     () => [...bets].sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()).slice(0, MAX_VISIBLE_BETS),
     [bets]
@@ -31,6 +32,18 @@ export default function SportsLoggerTab({ bets, currencyRates, subscriptionStatu
     });
     return { won, lost, profit, total: latestBets.length };
   }, [latestBets, currencyRates]);
+
+  const handleCopyBetId = async (value: string) => {
+    const copied = formatBetIdForCopy(value);
+    try {
+      await navigator.clipboard.writeText(copied);
+      setCopyState(`Copied: ${copied}`);
+      setTimeout(() => setCopyState(''), 1800);
+    } catch {
+      setCopyState('Copy failed');
+      setTimeout(() => setCopyState(''), 1800);
+    }
+  };
 
   return (
     <div className="logger-stack">
@@ -61,7 +74,15 @@ export default function SportsLoggerTab({ bets, currencyRates, subscriptionStatu
                 return (
                   <tr key={`${b.houseId ?? b.iid ?? b.betId}-${b.receivedAt}-${idx}`}>
                     <td>{formatDate(b.receivedAt)}</td>
-                    <td className="mono">{String(b.houseId ?? b.iid ?? b.betId ?? '-')}</td>
+                    <td className="mono">
+                      <button
+                        type="button"
+                        className="logger-link-btn mono"
+                        onClick={() => handleCopyBetId(String(b.houseId ?? b.iid ?? b.betId ?? '-'))}
+                      >
+                        {String(b.houseId ?? b.iid ?? b.betId ?? '-')}
+                      </button>
+                    </td>
                     <td><span className="logger-badge">{b.betType || 'SportsBet'}</span></td>
                     <td className="num">${formatNum(stake)}</td>
                     <td className="num">${formatNum(payout)}</td>
@@ -73,6 +94,7 @@ export default function SportsLoggerTab({ bets, currencyRates, subscriptionStatu
             </tbody>
           </table>
         </div>
+        {copyState ? <p className="logger-status">{copyState}</p> : null}
       </div>
     </div>
   );
