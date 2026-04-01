@@ -234,11 +234,18 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
             if (doCompactLog) console.warn('[houseBets] SKIP: __typename=', tn)
             return
           }
-          const amount = Number(bet?.amount) ?? 0
-          if (amount <= 0) {
-            if (doCompactLog) console.warn('[houseBets] SKIP: amount<=0', { amount, bet })
+          const amountRaw = Number(bet?.amount)
+          if (!Number.isFinite(amountRaw) || amountRaw <= 0) {
+            if (doCompactLog) console.warn('[houseBets] SKIP: amount<=0', { amount: amountRaw, bet })
             return
           }
+          const payoutRaw = Number(bet?.payout)
+          const payout = Number.isFinite(payoutRaw) && payoutRaw >= 0 ? payoutRaw : 0
+          const directPayoutMultiplier = Number(bet?.payoutMultiplier)
+          const payoutMultiplier = Number.isFinite(directPayoutMultiplier) && directPayoutMultiplier > 0
+            ? directPayoutMultiplier
+            : (amountRaw > 0 ? payout / amountRaw : 0)
+          const houseId = hb?.iid ?? bet?.id ?? hb?.id
           const gameSlug = game?.slug || gameNameToSlug(game?.name) || ''
           const name = (game?.name || '').toLowerCase()
           const icon = (game?.icon || '').toLowerCase()
@@ -252,17 +259,26 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
             return
           }
           const payload = {
+            receivedAt: new Date().toISOString(),
+            /** House-ID analog Logger: bevorzugt `houseBets.iid`, dann bet.id, dann houseBets.id */
+            houseId,
+            /** Bet-ID des Union-Objekts (provider-/bet-spezifisch) */
+            betId: bet?.id ?? hb?.id ?? null,
+            /** Raw `houseBets.iid` */
+            iid: hb?.iid ?? null,
+            betType: tn,
+            gameName: game?.name || null,
             /** Union `bet.id` (oft RGS-/Provider-intern, z. B. 527… bei Third-Party) — nicht mit Share-`house:460…` verwechseln. */
-            id: bet?.id || hb?.iid || hb?.id,
+            id: houseId,
             /** GraphQL `houseBets.iid` — Share-Identifier (z. B. house:… / casino:…), für Links wie FRIDA/Bet-Modal */
             shareIid: hb?.iid != null && String(hb.iid).trim() !== '' ? String(hb.iid).trim() : null,
             /** Top-Level `houseBets.id` — Fallback wenn `iid` fehlt */
             houseTopId: hb?.id != null && String(hb.id).trim() !== '' ? String(hb.id).trim() : null,
             gameSlug,
-            amount,
-            payout: Number(bet?.payout) ?? 0,
+            amount: amountRaw,
+            payout,
             currency: (bet?.currency || '').toLowerCase(),
-            payoutMultiplier: Number(bet?.payoutMultiplier) || 0,
+            payoutMultiplier,
             amountMultiplier: Number(bet?.amountMultiplier) || 0,
           }
           if (doCompactLog) console.warn('[houseBets] OK → onUpdate:', payload)

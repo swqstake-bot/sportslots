@@ -74,6 +74,18 @@ export function Sidebar() {
             >
               Sports
             </button>
+            <button
+              onClick={() => setCurrentView('logger')}
+              className={`flex-1 text-xs font-bold py-2.5 text-center transition-all uppercase tracking-widest rounded-md ${
+                currentView === 'logger' ? 'shadow-[0_0_16px_rgba(255,122,26,0.45)]' : ''
+              }`}
+              style={currentView === 'logger'
+                ? { color: '#0A0A0F', background: 'var(--app-accent)', boxShadow: '0 0 16px rgba(255, 122, 26, 0.45)' }
+                : { color: 'var(--app-text-muted)' }
+              }
+            >
+              Logger
+            </button>
         </div>
         
         {currentView === 'sports' && (

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net, session, shell, globalShortcut } from 'electron';
+import { app, BrowserWindow, ipcMain, net, session, shell, globalShortcut, dialog } from 'electron';
 import https from 'node:https';
 import http from 'node:http';
 import updater from 'electron-updater';
@@ -63,6 +63,29 @@ import {
 let win: BrowserWindow | null;
 let loginWin: BrowserWindow | null;
 const MAX_IPC_RESPONSE_BYTES = 8 * 1024 * 1024; // 8 MB safety cap for IPC responses
+
+function getBetLogsDir(): string {
+  const dir = path.join(app.getPath('userData'), 'bet-logs');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function getBetLogPathForDate(isoDateStr?: string): string {
+  const dateStr = isoDateStr ? String(isoDateStr).slice(0, 10) : new Date().toISOString().slice(0, 10);
+  return path.join(getBetLogsDir(), `bets-${dateStr}.jsonl`);
+}
+
+function appendBetLog(entry: unknown): string {
+  const filePath = getBetLogPathForDate();
+  fs.appendFileSync(filePath, JSON.stringify(entry) + '\n', 'utf8');
+  return filePath;
+}
+
+const LOGGER_CURRENCY_CONFIG_QUERY = `query CurrencyConfiguration($isAcp: Boolean!) {
+  currencyConfiguration(isAcp: $isAcp) {
+    baseRates { currency baseRate }
+  }
+}`;
 
 function createWindow() {
   win = new BrowserWindow({
@@ -246,6 +269,132 @@ ipcMain.handle('get-session-token', async () => {
 ipcMain.handle('get-stake-ws-url', async () => {
     const origin = await resolveStakeOrigin();
     return origin.replace(/^https/, 'wss') + '/_api/websockets';
+});
+
+ipcMain.handle('logger-fetch-currency-rates', async () => {
+    try {
+        await captureSession();
+        const origin = await resolveStakeOrigin();
+        const res = await fetch(`${origin}/_api/graphql`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Cookie: sessionData.cookies || '',
+                'User-Agent': sessionData.userAgent || 'Mozilla/5.0',
+                Origin: origin,
+                Referer: origin + '/',
+            },
+            body: JSON.stringify({
+                query: LOGGER_CURRENCY_CONFIG_QUERY,
+                variables: { isAcp: false },
+            }),
+        });
+        if (!res.ok) return {};
+        const json = await res.json();
+        const baseRates = json?.data?.currencyConfiguration?.baseRates;
+        if (!Array.isArray(baseRates)) return {};
+        const map: Record<string, number> = {};
+        for (const r of baseRates) {
+            const code = String(r?.currency || '').toLowerCase();
+            const usdRate = Number(r?.baseRate);
+            if (code && Number.isFinite(usdRate) && usdRate > 0) map[code] = usdRate;
+        }
+        return map;
+    } catch (error) {
+        console.error('[logger-fetch-currency-rates] failed:', error);
+        return {};
+    }
+});
+
+ipcMain.handle('logger-save-bet', (_event, entry: any) => {
+    if (!entry || (entry.houseId == null && entry.iid == null && entry.betId == null && entry.receivedAt == null)) return null;
+    return appendBetLog(entry);
+});
+
+ipcMain.handle('logger-load-bet-logs', async (_event, options: { limit?: number; fromDate?: string; toDate?: string } = {}) => {
+    const dir = getBetLogsDir();
+    const files = (fs.readdirSync(dir) || []).filter((f) => f.endsWith('.jsonl')).sort().reverse();
+    const limit = options.limit ?? 5000;
+    const fromDate = options.fromDate;
+    const toDate = options.toDate;
+    const bets: any[] = [];
+    for (const file of files) {
+        const dateStr = file.replace('bets-', '').replace('.jsonl', '');
+        if (fromDate && dateStr < fromDate) continue;
+        if (toDate && dateStr > toDate) continue;
+        const filePath = path.join(dir, file);
+        const content = fs.readFileSync(filePath, 'utf8');
+        const lines = content.trim().split('\n').filter(Boolean);
+        for (let i = lines.length - 1; i >= 0 && bets.length < limit; i--) {
+            try {
+                bets.push(JSON.parse(lines[i]));
+            } catch {
+                // ignore broken lines
+            }
+        }
+        if (bets.length >= limit) break;
+    }
+    return bets.reverse();
+});
+
+ipcMain.handle('logger-get-logs-dir', () => getBetLogsDir());
+
+ipcMain.handle('logger-export-bet-logs', async (_event, bets: any[]) => {
+    if (!Array.isArray(bets) || bets.length === 0) return { ok: false, error: 'Keine Daten zum Exportieren' };
+    const { filePath } = await dialog.showSaveDialog({
+        title: 'Wetten exportieren',
+        defaultPath: `bets-export-${new Date().toISOString().slice(0, 10)}.jsonl`,
+        filters: [{ name: 'JSONL (HouseBets)', extensions: ['jsonl'] }],
+    });
+    if (!filePath) return { ok: false, cancelled: true };
+    const lines = bets.map((b) => JSON.stringify(b)).join('\n') + (bets.length ? '\n' : '');
+    fs.writeFileSync(filePath, lines, 'utf8');
+    return { ok: true, path: filePath };
+});
+
+ipcMain.handle('logger-import-bet-logs', async () => {
+    const { filePaths } = await dialog.showOpenDialog({
+        title: 'Wetten importieren',
+        filters: [{ name: 'JSONL (HouseBets)', extensions: ['jsonl'] }],
+        properties: ['openFile'],
+    });
+    if (!filePaths?.length) return { ok: false, cancelled: true, bets: [] };
+    const content = fs.readFileSync(filePaths[0], 'utf8');
+    const lines = content.trim().split('\n').filter(Boolean);
+    const bets: any[] = [];
+    for (const line of lines) {
+        try {
+            const entry = JSON.parse(line);
+            if (entry && (entry.houseId != null || entry.iid != null || entry.betId != null || entry.receivedAt != null)) bets.push(entry);
+        } catch {
+            // ignore broken lines
+        }
+    }
+    if (bets.length === 0) return { ok: true, bets: [], saved: false };
+    for (const entry of bets) {
+        const filePath = getBetLogPathForDate(entry.receivedAt);
+        fs.appendFileSync(filePath, JSON.stringify(entry) + '\n', 'utf8');
+    }
+    return { ok: true, bets, saved: true };
+});
+
+ipcMain.handle('logger-delete-all-bet-logs', async () => {
+    try {
+        const dir = getBetLogsDir();
+        const files = (fs.readdirSync(dir) || []).filter((f) => f.endsWith('.jsonl'));
+        let deleted = 0;
+        for (const file of files) {
+            try {
+                fs.unlinkSync(path.join(dir, file));
+                deleted++;
+            } catch {
+                // ignore locked files
+            }
+        }
+        return { ok: true, deleted };
+    } catch (error: any) {
+        return { ok: false, error: error?.message || String(error) };
+    }
 });
 
 ipcMain.handle('api-request', async (_event, payload) => {

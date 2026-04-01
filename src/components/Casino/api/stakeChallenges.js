@@ -3,10 +3,7 @@ import { logApiCall } from '../utils/apiLogger'
 
 const CURRENCY_CONFIG_QUERY = `query CurrencyConfiguration($isAcp: Boolean!) {
   currencyConfiguration(isAcp: $isAcp) {
-    currencies {
-      name
-      rates { currency rate }
-    }
+    baseRates { currency baseRate }
   }
 }`
 
@@ -42,14 +39,16 @@ export async function fetchCurrencyRates(accessToken) {
       durationMs: Date.now() - t0,
     })
 
-    if (!json?.currencyConfiguration?.currencies) {
+    const cfg = json?.currencyConfiguration
+    if (!cfg) {
       return {}
     }
 
     const map = {}
-    for (const c of json.currencyConfiguration.currencies) {
-      const usdRate = c.rates?.find((r) => r.currency === 'usd')?.rate
-      if (usdRate != null) map[c.name?.toLowerCase() || ''] = usdRate
+    for (const r of cfg.baseRates || []) {
+      const code = String(r?.currency || '').toLowerCase()
+      const usdRate = Number(r?.baseRate)
+      if (code && Number.isFinite(usdRate) && usdRate > 0) map[code] = usdRate
     }
 
     try {

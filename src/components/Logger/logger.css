@@ -1,0 +1,273 @@
+.logger-root {
+  color: var(--app-text);
+}
+
+.logger-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.logger-tabs-wrap {
+  display: inline-flex;
+  gap: 0.5rem;
+  padding: 0.35rem;
+  border-radius: 0.8rem;
+  border: 1px solid var(--app-border);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.logger-tab-btn {
+  border: 1px solid transparent;
+  border-radius: 0.65rem;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--app-text-muted);
+  background: transparent;
+}
+
+.logger-tab-btn.is-active {
+  color: #0a0a0f;
+  background: var(--app-accent);
+  box-shadow: 0 0 14px var(--app-accent-glow);
+}
+
+.logger-panel {
+  border: 1px solid var(--app-border);
+  border-radius: 0.9rem;
+  padding: 1rem;
+  background: rgba(12, 12, 18, 0.82);
+}
+
+.logger-stack {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.logger-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.logger-muted {
+  margin-top: 0.45rem;
+  color: var(--app-text-muted);
+}
+
+.logger-grid {
+  margin-top: 0.6rem;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}
+
+.logger-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  color: var(--app-text-muted);
+}
+
+.logger-grid input,
+.logger-grid select {
+  border: 1px solid var(--app-border);
+  border-radius: 0.55rem;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--app-text);
+  padding: 0.4rem 0.5rem;
+}
+
+.logger-check {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-direction: row !important;
+  gap: 0.45rem !important;
+}
+
+.logger-action-btn {
+  border-radius: 0.6rem;
+  border: 1px solid var(--app-border);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--app-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.45rem 0.6rem;
+}
+
+.logger-danger-btn {
+  border-radius: 0.65rem;
+  border: 1px solid rgba(255, 122, 26, 0.45);
+  background: rgba(255, 122, 26, 0.14);
+  color: #ffbc90;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.5rem 0.8rem;
+}
+
+.logger-status {
+  margin-top: 0.65rem;
+  color: var(--app-text-muted);
+  font-size: 0.82rem;
+}
+
+.logger-table-wrap {
+  margin-top: 0.6rem;
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--app-border);
+  border-radius: 0.65rem;
+}
+
+.logger-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.logger-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  background: rgba(20, 20, 26, 0.96);
+  color: var(--app-text-muted);
+  font-weight: 700;
+  text-align: left;
+  border-bottom: 1px solid var(--app-border);
+  padding: 0.45rem 0.55rem;
+}
+
+.logger-table-wrap tbody td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 0.45rem 0.55rem;
+}
+
+.logger-table-wrap .num {
+  text-align: right;
+}
+
+.logger-table-wrap .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.75rem;
+}
+
+.logger-table-wrap .positive {
+  color: #3ee58b;
+}
+
+.logger-table-wrap .negative {
+  color: #ff7b7b;
+}
+
+.logger-table-compact {
+  max-height: 240px;
+}
+
+.logger-badge {
+  border: 1px solid var(--app-border);
+  border-radius: 0.5rem;
+  padding: 0.18rem 0.35rem;
+  color: var(--app-text-muted);
+  font-size: 0.68rem;
+}
+
+.logger-link-btn {
+  border: 0;
+  background: transparent;
+  color: var(--app-accent);
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+
+.logger-link-btn:hover {
+  text-decoration: underline;
+}
+
+.logger-kpis {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.logger-kpi {
+  border: 1px solid var(--app-border);
+  border-radius: 0.7rem;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.logger-kpi span {
+  color: var(--app-text-muted);
+  font-size: 0.72rem;
+}
+
+.logger-kpi strong {
+  font-size: 1rem;
+}
+
+.logger-kpi.positive strong {
+  color: #3ee58b;
+}
+
+.logger-kpi.negative strong {
+  color: #ff7b7b;
+}
+
+.logger-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.logger-modal-card {
+  width: min(520px, 92vw);
+  border: 1px solid var(--app-border);
+  border-radius: 0.85rem;
+  padding: 1rem;
+  background: rgba(12, 12, 18, 0.98);
+}
+
+.logger-modal-body {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.9rem;
+}
+
+.logger-modal-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.logger-slot-thumb {
+  width: 132px;
+  height: 74px;
+  object-fit: cover;
+  border-radius: 0.55rem;
+  border: 1px solid var(--app-border);
+  flex-shrink: 0;
+}
+
+.logger-modal-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+}

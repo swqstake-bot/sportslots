@@ -14,6 +14,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     getKeyAuthHwid: () => ipcRenderer.invoke('get-keyauth-hwid'),
     getSessionToken: () => ipcRenderer.invoke('get-session-token'),
+    fetchLoggerCurrencyRates: () => ipcRenderer.invoke('logger-fetch-currency-rates'),
+    saveLoggerBet: (entry: any) => ipcRenderer.invoke('logger-save-bet', entry),
+    loadLoggerBetLogs: (options?: { limit?: number; fromDate?: string; toDate?: string }) => ipcRenderer.invoke('logger-load-bet-logs', options),
+    getLoggerLogsDir: () => ipcRenderer.invoke('logger-get-logs-dir'),
+    exportLoggerBetLogs: (bets: any[]) => ipcRenderer.invoke('logger-export-bet-logs', bets),
+    importLoggerBetLogs: () => ipcRenderer.invoke('logger-import-bet-logs'),
+    deleteAllLoggerBetLogs: () => ipcRenderer.invoke('logger-delete-all-bet-logs'),
     proxyRequest: (options: any) => ipcRenderer.invoke('proxy-request', options),
     extractClawbusterSecret: (configUrl: string) => ipcRenderer.invoke('clawbuster-extract-secret', configUrl),
     // Slot Spin Samples – automatisches Lernen in Ordner

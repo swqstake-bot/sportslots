@@ -88,6 +88,14 @@ function countHunterSlotsForChallenge(challengeId, queue, activeRuns) {
   return n
 }
 
+function buildProbeCacheKey(challengeId, slotSlug, sourceCurr, minBetUsd) {
+  const cid = String(challengeId || '')
+  const slug = String(slotSlug || '').toLowerCase()
+  const src = String(sourceCurr || '').toLowerCase()
+  const min = Number(minBetUsd || 0)
+  return `${cid}|${slug}|${src}|${Number.isFinite(min) ? min.toFixed(6) : '0.000000'}`
+}
+
 function getRateForCurrency(rates, tCurr) {
   const c = (tCurr || '').toLowerCase()
   if (c === 'usd') return 1
@@ -280,6 +288,9 @@ const HUNTER_SPIN_ERROR_RETRY_MS = 2000
 const SESSION_NET_SERIES_MAX_POINTS = 5000
 /** Stablecoins: aus Session-Probes (wie BTC/LTC — Nutzer will klassische Fiat wie PKR/RUB) */
 const AUTO_PROBE_EXCLUDED_CURRENCIES = new Set(['usdc', 'usdt'])
+/** Frühabbruch nur wenn sehr nah am Challenge-Minimum (nicht bei +$0.02 wie zuvor). */
+const TARGET_PROBE_EARLY_STOP_REL = 0.02
+const TARGET_PROBE_EARLY_STOP_ABS_USD = 0.002
 
 /**
  * MinBet → Einsatz inkl. Bet-Levels; usdAt = effektiver USD-Wert des gewählten Levels.
@@ -705,6 +716,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   }, [bestMultiBySlot])
   /** Pro Run: max. Multi — wird mit houseBets bestätigt (wie bestMultiRun im State nach WS). */
   const runBestMultiSyncRef = useRef({})
+  /** Memoized measured ranking from first probe pass: [{ tCurr, usdAt }] sorted by real effective USD. */
+  const challengeProbeRankingRef = useRef({})
   /** Nach Persist der Overall-Bet-ID: UI/Konsole neu lesen. */
   const [hunterStorageTick, setHunterStorageTick] = useState(0)
   const bumpHunterStorageRef = useRef(() => {})
@@ -727,6 +740,29 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     }
     setHunterSlotTargets(next)
   }, [activeRuns])
+
+  useEffect(() => {
+    const hasRunningChallenges =
+      huntEnabled ||
+      queue.length > 0 ||
+      Object.values(activeRuns).some((run) => run?.status === 'running')
+    try {
+      window.dispatchEvent(
+        new CustomEvent('challenge-running-status', {
+          detail: { running: hasRunningChallenges },
+        })
+      )
+    } catch (_) {}
+    return () => {
+      try {
+        window.dispatchEvent(
+          new CustomEvent('challenge-running-status', {
+            detail: { running: false },
+          })
+        )
+      } catch (_) {}
+    }
+  }, [huntEnabled, queue, activeRuns])
 
   const maxParallelClamped = Math.min(CHALLENGE_SLIDER_MAX, Math.max(1, maxParallel))
   const pagesToLoadClamped = Math.min(CHALLENGE_SLIDER_MAX, Math.max(1, pagesToLoad))
@@ -829,6 +865,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         const batchRunBestMulti = {}
         for (const bItem of batch) {
           const payloadSlug = normalizeBetSlugForHouseMatch(bItem?.gameSlug)
+          const payloadCurr = String(bItem?.currency || '').toLowerCase()
           if (!payloadSlug) continue
 
           const active = activeRunsRef.current || {}
@@ -845,12 +882,26 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           // Wie FRIDA (MainForm): houseBets.iid direkt nutzen — kein Abgleich Betrag/Multi.
           // Pending wird nach jedem HTTP-Spin in Reihenfolge eingereiht; erstes passendes Slug = dieses Event (FIFO).
           let bestMatchIdx = -1
-          for (let i = 0; i < pending.length; i++) {
-            const p = pending[i]
-            if (p.multi == null) continue
-            if (!houseBetSlugMatchesSessionSlug(payloadSlug, p.slug)) continue
-            bestMatchIdx = i
-            break
+          // 1) Prefer strict match by slug + currency (important for copy runs of same slot).
+          if (payloadCurr) {
+            for (let i = 0; i < pending.length; i++) {
+              const p = pending[i]
+              if (p.multi == null) continue
+              if (!houseBetSlugMatchesSessionSlug(payloadSlug, p.slug)) continue
+              if (String(p.currency || '').toLowerCase() !== payloadCurr) continue
+              bestMatchIdx = i
+              break
+            }
+          }
+          // 2) Fallback to slug-only FIFO.
+          if (bestMatchIdx < 0) {
+            for (let i = 0; i < pending.length; i++) {
+              const p = pending[i]
+              if (p.multi == null) continue
+              if (!houseBetSlugMatchesSessionSlug(payloadSlug, p.slug)) continue
+              bestMatchIdx = i
+              break
+            }
           }
 
           if (bestMatchIdx >= 0) {
@@ -1415,6 +1466,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       const providerId = slot.providerId || 'stakeEngine'
       const preferredTarget = (targetCurrency || 'usd').toLowerCase()
       const minBetUsd = challenge.minBetUsd
+      const probeCacheKey = buildProbeCacheKey(challenge.id, slot.slug, sCurr, minBetUsd)
 
       let session = null
       let tCurr = preferredTarget
@@ -1448,8 +1500,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         if (currencySlotIndex === 0 && ordered.length > 0) {
           const probeLimit = Math.min(ordered.length, MAX_TARGET_SESSION_PROBES)
           let bestProbe = null
+          const measuredProbes = []
           const tightUsd =
-            minBetUsd != null ? minBetUsd + Math.max(0.02, minBetUsd * 0.05) : Infinity
+            minBetUsd != null
+              ? minBetUsd + Math.max(TARGET_PROBE_EARLY_STOP_ABS_USD, minBetUsd * TARGET_PROBE_EARLY_STOP_REL)
+              : Infinity
 
           for (let i = 0; i < probeLimit; i++) {
             if (i > 0) {
@@ -1462,6 +1517,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               log(`Session-Probe: ${sCurr.toUpperCase()} -> ${cand.toUpperCase()}…`)
               const sess = await provider.startSession(accessToken, slot.slug, sCurr, cand)
               const { betAmount: ba, usdAt } = computeBetFromMinBetAndSession(sess, cand, r, minBetUsd)
+              measuredProbes.push({ tCurr: cand, usdAt })
               if (!bestProbe || usdAt < bestProbe.usdAt - 1e-9) {
                 bestProbe = { session: sess, tCurr: cand, rate: r, betAmount: ba, usdAt }
               }
@@ -1472,6 +1528,18 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           }
 
           if (bestProbe) {
+            if (measuredProbes.length > 0) {
+              const dedup = new Map()
+              for (const p of measuredProbes) {
+                const k = String(p.tCurr || '').toLowerCase()
+                if (!k) continue
+                const ex = dedup.get(k)
+                if (!ex || p.usdAt < ex.usdAt) dedup.set(k, { tCurr: k, usdAt: p.usdAt })
+              }
+              challengeProbeRankingRef.current[probeCacheKey] = Array.from(dedup.values()).sort(
+                (a, b) => a.usdAt - b.usdAt
+              )
+            }
             session = bestProbe.session
             tCurr = bestProbe.tCurr
             rate = bestProbe.rate
@@ -1484,8 +1552,12 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             }
           }
         } else if (currencySlotIndex > 0 && ordered.length > 0) {
-          const idx = Math.min(currencySlotIndex, ordered.length - 1)
-          const cand = ordered[idx]
+          const measured = Array.isArray(challengeProbeRankingRef.current[probeCacheKey])
+            ? challengeProbeRankingRef.current[probeCacheKey].map((x) => x.tCurr).filter(Boolean)
+            : []
+          const ranked = measured.length > 0 ? measured : ordered
+          const idx = Math.min(currencySlotIndex, ranked.length - 1)
+          const cand = ranked[idx]
           const r = getRateForCurrency(rates, cand)
           if (!r) {
             log(`Kein Kurs für ${String(cand).toUpperCase()} — Fallback manuelle Zielwährung.`)
@@ -1493,11 +1565,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             try {
               if (idx !== currencySlotIndex) {
                 log(
-                  `Nur ${ordered.length} Ziel-Kandidaten — nutze Index ${idx} statt ${currencySlotIndex} (${cand.toUpperCase()})`
+                  `Nur ${ranked.length} Ziel-Kandidaten — nutze Index ${idx} statt ${currencySlotIndex} (${cand.toUpperCase()})`
                 )
               } else {
                 log(
-                  `Zielwährung Kopie #${currencySlotIndex + 1}: ${cand.toUpperCase()} (Sortierung Auto-Probe, Index ${idx})`
+                  `Zielwährung Kopie #${currencySlotIndex + 1}: ${cand.toUpperCase()} (${measured.length > 0 ? 'gemessene' : 'modellierte'} Sortierung, Index ${idx})`
                 )
               }
               await new Promise((res) => setTimeout(res, SESSION_PROBE_DELAY_MS))

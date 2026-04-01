@@ -87,6 +87,12 @@
   --app-accent-glow: rgba(0, 255, 136, 0.25);
 }
 
+[data-app-mode="logger"] {
+  --app-accent: #ff7a1a;
+  --app-accent-rgb: 255, 122, 26;
+  --app-accent-glow: rgba(255, 122, 26, 0.28);
+}
+
 * {
   margin: 0;
   padding: 0;

@@ -13,6 +13,8 @@ import { useUiStore } from './store/uiStore';
 import { WalletSelector } from './components/WalletSelector';
 import { AutoBetManager } from './components/AutoBet/AutoBetManager';
 import CasinoView from './components/Casino/CasinoView';
+import LoggerView from './components/Logger/LoggerView';
+import LoggerBackgroundCollector from './components/Logger/LoggerBackgroundCollector';
 import { KeyAuthLogin } from './components/KeyAuthLogin';
 import { isKeyAuthEnabled } from './api/keyauth';
 import { UpdaterNotification } from './components/UpdaterNotification';
@@ -65,6 +67,7 @@ function App() {
   const { user, setUser, setBalancesFromApi, setActiveBets } = useUserStore();
   const { isRunning } = useAutoBetStore();
   const { currentView, selectedSport } = useUiStore();
+  const [isChallengeRunning, setIsChallengeRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -183,12 +186,22 @@ function App() {
     return () => clearInterval(interval);
   }, [fetchData, isAuthenticated]);
 
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const e = event as CustomEvent<{ running?: boolean }>;
+      setIsChallengeRunning(Boolean(e?.detail?.running));
+    };
+    window.addEventListener('challenge-running-status', handler as EventListener);
+    return () => {
+      window.removeEventListener('challenge-running-status', handler as EventListener);
+    };
+  }, []);
+
   if (!isAuthenticated) {
     return <KeyAuthLogin onSuccess={handleKeyAuthSuccess} />;
   }
 
-  const isCasino = currentView === 'casino';
-  const appTitle = isCasino ? 'STAKESLOTS' : 'STAKESPORTS';
+  const appTitle = currentView === 'casino' ? 'STAKESLOTS' : currentView === 'logger' ? 'STAKELOGGER' : 'STAKESPORTS';
 
   return (
     <div 
@@ -197,6 +210,7 @@ function App() {
       data-app-mode={currentView}
     >
       <GlobalToast />
+      <LoggerBackgroundCollector />
       <UpdaterNotification />
       <ChangelogModal 
         isOpen={showChangelog} 
@@ -226,14 +240,26 @@ function App() {
             </h1>
           </div>
           {user && (
-            <div 
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all"
-              style={{ background: 'rgba(0,0,0,0.3)', borderColor: 'rgba(0, 240, 255, 0.2)' }}
-            >
-              <div className="w-2 h-2 rounded-full" style={{ background: 'var(--app-accent)', boxShadow: '0 0 6px var(--app-accent)' }}></div>
-              <span className="text-xs font-semibold tracking-wide" style={{ color: 'var(--app-text-muted)' }}>
-                {user.name}
-              </span>
+            <div className="flex items-center gap-2">
+              <div 
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all"
+                style={{ background: 'rgba(0,0,0,0.3)', borderColor: 'rgba(0, 240, 255, 0.2)' }}
+              >
+                <div className="w-2 h-2 rounded-full" style={{ background: 'var(--app-accent)', boxShadow: '0 0 6px var(--app-accent)' }}></div>
+                <span className="text-xs font-semibold tracking-wide" style={{ color: 'var(--app-text-muted)' }}>
+                  {user.name}
+                </span>
+              </div>
+              {isChallengeRunning && (
+                <div
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg border"
+                  style={{ background: 'rgba(255, 122, 26, 0.12)', borderColor: 'rgba(255, 122, 26, 0.35)', color: '#ffbc90' }}
+                  title="Challenge Hunter is still running in background"
+                >
+                  <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#ff7a1a', boxShadow: '0 0 8px rgba(255,122,26,0.7)' }}></span>
+                  <span className="text-[11px] font-bold uppercase tracking-wider">Challenge running</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -299,15 +325,16 @@ function App() {
         {/* Sidebar */}
         <Sidebar />
 
-        {/* Casino View */}
-        {currentView === 'casino' && (
-          <div className="flex-1 overflow-auto relative z-10" style={{ background: 'var(--app-bg-deep)' }}>
-            <CasinoView />
-          </div>
-        )}
+        {/* Casino View stays mounted so challenge/hunter processes keep running across tab switches */}
+        <div
+          className="flex-1 overflow-auto relative z-10"
+          style={{ background: 'var(--app-bg-deep)', display: currentView === 'casino' ? 'block' : 'none' }}
+        >
+          <CasinoView />
+        </div>
 
         {/* Sports View & Right Sidebar */}
-        {currentView !== 'casino' && (
+        {currentView === 'sports' && (
           <>
             <div className="sports-view flex-1 overflow-hidden flex flex-col relative z-0">
               {user ? (
@@ -354,6 +381,13 @@ function App() {
             
             <RightSidebar />
           </>
+        )}
+
+        {/* Logger View */}
+        {currentView === 'logger' && (
+          <div className="flex-1 overflow-auto relative z-10" style={{ background: 'var(--app-bg-deep)' }}>
+            <LoggerView />
+          </div>
         )}
       </div>
       {/* AutoBet Manager (Headless) - Only in Sports Mode */}

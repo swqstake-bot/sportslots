@@ -248,14 +248,13 @@ export default function BonusHuntControl({
       const rawAmount = Number(b?.amount) || 0
       const rawPayout = Number(b?.payout) ?? 0
       if (!gameSlug || rawAmount <= 0) return
-      const FALLBACK_RATES = { ars: 0.001, brl: 0.17, mxn: 0.05, eur: 1.07, ltc: 95, btc: 97000, eth: 3500, doge: 0.4, bch: 450, shib: 0.00002, xrp: 0.55, trx: 0.23, sol: 220, matic: 0.4, ada: 0.5, bnb: 680 }
       const amountAsMinor = rawAmount < 500 ? toMinor(rawAmount, curr) : rawAmount
       const pending = pendingSpinsRef.current
       const tol = (v) => Math.max(1, Math.abs(v) * 0.08)
-      const targetRate = (currencyRates[target] ?? FALLBACK_RATES[target]) || 0.001
+      const targetRate = ['usd', 'usdc', 'usdt'].includes(target) ? 1 : Number(currencyRates[target] || 0)
       const toUsdFromTarget = (minor) => toUnits(minor, target) * targetRate
-      const hbRate = ['usd', 'usdc', 'usdt'].includes(curr) ? 1 : (currencyRates[curr] ?? FALLBACK_RATES[curr] ?? 0)
-      const rawAmountUsd = rawAmount < 500 ? rawAmount * (hbRate || 1) : toUnits(rawAmount, curr) * (hbRate || 1)
+      const hbRate = ['usd', 'usdc', 'usdt'].includes(curr) ? 1 : Number(currencyRates[curr] || 0)
+      const rawAmountUsd = hbRate > 0 ? (rawAmount < 500 ? rawAmount * hbRate : toUnits(rawAmount, curr) * hbRate) : 0
       const amountMatches = (p) => {
         const m1 = Math.abs(p.effectiveBet - rawAmount) <= tol(rawAmount)
         const m2 = Math.abs(p.effectiveBet - amountAsMinor) <= tol(amountAsMinor)
@@ -263,8 +262,8 @@ export default function BonusHuntControl({
         const m4 = p.baseBet != null && Math.abs(p.baseBet - amountAsMinor) <= tol(amountAsMinor)
         const effUsd = toUsdFromTarget(p.effectiveBet)
         const usdTol = (u) => Math.max(0.01, Math.abs(u) * 0.55)
-        const m5 = rawAmount < 500 && hbRate > 0 && Math.abs(effUsd - rawAmountUsd) <= usdTol(rawAmountUsd)
-        const m6 = p.baseBet != null && rawAmount < 500 && hbRate > 0 && Math.abs(toUsdFromTarget(p.baseBet) - rawAmountUsd) <= usdTol(rawAmountUsd)
+        const m5 = rawAmount < 500 && hbRate > 0 && targetRate > 0 && Math.abs(effUsd - rawAmountUsd) <= usdTol(rawAmountUsd)
+        const m6 = p.baseBet != null && rawAmount < 500 && hbRate > 0 && targetRate > 0 && Math.abs(toUsdFromTarget(p.baseBet) - rawAmountUsd) <= usdTol(rawAmountUsd)
         const ok = m1 || m2 || m3 || m4 || m5 || m6
         if (BONUS_HUNT_DEBUG && pending.length > 0) {
           console.log('[BH houseBet] amountMatch', { effectiveBet: p.effectiveBet, rawAmount, rawAmountUsd, effUsd, curr, target, ok, m5, m6 })
@@ -645,13 +644,12 @@ export default function BonusHuntControl({
   }
 
   const statsCurrency = currencyCode || targetCurrency || sourceCurrency || 'usdc'
-  const FALLBACK_USD_RATES = { ars: 0.001, brl: 0.17, mxn: 0.05, clp: 0.001, inr: 0.012, idr: 0.000063, php: 0.017, pkr: 0.0036, pln: 0.25, ngn: 0.0006, cny: 0.14, krw: 0.00075, jpy: 0.0067, vnd: 0.00004, eur: 1.07, aud: 0.65, cad: 0.72, gbp: 1.27, dkk: 0.14, pen: 0.26, rub: 0.01, try: 0.03, ltc: 95, btc: 97000, eth: 3500, doge: 0.4, bch: 450, shib: 0.00002, xrp: 0.55, trx: 0.23, sol: 220, matic: 0.4, ada: 0.5, bnb: 680 }
   const toUsd = (v, curr) => {
     const c = (curr || statsCurrency || 'usdc').toLowerCase()
     const units = toUnits(v, c)
     if (['usd', 'usdc', 'usdt'].includes(c)) return units
-    const rate = (c && currencyRates[c]) ?? (c && FALLBACK_USD_RATES[c])
-    return rate != null && rate > 0 ? units * rate : units
+    const rate = c ? Number(currencyRates[c] || 0) : 0
+    return rate > 0 ? units * rate : 0
   }
   const format = (v) => `$${toUsd(v, statsCurrency).toFixed(2)}`
   const formatWithUsd = (v, displayCurr) => `$${toUsd(v, displayCurr || statsCurrency).toFixed(2)}`

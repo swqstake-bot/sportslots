@@ -6,6 +6,13 @@ export interface ElectronAPI {
   invoke: (channel: string, ...args: any[]) => Promise<any>;
   getKeyAuthHwid: () => Promise<string>;
   getSessionToken: () => Promise<string | null>;
+  fetchLoggerCurrencyRates: () => Promise<Record<string, number>>;
+  saveLoggerBet: (entry: any) => Promise<string | null>;
+  loadLoggerBetLogs: (options?: { limit?: number; fromDate?: string; toDate?: string }) => Promise<any[]>;
+  getLoggerLogsDir: () => Promise<string>;
+  exportLoggerBetLogs: (bets: any[]) => Promise<{ ok: boolean; cancelled?: boolean; path?: string; error?: string }>;
+  importLoggerBetLogs: () => Promise<{ ok: boolean; cancelled?: boolean; bets?: any[]; saved?: boolean; error?: string }>;
+  deleteAllLoggerBetLogs: () => Promise<{ ok: boolean; deleted?: number; error?: string }>;
   proxyRequest: (options: { url: string; method?: string; headers?: Record<string, string>; body?: any }) => Promise<{ status: number; statusText: string; headers: any; data: string; finalUrl: string }>;
   saveSlotSpinSample: (payload: { slotSlug: string; slotName?: string; providerId?: string; request: any; response: any }) => Promise<void>;
   getSlotSpinSamples: () => Promise<Record<string, any[]>>;
