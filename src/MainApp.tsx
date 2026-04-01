@@ -390,8 +390,8 @@ function App() {
           </div>
         )}
       </div>
-      {/* AutoBet Manager (Headless) - Only in Sports Mode */}
-      {currentView === 'sports' && <AutoBetManager />}
+      {/* AutoBet Manager (Headless): always mounted to avoid remount restarts */}
+      <AutoBetManager />
     </div>
   );
 }
