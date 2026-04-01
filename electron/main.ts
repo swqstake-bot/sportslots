@@ -314,7 +314,8 @@ ipcMain.handle('logger-save-bet', (_event, entry: any) => {
 ipcMain.handle('logger-load-bet-logs', async (_event, options: { limit?: number; fromDate?: string; toDate?: string } = {}) => {
     const dir = getBetLogsDir();
     const files = (fs.readdirSync(dir) || []).filter((f) => f.endsWith('.jsonl')).sort().reverse();
-    const limit = options.limit ?? 5000;
+    const limitRaw = Number(options.limit);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : Number.MAX_SAFE_INTEGER;
     const fromDate = options.fromDate;
     const toDate = options.toDate;
     const bets: any[] = [];

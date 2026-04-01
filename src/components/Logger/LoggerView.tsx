@@ -57,10 +57,17 @@ export default function LoggerView() {
     const foreground = options?.foreground === true;
     if (foreground) setManualReloading(true);
     try {
-      const list = await window.electronAPI.loadLoggerBetLogs({ limit: 10000 });
+      const list = await window.electronAPI.loadLoggerBetLogs({ limit: Number.MAX_SAFE_INTEGER });
       const normalized = (Array.isArray(list) ? list : []).map((b: any) => ({
         ...b,
-        category: b?.category === 'sports' ? 'sports' : 'casino',
+        category:
+          b?.category === 'sports' ||
+          String(b?.gameSlug || '').toLowerCase().includes('sportsbook') ||
+          String(b?.gameName || '').toLowerCase().includes('sportsbook') ||
+          String(b?.betType || '').toLowerCase().includes('sport') ||
+          `${String(b?.houseId || '')} ${String(b?.iid || '')} ${String(b?.betId || '')}`.toLowerCase().includes('sport:')
+            ? 'sports'
+            : 'casino',
       }));
       setCasinoBets(normalized.filter((b: LoggerBetEntry) => b.category !== 'sports'));
       setSportsBets(normalized.filter((b: LoggerBetEntry) => b.category === 'sports'));

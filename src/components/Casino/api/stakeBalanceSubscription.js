@@ -132,6 +132,9 @@ const HOUSE_BETS_ALLOWED_TYPEN = new Set([
   'MultiplayerCrashBet',
   'MultiplayerSlideBet',
   'RacingBet',
+  'SportsBet',
+  'SportBet',
+  'SportsbookBet',
 ])
 
 /** Edge-Cases wo API-Name von slug-Konvention abweicht */
@@ -229,22 +232,24 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
           }
           const { bet, game } = hb
           const tn = bet?.__typename || ''
+          const isSportsType = /sport/i.test(tn)
           // Ohne passendes Inline-Fragment fehlen Felder — Typ muss zur GraphQL-Query passen.
           if (!HOUSE_BETS_ALLOWED_TYPEN.has(tn)) {
             if (doCompactLog) console.warn('[houseBets] SKIP: __typename=', tn)
             return
           }
           const amountRaw = Number(bet?.amount)
-          if (!Number.isFinite(amountRaw) || amountRaw <= 0) {
+          const hasValidAmount = Number.isFinite(amountRaw) && amountRaw > 0
+          if (!hasValidAmount && !isSportsType) {
             if (doCompactLog) console.warn('[houseBets] SKIP: amount<=0', { amount: amountRaw, bet })
             return
           }
           const payoutRaw = Number(bet?.payout)
-          const payout = Number.isFinite(payoutRaw) && payoutRaw >= 0 ? payoutRaw : 0
+          const payout = Number.isFinite(payoutRaw) && payoutRaw >= 0 ? payoutRaw : (isSportsType ? null : 0)
           const directPayoutMultiplier = Number(bet?.payoutMultiplier)
           const payoutMultiplier = Number.isFinite(directPayoutMultiplier) && directPayoutMultiplier > 0
             ? directPayoutMultiplier
-            : (amountRaw > 0 ? payout / amountRaw : 0)
+            : (hasValidAmount && Number.isFinite(payout) ? payout / amountRaw : null)
           const houseId = hb?.iid ?? bet?.id ?? hb?.id
           const gameSlug = game?.slug || gameNameToSlug(game?.name) || ''
           const name = (game?.name || '').toLowerCase()
@@ -275,7 +280,7 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
             /** Top-Level `houseBets.id` — Fallback wenn `iid` fehlt */
             houseTopId: hb?.id != null && String(hb.id).trim() !== '' ? String(hb.id).trim() : null,
             gameSlug,
-            amount: amountRaw,
+            amount: hasValidAmount ? amountRaw : null,
             payout,
             currency: (bet?.currency || '').toLowerCase(),
             payoutMultiplier,

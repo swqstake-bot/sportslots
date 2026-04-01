@@ -4,7 +4,13 @@ import { subscribeToBetUpdates } from '../Casino/api/stakeBalanceSubscription';
 function mapLoggerEntry(b: any) {
   const slug = String(b?.gameSlug || '').toLowerCase();
   const gameName = String(b?.gameName || '').toLowerCase();
-  const isSports = slug === 'sportsbook' || gameName.includes('sportsbook');
+  const betType = String(b?.betType || '').toLowerCase();
+  const ids = `${String(b?.houseId || '')} ${String(b?.iid || '')} ${String(b?.betId || '')}`.toLowerCase();
+  const isSports =
+    slug.includes('sportsbook') ||
+    gameName.includes('sportsbook') ||
+    betType.includes('sport') ||
+    ids.includes('sport:');
   return {
     receivedAt: b?.receivedAt || new Date().toISOString(),
     houseId: b?.houseId ?? null,
