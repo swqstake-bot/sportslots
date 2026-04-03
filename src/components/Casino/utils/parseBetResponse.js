@@ -57,11 +57,25 @@ function isMiniFeature(bonusFeatureId) {
   return MINI_FEATURE_IDS.has(String(bonusFeatureId).toLowerCase())
 }
 
+/**
+ * Hacksaw liefert bei manchen Slots den Marketing-Titel statt fs_3/fs_5 (z. B. Epic Bullets and Bounty:
+ * „GO AHEAD, MAKE HER DAY“ für den 5-Scatter-Bonus nach Gamble).
+ */
+function isHacksawStyleNamedBonusRound(idRaw) {
+  if (idRaw == null) return false
+  const id = String(idRaw).toLowerCase().replace(/\s+/g, ' ').trim()
+  if (id.length < 8) return false
+  if (MINI_FEATURE_IDS.has(id)) return false
+  if (id.includes('make her day') || id.includes('go ahead')) return true
+  return false
+}
+
 function isRealFreeSpin(bonusFeatureId) {
   if (!bonusFeatureId) return false
   const id = String(bonusFeatureId).toLowerCase()
   if (MINI_FEATURE_IDS.has(id)) return false
-  return FREE_SPIN_IDS.has(id) || FREE_SPIN_PATTERN.test(id) || id.startsWith('fs')
+  if (FREE_SPIN_IDS.has(id) || FREE_SPIN_PATTERN.test(id) || id.startsWith('fs')) return true
+  return isHacksawStyleNamedBonusRound(bonusFeatureId)
 }
 
 /**
@@ -101,6 +115,9 @@ function extractBonusFeatureFromEvents(events) {
             if (!isNaN(n)) scatterCount = n
           }
         }
+        if (scatterCount == null && isHacksawStyleNamedBonusRound(bonusFeatureId)) {
+          scatterCount = 5
+        }
         return { bonusFeatureId, scatterCount }
       }
     }
@@ -116,6 +133,9 @@ function extractBonusFeatureFromEvents(events) {
           const n = parseInt(ev.c.bonusFeatureCount, 10)
           if (!isNaN(n)) scatterCount = n
         }
+      }
+      if (scatterCount == null && isHacksawStyleNamedBonusRound(bonusFeatureId)) {
+        scatterCount = 5
       }
       return { bonusFeatureId, scatterCount }
     }
@@ -293,12 +313,16 @@ export function parseBetResponse(response, betAmount) {
     ? extractBonusFeatureFromEvents(response?.round?.events)
     : { bonusFeatureId: null, scatterCount: null }
   let bonusFeatureId = bonusFromEvents.bonusFeatureId ?? stateBonus?.bonusFeatureId ?? null
-  const scatterCount = bonusFromEvents.scatterCount ?? stateBonus?.scatterCount ?? null
+  let scatterCount = bonusFromEvents.scatterCount ?? stateBonus?.scatterCount ?? null
   if (isBonus && !bonusFeatureId && response?._nolimitRaw) {
     bonusFeatureId = 'fs'
   }
   if (isBonus && !bonusFeatureId && (response?._pragmatic?.na === 'b' || response?.freeRoundOffer)) {
     bonusFeatureId = 'fs'
+  }
+  // Hacksaw: 5-Scatter-/Epic-Gamble liefert oft bonusFeatureWon: fs_epic (kein _5-Suffix)
+  if (scatterCount == null && String(bonusFeatureId || '').toLowerCase() === 'fs_epic') {
+    scatterCount = 5
   }
 
   const hasRealFsEnter = response?.round?.events?.some((ev) => {

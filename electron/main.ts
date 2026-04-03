@@ -97,7 +97,9 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: false,
-      sandbox: false
+      sandbox: false,
+      /** Sports/Casino AutoBet nutzt setTimeout-Loops — Standard wäre Throttling bei minimiertem Fenster. */
+      backgroundThrottling: false,
     },
   });
 

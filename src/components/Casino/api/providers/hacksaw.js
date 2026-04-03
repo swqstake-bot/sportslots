@@ -350,7 +350,29 @@ export function getImpliedScatterLevel(parsed, slotSlug = '') {
     const M = { fs: 3, fs_1: 3, fs_2: 4, underworld: 3, judgment: 4 }
     return M[bonusId] ?? null
   }
-  const M = { fs: 3, fs_1: 3, fs_2: 4 }
+  if (slug.includes('epic-bullets') || slug.includes('epicbullets')) {
+    // Epic Bullets and Bounty: 5-Scatter / Gamble-Ergebnis oft bonusFeatureWon: fs_epic
+    const M = {
+      fs: 3,
+      fs_1: 3,
+      fs_2: 4,
+      fs_3: 5,
+      fs_5: 5,
+      epic: 5,
+      fs_epic: 5,
+    }
+    if (M[bonusId] != null) return M[bonusId]
+    if (bonusId.includes('make her day') || bonusId.includes('go ahead')) return 5
+    return null
+  }
+  const M = {
+    fs: 3,
+    fs_1: 3,
+    fs_2: 4,
+    fs_3: 5,
+    fs_5: 5,
+    fs_epic: 5,
+  }
   return M[bonusId] ?? null
 }
 
@@ -411,15 +433,37 @@ export function shouldSkipBonus(parsed, options) {
     if (HAND_OF_ANUBIS_MAPPING.hasOwnProperty(bonusId)) {
       specialLevel = HAND_OF_ANUBIS_MAPPING[bonusId]
     }
+  } else if (slotSlug.includes('epic-bullets') || slotSlug.includes('epicbullets')) {
+    const EPIC_BULLETS_MAPPING = {
+      fs: 3,
+      fs_1: 3,
+      fs_2: 4,
+      fs_3: 5,
+      fs_5: 5,
+      epic: 5,
+      fs_epic: 5,
+    }
+    if (EPIC_BULLETS_MAPPING.hasOwnProperty(bonusId)) {
+      specialLevel = EPIC_BULLETS_MAPPING[bonusId]
+    }
+    if (specialLevel == null && (bonusId.includes('make her day') || bonusId.includes('go ahead'))) {
+      specialLevel = 5
+    }
   } else {
-    // Global/Legacy Mappings (falls nötig)
+    // Global/Legacy Mappings (falls nötig) — fs_epic: viele Hacksaw-Slots nutzen das für 5-Scatter-/Epic-Bonus
     const GLOBAL_MAPPING = {
-      'fs': 3,   // Normal Bonus für andere Slots
-      'fs_1': 3,
-      'fs_2': 4,
+      fs: 3,
+      fs_1: 3,
+      fs_2: 4,
+      fs_3: 5,
+      fs_5: 5,
+      fs_epic: 5,
     }
     if (GLOBAL_MAPPING.hasOwnProperty(bonusId)) {
       specialLevel = GLOBAL_MAPPING[bonusId]
+    }
+    if (specialLevel == null && (bonusId.includes('make her day') || bonusId.includes('go ahead'))) {
+      specialLevel = 5
     }
   }
 

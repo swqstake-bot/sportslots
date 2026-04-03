@@ -25,6 +25,17 @@ const isEsport = (slug: string) => {
   return esports.some(e => slug.toLowerCase().includes(e));
 };
 
+/**
+ * Live-Erkennung wie in FixtureCard: Stake setzt nicht immer `fixture.status` auf live,
+ * oft steht der Lauf nur in `eventStatus.matchStatus` (live / in_play / inplay).
+ */
+function isFixtureLiveMatch(fixture: { status?: string; eventStatus?: { matchStatus?: string } }): boolean {
+  const s = (fixture.status || '').toLowerCase();
+  if (s === 'live' || s === 'in_progress') return true;
+  const ms = String(fixture.eventStatus?.matchStatus ?? '').toLowerCase();
+  return ms === 'live' || ms === 'in_play' || ms === 'inplay';
+}
+
 /** Anstoßzeit aus SportFixture (data Match/Outright); fehlt → +∞ damit ans Ende sortiert. */
 function getFixtureStartTimeMs(fixture: any): number {
   const d = fixture?.data;
@@ -470,13 +481,9 @@ export function useAutoBetEngine() {
                     continue;
                 }
                 
-                // Stake Shield Strict Check for Live Games (using JSON status)
-                // Even if we requested 'upcoming', API might return live games.
-                // Status 'live' or 'in_progress' is not allowed for Shield OR if Ignore Live Games is checked.
+                // Shield / Ignore Live: auch wenn nur `eventStatus.matchStatus` Live meldet (siehe FixtureCard).
                 if (settings.stakeShield?.enabled || settings.ignoreLiveGames) {
-                    const status = (fixture.status || '').toLowerCase();
-                    if (status === 'live' || status === 'in_progress') {
-                        // console.log(`Skipping live fixture ${fixture.name} because Shield is enabled or Ignore Live is checked.`);
+                    if (isFixtureLiveMatch(fixture)) {
                         rejections.status++;
                         continue;
                     }
@@ -580,7 +587,7 @@ export function useAutoBetEngine() {
                                 outcomeName: outcome.name,
                                 odds: odds,
                                 sportSlug: sport.slug, // Track sport slug for mixing validation
-                                isLive: (fixture.status === 'live' || fixture.status === 'in_progress'), // Explicitly check status
+                                isLive: isFixtureLiveMatch(fixture),
                                 fixtureStartTimeMs: getFixtureStartTimeMs(fixture),
                                 });
                             } else {
