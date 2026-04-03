@@ -3,7 +3,12 @@ import { logApiCall } from '../utils/apiLogger'
 
 const PAGE_SIZE = 31
 const SLOTS_CACHE_KEY = 'slotbot_stake_slots_cache'
-const NEWEST_PAGES_MAX = 3
+const NEWEST_PAGES_MAX = 10
+/**
+ * Zusätzliche slugKuratorGroup-Slugs für Quick-Load: sort „newest“ nur innerhalb der Gruppe.
+ * Global `slug: 'slots'` + newest deckt nicht alle Provider-Neuerscheinungen ab (z. B. Hacksaw).
+ */
+const QUICK_LOAD_EXTRA_GROUPS = [{ slug: 'hacksaw-gaming', pages: 10 }]
 const SESSION_CACHE_TTL_MS = 10 * 60 * 1000 // 10 min – kein Refetch beim Tab-Wechsel
 
 let sessionSlotsCache = null
@@ -178,6 +183,21 @@ function mergeSlotsInto(base, incoming) {
   return Array.from(bySlug.values())
 }
 
+/** Mehrere Seiten „newest“ für einen Kurator (z. B. hacksaw-gaming). */
+async function fetchNewestPagesForCuratorSlug(curatorSlug, maxPages) {
+  const out = []
+  for (let page = 0; page < maxPages; page++) {
+    const offset = page * PAGE_SIZE
+    const variables = { slug: curatorSlug, limit: PAGE_SIZE, offset, sort: 'newest' }
+    const response = await StakeApi.query(SLUG_KURATOR_QUERY, variables)
+    const slots = parseGamesFromResponse(response)
+    if (slots.length === 0) break
+    out.push(...slots)
+    if (slots.length < PAGE_SIZE) break
+  }
+  return out
+}
+
 export async function fetchStakeSlots(accessToken) {
   if (sessionSlotsCache && Date.now() - sessionCacheTime < SESSION_CACHE_TTL_MS) {
     console.log(`[Slots] Session-Cache (${sessionSlotsCache.length} Slots), kein API-Call`)
@@ -188,7 +208,7 @@ export async function fetchStakeSlots(accessToken) {
   const t0 = Date.now()
 
   if (cached && cached.length > 0) {
-    console.log(`[Slots] Cache: ${cached.length} Slots, lade nur ${NEWEST_PAGES_MAX} Seiten newest...`)
+    console.log(`[Slots] Cache: ${cached.length} Slots, lade ${NEWEST_PAGES_MAX} Seiten newest (global slots) + Kuratoren…`)
     try {
       const newest = []
       for (let page = 0; page < NEWEST_PAGES_MAX; page++) {
@@ -200,12 +220,38 @@ export async function fetchStakeSlots(accessToken) {
         newest.push(...slots)
         if (slots.length < PAGE_SIZE) break
       }
+      for (const g of QUICK_LOAD_EXTRA_GROUPS) {
+        try {
+          const extra = await fetchNewestPagesForCuratorSlug(g.slug, g.pages)
+          if (extra.length) {
+            newest.push(...extra)
+            console.log(`[Slots] Quick-Load: +${extra.length} Einträge von Kurator „${g.slug}“ (newest)`)
+          }
+        } catch (e) {
+          console.warn(`[Slots] Quick-Load Kurator ${g.slug}:`, e?.message || e)
+        }
+      }
+      const knownBefore = new Set(cached.map((s) => s.slug))
       const merged = mergeSlotsInto(cached, newest)
+      let newlyAddedSlugs = 0
+      for (const s of merged) {
+        if (!knownBefore.has(s.slug)) newlyAddedSlugs++
+      }
       saveCachedSlots(merged)
       sessionSlotsCache = merged
       sessionCacheTime = Date.now()
-      console.log(`[Slots] Quick-Load: ${merged.length} Slots (${newest.length} newest) in ${Math.round((Date.now() - t0) / 1000)}s`)
-      logApiCall({ type: 'stake/slugKuratorGroup', endpoint: 'graphql', request: { quickLoad: true, newestPages: NEWEST_PAGES_MAX }, response: { count: merged.length }, error: null, durationMs: Date.now() - t0 })
+      const sec = Math.round((Date.now() - t0) / 1000)
+      console.log(
+        `[Slots] Quick-Load: ${merged.length} Slots gesamt · ${newest.length} Einträge von API zusammengeführt · ca. ${newlyAddedSlugs} neue Slugs (vorher ${cached.length}) in ${sec}s`
+      )
+      logApiCall({
+        type: 'stake/slugKuratorGroup',
+        endpoint: 'graphql',
+        request: { quickLoad: true, newestPages: NEWEST_PAGES_MAX, extraGroups: QUICK_LOAD_EXTRA_GROUPS },
+        response: { count: merged.length, mergedRows: newest.length, newlyAddedSlugs },
+        error: null,
+        durationMs: Date.now() - t0,
+      })
       return merged
     } catch (err) {
       console.warn('[Slots] Quick-Load fehlgeschlag, nutze Cache:', err?.message)
