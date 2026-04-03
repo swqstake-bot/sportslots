@@ -259,6 +259,39 @@ ipcMain.handle('open-external', async (_event, url) => {
     await shell.openExternal(url);
 });
 
+ipcMain.handle('open-slot-popup', async (_event, payload: { slug?: string; locale?: string } = {}) => {
+    const rawSlug = String(payload?.slug || '').trim().toLowerCase();
+    const slug = rawSlug.replace(/[^a-z0-9-]/g, '');
+    if (!slug) return { ok: false, error: 'invalid_slug' };
+
+    const localeRaw = String(payload?.locale || 'de').trim().toLowerCase();
+    const locale = /^[a-z]{2}(-[a-z]{2})?$/.test(localeRaw) ? localeRaw : 'de';
+    const origin = await resolveStakeOrigin();
+    const targetUrl = `${origin}/${locale}/casino/games/${slug}`;
+
+    const popup = new BrowserWindow({
+        width: 1360,
+        height: 860,
+        parent: win || undefined,
+        show: true,
+        autoHideMenuBar: true,
+        webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: false,
+            backgroundThrottling: false,
+        },
+    });
+
+    popup.webContents.setWindowOpenHandler(({ url }) => {
+        shell.openExternal(url);
+        return { action: 'deny' };
+    });
+
+    await popup.loadURL(targetUrl);
+    return { ok: true, url: targetUrl };
+});
+
 ipcMain.handle('get-session-token', async () => {
     if (!sessionData.cookies) {
         await captureSession();

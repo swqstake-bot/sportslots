@@ -707,6 +707,9 @@ export default function BonusHuntControl({
             onWinner={(slot) => {
               if (!slot?.slug) return
               setWheelOpenedSlugs((prev) => new Set([...prev, slot.slug]))
+              if (window.electronAPI?.openSlotPopup) {
+                void window.electronAPI.openSlotPopup({ slug: slot.slug, locale: 'de' }).catch(() => {})
+              }
               if (huntComplete) {
                 // Bei Bonus Opening entfernen wir ihn NICHT aus hasBonusSlugs,
                 // damit er in der Liste als "Bonus" bleibt, aber als "Opened" markiert wird.

@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     exportLoggerBetLogs: (bets: any[]) => ipcRenderer.invoke('logger-export-bet-logs', bets),
     importLoggerBetLogs: () => ipcRenderer.invoke('logger-import-bet-logs'),
     deleteAllLoggerBetLogs: () => ipcRenderer.invoke('logger-delete-all-bet-logs'),
+    openSlotPopup: (payload: { slug: string; locale?: string }) => ipcRenderer.invoke('open-slot-popup', payload),
     proxyRequest: (options: any) => ipcRenderer.invoke('proxy-request', options),
     extractClawbusterSecret: (configUrl: string) => ipcRenderer.invoke('clawbuster-extract-secret', configUrl),
     // Slot Spin Samples – automatisches Lernen in Ordner
