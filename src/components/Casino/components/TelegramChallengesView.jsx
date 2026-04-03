@@ -259,7 +259,7 @@ export default function TelegramChallengesView({
       return
     }
     const r = await api.invoke('telegram-config-set', { apiId, apiHash })
-    if (!r?.ok) setLoginError(r?.error || 'Speichern fehlgeschlagen.')
+    if (!r?.ok) setLoginError(r?.error || 'Save failed.')
   }, [apiIdStr, apiHashStr])
 
   const handleTelegramLogin = useCallback(async () => {
@@ -270,7 +270,7 @@ export default function TelegramChallengesView({
     const apiHash = apiHashStr.trim()
     const phone = phoneStr.trim()
     if (!Number.isFinite(apiId) || apiId <= 0) {
-      setLoginError('API-ID ungültig.')
+      setLoginError('Invalid API ID.')
       return
     }
     if (!apiHash) {
@@ -291,7 +291,7 @@ export default function TelegramChallengesView({
       if (r?.ok) {
         await refreshTgStatus()
       } else {
-        setLoginError(r?.error || 'Anmeldung fehlgeschlagen.')
+        setLoginError(r?.error || 'Login failed.')
       }
     } catch (e) {
       setLoginError(e instanceof Error ? e.message : String(e))
@@ -333,7 +333,7 @@ export default function TelegramChallengesView({
         setDraft((prev) => (appendFetch && prev.trim() ? `${prev.trim()}\n\n---\n\n${block}` : block))
         await refreshTgStatus()
       } else {
-        setFetchError(r?.error || 'Laden fehlgeschlagen.')
+        setFetchError(r?.error || 'Loading failed.')
       }
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : String(e))
@@ -352,7 +352,7 @@ export default function TelegramChallengesView({
       if (r?.ok) {
         setListening(true)
       } else {
-        setListenError(r?.error || 'Lauschen konnte nicht starten.')
+        setListenError(r?.error || 'Could not start listening.')
         setListening(false)
       }
     } catch (e) {
@@ -408,9 +408,9 @@ export default function TelegramChallengesView({
         <div>
           <div className="hunter-title">Telegram Challenges</div>
           <p className="hunter-meta" style={{ marginTop: '0.35rem', maxWidth: '52rem', lineHeight: 1.45 }}>
-            Text einfügen, <strong>History laden</strong> oder <strong>Kanal live lauschen</strong> (neue Posts): wie Auto-Hunter
-            werden <strong>Mindesteinsatz (USD)</strong> und <strong>Ziel-Multis</strong> in die Slots übernommen (Bridge). API-ID
-            / Hash von{' '}
+            Paste text, <strong>load history</strong> or <strong>listen live to channel</strong> (new posts): like Auto Hunter,
+            the <strong>minimum stake (USD)</strong> and <strong>target multipliers</strong> are transferred to slots (bridge). API ID
+            / hash from{' '}
             <a
               href="https://my.telegram.org"
               target="_blank"
@@ -426,10 +426,10 @@ export default function TelegramChallengesView({
 
       {!electron?.invoke && (
         <div className="hunter-card" style={{ padding: '0.85rem', borderColor: 'var(--warning)' }}>
-          <div className="hunter-section-title">Nur in der Electron-App</div>
+          <div className="hunter-section-title">Only in the Electron app</div>
           <p className="hunter-meta" style={{ margin: 0 }}>
-            Automatisches Laden von Telegram ist nur in der Desktop-App verfügbar. Im Browser kannst du den Text weiterhin
-            manuell einfügen.
+            Automatic Telegram loading is only available in the desktop app. In the browser you can still
+            paste manually.
           </p>
         </div>
       )}
@@ -437,7 +437,7 @@ export default function TelegramChallengesView({
       {electron?.invoke && (
         <div className="hunter-card" style={{ padding: '1rem' }}>
           <div className="hunter-section-title" style={{ marginBottom: '0.65rem' }}>
-            Telegram-Konto (eigene API, eigenes Konto)
+            Telegram account (own API, own account)
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.65rem' }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
@@ -463,7 +463,7 @@ export default function TelegramChallengesView({
                 type="password"
                 value={apiHashStr}
                 onChange={(e) => setApiHashStr(e.target.value)}
-                placeholder="von my.telegram.org"
+                placeholder="from my.telegram.org"
                 autoComplete="off"
                 style={{
                   padding: '0.5rem 0.6rem',
@@ -495,21 +495,21 @@ export default function TelegramChallengesView({
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center' }}>
             <Button type="button" variant="secondary" onClick={handleSaveApiConfig}>
-              API-Daten speichern
+              Save API data
             </Button>
             <Button type="button" variant="primary" onClick={handleTelegramLogin} disabled={loginBusy}>
-              {loginBusy ? 'Anmeldung…' : 'Bei Telegram anmelden'}
+              {loginBusy ? 'Signing in...' : 'Sign in to Telegram'}
             </Button>
             <Button type="button" variant="secondary" onClick={handleLogout}>
-              Abmelden (Session)
+              Logout (session)
             </Button>
             {tgStatus && (
               <span className="hunter-meta">
                 {tgStatus.authorized
-                  ? 'Verbunden & angemeldet'
+                  ? 'Connected & signed in'
                   : tgStatus.hasSessionFile
-                    ? 'Session vorhanden, prüfe Verbindung…'
-                    : 'Nicht angemeldet'}
+                    ? 'Session found, checking connection...'
+                    : 'Not signed in'}
               </span>
             )}
           </div>
@@ -527,7 +527,7 @@ export default function TelegramChallengesView({
                 <input
                   value={authCode}
                   onChange={(e) => setAuthCode(e.target.value)}
-                  placeholder="Code aus Telegram"
+                  placeholder="Code from Telegram"
                   style={{
                     flex: '1 1 160px',
                     padding: '0.45rem 0.55rem',
@@ -538,7 +538,7 @@ export default function TelegramChallengesView({
                   }}
                 />
                 <Button type="button" variant="primary" onClick={handleSubmitAuthCode} disabled={!authCode.trim()}>
-                  Code senden
+                  Submit code
                 </Button>
               </div>
             </div>
@@ -546,14 +546,14 @@ export default function TelegramChallengesView({
           {needsPassword && (
             <div style={{ marginTop: '0.75rem', padding: '0.65rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
               <div className="hunter-kpi-label" style={{ marginBottom: '0.35rem' }}>
-                2FA-Passwort{passwordHint ? ` (Hinweis: ${passwordHint})` : ''}
+                2FA password{passwordHint ? ` (hint: ${passwordHint})` : ''}
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
                 <input
                   type="password"
                   value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
-                  placeholder="Cloud-Passwort"
+                  placeholder="Cloud password"
                   style={{
                     flex: '1 1 160px',
                     padding: '0.45rem 0.55rem',
@@ -564,7 +564,7 @@ export default function TelegramChallengesView({
                   }}
                 />
                 <Button type="button" variant="primary" onClick={handleSubmitAuthPassword} disabled={!authPassword}>
-                  Passwort senden
+                  Submit password
                 </Button>
               </div>
             </div>
@@ -582,11 +582,11 @@ export default function TelegramChallengesView({
             }}
           >
             <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              <span className="hunter-kpi-label">Kanal / Gruppe</span>
+              <span className="hunter-kpi-label">Channel / Group</span>
               <input
                 value={channelStr}
                 onChange={(e) => setChannelStr(e.target.value)}
-                placeholder="@channel oder https://t.me/…"
+                placeholder="@channel or https://t.me/..."
                 style={{
                   padding: '0.5rem 0.6rem',
                   borderRadius: 'var(--radius-md)',
@@ -598,7 +598,7 @@ export default function TelegramChallengesView({
               />
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              <span className="hunter-kpi-label">Letzte Nachrichten (max.)</span>
+              <span className="hunter-kpi-label">Latest messages (max.)</span>
               <input
                 type="number"
                 min={1}
@@ -617,10 +617,10 @@ export default function TelegramChallengesView({
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', cursor: 'pointer' }}>
               <input type="checkbox" checked={appendFetch} onChange={(e) => setAppendFetch(e.target.checked)} />
-              <span className="hunter-meta">An Text anhängen</span>
+              <span className="hunter-meta">Append to text</span>
             </label>
             <Button type="button" variant="primary" onClick={handleFetchChannel} disabled={fetchBusy || !channelStr.trim()}>
-              {fetchBusy ? 'Lade…' : 'Nachrichten laden'}
+              {fetchBusy ? 'Loading...' : 'Load messages'}
             </Button>
           </div>
           {fetchError && (
@@ -640,7 +640,7 @@ export default function TelegramChallengesView({
             }}
           >
             <span className="hunter-kpi-label" style={{ width: '100%', marginBottom: '0.15rem' }}>
-              Live (empfiehlt sich statt History): neue Kanalnachrichten → Ziel-Multis + Min. Bet wie Hunter
+              Live (recommended over history): new channel messages -> target multipliers + min bet like hunter
             </span>
             <Button
               type="button"
@@ -648,14 +648,14 @@ export default function TelegramChallengesView({
               onClick={handleStartListen}
               disabled={listenBusy || listening || !channelStr.trim()}
             >
-              {listenBusy ? 'Starte…' : 'Lauschen starten'}
+              {listenBusy ? 'Starting...' : 'Start listening'}
             </Button>
             <Button type="button" variant="secondary" onClick={handleStopListen} disabled={!listening}>
-              Lauschen stoppen
+              Stop listening
             </Button>
             {listening && (
               <span className="hunter-meta" style={{ color: 'var(--accent)' }}>
-                ● Live aktiv
+                ● Live active
               </span>
             )}
           </div>
@@ -668,9 +668,9 @@ export default function TelegramChallengesView({
             <p
               className="hunter-meta"
               style={{ marginTop: '0.35rem', marginBottom: 0, fontSize: '0.72rem', lineHeight: 1.4, maxHeight: '4.5rem', overflow: 'auto' }}
-              title="Letzte empfangene Nachricht"
+              title="Latest received message"
             >
-              Zuletzt: {lastLivePreview}
+              Latest: {lastLivePreview}
             </p>
           )}
         </div>
@@ -678,12 +678,12 @@ export default function TelegramChallengesView({
 
       <div className="hunter-main">
         <label className="hunter-section-title" style={{ display: 'block' }}>
-          Nachricht (manuell oder aus Kanal geladen)
+          Message (manual or loaded from channel)
         </label>
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Telegram-Text mit stake.com/casino/games/… Links hier einfügen …"
+          placeholder="Paste Telegram text with stake.com/casino/games/... links here ..."
           rows={12}
           style={{
             width: '100%',
@@ -713,7 +713,7 @@ export default function TelegramChallengesView({
         >
           <div style={{ flex: '1 1 200px' }}>
             <label className="hunter-kpi-label" style={{ display: 'block', marginBottom: '0.35rem' }}>
-              Max. Slots gleichzeitig (Play)
+              Max slots at once (Play)
             </label>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
               <input
@@ -729,26 +729,25 @@ export default function TelegramChallengesView({
               </span>
             </div>
             <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-              Es werden die ersten {parallelClamped} <strong>angehakten</strong> Spiele (Reihenfolge wie unten) zu Play
-              hinzugefügt.
+              The first {parallelClamped} <strong>checked</strong> games (order as listed below) are added to Play.
             </p>
           </div>
           <Button variant="primary" onClick={handleAddToPlay} disabled={parsed.games.length === 0 || checkedSlugs.size === 0}>
-            Zu Play hinzufügen
+            Add to Play
           </Button>
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem' }}>
         <div className="hunter-kpi-card" style={{ padding: '1rem' }}>
-          <div className="hunter-kpi-label">Erkannte Spiele</div>
+          <div className="hunter-kpi-label">Detected games</div>
           <div className="hunter-kpi-value" style={{ fontSize: '1.5rem' }}>
             {parsed.games.length}
           </div>
         </div>
         {parsed.minBetUsd != null && (
           <div className="hunter-kpi-card" style={{ padding: '1rem' }}>
-            <div className="hunter-kpi-label">Min. Einsatz (geschätzt)</div>
+            <div className="hunter-kpi-label">Min stake (estimated)</div>
             <div className="hunter-kpi-value" style={{ fontSize: '1.25rem' }}>
               ~${parsed.minBetUsd.toFixed(2)} USD
             </div>
@@ -756,7 +755,7 @@ export default function TelegramChallengesView({
         )}
         {parsed.targetMultipliers?.length > 0 && (
           <div className="hunter-kpi-card" style={{ padding: '1rem' }}>
-            <div className="hunter-kpi-label">Ziel-Multis (geschätzt)</div>
+            <div className="hunter-kpi-label">Target multipliers (estimated)</div>
             <div className="hunter-kpi-value" style={{ fontSize: '1.15rem' }}>
               {parsed.targetMultipliers.map((n) => (Number.isInteger(n) ? n : n.toFixed(2))).join(' · ')}×
             </div>
@@ -764,7 +763,7 @@ export default function TelegramChallengesView({
         )}
         {(parsed.durationHint || parsed.statusHint) && (
           <div className="hunter-kpi-card" style={{ padding: '1rem' }}>
-            <div className="hunter-kpi-label">Status / Dauer</div>
+            <div className="hunter-kpi-label">Status / Duration</div>
             <div style={{ fontSize: '0.85rem', color: 'var(--text)', lineHeight: 1.4 }}>
               {parsed.statusHint && <div>{parsed.statusHint}</div>}
               {parsed.durationHint && <div className="hunter-meta">{parsed.durationHint}</div>}
@@ -775,7 +774,7 @@ export default function TelegramChallengesView({
 
       {parsed.games.length > 0 && (
         <div className="hunter-found-panel" style={{ maxHeight: 'none' }}>
-          <div className="hunter-found-head">Spiele aus dem Text (ankreuzen)</div>
+          <div className="hunter-found-head">Games from text (check to select)</div>
           <div className="hunter-found-body">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
               {parsed.games.map((g) => {
@@ -805,7 +804,7 @@ export default function TelegramChallengesView({
                       <div className="hunter-meta" style={{ wordBreak: 'break-all' }}>
                         {g.slug}
                         {!known && (
-                          <span style={{ color: 'var(--warning)', marginLeft: '0.35rem' }}>(wird beim Hinzufügen entdeckt)</span>
+                          <span style={{ color: 'var(--warning)', marginLeft: '0.35rem' }}>(discovered when adding)</span>
                         )}
                       </div>
                     </div>
@@ -820,7 +819,7 @@ export default function TelegramChallengesView({
       {parsed.prizeLines.length > 0 && (
         <div className="hunter-card">
           <div className="hunter-section-title" style={{ marginBottom: '0.5rem' }}>
-            Preise / Hinweise (Auszug)
+            Prizes / Notes (excerpt)
           </div>
           <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
             {parsed.prizeLines.map((line, i) => (
@@ -834,8 +833,8 @@ export default function TelegramChallengesView({
 
       {draft.trim() && parsed.games.length === 0 && (
         <div className="hunter-empty" style={{ padding: '1.25rem' }}>
-          Keine <code style={{ color: 'var(--accent)' }}>stake.com/casino/games/…</code>-Links erkannt. Stelle sicher, dass die
-          Nachricht vollständige URLs enthält (wie aus dem Telegram-Client kopiert).
+          No <code style={{ color: 'var(--accent)' }}>stake.com/casino/games/...</code> links detected. Make sure the
+          message contains full URLs (as copied from the Telegram client).
         </div>
       )}
     </div>

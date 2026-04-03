@@ -213,7 +213,7 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
         }
       })
       .catch((err) => {
-        if (!cancelled) setError(err?.message || 'Challenges konnten nicht geladen werden.')
+        if (!cancelled) setError(err?.message || 'Challenges could not be loaded.')
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -272,8 +272,8 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
         </div>
         <div style={STYLES.empty}>
           {tab === TAB_COMPLETED
-            ? 'Keine abgeschlossenen Challenges.'
-            : 'Keine aktiven Challenges. Neue Challenges findest du bei Stake unter „Challenges“.'}
+            ? 'No completed challenges.'
+            : 'No active challenges. You can find new challenges on Stake under "Challenges".'}
         </div>
       </div>
     )

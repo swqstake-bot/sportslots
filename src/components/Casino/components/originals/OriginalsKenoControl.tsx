@@ -53,7 +53,7 @@ export default function OriginalsKenoControl({ settings: propSettings, onSetting
     const amt = Number(amount) || Number(settings?.baseBet) || 0.01
     const pickArr = Array.from(picks).sort((a, b) => a - b)
     if (!(amt > 0 && pickArr.length >= 1)) {
-      setError('Einsatz > 0 und mind. 1 Pick.')
+      setError('Stake must be > 0 and at least 1 pick.')
       return
     }
     setError('')
@@ -77,13 +77,13 @@ export default function OriginalsKenoControl({ settings: propSettings, onSetting
         const win = payout > 0
         const entry: OriginalsBetEntry = { amount: amt, payout, win }
         addEntry(entry)
-        onBetPlaced?.(result ? { iid: result.iid, payout } : { error: 'Keine Antwort' })
+        onBetPlaced?.(result ? { iid: result.iid, payout } : { error: 'No response' })
         if (!result) break
         if (shouldStopSession(sessionEntries, settings ?? {})) break
         await delay(delayMs)
       }
     } catch (e: any) {
-      setError(e?.message || 'Wette fehlgeschlagen')
+      setError(e?.message || 'Bet failed')
       onBetPlaced?.({ error: e?.message })
     } finally {
       setRunning(false)
@@ -101,7 +101,7 @@ export default function OriginalsKenoControl({ settings: propSettings, onSetting
 
       <div className="flex flex-wrap gap-4 items-end">
         <div className="w-24">
-          <label className="block text-xs text-[var(--text-muted)] mb-1">Einsatz</label>
+          <label className="block text-xs text-[var(--text-muted)] mb-1">Stake</label>
           <input
             type="number"
             min="0.00000001"
@@ -112,7 +112,7 @@ export default function OriginalsKenoControl({ settings: propSettings, onSetting
           />
         </div>
         <div className="w-24">
-          <label className="block text-xs text-[var(--text-muted)] mb-1">Währung</label>
+          <label className="block text-xs text-[var(--text-muted)] mb-1">Currency</label>
           <select
             value={currency}
             onChange={(e) => setCurrency(e.target.value)}
@@ -143,8 +143,8 @@ export default function OriginalsKenoControl({ settings: propSettings, onSetting
 
       <div className="rounded-xl border border-[var(--border-subtle)] p-4 bg-[var(--bg-deep)]">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-xs text-[var(--text-muted)]">Zahlen 1–39, max. 10 Picks</span>
-          <span className="text-sm font-medium text-[var(--text)]">{picks.size} ausgewählt</span>
+          <span className="text-xs text-[var(--text-muted)]">Numbers 1-39, max. 10 picks</span>
+          <span className="text-sm font-medium text-[var(--text)]">{picks.size} selected</span>
         </div>
         <div className="grid grid-cols-8 sm:grid-cols-10 gap-1.5">
           {KENO_NUMBERS.map((n) => {

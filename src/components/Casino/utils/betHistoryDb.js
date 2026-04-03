@@ -3,9 +3,11 @@
  * Pro Slot gespeichert, lädt beim Start.
  */
 
-const DB_NAME = 'SlotbotBetHistory'
-const DB_VERSION = 2
-const STORE_NAME = 'bets'
+import { CASINO_DB_REGISTRY } from './storageRegistry'
+
+const DB_NAME = CASINO_DB_REGISTRY.betHistory.name
+const DB_VERSION = CASINO_DB_REGISTRY.betHistory.version
+const STORE_NAME = CASINO_DB_REGISTRY.betHistory.store
 
 /** @type {IDBDatabase | null} */
 let db = null

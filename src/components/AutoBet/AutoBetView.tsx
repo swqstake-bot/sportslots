@@ -7,6 +7,7 @@ import { AccordionSection } from '../ui/AccordionSection';
 import { TournamentEventPickFields } from './TournamentEventPickFields';
 import { EventMarketsScanner } from './EventMarketsScanner';
 import { hasTournamentScope } from '../../utils/tournamentScope';
+import './autobet.css';
 
 const STRATEGIES: AutoBetStrategy[] = [
   'Smart',
@@ -56,35 +57,30 @@ export function AutoBetView() {
     }
   };
 
-  const selectClass = 'w-full rounded p-2 text-sm font-medium appearance-none cursor-pointer transition-all focus:outline-none focus:ring-2 focus:ring-[var(--app-accent)] focus:border-[var(--app-accent)]';
-  const inputClass = 'w-full rounded p-2 text-sm font-mono outline-none transition-all focus:ring-2 focus:ring-[var(--app-accent)] focus:border-[var(--app-accent)]';
+  const selectClass = 'autobet-control w-full rounded p-2 text-sm font-medium appearance-none cursor-pointer transition-all focus:outline-none focus:ring-2 focus:ring-[var(--app-accent)] focus:border-[var(--app-accent)]';
+  const inputClass = 'autobet-control w-full rounded p-2 text-sm font-mono outline-none transition-all focus:ring-2 focus:ring-[var(--app-accent)] focus:border-[var(--app-accent)]';
   const inputSelectStyle = { background: 'var(--app-bg-deep)', border: '1px solid var(--app-border)', color: 'var(--app-text)' };
   const labelClass = 'block text-[11px] font-bold mb-1 uppercase tracking-wider';
   const labelStyle = { color: 'var(--app-text-muted)' };
 
   return (
-    <div className="flex flex-col h-full" style={{ background: 'var(--app-bg-deep)', color: 'var(--app-text-muted)' }}>
-      <div className="flex border-b" style={{ borderColor: 'var(--app-border)', background: 'var(--app-bg-deep)' }}>
+    <div className="autobet-view">
+      <div className="autobet-tabs">
         <button
-          className={`flex-1 py-3 font-bold text-sm transition-colors relative uppercase tracking-wider ${activeTab === 'settings' ? '' : 'hover:opacity-90'}`}
-          style={activeTab === 'settings' ? { color: 'var(--app-text)', background: 'var(--app-bg-card)' } : { color: 'var(--app-text-muted)' }}
+          className={`autobet-tab-btn ${activeTab === 'settings' ? 'is-active' : 'hover:opacity-90'}`}
           onClick={() => setActiveTab('settings')}
         >
           Settings
-          {activeTab === 'settings' && <div className="absolute bottom-0 left-0 w-full h-0.5" style={{ background: 'var(--app-accent)' }} />}
         </button>
         <button
-          className={`flex-1 py-3 font-bold text-sm transition-colors relative uppercase tracking-wider ${activeTab === 'logs' ? '' : 'hover:opacity-90'}`}
-          style={activeTab === 'logs' ? { color: 'var(--app-text)', background: 'var(--app-bg-card)' } : { color: 'var(--app-text-muted)' }}
+          className={`autobet-tab-btn ${activeTab === 'logs' ? 'is-active' : 'hover:opacity-90'}`}
           onClick={() => setActiveTab('logs')}
         >
-          Logs
-          <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${logs.length > 0 ? '' : ''}`} style={logs.length > 0 ? { background: 'var(--app-border)', color: 'var(--app-text)' } : { background: 'var(--app-bg-deep)', color: 'var(--app-text-muted)' }}>{logs.length}</span>
-          {activeTab === 'logs' && <div className="absolute bottom-0 left-0 w-full h-0.5" style={{ background: 'var(--app-accent)' }} />}
+          Logs <span className="autobet-tab-count">{logs.length}</span>
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 scrollbar-thin" style={{ background: 'var(--app-bg-card)', scrollbarColor: 'var(--app-border) transparent' }}>
+      <div className="autobet-content scrollbar-thin" style={{ scrollbarColor: 'var(--app-border) transparent' }}>
           {activeTab === 'settings' ? (
               <div className="space-y-2.5">
                   <AccordionSection title="Strategy" defaultOpen={true}>
@@ -122,7 +118,7 @@ export function AutoBetView() {
                           </div>
                         </div>
                       </div>
-                      <label className="flex items-center gap-2 cursor-pointer">
+                      <label className="autobet-check-card flex items-center gap-2 cursor-pointer rounded-lg p-2.5">
                         <input type="checkbox" id="ignoreLiveGames" checked={settings.ignoreLiveGames || false} onChange={(e) => updateSettings({ ignoreLiveGames: e.target.checked })} className="w-4 h-4 rounded cursor-pointer" style={{ accentColor: 'var(--app-accent)', borderColor: 'var(--app-border)' }} />
                         <span className="text-xs hover:opacity-90" style={{ color: 'var(--app-text-muted)' }}>Ignore Live Games</span>
                       </label>
@@ -177,11 +173,11 @@ export function AutoBetView() {
                       <div>
                         <label className={labelClass} style={labelStyle}>Event Filter (Keywords)</label>
                         <input type="text" value={settings.eventFilter || ''} onChange={(e) => updateSettings({ eventFilter: e.target.value })} className={inputClass} style={inputSelectStyle} placeholder="e.g. Night: Strickland" disabled={hasTournamentScope(settings)} />
-                        <p className="text-[10px] mt-1" style={{ color: 'var(--app-text-muted)' }}>Aus bei festem Turnier (Sport + Event oder URL).</p>
+                        <p className="text-[10px] mt-1" style={{ color: 'var(--app-text-muted)' }}>Disabled when a fixed tournament scope is set (sport + event or URL).</p>
                       </div>
 
                       <div>
-                        <h4 className="text-xs font-bold mb-2 uppercase tracking-wider" style={{ color: 'var(--app-text)' }}>Turnier / Event</h4>
+                        <h4 className="text-xs font-bold mb-2 uppercase tracking-wider" style={{ color: 'var(--app-text)' }}>Tournament / Event</h4>
                         <TournamentEventPickFields
                           settings={settings}
                           updateSettings={updateSettings}
@@ -203,7 +199,7 @@ export function AutoBetView() {
                         />
                       </div>
 
-                      <label className="flex items-center gap-2 cursor-pointer">
+                      <label className="autobet-check-card flex items-center gap-2 cursor-pointer rounded-lg p-2.5">
                         <input
                           type="checkbox"
                           checked={settings.fillUpEventMaxLegs || false}
@@ -213,7 +209,7 @@ export function AutoBetView() {
                           disabled={!hasTournamentScope(settings)}
                         />
                         <span className="text-xs hover:opacity-90" style={{ color: 'var(--app-text-muted)' }}>
-                          Fill legs pro Event (alle verfügbaren Fights im Turnier, begrenzt durch Max Legs)
+                          Fill legs per event (all available fights in the tournament, limited by Max Legs)
                         </span>
                       </label>
                     </div>
@@ -221,21 +217,21 @@ export function AutoBetView() {
 
                   <AccordionSection title="Advanced" defaultOpen={false}>
                     <div className="space-y-3">
-                      <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors" style={{ background: 'var(--app-bg-deep)', borderColor: 'var(--app-border)' }}>
+                      <label className="autobet-check-card flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors">
                         <input type="checkbox" checked={settings.fillUp || false} onChange={(e) => updateSettings({ fillUp: e.target.checked })} className="w-4 h-4 rounded cursor-pointer" style={{ accentColor: 'var(--app-accent)', borderColor: 'var(--app-border)' }} />
                         <div>
                           <span className="block text-sm font-bold" style={{ color: 'var(--app-text)' }}>Fill Up Mode</span>
                           <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>Keep filling up to 150 bets. Retry every 3 mins if full.</span>
                         </div>
                       </label>
-                      <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors" style={{ background: 'var(--app-bg-deep)', borderColor: 'var(--app-border)' }}>
+                      <label className="autobet-check-card flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors">
                         <input type="checkbox" checked={settings.coverWithShield || false} onChange={(e) => updateSettings({ coverWithShield: e.target.checked })} className="w-4 h-4 rounded cursor-pointer" style={{ accentColor: 'var(--app-accent)', borderColor: 'var(--app-border)' }} />
                         <div>
                           <span className="block text-sm font-bold" style={{ color: 'var(--app-text)' }}>Cover with Shield</span>
                           <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>Place 2nd identical bet with Shield after success.</span>
                         </div>
                       </label>
-                      <div className="p-3 rounded-lg border" style={{ background: 'rgba(15,15,25,0.5)', borderColor: 'var(--app-border)' }}>
+                      <div className="autobet-advanced-card p-3 rounded-lg">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-2" style={{ color: 'var(--app-text-muted)' }}>
                             <svg className="w-4 h-4" style={{ color: 'var(--app-accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
@@ -269,7 +265,7 @@ export function AutoBetView() {
                   <div className="pt-3">
                         <button
                             onClick={handleStartStop}
-                            className="w-full font-bold py-3 rounded-lg text-xs transition-all shadow-lg transform active:scale-[0.98] uppercase tracking-wider flex justify-center items-center gap-2"
+                            className="autobet-start-btn transition-all shadow-lg transform active:scale-[0.98] flex justify-center items-center gap-2"
                             style={isRunning
                                 ? { background: 'var(--app-error)', color: 'white', border: '2px solid rgba(255,51,102,0.5)' }
                                 : { background: 'var(--app-accent)', color: 'var(--app-bg-deep)', border: '2px solid rgba(var(--app-accent-rgb), 0.5)' }
@@ -291,7 +287,7 @@ export function AutoBetView() {
 
               </div>
           ) : (
-             <div className="flex flex-col h-full rounded-lg overflow-hidden border" style={{ background: 'var(--app-bg-card)', borderColor: 'var(--app-border)' }}>
+             <div className="autobet-log-shell">
                  <div className="flex justify-between items-center p-3 border-b" style={{ borderColor: 'var(--app-border)', background: 'var(--app-bg-deep)' }}>
                     <span className="font-bold uppercase tracking-wider text-xs flex items-center gap-2" style={{ color: 'var(--app-text)' }}>
                         <svg className="w-4 h-4" style={{ color: 'var(--app-accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>

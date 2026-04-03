@@ -1,54 +1,31 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import SlotControlJS from './components/SlotControl'
-const SlotControl = SlotControlJS as any
-import LogViewer from './components/LogViewer'
-import BonusHuntControl from './components/BonusHuntControl'
-import AutoChallengeHunter from './components/AutoChallengeHunter'
-import TelegramChallengeHunter from './components/TelegramChallengeHunter'
-import ForumChallengeView from './components/ForumChallengeView'
-import OriginalsView from './components/OriginalsView'
-import { SlotSelectMulti } from './components/SlotSelectGrouped'
 import { Button } from './components/ui/Button'
 import { Toast } from './components/Toast'
 import { useSlots } from './hooks/useSlots'
 import { loadSlotSets, saveSlotSet, deleteSlotSet, exportSlotSets, importSlotSets, loadFavorites, toggleFavorite } from './utils/slotSets'
 import { loadDiscoveredSlots, saveDiscoveredSlots } from './utils/discoveredSlots'
 import { loadRecentBets, clearAllBetHistory, clearSlotHistory } from './utils/betHistoryDb'
-import BetList from './components/BetList'
 import { ALL_CURRENCIES } from './constants/currencies'
 import { isFiat, isStable } from './utils/formatAmount'
+import { CASINO_STORAGE_KEYS } from './utils/storageRegistry'
 import './bridge/slotbotBridge'
 import { useUiStore } from '../../store/uiStore'
+import { useCasinoSession } from './hooks/useCasinoSession'
+import { CasinoShell } from './components/shell/CasinoShell'
+import { CasinoModeContent } from './components/tabs/CasinoModeContent'
+import type { CasinoSlotInstance, SlotSet } from './types'
 
 // Styles
 import './casino.css'
 import './styles/design-tokens.css'
 
-interface SlotSet {
-  id: string;
-  name: string;
-  slugs: string[];
-}
-
-const THEME_KEY = 'slotbot_theme'
+const THEME_KEY = CASINO_STORAGE_KEYS.theme
 
 export default function CasinoView() {
-  const [token, setToken] = useState('')
-  const [status, setStatus] = useState('idle')
-  const [error, setError] = useState('')
+  const { token, status, error } = useCasinoSession()
   const [discoveredSlots, setDiscoveredSlots] = useState<{ slug: string; name: string; providerId: string; thumbnailUrl?: string }[]>(() => loadDiscoveredSlots())
   const { slots: webSlots, loading: slotsLoading, error: slotsError } = useSlots(token, discoveredSlots)
-  const [selectedSlotInstances, setSelectedSlotInstances] = useState<
-    {
-      id: string
-      slug: string
-      sourceCurrency?: string
-      targetCurrency?: string
-      challengeTargetMultiplier?: number
-      challengeTargetMultipliers?: number[]
-      minBetUsd?: number
-    }[]
-  >([])
+  const [selectedSlotInstances, setSelectedSlotInstances] = useState<CasinoSlotInstance[]>([])
 
   const selectedSlugs = selectedSlotInstances.map((i) => i.slug)
   const { casinoMode: mode, setCasinoMode: setMode } = useUiStore()
@@ -111,33 +88,13 @@ export default function CasinoView() {
 
   // Beim App-Start: alte Slot-Statistiken löschen
   useEffect(() => {
-    const key = 'slotbot_bet_history_cleared_this_session'
+    const key = CASINO_STORAGE_KEYS.sessionHistoryCleared
     if (!sessionStorage.getItem(key)) {
       clearAllBetHistory().catch(() => {}).finally(() => {
         try { sessionStorage.setItem(key, '1') } catch { /* ignore */ }
       })
     }
   }, [])
-
-  // Initialize Session
-  useEffect(() => {
-    const initSession = async () => {
-        try {
-            const t = await window.electronAPI.getSessionToken();
-            if (t) {
-                setToken(t);
-                setStatus('connected');
-            } else {
-                console.warn("No session token found");
-                setError("No active Stake session found. Please navigate to Stake in the app.");
-            }
-        } catch (e) {
-            console.error("Failed to get session token", e);
-            setError("Failed to access session.");
-        }
-    };
-    initSession();
-  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -203,7 +160,7 @@ export default function CasinoView() {
     for (let i = 1; i < selectedSlotInstances.length; i++) {
       refs.get(selectedSlotInstances[i].id)?.applySettings?.(settings)
     }
-    setToast('Einstellungen vom ersten Slot auf alle übertragen')
+    setToast('Applied first slot settings to all slots')
   }, [selectedSlotInstances, useSharedCurrency])
 
   const handleSaveSet = (e: any) => {
@@ -245,7 +202,7 @@ export default function CasinoView() {
 
   const handleDeleteSet = (id: string, e: any) => {
     e.stopPropagation()
-    if (!confirm('Slot-Set wirklich löschen?')) return
+    if (!confirm('Delete slot set?')) return
     deleteSlotSet(id)
     setSlotSets(loadSlotSets())
     if (loadedSetId === id) setLoadedSetId('')
@@ -303,7 +260,7 @@ export default function CasinoView() {
 
   const handleAddInstance = useCallback((slug: string, source?: string | null, target?: string | null, blocked?: boolean) => {
     if (blocked) {
-      setToast('Hacksaw unterstützt nur eine Session pro Spiel')
+      setToast('Hacksaw supports only one session per game')
       setTimeout(() => setToast(''), 3000)
       return
     }
@@ -367,263 +324,71 @@ export default function CasinoView() {
               : {}),
           }]
       })
-      setToast(`Challenge ausgewählt: ${challenge.gameName || challenge.gameSlug}`)
+      setToast(`Challenge selected: ${challenge.gameName || challenge.gameSlug}`)
   }, [setMode, sharedSourceCurrency, sharedTargetCurrency])
 
   if (status === 'idle') {
-      return <div className="p-8 text-center text-gray-400">Loading Casino Session...</div>
+      return <div className="p-8 text-center text-[var(--text-muted)]">Loading Casino Session...</div>
+  }
+
+  const clearSlotHistoryForInstances = () => {
+    setSelectedSlotInstances((prev) => {
+      const slugsToClear = [...new Set(prev.map((i) => i.slug))]
+      slugsToClear.forEach((s) => clearSlotHistory(s).catch(() => {}))
+      return []
+    })
   }
 
   return (
-    <div className="casino-root min-h-screen font-sans" style={{ background: 'var(--bg-deep)', color: 'var(--text)' }}>
-      <div className="p-6 lg:p-8 max-w-[1800px] mx-auto">
-        
-        {/* Content */}
-        <main className="animate-in fade-in duration-500 space-y-6">
-           {error && (
-             <div className="casino-card border-l-4 border-l-[var(--error)] !bg-red-500/5">
-               <p className="text-sm font-medium text-[var(--error)]">{error}</p>
-             </div>
-           )}
-           {slotsError && !error && (
-             <div className="casino-card border-l-4 border-l-[var(--error)] !bg-red-500/5">
-               <p className="text-sm font-medium text-[var(--error)]">Slots: {slotsError}</p>
-             </div>
-           )}
-           {slotsLoading && token && (
-             <div className="space-y-2">
-               <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
-                 <div
-                   className="h-full min-w-[30%] rounded-full bg-[var(--accent)] opacity-80"
-                   style={{
-                     animation: 'slots-loading-shimmer 1.5s ease-in-out infinite',
-                   }}
-                 />
-               </div>
-               <p className="text-xs text-[var(--text-muted)]">Slots werden geladen…</p>
-             </div>
-           )}
-
-           {mode === 'originals' && (
-             <OriginalsView accessToken={token} />
-           )}
-
-           {mode === 'play' && (
-            <div className="space-y-6">
-              <div>
-                   <div className="casino-card">
-                     <h2 className="casino-card-header">
-                       <span className="casino-card-header-accent"></span>
-                       Slot Selection
-                     </h2>
-                     <SlotSelectMulti
-                       slots={webSlots}
-                       selectedSlugs={selectedSlugs}
-                       selectedInstances={selectedSlotInstances}
-                       onToggle={handleToggleSlot}
-                       onAddInstance={handleAddInstance}
-                       onRemoveInstance={handleRemoveInstance}
-                       sharedSourceCurrency={sharedSourceCurrency}
-                       sharedTargetCurrency={sharedTargetCurrency}
-                       favorites={favorites}
-                       onToggleFavorite={handleToggleFavorite}
-                       disabled={false}
-                     />
-                     
-                     {/* Slot Sets + Global Controls – eine kompakte Zeile */}
-                     <div className="mt-4 flex flex-wrap gap-2 items-center">
-                       <select 
-                         value={loadedSetId} 
-                         onChange={(e) => handleLoadSet(e.target.value)} 
-                         className="bg-[var(--bg-deep)] border border-[var(--border)] rounded-[var(--radius-md)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--accent)] outline-none transition-all min-w-[120px]"
-                       >
-                         <option value="">Set...</option>
-                         {slotSets.map(s => <option key={s.id} value={s.id}>{s.name} ({(s.slugs || []).length})</option>)}
-                       </select>
-                       <div className="flex gap-1.5 rounded-[var(--radius-md)] p-0.5 bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
-                         <Button variant="secondary" size="sm" className="text-xs px-3 py-1.5 rounded-md hover:bg-[var(--bg-elevated)]" onClick={() => setSaveSlotSetOpen(true)}>Save</Button>
-                         <Button variant="secondary" size="sm" className="text-xs px-3 py-1.5 rounded-md hover:bg-[var(--bg-elevated)]" onClick={handleExportSets}>Export</Button>
-                         <label className="cursor-pointer inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium rounded-md transition-all bg-[var(--bg-elevated)] text-[var(--text)] border border-transparent hover:bg-[var(--accent)] hover:text-[var(--bg-deep)] hover:border-transparent">
-                            Import
-                            <input type="file" accept=".json" onChange={handleImportSets} className="hidden" />
-                         </label>
-                         {loadedSetId && (
-                            <Button variant="danger" size="sm" className="text-xs px-3 py-1.5 rounded-md" onClick={(e) => handleDeleteSet(loadedSetId, e)}>Delete</Button>
-                         )}
-                       </div>
-                       <span className="text-[10px] text-[var(--text-muted)] px-1">|</span>
-                       {/* Global – kompakt inline */}
-                       <div className="flex gap-1 items-center rounded-md p-0.5 bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
-                         <Button onClick={handleStartAll} disabled={selectedSlotInstances.length === 0} size="sm" className="h-6 text-[10px] font-semibold py-0 px-2 bg-[var(--accent)] hover:opacity-95 text-[var(--bg-deep)]">
-                           Start
-                         </Button>
-                         <Button onClick={handleStopAll} disabled={selectedSlotInstances.length === 0} variant="danger" size="sm" className="h-6 text-[10px] font-semibold py-0 px-2">
-                           Stop
-                         </Button>
-                         <button
-                           type="button"
-                           onClick={() => setGlobalControlsOpen(o => !o)}
-                           className="h-6 w-6 flex items-center justify-center rounded text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)] transition-colors"
-                           title="Mehr"
-                         >
-                           {globalControlsOpen ? '▼' : '▸'}
-                         </button>
-                       </div>
-                       {globalControlsOpen && (
-                         <div className="flex flex-wrap gap-2 items-center pl-2 border-l border-[var(--border)] animate-in fade-in slide-in-from-left-2 duration-150">
-                           <Button onClick={handleApplyFirstSlotSettings} disabled={selectedSlotInstances.length < 2} variant="secondary" size="sm" className="h-6 text-[10px] py-0 px-2">
-                             Apply First
-                           </Button>
-                           <label className="flex items-center gap-1.5 text-[10px] cursor-pointer">
-                             <input type="checkbox" checked={useSharedCurrency} onChange={(e) => setUseSharedCurrency(e.target.checked)} className="w-3 h-3 rounded accent-[var(--accent)]" />
-                             <span>Shared</span>
-                           </label>
-                           {useSharedCurrency && (
-                             <span className="flex gap-1 items-center text-[10px]">
-                               <select value={sharedSourceCurrency} onChange={(e) => setSharedSourceCurrency(e.target.value)} className="h-6 text-[10px] bg-[var(--bg-deep)] border border-[var(--border)] rounded px-1.5 py-0 outline-none">
-                                 {displayedCurrencies.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                               </select>
-                               <span className="text-[var(--text-muted)]">→</span>
-                               <select value={sharedTargetCurrency} onChange={(e) => setSharedTargetCurrency(e.target.value)} className="h-6 text-[10px] bg-[var(--bg-deep)] border border-[var(--border)] rounded px-1.5 py-0 outline-none">
-                                 {displayedCurrencies.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                               </select>
-                               <label className="flex items-center gap-1 cursor-pointer">
-                                 <input type="checkbox" checked={sharedCryptoOnly} onChange={(e) => setSharedCryptoOnly(e.target.checked)} className="w-3 h-3 rounded accent-[var(--accent)]" />
-                                 <span>Crypto only</span>
-                               </label>
-                             </span>
-                           )}
-                         </div>
-                       )}
-                     </div>
-                     </div>
-              </div>
-
-              {/* Slots Grid */}
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                {selectedSlotInstances.map((inst) => {
-                  const slot = webSlots.find((s: any) => s.slug === inst.slug)
-                  if (!slot) return null
-                  return (
-                    <div key={inst.id} className="casino-card overflow-hidden p-4">
-                    <SlotControl
-                      ref={getSlotControlRef(inst.id)}
-                      slot={slot}
-                      accessToken={token}
-                      onLogUpdate={handlePlayLogUpdate}
-                      initialExpanded={selectedSlotInstances.length <= 2}
-                      useSharedCurrency={useSharedCurrency}
-                      sharedSourceCurrency={inst.sourceCurrency || sharedSourceCurrency}
-                      sharedTargetCurrency={inst.targetCurrency || sharedTargetCurrency}
-                      initialTargetCurrency={inst.targetCurrency}
-                      sharedCryptoOnly={sharedCryptoOnly}
-                      challengeTargetMultipliers={
-                        inst.challengeTargetMultipliers?.length
-                          ? inst.challengeTargetMultipliers
-                          : inst.challengeTargetMultiplier != null
-                            ? [inst.challengeTargetMultiplier]
-                            : undefined
-                      }
-                      initialMinBetUsd={inst.minBetUsd}
-                    />
-                    </div>
-                  )
-                })}
-              </div>
-               
-               {selectedSlotInstances.length === 0 && (
-                 <div className="casino-card text-center py-20 border-dashed border-[var(--border-subtle)]">
-                   <div className="text-5xl mb-4 opacity-25">🎰</div>
-                   <p className="text-[var(--text-muted)] font-medium text-sm">Select slots to start playing</p>
-                   <p className="text-xs text-[var(--text-muted)] mt-1.5 opacity-70">Add slots from the list above</p>
-                 </div>
-               )}
-             </div>
-           )}
-
-           {mode === 'challenges' && (
-             <div className="casino-card">
-               <h2 className="casino-card-header">
-                 <span className="casino-card-header-accent"></span>
-                 Auto Hunter
-               </h2>
-               <AutoChallengeHunter 
-                 accessToken={token} 
-                 webSlots={webSlots as any}
-                 onDiscoveredSlots={handleDiscoveredSlots}
-               />
-             </div>
-           )}
-
-           {mode === 'telegram' && (
-             <div className="casino-card">
-               <h2 className="casino-card-header">
-                 <span className="casino-card-header-accent"></span>
-                 Telegram Hunter
-               </h2>
-               <TelegramChallengeHunter
-                 accessToken={token}
-                 webSlots={webSlots as any}
-                 onDiscoveredSlots={handleDiscoveredSlots}
-               />
-             </div>
-           )}
-
-           {mode === 'bonushunt' && (
-             <div className="bonushunt-wrapper">
-             <BonusHuntControl 
-                accessToken={token} 
-                slots={webSlots as any}
-                // @ts-expect-error - webSlots type mismatch
-                selectedSlugs={selectedSlugs}
-                onToggleSlot={handleToggleSlot}
-                onSelectAll={() => setSelectedSlotInstances(webSlots.map((s: any) => ({
-                  id: `inst_${Date.now()}_${s.slug}_${Math.random().toString(36).slice(2, 9)}`,
-                  slug: s.slug,
-                  sourceCurrency: sharedSourceCurrency,
-                  targetCurrency: sharedTargetCurrency,
-                })))}
-                onSelectNone={() => {
-                  setSelectedSlotInstances((prev) => {
-                    const slugsToClear = [...new Set(prev.map((i) => i.slug))]
-                    slugsToClear.forEach((s) => clearSlotHistory(s).catch(() => {}))
-                    return []
-                  })
-                }}
-                // @ts-expect-error - slotSets type mismatch
-                slotSets={slotSets}
-                loadedSetId={loadedSetId}
-                onLoadSlotSet={handleLoadSet}
-               onSaveSlotSet={() => setSaveSlotSetOpen(true)}
-               onDeleteSlotSet={handleDeleteSet}
-               onToggleFavorite={handleToggleFavorite}
-               favorites={favorites}
-             />
-             </div>
-           )}
-           
-           {mode === 'forum' && (
-             <ForumChallengeView 
-                accessToken={token} 
-                webSlots={webSlots as any}
-                onSelectChallenge={handleSelectChallenge}
-             />
-           )}
-
-           {mode === 'logs' && (
-             <div className="space-y-6">
-                <div className="casino-card">
-                   <h2 className="casino-card-header">
-                     <span className="casino-card-header-accent"></span>
-                     Recent Bets
-                   </h2>
-                   <BetList bets={recentBets} totalCount={recentBets?.length ?? 0} currencyCode="usd" emptyMessage="No bets found" />
-                </div>
-                <LogViewer refreshKey={playLogRefreshKey} />
-             </div>
-           )}
-        </main>
-      </div>
+    <CasinoShell
+      error={error}
+      slotsError={slotsError}
+      slotsLoading={slotsLoading}
+      token={token}
+      mode={mode}
+      onChangeMode={setMode}
+    >
+      <CasinoModeContent
+        mode={mode}
+        token={token}
+        webSlots={webSlots as any}
+        selectedSlugs={selectedSlugs}
+        selectedSlotInstances={selectedSlotInstances}
+        loadedSetId={loadedSetId}
+        slotSets={slotSets}
+        favorites={favorites}
+        globalControlsOpen={globalControlsOpen}
+        sharedSourceCurrency={sharedSourceCurrency}
+        sharedTargetCurrency={sharedTargetCurrency}
+        sharedCryptoOnly={sharedCryptoOnly}
+        useSharedCurrency={useSharedCurrency}
+        displayedCurrencies={displayedCurrencies}
+        playLogRefreshKey={playLogRefreshKey}
+        recentBets={recentBets}
+        setGlobalControlsOpen={setGlobalControlsOpen}
+        setSharedSourceCurrency={setSharedSourceCurrency}
+        setSharedTargetCurrency={setSharedTargetCurrency}
+        setSharedCryptoOnly={setSharedCryptoOnly}
+        setUseSharedCurrency={setUseSharedCurrency}
+        setSaveSlotSetOpen={setSaveSlotSetOpen}
+        setSelectedSlotInstances={setSelectedSlotInstances}
+        clearSlotHistoryForInstances={clearSlotHistoryForInstances}
+        handleToggleSlot={handleToggleSlot}
+        handleAddInstance={handleAddInstance}
+        handleRemoveInstance={handleRemoveInstance}
+        handleToggleFavorite={handleToggleFavorite}
+        handleLoadSet={handleLoadSet}
+        handleDeleteSet={handleDeleteSet}
+        handleImportSets={handleImportSets}
+        handleExportSets={handleExportSets}
+        handleStartAll={handleStartAll}
+        handleStopAll={handleStopAll}
+        handleApplyFirstSlotSettings={handleApplyFirstSlotSettings}
+        getSlotControlRef={getSlotControlRef}
+        handlePlayLogUpdate={handlePlayLogUpdate}
+        handleDiscoveredSlots={handleDiscoveredSlots}
+        handleSelectChallenge={handleSelectChallenge}
+      />
       
 
       {/* Save Set Modal */}
@@ -640,7 +405,7 @@ export default function CasinoView() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-[#9ca3af] mb-1">Name</label>
+                <label className="block text-sm text-[var(--text-muted)] mb-1">Name</label>
                 <input 
                   type="text" 
                   placeholder="My Best Slots" 
@@ -667,6 +432,6 @@ export default function CasinoView() {
 
       {toast && <Toast message={toast} visible={!!toast} onHide={() => setToast('')} />}
 
-    </div>
+    </CasinoShell>
   )
 }

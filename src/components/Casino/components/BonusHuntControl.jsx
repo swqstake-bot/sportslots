@@ -18,8 +18,9 @@ import { loadHasBonusSlugs, toggleHasBonusSlug, removeHasBonusSlug, clearHasBonu
 import { notifyBonusHit } from '../utils/notifications'
 import { saveBonusLog, isSaveBonusLogsEnabled, setSaveBonusLogsEnabled, exportBonusLogsAsFile, clearBonusLogs } from '../utils/apiLogger'
 import { saveSlotSpinSample, saveBonusSpinSample } from '../utils/slotSpinSamples'
-import { subscribeToBetUpdates } from '../api/stakeBalanceSubscription'
+import { subscribeToHouseBets } from '../api/stakeRealtimeFacade'
 import { PROVIDERS as PROVIDERS_META } from '../constants/providers'
+import { houseBetSlugMatchesSessionSlug } from '../utils/slotSlugMatching'
 import { TipMenu } from '../../ui/TipMenu'
 
 const HUNT_BET_LEVELS = [
@@ -31,6 +32,26 @@ const CLOUDFLARE_MAX_RETRIES = 3
 function isCloudflareError(err) {
   const msg = (err?.message || '').toLowerCase()
   return msg.includes('just a moment') || msg.includes('cloudflare') || msg.includes('html statt json')
+}
+
+function smoothPathFromPoints(points, tension = 0.22) {
+  if (!Array.isArray(points) || points.length === 0) return ''
+  if (points.length === 1) return `M ${points[0][0]},${points[0][1]}`
+  if (points.length === 2) return `M ${points[0][0]},${points[0][1]} L ${points[1][0]},${points[1][1]}`
+
+  let d = `M ${points[0][0]},${points[0][1]}`
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const p0 = points[Math.max(0, i - 1)]
+    const p1 = points[i]
+    const p2 = points[i + 1]
+    const p3 = points[Math.min(points.length - 1, i + 2)]
+    const cp1x = p1[0] + (p2[0] - p0[0]) * tension
+    const cp1y = p1[1] + (p2[1] - p0[1]) * tension
+    const cp2x = p2[0] - (p3[0] - p1[0]) * tension
+    const cp2y = p2[1] - (p3[1] - p1[1]) * tension
+    d += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2[0]},${p2[1]}`
+  }
+  return d
 }
 
 export default function BonusHuntControl({
@@ -74,6 +95,7 @@ export default function BonusHuntControl({
   const cancelRef = useRef(false)
   const [hasBonusSlugs, setHasBonusSlugs] = useState(() => new Set(loadHasBonusSlugs()))
   const [wheelOpenedSlugs, setWheelOpenedSlugs] = useState(() => new Set())
+  const [showDetailedProgress, setShowDetailedProgress] = useState(false)
   const [tipCopied, setTipCopied] = useState(false)
   const [showTipMenu, setShowTipMenu] = useState(false)
   const tipMenuRef = useRef(null)
@@ -199,7 +221,7 @@ export default function BonusHuntControl({
 
   const handleUncheckAllBonus = () => {
     if (isRunning) return
-    if (!window.confirm('Möchtest du wirklich bei ALLEN Slots den "hat Bonus"-Status entfernen?')) return
+    if (!window.confirm('Remove the "has bonus" status for ALL slots?')) return
     clearHasBonusSlugs()
     setHasBonusSlugs(new Set())
   }
@@ -217,7 +239,7 @@ export default function BonusHuntControl({
       .filter(Boolean)
 
     if (toRun.length === 0) {
-      setError(slugsToRun ? 'Keine Slots zum Erneut versuchen.' : slugs.length > 0 ? 'Alle ausgewählten Slots haben bereits Bonus (hat Bonus).' : 'Mindestens einen Slot auswählen.')
+      setError(slugsToRun ? 'No slots available to retry.' : slugs.length > 0 ? 'All selected slots already have a bonus (has bonus).' : 'Select at least one slot.')
       return
     }
 
@@ -233,9 +255,8 @@ export default function BonusHuntControl({
     try {
       if (houseBetSubRef.current?.disconnect) houseBetSubRef.current.disconnect()
     } catch (_) {}
-    const slotMatchesHouseBet = (slotSlug, gameSlug) =>
-      !gameSlug ? false : slotSlug === gameSlug || slotSlug.endsWith('-' + gameSlug)
-    houseBetSubRef.current = await subscribeToBetUpdates(accessToken, (b) => {
+    const slotMatchesHouseBet = (slotSlug, gameSlug) => houseBetSlugMatchesSessionSlug(gameSlug, slotSlug)
+    houseBetSubRef.current = await subscribeToHouseBets(accessToken, (b) => {
       const gameSlug = String(b?.gameSlug || '').toLowerCase()
       const hbCurrency = (b?.currency || '').toLowerCase()
       const target = (targetCurrency || 'eur').toLowerCase()
@@ -334,7 +355,7 @@ export default function BonusHuntControl({
       if (!provider?.startSession || !provider?.placeBet) {
         setHuntState((h) => ({
           ...h,
-          [slot.slug]: { ...h[slot.slug], status: 'done', spins: 0, totalWagered: 0, error: 'Provider nicht unterstützt' },
+          [slot.slug]: { ...h[slot.slug], status: 'done', spins: 0, totalWagered: 0, error: 'Provider not supported' },
         }))
         return
       }
@@ -351,7 +372,7 @@ export default function BonusHuntControl({
             await new Promise((r) => setTimeout(r, CLOUDFLARE_RETRY_WAIT_MS))
             continue
           }
-          setError(`${slot.name}: ${err?.message || 'Session fehlgeschlagen'}`)
+          setError(`${slot.name}: ${err?.message || 'Session failed'}`)
           setHuntState((h) => ({ ...h, [slot.slug]: { ...h[slot.slug], status: 'done', error: err?.message } }))
           return
         }
@@ -575,7 +596,7 @@ export default function BonusHuntControl({
                 balanceEmpty: true,
               },
             }))
-            setError(lastBalance <= 0 ? 'Balance leer – Bonus Hunt gestoppt.' : 'Balance zu niedrig für weiteren Einsatz.')
+            setError(lastBalance <= 0 ? 'Balance empty - bonus hunt stopped.' : 'Balance too low for the next bet.')
             cancelRef.current = true
             return
           }
@@ -601,7 +622,7 @@ export default function BonusHuntControl({
             }))
           }
         } catch (err) {
-          setError(`${slot.name}: ${err?.message || 'Spin fehlgeschlagen'}`)
+          setError(`${slot.name}: ${err?.message || 'Spin failed'}`)
           setHuntState((h) => ({ ...h, [slot.slug]: { ...h[slot.slug], status: 'done', error: err?.message } }))
           break
         }
@@ -681,6 +702,20 @@ export default function BonusHuntControl({
   const skippedCount = Object.values(huntState).filter((h) => h?.skipped || h?.stoppedLoss).length
   const totalSpins = Object.values(huntState).reduce((s, h) => s + (h?.spins || 0), 0)
   const totalWagered = Object.values(huntState).reduce((s, h) => s + (h?.totalWagered || 0), 0)
+  const progressRows = useMemo(() => {
+    return selectedSlugs
+      .map((slug) => ({ slot: slots.find((s) => s.slug === slug), state: huntState[slug] }))
+      .filter(({ slot }) => slot)
+  }, [selectedSlugs, slots, huntState])
+  const sliderBonusSlots = useMemo(() => {
+    const source = huntComplete ? wheelSlots : selectedSlots
+    return source.filter((slot) => hasBonusSlugs.has(slot.slug))
+  }, [huntComplete, wheelSlots, selectedSlots, hasBonusSlugs])
+  const openedBonusCount = useMemo(
+    () => sliderBonusSlots.filter((slot) => wheelOpenedSlugs.has(slot.slug)).length,
+    [sliderBonusSlots, wheelOpenedSlugs]
+  )
+
   const getDisplayWin = (b) => {
     const win = b.winAmount ?? 0
     if (b.isBonus && b.stoppedBonus && win === 0) return 0
@@ -698,7 +733,12 @@ export default function BonusHuntControl({
     <div className="bonushunt-root" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       {(selectedSlots.length >= 2 || (huntComplete && wheelSlots.length >= 2)) && (
         <div className="casino-card" style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '1.25rem' }}>
-          {huntComplete && <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.02em' }}>Bonus Opening – Welchen Bonus als nächstes?</div>}
+          {huntComplete && <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.02em' }}>Bonus opening - choose the next bonus</div>}
+          {sliderBonusSlots.length > 0 && (
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+              Opened: <span style={{ color: 'var(--accent)' }}>{openedBonusCount}</span> / {sliderBonusSlots.length}
+            </div>
+          )}
           <SlotSlider
             slots={huntComplete ? wheelSlots : selectedSlots}
             bonusSlots={huntComplete ? wheelSlots.filter(slot => hasBonusSlugs.has(slot.slug)) : selectedSlots.filter(slot => hasBonusSlugs.has(slot.slug))}
@@ -708,7 +748,7 @@ export default function BonusHuntControl({
               if (!slot?.slug) return
               setWheelOpenedSlugs((prev) => new Set([...prev, slot.slug]))
               if (window.electronAPI?.openSlotPopup) {
-                void window.electronAPI.openSlotPopup({ slug: slot.slug, locale: 'de' }).catch(() => {})
+                void window.electronAPI.openSlotPopup({ slug: slot.slug, locale: 'en' }).catch(() => {})
               }
               if (huntComplete) {
                 // Bei Bonus Opening entfernen wir ihn NICHT aus hasBonusSlugs,
@@ -722,32 +762,32 @@ export default function BonusHuntControl({
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.25rem', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(360px, 100%), 1fr))', gap: '1.25rem', alignItems: 'start' }}>
       <div className="casino-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: 0 }}>
         <h3 className="casino-card-header" style={{ marginBottom: '0.75rem' }}>
           <span className="casino-card-header-accent"></span>
-          Slots & Einstellungen
+          Slots & Settings
         </h3>
         <div className={styles.section}>
-          <span className={styles.label}>Slots (anklicken zum Auswählen)</span>
+          <span className={styles.label}>Slots (click to select)</span>
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.35rem' }}>
           <select value={loadedSetId} onChange={(e) => onLoadSlotSet?.(e.target.value)} className={styles.select} style={{ width: 'auto', minWidth: 120 }} disabled={isRunning}>
-            <option value="">— Slot-Set laden —</option>
+            <option value="">— Load slot set —</option>
             {slotSets.map((s) => (
               <option key={s.id} value={s.id}>{s.name} ({(s.slugs || s.slots || []).length})</option>
             ))}
           </select>
           <button type="button" onClick={() => onSaveSlotSet?.()} disabled={isRunning || selectedSlugs.length === 0} className={styles.btnSecondary}>
-            Speichern
+            Save
           </button>
           {loadedSetId && (
             <button type="button" onClick={() => onDeleteSlotSet?.()} disabled={isRunning} className={styles.btnSecondary} style={{ color: 'var(--error)' }}>
-              Löschen
+              Delete
             </button>
           )}
           <span style={{ flex: 1 }} />
-          <button type="button" onClick={selectAll} className={styles.btnSecondary} disabled={isRunning}>Alle</button>
-          <button type="button" onClick={selectNone} className={styles.btnSecondary} disabled={isRunning}>Keine</button>
+          <button type="button" onClick={selectAll} className={styles.btnSecondary} disabled={isRunning}>All</button>
+          <button type="button" onClick={selectNone} className={styles.btnSecondary} disabled={isRunning}>None</button>
           <button type="button" onClick={handleUncheckAllBonus} className={styles.btnSecondary} style={{ color: 'var(--text)' }} disabled={isRunning}>Uncheck Bonus</button>
           <button
             type="button"
@@ -757,7 +797,7 @@ export default function BonusHuntControl({
             }}
             className={styles.btnSecondary} style={{ padding: '0.35rem 0.5rem', fontSize: '0.75rem' }}
             disabled={isRunning || selectedSlots.length === 0}
-            title="Namen für WheelOfNames.com kopieren (ein Name pro Zeile)"
+            title="Copy names for WheelOfNames.com (one name per line)"
           >
             🎡 Copy
           </button>
@@ -766,6 +806,7 @@ export default function BonusHuntControl({
           slots={slots}
           selectedSlugs={selectedSlugs}
           onToggle={toggleSlot}
+          hasBonusSlugs={hasBonusSlugs}
           favorites={favorites}
           onToggleFavorite={onToggleFavorite}
           disabled={isRunning}
@@ -773,7 +814,7 @@ export default function BonusHuntControl({
         </div>
 
         <div className={`${styles.section} ${styles.sectionBlock}`}>
-        <span className={styles.label} style={{ marginBottom: '0.5rem' }}>Währung & Einsatz</span>
+        <span className={styles.label} style={{ marginBottom: '0.5rem' }}>Currency & Bet</span>
         <div className={styles.row} style={{ flexWrap: 'wrap', marginBottom: '0.35rem' }}>
           <select value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'usdc')} onChange={(e) => setSourceCurrency(e.target.value)} className={styles.select} style={{ minWidth: 90, flex: 'none' }} disabled={isRunning}>
             {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
@@ -793,38 +834,38 @@ export default function BonusHuntControl({
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
             <input type="checkbox" checked={saveBonusLogs} onChange={(e) => handleToggleBonusLogs(e.target.checked)} disabled={isRunning} />
-            Bonus-Log
+            Bonus log
           </label>
           <button type="button" onClick={() => exportBonusLogsAsFile()} className={styles.btnSecondary} disabled={isRunning}>Export</button>
-          <button type="button" onClick={() => { if (window.confirm('Bonus-Logs löschen?')) clearBonusLogs() }} className={styles.btnSecondary} style={{ color: 'var(--error)' }} disabled={isRunning}>Löschen</button>
+          <button type="button" onClick={() => { if (window.confirm('Delete bonus logs?')) clearBonusLogs() }} className={styles.btnSecondary} style={{ color: 'var(--error)' }} disabled={isRunning}>Delete</button>
         </div>
         <div className={styles.row} style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
-            Max Spins: <input type="number" min={0} value={maxSpinsPerSlot || ''} onChange={(e) => setMaxSpinsPerSlot(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0=∞" className={styles.select} style={{ width: 52 }} disabled={isRunning} title="0 = unendlich" />
+            Max Spins: <input type="number" min={0} value={maxSpinsPerSlot || ''} onChange={(e) => setMaxSpinsPerSlot(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0=∞" className={styles.select} style={{ width: 52 }} disabled={isRunning} title="0 = unlimited" />
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Stopp bei Verlust in Währung">
-            Verlust: <input type="number" min={0} value={maxLossLimit || ''} onChange={(e) => setMaxLossLimit(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 52 }} disabled={isRunning} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Stop after loss limit in selected currency">
+            Loss: <input type="number" min={0} value={maxLossLimit || ''} onChange={(e) => setMaxLossLimit(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 52 }} disabled={isRunning} />
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
             <input type="checkbox" checked={stopOnMulti} onChange={(e) => setStopOnMulti(e.target.checked)} disabled={isRunning} />
             Multi <input type="number" min={2} value={stopOnMultiplier} onChange={(e) => setStopOnMultiplier(Math.max(2, parseInt(e.target.value) || 2))} className={styles.select} style={{ width: 44 }} disabled={isRunning || !stopOnMulti} />×
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Scatter-Minimum für Bonus-Stopp">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Minimum scatter count to stop on bonus">
             Scatter: <select value={minScatterForStop} onChange={(e) => setMinScatterForStop(Number(e.target.value))} className={styles.select} style={{ width: 90 }} disabled={isRunning}>
-              <option value={0}>Jeder</option>
+              <option value={0}>Any</option>
               <option value={3}>3+</option>
               <option value={4}>4+</option>
               <option value={5}>5</option>
             </select>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Gamble bei Bonus">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Gamble when bonus triggers">
             <input type="checkbox" checked={gambleOption} onChange={(e) => setGambleOption(e.target.checked)} disabled={isRunning} />
             Gamble
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
             Refresh: <input type="number" min={0} value={sessionRefreshSpins || ''} onChange={(e) => setSessionRefreshSpins(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 48 }} disabled={isRunning} />
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Mehrere Slots parallel">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Run multiple slots in parallel">
             <input type="checkbox" checked={parallelHuntEnabled} onChange={(e) => setParallelHuntEnabled(e.target.checked)} disabled={isRunning} />
             <input type="range" min={2} value={maxParallelSlots} onChange={(e) => setMaxParallelSlots(Math.max(2, parseInt(e.target.value) || 2))} style={{ width: 80 }} disabled={isRunning || !parallelHuntEnabled} />
             <span style={{ minWidth: 16 }}>{maxParallelSlots}</span> parallel
@@ -836,21 +877,21 @@ export default function BonusHuntControl({
           {!isRunning ? (
             <>
               <button onClick={() => runHunt()} className={styles.btn} disabled={selectedSlugs.length === 0}>
-                Bonus Hunt starten ({selectedSlugs.length} Slot{selectedSlugs.length !== 1 ? 's' : ''})
+                Start bonus hunt ({selectedSlugs.length} slot{selectedSlugs.length !== 1 ? 's' : ''})
               </button>
               {skippedCount > 0 && Object.keys(huntState).length > 0 && (
                 <button onClick={handleRetrySkipped} className={styles.btnSecondary}>
-                  Erneut versuchen ({skippedCount} übrig)
+                  Retry ({skippedCount} remaining)
                 </button>
               )}
             </>
           ) : (
             <button onClick={stopHunt} className={`${styles.btn} ${styles.btnStop}`}>
-              Stoppen
+              Stop
             </button>
           )}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', cursor: 'pointer' }} title="Console-Logs für Balance, Wins und HouseBet-Matching">
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', cursor: 'pointer' }} title="Console logs for balance, wins and house-bet matching">
               <input
                 type="checkbox"
                 checked={BONUS_HUNT_DEBUG}
@@ -872,16 +913,16 @@ export default function BonusHuntControl({
       <div className="casino-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', minWidth: 0 }}>
         <h3 className="casino-card-header" style={{ marginBottom: 0 }}>
           <span className="casino-card-header-accent"></span>
-          Fortschritt & Statistik
+          Progress & Statistics
         </h3>
       {Object.keys(huntState).length === 0 && !isRunning && (
         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-          Starte einen Bonus Hunt, um Fortschritt, Balance und Spins hier zu sehen.
+          Start a bonus hunt to see progress, balance and spins here.
         </p>
       )}
       {(currentBalance != null || isRunning) && (
         <div style={{ marginTop: '1rem', marginBottom: '0.5rem' }}>
-          <span className={styles.label}>Kontostand</span>
+          <span className={styles.label}>Balance</span>
           <div className={styles.balanceBadge}>
             {currentBalance != null
               ? formatWithUsd(currentBalance, currencyCode || targetCurrency || sourceCurrency)
@@ -893,75 +934,100 @@ export default function BonusHuntControl({
       {Object.keys(huntState).length > 0 && (
         <div className={styles.progressList}>
           <div className={styles.statsTitle}>
-            Fortschritt {doneCount}/{Object.keys(huntState).length}
+            Progress {doneCount}/{Object.keys(huntState).length}
             {skippedCount > 0 && (
               <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: '0.5rem' }}>
-                ({skippedCount} noch offen)
+                    ({skippedCount} skipped/stopped)
               </span>
             )}
           </div>
-          {selectedSlugs
-            .map((slug) => ({ slot: slots.find((s) => s.slug === slug), state: huntState[slug] }))
-            .filter(({ slot }) => slot)
-            .map(({ slot, state }, i, arr) => (
-              <div
-                key={slot.slug}
-                className={`${styles.progressItem} ${i === arr.length - 1 ? styles.progressItemLast : ''}`.trim()}
-              >
-                <span>
-                  {wheelOpenedSlugs.has(slot.slug) ? (
-                    <span className={styles.progressOpened}>🎁 OPEN</span>
-                  ) : hasBonusSlugs.has(slot.slug) ? (
-                    <span className={styles.progressCheck}>✓</span>
-                  ) : state?.status === 'done' && !state?.skipped && !state?.error && !state?.balanceEmpty ? (
-                    <span className={styles.progressCheck}>✓</span>
-                  ) : state?.status === 'done' && (state?.skipped || state?.error || state?.balanceEmpty) ? (
-                    <span className={styles.progressCross}>✗</span>
-                  ) : state?.status === 'spinning' ? (
-                    <span className={styles.progressSpinning}>⟳</span>
-                  ) : (
-                    <span className={styles.progressWait}>○</span>
-                  )}
-                </span>
-                <span style={{ flex: 1 }}>
-                  {slot.name}
-                  {state?.spins != null && state.spins > 0 && (
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
-                      ({state.spins} Spins{state.scatterCount != null ? `, ${state.scatterCount} Scatter` : ''}{state.totalWagered ? `, ${format(state.totalWagered)}` : ''})
-                    </span>
-                  )}
-                  {state?.error && (
-                    <span style={{ color: 'var(--error)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
-                      {state.error}
-                    </span>
-                  )}
-                  {state?.skipped && (
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
-                      (Max erreicht)
-                    </span>
-                  )}
-                  {state?.stoppedLoss && (
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
-                      (Verlust-Limit)
-                    </span>
-                  )}
-                  {state?.balanceEmpty && (
-                    <span style={{ color: 'var(--error)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
-                      (Balance leer)
-                    </span>
-                  )}
-                </span>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0, cursor: isRunning ? 'default' : 'pointer', fontSize: '0.8rem', color: 'var(--text-muted)' }} title="Bei nächstem Hunt überspringen (verhindert Session-Timeouts)">
-                  <input
-                    type="checkbox"
-                    checked={hasBonusSlugs.has(slot.slug)}
-                    onChange={() => handleToggleHasBonus(slot.slug)}
-                    disabled={isRunning}
-                  />
-                  hat Bonus
-                </label>
-              </div>
-            ))}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.45rem' }}>
+            {progressRows.map(({ slot, state }) => {
+              const opened = wheelOpenedSlugs.has(slot.slug)
+              const running = state?.status === 'spinning'
+              const failed = state?.status === 'done' && (state?.skipped || state?.error || state?.balanceEmpty)
+              const done = state?.status === 'done' && !failed
+              const marker = opened ? 'OPEN' : running ? 'RUN' : failed ? 'ERR' : done ? 'DONE' : 'WAIT'
+              const markerColor = opened
+                ? 'var(--accent)'
+                : running
+                  ? 'var(--accent)'
+                  : failed
+                    ? 'var(--error)'
+                    : done
+                      ? 'var(--success)'
+                      : 'var(--text-muted)'
+              return (
+                <div
+                  key={slot.slug}
+                  style={{
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'color-mix(in srgb, var(--bg-elevated) 90%, rgba(var(--accent-rgb), 0.1))',
+                    padding: '0.45rem 0.55rem',
+                    minWidth: 0,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.35rem', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: markerColor }}>{marker}</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>{state?.spins || 0} Spins</span>
+                  </div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={slot.name}>
+                    {slot.name}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.6rem', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              Bonus opened: <strong style={{ color: 'var(--accent)' }}>{openedBonusCount}</strong> / {sliderBonusSlots.length || 0}
+            </span>
+            <button type="button" className={styles.btnSecondary} onClick={() => setShowDetailedProgress((v) => !v)}>
+              {showDetailedProgress ? 'Hide details' : 'Show details'}
+            </button>
+          </div>
+
+          {showDetailedProgress && progressRows.map(({ slot, state }, i, arr) => (
+            <div
+              key={`${slot.slug}_detail`}
+              className={`${styles.progressItem} ${i === arr.length - 1 ? styles.progressItemLast : ''}`.trim()}
+            >
+              <span>
+                {wheelOpenedSlugs.has(slot.slug) ? (
+                  <span className={styles.progressOpened}>🎁 OPEN</span>
+                ) : hasBonusSlugs.has(slot.slug) ? (
+                  <span className={styles.progressCheck}>✓</span>
+                ) : state?.status === 'done' && !state?.skipped && !state?.error && !state?.balanceEmpty ? (
+                  <span className={styles.progressCheck}>✓</span>
+                ) : state?.status === 'done' && (state?.skipped || state?.error || state?.balanceEmpty) ? (
+                  <span className={styles.progressCross}>✗</span>
+                ) : state?.status === 'spinning' ? (
+                  <span className={styles.progressSpinning}>⟳</span>
+                ) : (
+                  <span className={styles.progressWait}>○</span>
+                )}
+              </span>
+              <span style={{ flex: 1 }}>
+                {slot.name}
+                {state?.spins != null && state.spins > 0 && (
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
+                    ({state.spins} Spins{state.scatterCount != null ? `, ${state.scatterCount} Scatter` : ''}{state.totalWagered ? `, ${format(state.totalWagered)}` : ''})
+                  </span>
+                )}
+              </span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0, cursor: isRunning ? 'default' : 'pointer', fontSize: '0.8rem', color: 'var(--text-muted)' }} title="Skip this slot in the next hunt (prevents session timeouts)">
+                <input
+                  type="checkbox"
+                  checked={hasBonusSlugs.has(slot.slug)}
+                  onChange={() => handleToggleHasBonus(slot.slug)}
+                  disabled={isRunning}
+                />
+                has bonus
+              </label>
+            </div>
+          ))}
         </div>
       )}
 
@@ -1013,11 +1079,11 @@ export default function BonusHuntControl({
                 textAlign: 'center',
               }}>
                 <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--accent)', marginBottom: '0.5rem' }}>
-                  Bonus Hunt abgeschlossen
+                  Bonus hunt complete
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.9rem' }}>
                   <span>
-                    Netto: <strong style={{ color: totalNet >= 0 ? 'var(--success)' : 'var(--error)' }}>
+                    Net: <strong style={{ color: totalNet >= 0 ? 'var(--success)' : 'var(--error)' }}>
                       {totalNet >= 0 ? '+' : ''}{format(totalNet)}
                     </strong>
                   </span>
@@ -1031,15 +1097,15 @@ export default function BonusHuntControl({
                 </div>
               </div>
             )}
-            <div className={styles.statsTitle}>Bonus Hunt Statistik</div>
+            <div className={styles.statsTitle}>Bonus Hunt Statistics</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', fontSize: '0.95rem', marginBottom: slotStats.length > 1 ? '1rem' : 0 }}>
-              <span>Spins gesamt</span>
+              <span>Total spins</span>
               <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{totalSpins}</span>
-              <span>Gesamteinsatz</span>
+              <span>Total wagered</span>
               <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{format(totalWagered)}</span>
-              <span>Gesamtgewinn</span>
+              <span>Total win</span>
               <span style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--success)' }}>{format(totalWon)}</span>
-              <span>Netto</span>
+              <span>Net</span>
               <span style={{ fontFamily: 'monospace', fontWeight: 600, color: totalNet >= 0 ? 'var(--success)' : 'var(--error)' }}>
                 {totalNet >= 0 ? '+' : ''}{format(totalNet)}
               </span>
@@ -1066,8 +1132,8 @@ export default function BonusHuntControl({
                   <span>Slot</span>
                   <span>Spins</span>
                   <span>Max ×</span>
-                  <span>Einsatz</span>
-                  <span>Netto</span>
+                  <span>Wagered</span>
+                  <span>Net</span>
                 </div>
                 {slotStats.map((st) => (
                   <div
@@ -1102,7 +1168,7 @@ export default function BonusHuntControl({
       })()}
 
       {betHistory.length > 0 && (() => {
-        const chartColors = ['#00d4ff', '#a3e635', '#fbbf24', '#a78bfa', '#fb7185', '#38bdf8']
+        const chartColors = ['#d12b3a', '#f97316', '#fb7185', '#fbbf24', '#a78bfa', '#ef4444']
         const slotKeys = [...new Set(betHistory.map((b) => b.slotSlug || b.slotName).filter(Boolean))]
         const slotNames = {}
         betHistory.forEach((b) => {
@@ -1112,12 +1178,12 @@ export default function BonusHuntControl({
 
         if (slotKeys.length === 0) return null
 
-        const padL = 48
-        const padR = 12
-        const padT = 14
-        const padB = 24
-        const w = 340
-        const h = 130
+        const padL = 34
+        const padR = 8
+        const padT = 8
+        const padB = 16
+        const w = 268
+        const h = 82
         const chartW = w - padL - padR
         const chartH = h - padT - padB
 
@@ -1133,17 +1199,19 @@ export default function BonusHuntControl({
           const range = maxB - minB || 0.01
           const divisor = balances.length > 1 ? balances.length - 1 : 1
           const pts = balances.map((v, i) => [toChartX(i, divisor), toChartY(toUsd(v, statsCurrency), minB, range)])
+          const smoothLinePath = smoothPathFromPoints(pts)
+          const latestPoint = pts[pts.length - 1]
           const areaPath = pts.length >= 2
             ? `M ${pts[0][0]},${pts[0][1]} L ${pts.slice(1).map(([x, y]) => `${x},${y}`).join(' ')} L ${pts[pts.length - 1][0]},${h - padB} L ${pts[0][0]},${h - padB} Z`
             : ''
           return (
             <div className={styles.chart}>
               <div className={styles.statsTitle} style={{ marginBottom: '0.75rem', color: 'rgba(255,255,255,0.9)' }}>Balance ($) · {slotNames[slotKeys[0]] || slotKeys[0]}</div>
-              <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', minHeight: 130 }}>
+              <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', minHeight: 82 }}>
                 <defs>
                   <linearGradient id="bh-balance-fill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#00d4ff" stopOpacity="0.25" />
-                    <stop offset="100%" stopColor="#00d4ff" stopOpacity="0" />
+                    <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.25" />
+                    <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
                   </linearGradient>
                 </defs>
                 {[0, 0.25, 0.5, 0.75, 1].map((t) => {
@@ -1152,8 +1220,14 @@ export default function BonusHuntControl({
                   return <g key={t}><line x1={padL} x2={w - padR} y1={y} y2={y} className={styles.chartGrid} /><text x={padL - 6} y={y + 4} fontSize="10" fill="rgba(255,255,255,0.6)" textAnchor="end" fontFamily="system-ui">${val.toFixed(2)}</text></g>
                 })}
                 {areaPath && <path d={areaPath} fill="url(#bh-balance-fill)" />}
-                <polyline fill="none" stroke="#00d4ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" points={pts.map(([x, y]) => `${x},${y}`).join(' ')} />
-                {pts.map(([x, y], i) => <circle key={i} cx={x} cy={y} r="3" fill="#00d4ff" stroke="rgba(0,0,0,0.3)" strokeWidth="1" />)}
+                {smoothLinePath && <path d={smoothLinePath} fill="none" stroke="rgba(var(--accent-rgb), 0.22)" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />}
+                {smoothLinePath && <path d={smoothLinePath} fill="none" stroke="var(--accent)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />}
+                {latestPoint && (
+                  <g>
+                    <circle cx={latestPoint[0]} cy={latestPoint[1]} r="4.5" fill="rgba(var(--accent-rgb), 0.2)" />
+                    <circle cx={latestPoint[0]} cy={latestPoint[1]} r="2.1" fill="var(--accent)" stroke="rgba(0,0,0,0.35)" strokeWidth="0.8" />
+                  </g>
+                )}
               </svg>
             </div>
           )
@@ -1184,8 +1258,8 @@ export default function BonusHuntControl({
         const yTicks = [0, 0.25, 0.5, 0.75, 1]
         return (
           <div className={`${styles.chart} ${styles.chartMultiSlot}`}>
-            <div className={styles.statsTitle} style={{ marginBottom: '0.75rem', color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>Kumulatives Netto pro Slot ($)</div>
-            <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', minHeight: 130 }}>
+            <div className={styles.statsTitle} style={{ marginBottom: '0.75rem', color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>Cumulative net per slot ($)</div>
+            <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', minHeight: 82 }}>
               {yTicks.map((t) => {
                 const y = padT + chartH * (1 - t)
                 const val = minV + t * range
@@ -1202,19 +1276,36 @@ export default function BonusHuntControl({
                   const y = toChartY(yUsd, minV, range)
                   return [x, y]
                 })
+                const smoothLinePath = smoothPathFromPoints(points)
+                const latestPoint = points[points.length - 1]
                 return (
                   <g key={key}>
-                    <polyline
-                      fill="none"
-                      stroke={color}
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      points={points.map(([x, y]) => `${x},${y}`).join(' ')}
-                    />
-                    {points.map(([x, y], i) => (
-                      <circle key={i} cx={x} cy={y} r="3" fill={color} stroke="rgba(0,0,0,0.25)" strokeWidth="1" />
-                    ))}
+                    {smoothLinePath && (
+                      <path
+                        d={smoothLinePath}
+                        fill="none"
+                        stroke={`${color}55`}
+                        strokeWidth="4.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    )}
+                    {smoothLinePath && (
+                      <path
+                        d={smoothLinePath}
+                        fill="none"
+                        stroke={color}
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    )}
+                    {latestPoint && (
+                      <>
+                        <circle cx={latestPoint[0]} cy={latestPoint[1]} r="4.2" fill={`${color}2f`} />
+                        <circle cx={latestPoint[0]} cy={latestPoint[1]} r="1.9" fill={color} stroke="rgba(0,0,0,0.3)" strokeWidth="0.8" />
+                      </>
+                    )}
                   </g>
                 )
               })}
@@ -1239,9 +1330,9 @@ export default function BonusHuntControl({
           <div className={styles.chart}>
             <div className={styles.betRow} style={{ color: 'var(--text-muted)', fontSize: '0.7rem', borderBottom: '1px solid var(--border)' }}>
               <span>Slot</span>
-              <span>Einsatz</span>
-              <span>Gewinn</span>
-              <span>Netto</span>
+              <span>Wagered</span>
+              <span>Win</span>
+              <span>Net</span>
               <span>×</span>
             </div>
             <div className={styles.betList}>

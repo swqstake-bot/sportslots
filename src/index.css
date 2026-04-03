@@ -59,6 +59,23 @@
 :root {
   --font-heading: 'Orbitron', monospace;
   --font-body: 'Exo 2', -apple-system, sans-serif;
+  --font-sans: 'Exo 2', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --transition-fast: 0.16s ease;
+  --transition-normal: 0.24s ease;
+
   --app-accent: #00F0FF;
   --app-accent-rgb: 0, 240, 255;
   --app-accent-alt: #FF00AA;
@@ -71,26 +88,58 @@
   --app-bg-card: rgba(15, 15, 25, 0.85);
   --app-bg-elevated: rgba(25, 25, 40, 0.9);
   --app-border: rgba(0, 240, 255, 0.25);
+  --app-border-subtle: rgba(0, 240, 255, 0.12);
   --app-text: #e8ecf4;
   --app-text-muted: #8890a8;
+  --surface-1: linear-gradient(135deg, rgba(255, 255, 255, 0.015), rgba(var(--app-accent-rgb), 0.045));
+  --surface-2: linear-gradient(160deg, rgba(var(--app-accent-rgb), 0.06), rgba(255, 255, 255, 0.01) 42%, rgba(0, 0, 0, 0.18));
+  --surface-3: linear-gradient(180deg, rgba(255, 255, 255, 0.01), rgba(255, 255, 255, 0));
+  --focus-ring: 0 0 0 2px var(--app-bg-deep), 0 0 0 4px var(--app-accent);
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
+
+  /* Backward compatibility aliases for legacy components. */
+  --bg-deep: var(--app-bg-deep);
+  --bg-card: var(--app-bg-card);
+  --bg-elevated: var(--app-bg-elevated);
+  --accent: var(--app-accent);
+  --accent-rgb: var(--app-accent-rgb);
+  --accent-glow: var(--app-accent-glow);
+  --text: var(--app-text);
+  --text-muted: var(--app-text-muted);
+  --border: var(--app-border);
+  --border-subtle: var(--app-border-subtle);
+  --success: var(--app-success);
+  --error: var(--app-error);
 }
 
 [data-app-mode="casino"] {
-  --app-accent: #00F0FF;
-  --app-accent-rgb: 0, 240, 255;
-  --app-accent-glow: rgba(0, 240, 255, 0.3);
+  --app-accent: #b61f34;
+  --app-accent-rgb: 182, 31, 52;
+  --app-accent-glow: rgba(182, 31, 52, 0.15);
+  --app-border: rgba(182, 31, 52, 0.14);
+  --app-border-subtle: rgba(182, 31, 52, 0.07);
+  --app-bg-deep: #09070a;
+  --app-bg-card: rgba(14, 14, 18, 0.9);
+  --app-bg-elevated: rgba(19, 18, 24, 0.92);
+  --surface-1: linear-gradient(180deg, rgba(182, 31, 52, 0.08) 0%, rgba(182, 31, 52, 0.025) 34%, rgba(8, 8, 12, 0.94) 100%);
+  --surface-2: linear-gradient(165deg, rgba(182, 31, 52, 0.065) 0%, rgba(182, 31, 52, 0.02) 36%, rgba(8, 8, 12, 0.93) 100%);
+  --surface-3: linear-gradient(180deg, rgba(182, 31, 52, 0.05) 0%, rgba(182, 31, 52, 0.015) 42%, rgba(7, 7, 11, 0.93) 100%);
 }
 
 [data-app-mode="sports"] {
   --app-accent: #00ff88;
   --app-accent-rgb: 0, 255, 136;
   --app-accent-glow: rgba(0, 255, 136, 0.25);
+  --app-border: rgba(0, 255, 136, 0.24);
+  --app-border-subtle: rgba(0, 255, 136, 0.11);
 }
 
 [data-app-mode="logger"] {
   --app-accent: #ff7a1a;
   --app-accent-rgb: 255, 122, 26;
   --app-accent-glow: rgba(255, 122, 26, 0.28);
+  --app-border: rgba(255, 122, 26, 0.24);
+  --app-border-subtle: rgba(255, 122, 26, 0.12);
 }
 
 * {
@@ -292,8 +341,8 @@ a:focus-visible {
 
 /* HUD Puls-Glow (Running-Status) */
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 16px rgba(0, 240, 255, 0.3); }
-  50% { box-shadow: 0 0 24px rgba(0, 240, 255, 0.5); }
+  0%, 100% { box-shadow: 0 0 16px rgba(var(--app-accent-rgb), 0.3); }
+  50% { box-shadow: 0 0 24px rgba(var(--app-accent-rgb), 0.5); }
 }
 .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
 
@@ -322,12 +371,12 @@ a:focus-visible {
   }
   
   ::-webkit-scrollbar-thumb {
-    background: rgba(0, 240, 255, 0.25);
+    background: rgba(var(--app-accent-rgb), 0.25);
     border-radius: 999px;
   }
   
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 240, 255, 0.4);
+    background: rgba(var(--app-accent-rgb), 0.4);
   }
 }
 

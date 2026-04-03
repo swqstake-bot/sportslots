@@ -42,7 +42,7 @@ export const ActiveBetsList: React.FC = () => {
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
           </svg>
-          Alle Wetten ({activeBets.length})
+          All Bets ({activeBets.length})
         </button>
       </div>
 
@@ -52,7 +52,7 @@ export const ActiveBetsList: React.FC = () => {
             <svg className="w-10 h-10 mb-2" style={{ color: 'var(--app-border)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
-            <span className="text-xs font-bold uppercase tracking-wider">Keine aktiven Wetten</span>
+            <span className="text-xs font-bold uppercase tracking-wider">No Active Bets</span>
           </div>
         ) : (
           <>
@@ -63,7 +63,7 @@ export const ActiveBetsList: React.FC = () => {
                   <tr className="border-b" style={{ background: 'var(--app-bg-deep)', borderColor: 'var(--app-border)', color: 'var(--app-text-muted)' }}>
                     <th className="py-1.5 px-2 font-bold w-6">#</th>
                     <th className="py-1.5 px-2 font-bold truncate max-w-[100px]">Fixture</th>
-                    <th className="py-1.5 px-1 font-bold text-right w-10">Quote</th>
+                    <th className="py-1.5 px-1 font-bold text-right w-10">Odds</th>
                     <th className="py-1.5 px-2 font-bold text-right w-12">Cashout</th>
                     <th className="py-1.5 px-2 font-bold text-center w-10">Legs</th>
                   </tr>

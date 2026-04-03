@@ -1,16 +1,15 @@
 import './index.css';
 import './components/Sports/sports.css';
+import './components/AppShell/app-shell.css';
 import { useState, useEffect, useCallback, Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { StakeApi } from './api/client';
 import { Queries } from './api/queries';
-import { Sidebar } from './components/Sidebar';
 import { FixtureList } from './components/FixtureList';
 import { RightSidebar } from './components/RightSidebar';
 import { useUserStore, type SportBet } from './store/userStore';
 import { useAutoBetStore } from './store/autoBetStore';
 import { useUiStore } from './store/uiStore';
-import { WalletSelector } from './components/WalletSelector';
 import { AutoBetManager } from './components/AutoBet/AutoBetManager';
 import CasinoView from './components/Casino/CasinoView';
 import LoggerView from './components/Logger/LoggerView';
@@ -21,6 +20,8 @@ import { UpdaterNotification } from './components/UpdaterNotification';
 import { ChangelogModal } from './components/ui/ChangelogModal';
 import { GlobalToast } from './components/ui/GlobalToast';
 import { getChangelogForVersion } from './constants/changelogs';
+import { AppHeader } from './components/AppShell/AppHeader';
+import { SportsSubbar } from './components/AppShell/SportsSubbar';
 
 /** Pro GraphQL-Request: Stake validiert `activeSportBets(limit)` mit Obergrenze (typisch ≤50; höhere Werte → error.number_less_equal). */
 const ACTIVE_SPORT_BETS_PAGE_SIZE = 50;
@@ -55,7 +56,13 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
   }
 }
 
-// Types
+interface SportMenuItem {
+  id: string;
+  name: string;
+  slug: string;
+  fixtureCount: number;
+}
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     // If KeyAuth is not configured, skip login
@@ -66,10 +73,20 @@ function App() {
 
   const { user, setUser, setBalancesFromApi, setActiveBets } = useUserStore();
   const { isRunning } = useAutoBetStore();
-  const { currentView, selectedSport } = useUiStore();
+  const {
+    currentView,
+    setCurrentView,
+    selectedSportSlug,
+    setSelectedSportSlug,
+    sportFilterType,
+    setSportFilterType,
+    fixtureSearchQuery,
+    setFixtureSearchQuery,
+  } = useUiStore();
   const [isChallengeRunning, setIsChallengeRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sportsMenu, setSportsMenu] = useState<SportMenuItem[]>([]);
 
   // Changelog State
   const [showChangelog, setShowChangelog] = useState(false);
@@ -91,6 +108,30 @@ function App() {
         localStorage.setItem('app_last_seen_version', currentVersion);
       }
     });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchSportsMenu() {
+      try {
+        const response = await StakeApi.query<any>(Queries.SportListMenu, {
+          type: 'upcoming',
+          limit: 100,
+          offset: 0,
+          liveRank: false,
+          sportType: 'sport',
+        });
+        if (cancelled) return;
+        const list = response?.data?.sportList || [];
+        setSportsMenu(Array.isArray(list) ? list : []);
+      } catch (_) {
+        if (!cancelled) setSportsMenu([]);
+      }
+    }
+    fetchSportsMenu();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleKeyAuthSuccess = () => {
@@ -218,102 +259,42 @@ function App() {
         version={changelogVersion} 
         changes={changelogContent} 
       />
-      {/* HUD – Floating semi-transparentes Panel mit Neon-Glow */}
-      <header 
-        className="mx-4 mt-3 mb-0 px-5 py-3 flex justify-between items-center z-50 rounded-xl transition-all duration-300 border-b-0"
-        style={{ 
-          background: 'rgba(10, 10, 20, 0.82)', 
-          backdropFilter: 'blur(14px)', 
-          WebkitBackdropFilter: 'blur(14px)',
-          border: '1px solid rgba(0, 240, 255, 0.18)',
-          borderBottom: '1px solid rgba(0, 240, 255, 0.08)',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.35), 0 0 24px rgba(0, 240, 255, 0.06), inset 0 1px 0 rgba(255,255,255,0.02)'
-        }}
-      >
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <svg className="w-6 h-6 shrink-0" style={{ color: 'var(--app-accent)', filter: 'drop-shadow(0 0 6px var(--app-accent))' }} viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2L2 7l10 5 10-5-10-5zm0 9l2.5-1.25L12 8.5l-2.5 1.25L12 11zm0 2.5l-5-2.5-5 2.5L12 22l10-8.5-5-2.5-5 2.5z"/>
-            </svg>
-            <h1 className="text-base sm:text-lg font-bold tracking-widest uppercase" style={{ fontFamily: 'var(--font-heading)', color: 'var(--app-text)' }}>
-              STAKE<span style={{ color: 'var(--app-accent)', textShadow: '0 0 12px var(--app-accent)' }}>{appTitle.replace('STAKE', '')}</span>
-            </h1>
-          </div>
-          {user && (
-            <div className="flex items-center gap-2">
-              <div 
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all"
-                style={{ background: 'rgba(0,0,0,0.3)', borderColor: 'rgba(0, 240, 255, 0.2)' }}
-              >
-                <div className="w-2 h-2 rounded-full" style={{ background: 'var(--app-accent)', boxShadow: '0 0 6px var(--app-accent)' }}></div>
-                <span className="text-xs font-semibold tracking-wide" style={{ color: 'var(--app-text-muted)' }}>
-                  {user.name}
-                </span>
-              </div>
-              {isChallengeRunning && (
-                <div
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg border"
-                  style={{ background: 'rgba(255, 122, 26, 0.12)', borderColor: 'rgba(255, 122, 26, 0.35)', color: '#ffbc90' }}
-                  title="Challenge Hunter is still running in background"
-                >
-                  <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#ff7a1a', boxShadow: '0 0 8px rgba(255,122,26,0.7)' }}></span>
-                  <span className="text-[11px] font-bold uppercase tracking-wider">Challenge running</span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        
-        <div className="flex items-center gap-4">
-          {user ? (
-            <>
-              <div
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs transition-all border ${
-                  isRunning ? 'animate-pulse-glow' : ''
-                }`}
-                style={isRunning 
-                  ? { background: 'rgba(0, 240, 255, 0.12)', borderColor: 'var(--app-accent)', color: 'var(--app-accent)', boxShadow: '0 0 16px rgba(0, 240, 255, 0.3)' } 
-                  : { background: 'rgba(0,0,0,0.3)', borderColor: 'rgba(255,255,255,0.1)', color: 'var(--app-text-muted)' }
-                }
-              >
-                <span className="uppercase tracking-widest">{isRunning ? 'Running' : 'Stopped'}</span>
-                <span 
-                  className={`w-2 h-2 rounded-full ${isRunning ? 'animate-pulse' : ''}`}
-                  style={{ background: isRunning ? 'var(--app-accent)' : 'var(--app-text-muted)', boxShadow: isRunning ? '0 0 8px var(--app-accent)' : 'none' }}
-                ></span>
-              </div>
-              
-              <div className="h-8 w-px" style={{ background: 'rgba(0, 240, 255, 0.3)' }}></div>
-              
-              <WalletSelector />
-              
-              <button 
-                onClick={fetchData} 
-                disabled={isLoading}
-                className="transition-all p-2 rounded-lg hover:bg-white/5"
-                style={{ color: isLoading ? 'var(--app-accent)' : 'var(--app-text-muted)' }}
-                title="Refresh Data"
-              >
-                <svg className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-              </button>
-            </>
-          ) : (
-            <button 
-              onClick={handleLogin}
-              className="text-white px-6 py-2 rounded-lg font-bold text-sm transition-all"
-              style={{ background: 'var(--app-accent)', color: '#0A0A0F', boxShadow: '0 0 20px rgba(0, 240, 255, 0.4)' }}
-            >
-              Login with Stake
-            </button>
-          )}
-        </div>
-      </header>
+      <AppHeader
+        currentView={currentView}
+        onChangeView={setCurrentView}
+        appTitle={appTitle}
+        userName={user?.name}
+        isChallengeRunning={isChallengeRunning}
+        isRunning={isRunning}
+        isLoading={isLoading}
+        onRefresh={fetchData}
+        onLogin={handleLogin}
+      />
+
+      {currentView === 'sports' && (
+        <SportsSubbar
+          sportFilterType={sportFilterType}
+          onChangeFilter={setSportFilterType}
+          selectedSportSlug={selectedSportSlug || 'soccer'}
+          onChangeSportSlug={setSelectedSportSlug}
+          fixtureSearchQuery={fixtureSearchQuery}
+          onChangeSearch={setFixtureSearchQuery}
+          sportsMenu={sportsMenu}
+        />
+      )}
 
       {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className="app-main-layout">
         {/* Error Toast */}
         {error && (
-          <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-50 bg-[#ff4d4d] text-white px-6 py-3 rounded shadow-2xl flex items-center gap-4 border border-white/10 animate-bounce">
+          <div
+            className="absolute top-6 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded shadow-2xl flex items-center gap-4 border"
+            style={{
+              background: 'rgba(255, 51, 102, 0.16)',
+              color: 'var(--app-error)',
+              borderColor: 'rgba(255, 51, 102, 0.4)',
+            }}
+          >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
             <span className="font-bold text-sm">{error}</span>
             <button onClick={() => setError(null)} className="hover:bg-white/20 rounded-full p-1 transition-colors">
@@ -322,13 +303,10 @@ function App() {
           </div>
         )}
 
-        {/* Sidebar */}
-        <Sidebar />
-
         {/* Casino View stays mounted so challenge/hunter processes keep running across tab switches */}
         <div
-          className="flex-1 overflow-auto relative z-10"
-          style={{ background: 'var(--app-bg-deep)', display: currentView === 'casino' ? 'block' : 'none' }}
+          className="app-view-casino"
+          style={{ display: currentView === 'casino' ? 'block' : 'none' }}
         >
           <CasinoView />
         </div>
@@ -336,10 +314,10 @@ function App() {
         {/* Sports View & Right Sidebar */}
         {currentView === 'sports' && (
           <>
-            <div className="sports-view flex-1 overflow-hidden flex flex-col relative z-0">
+            <div className="sports-view app-view-sports">
               {user ? (
-                selectedSport ? (
-                  <FixtureList sportSlug={selectedSport} />
+                selectedSportSlug ? (
+                  <FixtureList sportSlug={selectedSportSlug} />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full text-center p-12">
                     <div 
@@ -348,8 +326,8 @@ function App() {
                     >
                       <svg className="w-10 h-10" style={{ color: 'var(--app-accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     </div>
-                    <span className="font-bold text-lg" style={{ color: 'var(--app-text-muted)' }}>Sport wählen für Fixtures</span>
-                    <span className="text-sm mt-2" style={{ color: 'var(--app-text-muted)', opacity: 0.8 }}>Live Events, Starting Soon oder Sport aus der Liste</span>
+                    <span className="font-bold text-lg" style={{ color: 'var(--app-text-muted)' }}>Select a sport for fixtures</span>
+                    <span className="text-sm mt-2" style={{ color: 'var(--app-text-muted)', opacity: 0.8 }}>Live events, starting soon, or pick a sport from the list</span>
                   </div>
                 )
               ) : (
@@ -363,17 +341,17 @@ function App() {
                     </svg>
                   </div>
                   <h2 className="text-2xl font-black mb-3 tracking-wide uppercase" style={{ color: 'var(--app-text)', fontFamily: 'var(--font-heading)' }}>
-                    Willkommen bei STAKE<span style={{ color: 'var(--app-accent)' }}>SPORTS</span>
+                    Welcome to STAKE<span style={{ color: 'var(--app-accent)' }}>SPORTS</span>
                   </h2>
                   <p className="mb-8 max-w-md text-sm leading-relaxed" style={{ color: 'var(--app-text-muted)' }}>
-                    Mit Stake.com anmelden, um Fixtures anzuzeigen, Wetten zu platzieren und dein Portfolio zu verwalten.
+                    Login with Stake.com to view fixtures, place bets, and manage your portfolio.
                   </p>
                   <button 
                     onClick={handleLogin}
                     className="px-8 py-3.5 rounded-xl font-bold text-sm transition-all uppercase tracking-wider hover:-translate-y-0.5"
                     style={{ background: 'var(--app-accent)', color: 'var(--app-bg-deep)', boxShadow: '0 0 24px var(--app-accent-glow)' }}
                   >
-                    Mit Stake anmelden
+                    Login with Stake
                   </button>
                 </div>
               )}
@@ -385,7 +363,7 @@ function App() {
 
         {/* Logger View */}
         {currentView === 'logger' && (
-          <div className="flex-1 overflow-auto relative z-10" style={{ background: 'var(--app-bg-deep)' }}>
+          <div className="app-view-logger">
             <LoggerView />
           </div>
         )}

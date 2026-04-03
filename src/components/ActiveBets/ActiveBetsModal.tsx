@@ -83,7 +83,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     activeBets,
     setActiveBets,
     usdRates,
-    onAutoCashoutSuccess: () => showToast('Auto-Cashout ausgeführt', 'success'),
+    onAutoCashoutSuccess: () => showToast('Auto cashout executed', 'success'),
   });
 
   const { refreshCashoutOffers } = useCashoutOffers({
@@ -135,11 +135,11 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
       });
       if (result.data?.cashoutSportBet) {
         setActiveBets((prev) => prev.filter((b) => b.id !== betId));
-        showToast('Cashout erfolgreich', 'success');
+        showToast('Cashout successful', 'success');
       }
     } catch (err) {
       console.error('Cashout failed', err);
-      showToast('Cashout fehlgeschlagen', 'error');
+      showToast('Cashout failed', 'error');
     }
   };
 
@@ -200,10 +200,10 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     navigator.clipboard.writeText(url).then(() => {
       setCopiedId(betId);
       setTimeout(() => setCopiedId(null), 2000);
-      showToast('Link kopiert', 'success');
+      showToast('Link copied', 'success');
     }).catch((err) => {
       console.error('Failed to copy link', err);
-      showToast('Kopieren fehlgeschlagen', 'error');
+      showToast('Copy failed', 'error');
     });
   };
 
@@ -377,13 +377,13 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
 
         {/* Sort bar */}
         <div className="flex items-center gap-3 px-4 py-2 border-b flex-wrap" style={{ borderColor: 'var(--app-border)', background: 'color-mix(in srgb, var(--app-bg-deep) 80%, transparent)' }}>
-          <span className="text-xs uppercase tracking-wider" style={{ color: 'var(--app-text-muted)' }}>Sortieren:</span>
+          <span className="text-xs uppercase tracking-wider" style={{ color: 'var(--app-text-muted)' }}>Sort:</span>
           <div className="flex flex-wrap gap-1.5">
             {[
-              { key: 'createdAt', label: 'Datum' },
+              { key: 'createdAt', label: 'Date' },
               { key: 'cashout', label: 'Cashout' },
               { key: 'openLegs', label: 'Legs' },
-              { key: 'payoutMultiplier', label: 'Quote' },
+              { key: 'payoutMultiplier', label: 'Odds' },
             ].map(({ key, label }) => (
               <button
                 key={key}
@@ -407,7 +407,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
               onClick={() => setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'))}
               className="p-1.5 rounded-lg border border-transparent hover:opacity-90"
               style={{ background: 'color-mix(in srgb, var(--app-border) 50%, transparent)', color: 'var(--app-text-muted)' }}
-              title={sortDirection === 'asc' ? 'Aufsteigend (älteste zuerst)' : 'Absteigend (neueste zuerst)'}
+              title={sortDirection === 'asc' ? 'Ascending (oldest first)' : 'Descending (newest first)'}
             >
               {sortDirection === 'asc' ? '↑' : '↓'}
             </button>
@@ -430,7 +430,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                     accent="live"
                   >
                     {liveBets.length === 0 ? (
-                      <p className="text-sm py-2" style={{ color: 'var(--app-text-muted)' }}>Keine Live-Wetten.</p>
+                      <p className="text-sm py-2" style={{ color: 'var(--app-text-muted)' }}>No live bets.</p>
                     ) : (
                       liveBets.map((bet) => (
                         <BetListCard
@@ -452,7 +452,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                     accent="upcoming"
                   >
                     {upcomingBets.length === 0 ? (
-                      <p className="text-sm py-2" style={{ color: 'var(--app-text-muted)' }}>Keine anstehenden Wetten.</p>
+                      <p className="text-sm py-2" style={{ color: 'var(--app-text-muted)' }}>No upcoming bets.</p>
                     ) : (
                       upcomingBets.map((bet) => (
                         <BetListCard
@@ -471,13 +471,13 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
               ) : (
                 <>
                   <CollapsibleSection
-                    title="Gewonnen"
+                    title="Won"
                     count={wonBets.length}
                     defaultOpen={true}
                     accent="won"
                   >
                     {wonBets.length === 0 ? (
-                      <p className="text-sm py-2" style={{ color: 'var(--app-text-muted)' }}>Keine gewonnenen Wetten.</p>
+                      <p className="text-sm py-2" style={{ color: 'var(--app-text-muted)' }}>No won bets.</p>
                     ) : (
                       wonBets.map((bet) => (
                         <BetListCard
@@ -493,13 +493,13 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                     )}
                   </CollapsibleSection>
                   <CollapsibleSection
-                    title="Verloren"
+                    title="Lost"
                     count={lostBets.length}
                     defaultOpen={true}
                     accent="lost"
                   >
                     {lostBets.length === 0 ? (
-                      <p className="text-sm py-2" style={{ color: 'var(--app-text-muted)' }}>Keine verlorenen Wetten.</p>
+                      <p className="text-sm py-2" style={{ color: 'var(--app-text-muted)' }}>No lost bets.</p>
                     ) : (
                       lostBets.map((bet) => (
                         <BetListCard
@@ -553,7 +553,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                     />
                   </svg>
                   <p className="font-bold uppercase tracking-wide">
-                    {activeTab === 'active' ? 'Keine aktiven Wetten' : 'Keine abgeschlossenen Wetten'}
+                    {activeTab === 'active' ? 'No active bets' : 'No finished bets'}
                   </p>
                 </div>
               )}
@@ -564,7 +564,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
         <div className="p-4 border-t flex justify-between items-center text-xs gap-4" style={{ borderColor: 'var(--app-border)', background: 'var(--app-bg-card)', color: 'var(--app-text-muted)' }}>
             <span>{activeTab === 'active' ? `Total Active: ${activeBets.length}` : `Total Finished: ${finishedBets.length}`}</span>
             <button onClick={onClose} className="px-4 py-2 font-bold rounded-lg border transition-colors uppercase tracking-wider shrink-0 hover:opacity-90" style={{ background: 'rgba(var(--app-accent-rgb), 0.15)', color: 'var(--app-accent)', borderColor: 'color-mix(in srgb, var(--app-accent) 50%, transparent)' }}>
-              Schließen
+              Close
             </button>
         </div>
       </motion.div>

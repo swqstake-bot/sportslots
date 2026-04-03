@@ -5,10 +5,11 @@
 
 import { StakeApi } from '../../../api/client'
 import { logApiCall } from '../utils/apiLogger'
+import { CASINO_STORAGE_KEYS } from '../utils/storageRegistry'
 
 const ORIGINALS_GROUP_SLUG = 'stake-originals'
 const PAGE_SIZE = 31
-const ORIGINALS_CACHE_KEY = 'stake_originals_cache'
+const ORIGINALS_CACHE_KEY = CASINO_STORAGE_KEYS.stakeOriginalsCache
 const NEWEST_PAGES_MAX = 2
 const SESSION_CACHE_TTL_MS = 10 * 60 * 1000
 

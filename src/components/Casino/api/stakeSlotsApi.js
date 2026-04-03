@@ -1,8 +1,9 @@
 import { StakeApi } from '../../../api/client'
 import { logApiCall } from '../utils/apiLogger'
+import { CASINO_STORAGE_KEYS } from '../utils/storageRegistry'
 
 const PAGE_SIZE = 31
-const SLOTS_CACHE_KEY = 'slotbot_stake_slots_cache'
+const SLOTS_CACHE_KEY = CASINO_STORAGE_KEYS.stakeSlotsCache
 const NEWEST_PAGES_MAX = 10
 /**
  * Zusätzliche slugKuratorGroup-Slugs für Quick-Load: sort „newest“ nur innerhalb der Gruppe.

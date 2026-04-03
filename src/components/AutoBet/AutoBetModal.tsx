@@ -165,7 +165,7 @@ export function AutoBetModal({ onClose }: AutoBetModalProps) {
                   />
                 </div>
                 <div className="col-span-2 space-y-2">
-                  <label className="block text-sm font-bold text-gray-400 mb-1">Turnier / Event</label>
+                  <label className="block text-sm font-bold text-gray-400 mb-1">Tournament / Event</label>
                   <TournamentEventPickFields
                     settings={settings}
                     updateSettings={updateSettings}
@@ -195,7 +195,7 @@ export function AutoBetModal({ onClose }: AutoBetModalProps) {
                       className="form-checkbox h-5 w-5 text-green-500 rounded focus:ring-0 bg-gray-900 border-gray-700"
                       disabled={!hasTournamentScope(settings)}
                     />
-                    <span className="text-gray-300">Fill legs pro Event (alle Fights im Turnier, max. Legs beachten)</span>
+                    <span className="text-gray-300">Fill legs per event (all fights in the tournament, limited by Max Legs)</span>
                   </label>
                 </div>
               </div>

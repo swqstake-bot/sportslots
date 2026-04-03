@@ -167,7 +167,7 @@ export function TournamentEventPickFields({
     <div className="space-y-3">
       <div>
         <label className={labelClass} style={labelStyle}>
-          Event-Sport
+          Event sport
         </label>
         <div className="relative">
           <select
@@ -176,7 +176,7 @@ export function TournamentEventPickFields({
             className={selectClass}
             style={inputSelectStyle}
           >
-            <option value="">— Kein festes Turnier (normaler Scan) —</option>
+            <option value="">- No fixed tournament (normal scan) -</option>
             {sports.map((s) => (
               <option key={s.slug} value={s.slug}>
                 {s.name}
@@ -192,16 +192,16 @@ export function TournamentEventPickFields({
         </div>
         <p className="text-[10px] mt-1" style={helpStyle}>
           {variant === 'modal' ? (
-            <span className="text-gray-500">Sport wählen, dann erscheinen aktive Turniere.</span>
+            <span className="text-gray-500">Select a sport to load active tournaments.</span>
           ) : (
-            'Sport wählen, dann erscheinen aktive Turniere / Fight Cards.'
+            'Select a sport to load active tournaments / fight cards.'
           )}
         </p>
       </div>
 
       <div>
         <label className={labelClass} style={labelStyle}>
-          Turnier / Event
+          Tournament / Event
         </label>
         <div className="relative">
           <select
@@ -216,12 +216,12 @@ export function TournamentEventPickFields({
           >
             <option value="">
               {loadingEvents
-                ? 'Lade Events…'
+                ? 'Loading events...'
                 : !pickerSport
-                  ? 'Zuerst Sport wählen'
+                  ? 'Select a sport first'
                   : tournamentOptions.length === 0
-                    ? 'Keine Events gefunden'
-                    : '— Event wählen —'}
+                    ? 'No events found'
+                    : '- Select event -'}
             </option>
             {tournamentOptions.map((o) => (
               <option key={`${o.categorySlug}${SEP}${o.tournamentSlug}`} value={`${o.categorySlug}${SEP}${o.tournamentSlug}`}>
@@ -252,9 +252,9 @@ export function TournamentEventPickFields({
         />
         <p className="text-[10px] mt-1" style={helpStyle}>
           {variant === 'modal' ? (
-            <span className="text-gray-500">Alternativ zur Auswahl: Link einfügen (überschreibt Sport/Event).</span>
+            <span className="text-gray-500">Alternative to selection: paste a link (overrides sport/event).</span>
           ) : (
-            'Alternativ zur Auswahl: Stake-Link einfügen (setzt die Auswahl oben zurück).'
+            'Alternative to selection: paste a Stake link (resets the selection above).'
           )}
         </p>
       </div>

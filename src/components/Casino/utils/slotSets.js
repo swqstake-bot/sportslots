@@ -3,17 +3,18 @@
  * Persistenz via localStorage
  */
 
-const STORAGE_KEY = 'slotbot_slot_sets'
-const FAVORITES_KEY = 'slotbot_slot_favorites'
-const HAS_BONUS_KEY = 'slotbot_has_bonus_slugs'
+import { CASINO_STORAGE_KEYS, readStorageJson, writeStorageJson } from './storageRegistry'
+
+const STORAGE_KEY = CASINO_STORAGE_KEYS.slotSets
+const FAVORITES_KEY = CASINO_STORAGE_KEYS.slotFavorites
+const HAS_BONUS_KEY = CASINO_STORAGE_KEYS.hasBonusSlugs
 
 // Six Six Six: falsche Duplikate (richtige kommt dynamisch)
 const SIX_SIX_SIX_SLUGS = ['hacksaw-six-six-six', 'hacksaw-sixsixsix']
 
 export function loadSlotSets() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    const sets = raw ? JSON.parse(raw) : []
+    const sets = readStorageJson(STORAGE_KEY, [])
     let changed = false
     // Migration: ensure 'slugs' property exists (from legacy 'slots')
     const result = sets.map(s => {
@@ -35,9 +36,7 @@ export function loadSlotSets() {
       return newSet
     })
     if (changed) {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(result))
-      } catch (_) {}
+      writeStorageJson(STORAGE_KEY, result)
     }
     return result
   } catch {
@@ -49,13 +48,13 @@ export function saveSlotSet({ name, slots }) {
   const sets = loadSlotSets()
   const id = `set_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
   sets.push({ id, name: (name || 'Unbenannt').trim(), slugs: [...(slots || [])], createdAt: Date.now() })
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sets))
+  writeStorageJson(STORAGE_KEY, sets)
   return id
 }
 
 export function deleteSlotSet(id) {
   const sets = loadSlotSets().filter((s) => s.id !== id)
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sets))
+  writeStorageJson(STORAGE_KEY, sets)
 }
 
 export function loadSlotSet(id) {
@@ -81,7 +80,7 @@ export function importSlotSets(jsonStr, merge = true) {
       const id = `set_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
       sets.push({ id, name: String(s.name).trim(), slugs, createdAt: s.createdAt || Date.now() })
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sets))
+    writeStorageJson(STORAGE_KEY, sets)
     return { ok: true, count: sets.length }
   } catch (e) {
     return { ok: false, error: e?.message || 'Import fehlgeschlagen' }
@@ -90,14 +89,11 @@ export function importSlotSets(jsonStr, merge = true) {
 
 export function loadFavorites() {
   try {
-    const raw = localStorage.getItem(FAVORITES_KEY)
-    const list = raw ? JSON.parse(raw) : []
+    const list = readStorageJson(FAVORITES_KEY, [])
     // Migration: Six Six Six Duplikate entfernen
     const filtered = list.filter((slug) => !SIX_SIX_SIX_SLUGS.includes(slug))
     if (filtered.length !== list.length) {
-      try {
-        localStorage.setItem(FAVORITES_KEY, JSON.stringify(filtered))
-      } catch (_) {}
+      writeStorageJson(FAVORITES_KEY, filtered)
     }
     return filtered
   } catch {
@@ -110,20 +106,17 @@ export function toggleFavorite(slug) {
   const idx = fav.indexOf(slug)
   if (idx >= 0) fav.splice(idx, 1)
   else fav.push(slug)
-  localStorage.setItem(FAVORITES_KEY, JSON.stringify(fav))
+  writeStorageJson(FAVORITES_KEY, fav)
   return fav
 }
 
 /** Slots die „hat Bonus“ markiert sind – werden beim Hunt übersprungen (verhindert Session-Timeouts) */
 export function loadHasBonusSlugs() {
   try {
-    const raw = localStorage.getItem(HAS_BONUS_KEY)
-    const list = raw ? JSON.parse(raw) : []
+    const list = readStorageJson(HAS_BONUS_KEY, [])
     const filtered = list.filter((slug) => !SIX_SIX_SIX_SLUGS.includes(slug))
     if (filtered.length !== list.length) {
-      try {
-        localStorage.setItem(HAS_BONUS_KEY, JSON.stringify(filtered))
-      } catch (_) {}
+      writeStorageJson(HAS_BONUS_KEY, filtered)
     }
     return filtered
   } catch {
@@ -136,7 +129,7 @@ export function toggleHasBonusSlug(slug) {
   const idx = list.indexOf(slug)
   if (idx >= 0) list.splice(idx, 1)
   else list.push(slug)
-  localStorage.setItem(HAS_BONUS_KEY, JSON.stringify(list))
+  writeStorageJson(HAS_BONUS_KEY, list)
   return list
 }
 
@@ -146,7 +139,7 @@ export function removeHasBonusSlug(slug) {
   const idx = list.indexOf(slug)
   if (idx >= 0) {
     list.splice(idx, 1)
-    localStorage.setItem(HAS_BONUS_KEY, JSON.stringify(list))
+    writeStorageJson(HAS_BONUS_KEY, list)
   }
   return list
 }

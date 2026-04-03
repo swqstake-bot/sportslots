@@ -13,10 +13,12 @@
 
 .sectionBlock {
   padding: 0.85rem 1rem;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-card) 86%, rgba(var(--accent-rgb), 0.12));
+  border: 1px solid var(--border);
+  backdrop-filter: blur(8px);
   border-radius: var(--radius-md);
   margin-bottom: 1rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .sectionBlock:last-of-type {
@@ -44,9 +46,9 @@
   flex: 1;
   min-width: 100px;
   padding: 0.5rem 0.65rem;
-  background: var(--bg-elevated);
+  background: color-mix(in srgb, var(--bg-elevated) 88%, rgba(var(--accent-rgb), 0.08));
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--text);
   font-size: 0.85rem;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -73,7 +75,7 @@
   background: var(--accent);
   color: var(--bg-deep);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   font-weight: 700;
   cursor: pointer;
   font-size: 0.9rem;
@@ -93,10 +95,10 @@
 
 .btnSecondary {
   padding: 0.4rem 0.85rem;
-  background: transparent;
+  background: color-mix(in srgb, var(--bg-card) 84%, rgba(var(--accent-rgb), 0.12));
   color: var(--text-muted);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.8rem;
   font-weight: 500;
@@ -104,19 +106,21 @@
 }
 
 .btnSecondary:hover:not(:disabled) {
-  background: var(--bg-elevated);
+  background: color-mix(in srgb, var(--bg-card) 80%, rgba(var(--accent-rgb), 0.18));
   color: var(--text);
-  border-color: var(--text-muted);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
 }
 
 .progressList {
   margin-top: 0.75rem;
   padding: 0.75rem;
-  background: var(--bg-elevated);
+  background: color-mix(in srgb, var(--bg-card) 84%, rgba(var(--accent-rgb), 0.14));
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   color: var(--text);
   font-size: 0.85rem;
+  max-height: 420px;
+  overflow-y: auto;
 }
 
 .progressItem {
@@ -126,6 +130,11 @@
   padding: 0.35rem 0;
   border-bottom: 1px solid var(--border);
   font-size: 0.85rem;
+  transition: background 0.15s ease;
+}
+
+.progressItem:hover {
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .progressItemLast {
@@ -148,7 +157,7 @@
   font-weight: 600;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 2px 6px;
   margin-right: 0.25rem;
 }
@@ -164,9 +173,9 @@
 .statsCard {
   margin-top: 0.75rem;
   padding: 1rem;
-  background: var(--bg-elevated);
+  background: color-mix(in srgb, var(--bg-card) 84%, rgba(var(--accent-rgb), 0.14));
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   color: var(--text);
   font-size: 0.85rem;
 }
@@ -183,7 +192,7 @@
   align-items: center;
   gap: 0.35rem;
   padding: 0.35rem 0.6rem;
-  background: var(--bg-elevated);
+  background: var(--surface-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   font-family: "JetBrains Mono", monospace;
@@ -194,17 +203,17 @@
 
 .chart {
   margin-top: 0.5rem;
-  padding: 1rem;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  min-height: 100px;
+  padding: 0.55rem 0.6rem;
+  background: color-mix(in srgb, var(--bg-elevated) 90%, rgba(var(--accent-rgb), 0.1));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  min-height: 68px;
   color: var(--text);
   backdrop-filter: blur(8px);
 }
 
 .chartMultiSlot {
-  min-height: 150px;
+  min-height: 90px;
 }
 
 /* SVG – light modern grid */
@@ -242,7 +251,7 @@
   padding: 0.75rem 1rem;
   background: rgba(255, 82, 82, 0.08);
   border: 1px solid rgba(255, 82, 82, 0.25);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--error);
   font-size: 0.85rem;
   font-weight: 500;

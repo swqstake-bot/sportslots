@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { fetchUserBalances } from '../api/stakeWallet'
 import { fetchCurrencyRates } from '../api/stakeChallenges'
-import { subscribeToBalanceUpdates } from '../api/stakeBalanceSubscription'
+import { subscribeToStakeBalance } from '../api/stakeRealtimeFacade'
 import { formatAmount } from '../utils/formatAmount'
 import { SkeletonWallet } from './SkeletonLoader'
 
@@ -136,7 +136,7 @@ export default function WalletView({ accessToken, compact = false, hideTitle = f
         if (is403 && consecutiveFailuresRef.current >= 2) {
           pollIntervalRef.current = POLL_BACKOFF_MS
         }
-        setError(is403 ? 'Token abgelaufen? Bitte erneut verbinden.' : (err?.message || 'Wallet konnte nicht geladen werden.'))
+        setError(is403 ? 'Token expired? Please reconnect.' : (err?.message || 'Wallet could not be loaded.'))
       })
       .finally(() => setLoading(false))
   }, [accessToken, rates])
@@ -174,7 +174,7 @@ export default function WalletView({ accessToken, compact = false, hideTitle = f
     if (!accessToken) return
     let cancelled = false
     let sub = null
-    subscribeToBalanceUpdates(accessToken, (payload) => {
+    subscribeToStakeBalance(accessToken, (payload) => {
       if (!payload?.currency) return
       setLiveBalances((prev) => ({
         ...prev,

@@ -102,7 +102,7 @@ export default function CasinoLoggerTab({
   const gameStats = useMemo(() => {
     const byGame: Record<string, { count: number; amount: number; payout: number }> = {};
     filteredBets.forEach((b) => {
-      const name = b.gameName || '(Unbekannt)';
+      const name = b.gameName || '(Unknown)';
       if (!byGame[name]) byGame[name] = { count: 0, amount: 0, payout: 0 };
       byGame[name].count++;
       byGame[name].amount += toUsd(b.amount, b.currency, currencyRates);
@@ -166,7 +166,7 @@ export default function CasinoLoggerTab({
   }, []);
 
   const openGameDetails = (gameName: string) => {
-    const gameBets = filteredBets.filter((b) => (b.gameName || '(Unbekannt)') === gameName);
+    const gameBets = filteredBets.filter((b) => (b.gameName || '(Unknown)') === gameName);
     if (!gameBets.length) return;
     let bestBet: LoggerBetEntry | null = null;
     let bestMulti = -1;
@@ -221,41 +221,41 @@ export default function CasinoLoggerTab({
       <div className="logger-panel">
         <h2 className="logger-title">Casino Bets ({filteredBets.length})</h2>
         <div className="logger-grid">
-          <label>Datum von:<input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} /></label>
-          <label>Datum bis:<input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} /></label>
-          <label>Spiel:<input type="text" value={filterGame} onChange={(e) => setFilterGame(e.target.value)} placeholder="Suchen..." /></label>
-          <label>Min Einsatz ($):<input type="number" value={filterMinAmount} onChange={(e) => setFilterMinAmount(e.target.value)} /></label>
-          <label>Max Einsatz ($):<input type="number" value={filterMaxAmount} onChange={(e) => setFilterMaxAmount(e.target.value)} /></label>
+          <label>Date from:<input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} /></label>
+          <label>Date to:<input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} /></label>
+          <label>Game:<input type="text" value={filterGame} onChange={(e) => setFilterGame(e.target.value)} placeholder="Search..." /></label>
+          <label>Min stake ($):<input type="number" value={filterMinAmount} onChange={(e) => setFilterMinAmount(e.target.value)} /></label>
+          <label>Max stake ($):<input type="number" value={filterMaxAmount} onChange={(e) => setFilterMaxAmount(e.target.value)} /></label>
           <label>Min Multi:<input type="number" value={filterMinMulti} onChange={(e) => setFilterMinMulti(e.target.value)} /></label>
           <label>Max Multi:<input type="number" value={filterMaxMulti} onChange={(e) => setFilterMaxMulti(e.target.value)} /></label>
-          <label>Min Gewinn ($):<input type="number" value={filterMinPayout} onChange={(e) => setFilterMinPayout(e.target.value)} /></label>
-          <label>Max Gewinn ($):<input type="number" value={filterMaxPayout} onChange={(e) => setFilterMaxPayout(e.target.value)} /></label>
+          <label>Min win ($):<input type="number" value={filterMinPayout} onChange={(e) => setFilterMinPayout(e.target.value)} /></label>
+          <label>Max win ($):<input type="number" value={filterMaxPayout} onChange={(e) => setFilterMaxPayout(e.target.value)} /></label>
           <label>
-            Währung:
+            Currency:
             <select value={filterCurrency} onChange={(e) => setFilterCurrency(e.target.value)}>
-              <option value="">Alle</option>
+              <option value="">All</option>
               {currencies.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </label>
           <label>
-            Bet-Typ:
+            Bet type:
             <select value={filterBetType} onChange={(e) => setFilterBetType(e.target.value)}>
-              <option value="">Alle</option>
+              <option value="">All</option>
               {betTypes.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </label>
           <label>
-            Sortieren nach:
+            Sort by:
             <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
-              <option value="date">Datum</option>
-              <option value="game">Spiel</option>
-              <option value="amount">Einsatz</option>
+              <option value="date">Date</option>
+              <option value="game">Game</option>
+              <option value="amount">Stake</option>
               <option value="multi">Multi</option>
-              <option value="payout">Gewinn</option>
+              <option value="payout">Win</option>
             </select>
           </label>
-          <label className="logger-check"><input type="checkbox" checked={sortDesc} onChange={(e) => setSortDesc(e.target.checked)} />Absteigend</label>
-          <button type="button" className="logger-action-btn" onClick={() => onReload()} disabled={loading}>{loading ? 'Lade...' : 'Logs neu laden'}</button>
+          <label className="logger-check"><input type="checkbox" checked={sortDesc} onChange={(e) => setSortDesc(e.target.checked)} />Descending</label>
+          <button type="button" className="logger-action-btn" onClick={() => onReload()} disabled={loading}>{loading ? 'Loading...' : 'Reload logs'}</button>
           <button type="button" className="logger-action-btn" onClick={() => onExport(filteredBets.length > 0 ? filteredBets : bets)} disabled={bets.length === 0}>Export (JSONL)</button>
           <button type="button" className="logger-action-btn" onClick={() => onImport()}>Import (JSONL)</button>
         </div>
@@ -263,11 +263,11 @@ export default function CasinoLoggerTab({
       </div>
 
       <div className="logger-panel">
-        <h3 className="logger-title">Spiele nach RTP (aus gefilterten Wetten)</h3>
+        <h3 className="logger-title">Games by RTP (from filtered bets)</h3>
         <div className="logger-table-wrap logger-table-compact">
           <table>
             <thead>
-              <tr><th>Spiel</th><th className="num">Wetten</th><th className="num">Einsatz gesamt ($)</th><th className="num">Gewinn gesamt ($)</th><th className="num">RTP %</th></tr>
+              <tr><th>Game</th><th className="num">Bets</th><th className="num">Total stake ($)</th><th className="num">Total win ($)</th><th className="num">RTP %</th></tr>
             </thead>
             <tbody>
               {gameStats.slice(0, 50).map((g) => (
@@ -289,11 +289,11 @@ export default function CasinoLoggerTab({
       </div>
 
       <div className="logger-panel">
-        <h3 className="logger-title">Wetten ({filteredBets.length})</h3>
+        <h3 className="logger-title">Bets ({filteredBets.length})</h3>
         <div className="logger-table-wrap">
           <table>
             <thead>
-              <tr><th>Zeit</th><th>House-ID</th><th>Spiel</th><th>Typ</th><th className="num">Einsatz ($)</th><th className="num">Gewinn ($)</th><th className="num">Multi</th></tr>
+              <tr><th>Time</th><th>House ID</th><th>Game</th><th>Type</th><th className="num">Stake ($)</th><th className="num">Win ($)</th><th className="num">Multi</th></tr>
             </thead>
             <tbody>
               {visibleBets.map((b, idx) => (
@@ -319,7 +319,7 @@ export default function CasinoLoggerTab({
           </table>
         </div>
         {houseIdCopyState ? <p className="logger-status">{houseIdCopyState}</p> : null}
-        {filteredBets.length > MAX_VISIBLE_BETS ? <p className="logger-muted">Nur die neuesten 500 Einträge angezeigt.</p> : null}
+        {filteredBets.length > MAX_VISIBLE_BETS ? <p className="logger-muted">Only the newest 500 entries are shown.</p> : null}
       </div>
 
       {gameDetails ? (

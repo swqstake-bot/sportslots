@@ -4,14 +4,13 @@
  */
 import { getStakeEngineGameSlugPrefixes, mapProviderSlugToProviderId } from '../api/stakeSlotsApi'
 import { PROVIDERS } from '../constants/slots'
+import { CASINO_STORAGE_KEYS, readStorageJson, writeStorageJson } from './storageRegistry'
 
-const DISCOVERED_SLOTS_KEY = 'slotbot_discovered_slots'
+const DISCOVERED_SLOTS_KEY = CASINO_STORAGE_KEYS.discoveredSlots
 
 export function loadDiscoveredSlots() {
   try {
-    const raw = localStorage.getItem(DISCOVERED_SLOTS_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
+    const parsed = readStorageJson(DISCOVERED_SLOTS_KEY, [])
     return Array.isArray(parsed) ? parsed : []
   } catch {
     return []
@@ -19,9 +18,7 @@ export function loadDiscoveredSlots() {
 }
 
 export function saveDiscoveredSlots(list) {
-  try {
-    localStorage.setItem(DISCOVERED_SLOTS_KEY, JSON.stringify(list))
-  } catch (_) {}
+  writeStorageJson(DISCOVERED_SLOTS_KEY, list)
 }
 
 export function inferProviderId(slug) {

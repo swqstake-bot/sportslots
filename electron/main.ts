@@ -88,10 +88,16 @@ const LOGGER_CURRENCY_CONFIG_QUERY = `query CurrencyConfiguration($isAcp: Boolea
 }`;
 
 function createWindow() {
+  const iconPngPath = path.join(VITE_PUBLIC, 'icon.png');
+  const iconSvgPath = path.join(VITE_PUBLIC, 'favicon.svg');
+  const resolvedIconPath = fs.existsSync(iconPngPath) ? iconPngPath : iconSvgPath;
+
   win = new BrowserWindow({
     width: 1200,
     height: 800,
-    icon: path.join(VITE_PUBLIC, 'icon.png'),
+    title: 'StakeSports',
+    autoHideMenuBar: true,
+    icon: resolvedIconPath,
     webPreferences: {
       preload: path.join(ELECTRON_DIR, 'preload.js'),
       nodeIntegration: false,

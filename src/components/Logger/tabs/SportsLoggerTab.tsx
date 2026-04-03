@@ -50,9 +50,9 @@ export default function SportsLoggerTab({ bets, currencyRates, subscriptionStatu
       <div className="logger-panel">
         <div className="logger-kpis">
           <div className="logger-kpi"><span>Sports Bets</span><strong>{stats.total}</strong></div>
-          <div className="logger-kpi"><span>Gewonnen</span><strong>{stats.won}</strong></div>
-          <div className="logger-kpi"><span>Verloren</span><strong>{stats.lost}</strong></div>
-          <div className={`logger-kpi ${stats.profit >= 0 ? 'positive' : 'negative'}`}><span>Profit / Minus ($)</span><strong>{stats.profit >= 0 ? '+' : ''}{formatNum(stats.profit)}</strong></div>
+          <div className="logger-kpi"><span>Won</span><strong>{stats.won}</strong></div>
+          <div className="logger-kpi"><span>Lost</span><strong>{stats.lost}</strong></div>
+          <div className={`logger-kpi ${stats.profit >= 0 ? 'positive' : 'negative'}`}><span>Profit / Loss ($)</span><strong>{stats.profit >= 0 ? '+' : ''}{formatNum(stats.profit)}</strong></div>
         </div>
         <p className="logger-muted">
           Subscription Status: <b>{subscriptionStatus}</b>{subscriptionError ? ` - ${subscriptionError}` : ''}
@@ -64,7 +64,7 @@ export default function SportsLoggerTab({ bets, currencyRates, subscriptionStatu
         <div className="logger-table-wrap">
           <table>
             <thead>
-              <tr><th>Zeit</th><th>House-ID</th><th>Typ</th><th className="num">Einsatz ($)</th><th className="num">Gewinn ($)</th><th className="num">Netto ($)</th><th className="num">Multi</th></tr>
+              <tr><th>Time</th><th>House ID</th><th>Type</th><th className="num">Stake ($)</th><th className="num">Win ($)</th><th className="num">Net ($)</th><th className="num">Multi</th></tr>
             </thead>
             <tbody>
               {latestBets.map((b, idx) => {

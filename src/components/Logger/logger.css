@@ -6,7 +6,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.75rem;
+  padding: 0.7rem;
+  border-radius: 0.9rem;
+  border: 1px solid var(--app-border-subtle);
+  background: var(--surface-1);
 }
 
 .logger-tabs-wrap {
@@ -14,8 +19,8 @@
   gap: 0.5rem;
   padding: 0.35rem;
   border-radius: 0.8rem;
-  border: 1px solid var(--app-border);
-  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--app-border-subtle);
+  background: var(--surface-3);
 }
 
 .logger-tab-btn {
@@ -32,15 +37,15 @@
 
 .logger-tab-btn.is-active {
   color: #0a0a0f;
-  background: var(--app-accent);
+  background: rgba(var(--app-accent-rgb), 0.95);
   box-shadow: 0 0 14px var(--app-accent-glow);
 }
 
 .logger-panel {
-  border: 1px solid var(--app-border);
+  border: 1px solid var(--app-border-subtle);
   border-radius: 0.9rem;
   padding: 1rem;
-  background: rgba(12, 12, 18, 0.82);
+  background: var(--surface-2), rgba(12, 12, 18, 0.82);
 }
 
 .logger-stack {
@@ -94,8 +99,8 @@
 
 .logger-action-btn {
   border-radius: 0.6rem;
-  border: 1px solid var(--app-border);
-  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--app-border-subtle);
+  background: var(--surface-3);
   color: var(--app-text);
   font-size: 0.78rem;
   font-weight: 600;
@@ -122,7 +127,7 @@
 
 .logger-table-wrap {
   margin-top: 0.6rem;
-  max-height: 340px;
+  max-height: clamp(260px, 42vh, 420px);
   overflow: auto;
   border: 1px solid var(--app-border);
   border-radius: 0.65rem;
@@ -155,7 +160,7 @@
 }
 
 .logger-table-wrap .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: var(--font-mono);
   font-size: 0.75rem;
 }
 
@@ -200,9 +205,9 @@
 }
 
 .logger-kpi {
-  border: 1px solid var(--app-border);
+  border: 1px solid var(--app-border-subtle);
   border-radius: 0.7rem;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--surface-3);
   padding: 0.65rem;
   display: flex;
   flex-direction: column;
@@ -238,7 +243,7 @@
 
 .logger-modal-card {
   width: min(520px, 92vw);
-  border: 1px solid var(--app-border);
+  border: 1px solid var(--app-border-subtle);
   border-radius: 0.85rem;
   padding: 1rem;
   background: rgba(12, 12, 18, 0.98);
@@ -261,7 +266,7 @@
   height: 74px;
   object-fit: cover;
   border-radius: 0.55rem;
-  border: 1px solid var(--app-border);
+  border: 1px solid var(--app-border-subtle);
   flex-shrink: 0;
 }
 
@@ -270,4 +275,22 @@
   display: flex;
   gap: 0.55rem;
   align-items: center;
+}
+
+@media (max-width: 1400px) {
+  .logger-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  .logger-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .logger-kpis {
+    grid-template-columns: 1fr;
+  }
 }

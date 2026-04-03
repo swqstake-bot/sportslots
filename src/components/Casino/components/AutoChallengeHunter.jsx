@@ -16,8 +16,9 @@ import {
   stakeBetIdForPreviewApi,
   stakeBetModalShareUrl,
 } from '../utils/stakeBetShareId'
+import { normalizeBetSlugForHouseMatch, houseBetSlugMatchesSessionSlug } from '../utils/slotSlugMatching'
 import { setHunterSlotTargets } from '../utils/hunterSlotTargetsBridge'
-import { subscribeToBetUpdates } from '../api/stakeBalanceSubscription'
+import { subscribeToHouseBets } from '../api/stakeRealtimeFacade'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import {
   usdLimitToInputStr,
@@ -100,61 +101,6 @@ function getRateForCurrency(rates, tCurr) {
   const c = (tCurr || '').toLowerCase()
   if (c === 'usd') return 1
   return rates[c] || 0
-}
-
-/**
- * Stake houseBets liefert gameSlug als kebab-case (z. B. rooster-doubles).
- * Challenge-Listen können denselben Titel mit Leerzeichen/Underscores liefern — ohne Normalisierung schlägt das Matching fehl.
- */
-function normalizeBetSlugForHouseMatch(s) {
-  return String(s || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/_/g, '-')
-}
-
-/**
- * houseBets: gameSlug oft ohne Studio-Präfix (lazy-pirate).
- * Challenge/Session: slotSlug mit Präfix (paperclip-lazy-pirate, uppercut-rooster-doubles).
- * Vergleich über die letzten N Segmente (N = Segmentanzahl des kürzeren Slugs), damit
- * `endsWith('-' + h)` nicht scheitert, wenn der kurze Slug selbst Bindestriche enthält.
- *
- * Zusätzlich: kürzerer Slug als zusammenhängende Teilfolge im längeren (Provider-/Studio-Segmente
- * in der Mitte, z. B. session …-valkyrie-…-waylanders-forge vs house valkyrie-waylanders-forge).
- */
-function houseBetSlugMatchesSessionSlug(houseSlug, sessionSlug) {
-  const h = normalizeBetSlugForHouseMatch(houseSlug)
-  const s = normalizeBetSlugForHouseMatch(sessionSlug)
-  if (!h || !s) return false
-  if (s === h) return true
-  // Stake game.slug oft kurz (…-shamrock-1000), Session-Slug mit Provider-Präfix
-  if (h.length >= 10 && s.endsWith(h)) return true
-  if (s.length >= 10 && h.endsWith(s)) return true
-  const hParts = h.split('-').filter(Boolean)
-  const sParts = s.split('-').filter(Boolean)
-  if (hParts.length === 0 || sParts.length === 0) return false
-  // Gleiche Segmentanzahl, anderer Studio-/Listen-Präfix (z. B. stake- vs valkyrie-waylanders-forge)
-  if (hParts.length === sParts.length && hParts.length >= 2) {
-    for (let n = hParts.length; n >= 2; n--) {
-      if (hParts.slice(-n).join('-') === sParts.slice(-n).join('-')) return true
-    }
-  }
-  if (hParts.length === sParts.length) return false
-  const [shortParts, longParts] =
-    hParts.length < sParts.length ? [hParts, sParts] : [sParts, hParts]
-  if (shortParts.length < 2) return false
-  for (let i = 0; i <= longParts.length - shortParts.length; i++) {
-    let ok = true
-    for (let j = 0; j < shortParts.length; j++) {
-      if (longParts[i + j] !== shortParts[j]) {
-        ok = false
-        break
-      }
-    }
-    if (ok) return true
-  }
-  return false
 }
 
 /** Minor units → USD (wie im Spin-Loop: toUnits * Kurs) */
@@ -1049,7 +995,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     }
     scheduleHouseBetWorkerRef.current = scheduleHouseBetWorker
 
-    subscribeToBetUpdates(accessToken, (b) => {
+    subscribeToHouseBets(accessToken, (b) => {
       const now = Date.now()
       const pendBefore = pendingHouseBetMatchRef.current
       while (pendBefore.length > 0 && now - pendBefore[0].at > PENDING_HOUSEBET_MAX_AGE_MS) {

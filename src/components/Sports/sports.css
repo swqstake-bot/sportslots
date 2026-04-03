@@ -1,43 +1,51 @@
 /**
- * Sports – Design-System analog zu Casino (Glass, Neon, Cyberpunk)
- * Nutzt --app-* Variablen (Sports-Mode: grüner Akzent #00ff88)
+ * Sports design system aligned with Casino (glass, neon, cyberpunk)
+ * Uses --app-* variables (Sports mode: green accent #00ff88)
  */
 
 /* Sports View Wrapper */
 .sports-view {
-  background: var(--app-bg-deep);
+  background:
+    radial-gradient(circle at 12% 8%, rgba(var(--app-accent-rgb), 0.12), transparent 34%),
+    radial-gradient(circle at 88% 12%, rgba(var(--app-accent-rgb), 0.08), transparent 40%),
+    var(--app-bg-deep);
   color: var(--app-text);
   min-height: 100%;
 }
 
 /* Sports Header – Sticky, Glass */
 .sports-view .sports-header {
-  background: rgba(10, 10, 20, 0.88);
+  background:
+    linear-gradient(180deg, rgba(var(--app-accent-rgb), 0.18) 0%, rgba(var(--app-accent-rgb), 0.07) 36%, rgba(8, 12, 10, 0.92) 100%),
+    var(--surface-1);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid var(--app-border);
+  border-bottom: 1px solid var(--app-border-subtle);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
-/* Sports Card – Fixture Cards (kompakt für Bot-Übersicht) */
+/* Sports card - Fixture cards (compact for bot overview) */
 .sports-view .fixture-card {
-  background: var(--app-bg-card);
+  background:
+    linear-gradient(180deg, rgba(var(--app-accent-rgb), 0.16) 0%, rgba(var(--app-accent-rgb), 0.06) 40%, rgba(8, 12, 10, 0.92) 100%),
+    var(--surface-3),
+    var(--app-bg-card);
   backdrop-filter: blur(8px);
-  border: 1px solid var(--app-border);
-  border-radius: 8px;
+  border: 1px solid var(--app-border-subtle);
+  border-radius: 10px;
   transition: border-color 0.2s, box-shadow 0.2s;
   min-height: 0;
 }
 
 .sports-view .fixture-card:hover {
   border-color: var(--app-accent);
-  box-shadow: 0 0 12px var(--app-accent-glow);
+  box-shadow: 0 0 18px var(--app-accent-glow);
 }
 
 /* Odds Button */
 .sports-view .odds-btn {
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid var(--app-border);
+  background: color-mix(in srgb, var(--app-bg-elevated) 88%, rgba(var(--app-accent-rgb), 0.08));
+  border: 1px solid var(--app-border-subtle);
   color: var(--app-text);
   transition: all 0.15s ease;
 }
@@ -66,7 +74,7 @@
 /* Filter Toggle (Live/Upcoming) */
 .sports-view .filter-toggle {
   background: rgba(0, 0, 0, 0.4);
-  border: 1px solid var(--app-border);
+  border: 1px solid var(--app-border-subtle);
   border-radius: 9999px;
 }
 
@@ -84,7 +92,141 @@
   box-shadow: 0 0 16px var(--app-accent-glow);
 }
 
-/* Extra market outcome buttons (smaller) */
-.sports-view .odds-btn.selected {
-  border: 1px solid var(--app-accent);
+.sports-right-rail {
+  width: clamp(320px, 25vw, 360px);
+  min-width: 320px;
+  flex-shrink: 0;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--app-border-subtle);
+  background:
+    linear-gradient(180deg, rgba(var(--app-accent-rgb), 0.2) 0%, rgba(var(--app-accent-rgb), 0.08) 36%, rgba(8, 12, 10, 0.92) 100%),
+    var(--surface-2),
+    var(--app-bg-deep);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+}
+
+.sports-right-rail-tabs {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.38rem;
+  border-bottom: 1px solid var(--app-border-subtle);
+  background:
+    linear-gradient(180deg, rgba(var(--app-accent-rgb), 0.17) 0%, rgba(var(--app-accent-rgb), 0.06) 52%, rgba(8, 12, 10, 0.92) 100%),
+    var(--surface-3);
+}
+
+.sports-right-rail-tab-btn {
+  flex: 1;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--app-bg-card) 82%, rgba(var(--app-accent-rgb), 0.08));
+  color: var(--app-text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.55rem 0.6rem;
+}
+
+.sports-right-rail-tab-btn.is-active {
+  color: #071015;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: linear-gradient(135deg, rgba(var(--app-accent-rgb), 0.95), rgba(var(--app-accent-rgb), 0.72));
+  box-shadow: 0 0 14px var(--app-accent-glow);
+}
+
+.sports-right-rail-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(var(--app-accent-rgb), 0.08) 0%, rgba(0, 0, 0, 0) 38%),
+    color-mix(in srgb, var(--app-bg-card) 92%, rgba(var(--app-accent-rgb), 0.06));
+}
+
+.sports-betslip-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  transition: height 0.24s ease;
+  border-top: 1px solid var(--app-border-subtle);
+  box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.3);
+}
+
+.sports-betslip-wrap.is-expanded {
+  height: clamp(250px, 58%, 520px);
+}
+
+.sports-betslip-wrap.is-collapsed {
+  height: 76px;
+}
+
+.sports-betslip-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  border-bottom: 1px solid var(--app-border-subtle);
+  background:
+    linear-gradient(180deg, rgba(var(--app-accent-rgb), 0.15) 0%, rgba(var(--app-accent-rgb), 0.05) 52%, rgba(8, 12, 10, 0.9) 100%),
+    var(--surface-3);
+  padding: 1rem 1.1rem;
+}
+
+.sports-betslip-title {
+  color: var(--app-text);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.sports-betslip-count {
+  border-radius: 999px;
+  background: rgba(var(--app-accent-rgb), 0.94);
+  color: #071015;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.15rem 0.48rem;
+  box-shadow: 0 0 10px var(--app-accent-glow);
+}
+
+.sports-betslip-toggle-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--app-text-muted);
+}
+
+.sports-betslip-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(var(--app-accent-rgb), 0.12) 0%, rgba(var(--app-accent-rgb), 0.04) 40%, rgba(8, 12, 10, 0.92) 100%),
+    var(--app-bg-card);
+}
+
+@media (max-width: 1366px) {
+  .sports-right-rail {
+    width: 330px;
+    min-width: 330px;
+  }
+
+  .sports-betslip-wrap.is-expanded {
+    height: clamp(230px, 52%, 420px);
+  }
+}
+
+@media (max-width: 1180px) {
+  .sports-right-rail {
+    width: 310px;
+    min-width: 310px;
+  }
 }

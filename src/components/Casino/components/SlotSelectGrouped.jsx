@@ -14,11 +14,11 @@ const SearchIcon = () => (
 
 /** Provider-Farben für Neon-Chips */
 const PROVIDER_COLORS = {
-  hacksaw: '#FF00AA',
-  pragmatic: '#00F0FF',
-  stakeEngine: '#9D00FF',
-  nolimit: '#00ff88',
-  default: '#00F0FF',
+  hacksaw: '#b61f34',
+  pragmatic: '#b61f34',
+  stakeEngine: '#9a1a2d',
+  nolimit: '#c22a3f',
+  default: '#b61f34',
 }
 
 const getProviderColor = (pid) => PROVIDER_COLORS[pid] || PROVIDER_COLORS.default
@@ -29,7 +29,7 @@ const LEGACY_STYLES = {
   groupHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.55rem 0.85rem', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem', color: 'var(--text)' },
   groupSlots: { padding: '0.65rem', background: 'var(--bg-deep)', border: '1px solid var(--border-subtle)', borderTop: 'none', borderRadius: '0 0 var(--radius-md) var(--radius-md)', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.5rem' },
   slot: { padding: '0.5rem', borderRadius: 'var(--radius-md)', fontSize: '0.85rem', cursor: 'pointer', color: 'var(--text)', border: '1px solid var(--border-subtle)', background: 'var(--bg-card)' },
-  slotSelected: { background: 'rgba(0, 240, 255, 0.12)', borderColor: 'var(--accent)' },
+  slotSelected: { background: 'rgba(var(--accent-rgb), 0.12)', borderColor: 'var(--accent)' },
   chevron: { transition: 'transform 0.2s' },
 }
 
@@ -139,7 +139,20 @@ function slotMatchesSearch(slot, q) {
  * @param {string} [props.sharedSourceCurrency]
  * @param {string} [props.sharedTargetCurrency]
  */
-export function SlotSelectMulti({ slots, selectedSlugs, selectedInstances = [], onToggle, onAddInstance, onRemoveInstance, disabled, favorites = [], onToggleFavorite, sharedSourceCurrency, sharedTargetCurrency }) {
+export function SlotSelectMulti({
+  slots,
+  selectedSlugs,
+  selectedInstances = [],
+  onToggle,
+  onAddInstance,
+  onRemoveInstance,
+  disabled,
+  favorites = [],
+  onToggleFavorite,
+  sharedSourceCurrency,
+  sharedTargetCurrency,
+  hasBonusSlugs = [],
+}) {
   const isInstanceMode = !!onAddInstance
   const groups = getSlotsGroupedByProvider(slots)
   const [search, setSearch] = useState('')
@@ -202,6 +215,11 @@ export function SlotSelectMulti({ slots, selectedSlugs, selectedInstances = [], 
     : allSlotsFlat
 
   const chipsRef = useRef(null)
+  const hasBonusLookup = useMemo(() => {
+    if (hasBonusSlugs instanceof Set) return hasBonusSlugs
+    if (Array.isArray(hasBonusSlugs)) return new Set(hasBonusSlugs)
+    return new Set()
+  }, [hasBonusSlugs])
 
   return (
     <div className="slot-select-cyber" style={{ marginBottom: '1rem' }}>
@@ -219,16 +237,16 @@ export function SlotSelectMulti({ slots, selectedSlugs, selectedInstances = [], 
                   alignItems: 'center',
                   gap: '0.4rem',
                   padding: '0.35rem 0.6rem',
-                  background: 'rgba(0, 240, 255, 0.08)',
-                  border: '1px solid rgba(0, 240, 255, 0.4)',
+                  background: 'rgba(var(--accent-rgb), 0.08)',
+                  border: '1px solid rgba(var(--accent-rgb), 0.4)',
                   borderRadius: 'var(--radius-md)',
                   fontSize: '0.8rem',
                   color: 'var(--text)',
-                  boxShadow: '0 0 12px rgba(0, 240, 255, 0.15)',
+                  boxShadow: '0 0 12px rgba(var(--accent-rgb), 0.18)',
                 }}
               >
                 <span>{label}{cc}</span>
-                <button type="button" onClick={(e) => { e.stopPropagation(); onRemoveInstance?.(inst.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem', fontSize: '1rem', color: 'var(--text-muted)', lineHeight: 1 }} title="Entfernen">×</button>
+                <button type="button" onClick={(e) => { e.stopPropagation(); onRemoveInstance?.(inst.id) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.1rem', fontSize: '1rem', color: 'var(--text-muted)', lineHeight: 1 }} title="Remove">×</button>
               </div>
             )
           })}
@@ -242,7 +260,7 @@ export function SlotSelectMulti({ slots, selectedSlugs, selectedInstances = [], 
           top: 0, 
           zIndex: 10, 
           padding: '0.5rem 0', 
-          background: 'var(--bg-deep)', 
+          background: 'linear-gradient(180deg, rgba(var(--accent-rgb), 0.06) 0%, rgba(var(--accent-rgb), 0.015) 42%, rgba(8,8,12,0.92) 100%)', 
           marginBottom: '0.75rem',
           borderBottom: '1px solid var(--border-subtle)',
         }}
@@ -254,11 +272,11 @@ export function SlotSelectMulti({ slots, selectedSlugs, selectedInstances = [], 
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Slot suchen..."
+              placeholder="Search slot..."
               style={{
                 width: '100%',
                 padding: '0.45rem 0.7rem 0.45rem 2rem',
-                background: 'var(--bg-elevated)',
+                background: 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.05))',
                 border: '1px solid var(--border-subtle)',
                 borderRadius: 'var(--radius-md)',
                 color: 'var(--text)',
@@ -289,11 +307,11 @@ export function SlotSelectMulti({ slots, selectedSlugs, selectedInstances = [], 
               fontSize: '0.75rem',
               fontWeight: 600,
               border: `1px solid ${!providerFilter ? 'var(--accent)' : 'var(--border-subtle)'}`,
-              background: !providerFilter ? 'rgba(0, 240, 255, 0.15)' : 'var(--bg-elevated)',
+              background: !providerFilter ? 'rgba(var(--accent-rgb), 0.1)' : 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.05))',
               color: !providerFilter ? 'var(--accent)' : 'var(--text-muted)',
               cursor: 'pointer',
               transition: 'all 0.2s',
-              boxShadow: !providerFilter ? '0 0 12px rgba(0, 240, 255, 0.25)' : 'none',
+              boxShadow: !providerFilter ? '0 0 8px rgba(var(--accent-rgb), 0.12)' : 'none',
             }}
           >
             All
@@ -314,11 +332,11 @@ export function SlotSelectMulti({ slots, selectedSlugs, selectedInstances = [], 
                   fontSize: '0.75rem',
                   fontWeight: 600,
                   border: `1px solid ${isActive ? color : 'var(--border-subtle)'}`,
-                  background: isActive ? `${color}22` : 'var(--bg-elevated)',
+                  background: isActive ? `${color}1f` : 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.045))',
                   color: isActive ? color : 'var(--text-muted)',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
-                  boxShadow: isActive ? `0 0 12px ${color}40` : 'none',
+                  boxShadow: isActive ? `0 0 7px ${color}24` : 'none',
                 }}
               >
                 {PROVIDERS_META[pid]?.name || PROVIDERS_BASIC[pid]?.name || pid} ({count})
@@ -332,7 +350,7 @@ export function SlotSelectMulti({ slots, selectedSlugs, selectedInstances = [], 
       <div style={{ maxHeight: '55vh', overflowY: 'auto', paddingRight: '0.35rem' }}>
         {displaySlots.length === 0 ? (
           <div style={{ padding: '2.5rem', color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-            {debouncedSearch?.trim() ? 'Keine Slots gefunden.' : 'Keine Slots verfügbar.'}
+            {debouncedSearch?.trim() ? 'No slots found.' : 'No slots available.'}
           </div>
         ) : (
           <div 
@@ -346,6 +364,7 @@ export function SlotSelectMulti({ slots, selectedSlugs, selectedInstances = [], 
               const selected = isInstanceMode ? selectedInstances.some((i) => i.slug === slot.slug) : selectedSlugs.includes(slot.slug)
               const instanceCount = isInstanceMode ? selectedInstances.filter((i) => i.slug === slot.slug).length : (selected ? 1 : 0)
               const isFav = favorites.includes(slot.slug)
+              const hasBonus = hasBonusLookup.has(slot.slug)
               const handleClick = () => {
                 if (disabled) return
                 if (isInstanceMode) {
@@ -382,7 +401,9 @@ export function SlotSelectMulti({ slots, selectedSlugs, selectedInstances = [], 
                     cursor: 'pointer',
                     color: 'var(--text)',
                     border: `1px solid ${selected ? 'var(--accent)' : 'var(--border-subtle)'}`,
-                    background: selected ? 'rgba(0, 240, 255, 0.1)' : 'var(--bg-card)',
+                    background: selected
+                      ? 'linear-gradient(180deg, rgba(var(--accent-rgb), 0.1) 0%, rgba(var(--accent-rgb), 0.03) 48%, rgba(8,8,12,0.94) 100%)'
+                      : 'linear-gradient(180deg, rgba(var(--accent-rgb), 0.05) 0%, rgba(var(--accent-rgb), 0.015) 42%, rgba(8,8,12,0.94) 100%)',
                     minHeight: '4.5rem',
                     transition: 'all 0.2s',
                     position: 'relative',
@@ -393,7 +414,9 @@ export function SlotSelectMulti({ slots, selectedSlugs, selectedInstances = [], 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.25rem', marginBottom: '0.35rem' }}>
                     <div style={{ 
                       width: 42, height: 42, borderRadius: 8, 
-                      background: hasThumbnail ? 'var(--bg-elevated)' : `${providerColor}33`, 
+                      background: hasThumbnail
+                        ? 'color-mix(in srgb, var(--bg-elevated) 90%, rgba(var(--accent-rgb), 0.08))'
+                        : `${providerColor}33`, 
                       border: `1px solid ${hasThumbnail ? 'var(--border-subtle)' : `${providerColor}66`}`,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: hasThumbnail ? 0 : '0.7rem', fontWeight: 700, color: providerColor, flexShrink: 0,
@@ -415,6 +438,26 @@ export function SlotSelectMulti({ slots, selectedSlugs, selectedInstances = [], 
                       {selected && '✓'}
                     </div>
                   </div>
+                  {hasBonus && (
+                    <div
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        alignSelf: 'flex-start',
+                        marginBottom: '0.25rem',
+                        padding: '0.1rem 0.35rem',
+                        borderRadius: 999,
+                        border: '1px solid rgba(var(--accent-rgb), 0.35)',
+                        background: 'rgba(var(--accent-rgb), 0.08)',
+                        color: 'var(--accent)',
+                        fontSize: '0.62rem',
+                        fontWeight: 700,
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      HAS BONUS
+                    </div>
+                  )}
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: 1.25, fontWeight: selected ? 600 : 400 }}>
                     {slot.name}
                     {instanceCount > 1 && <span style={{ marginLeft: '0.2rem', opacity: 0.8 }}>({instanceCount})</span>}
@@ -424,7 +467,7 @@ export function SlotSelectMulti({ slots, selectedSlugs, selectedInstances = [], 
                       type="button"
                       onClick={(e) => { e.stopPropagation(); onToggleFavorite(slot.slug) }}
                       style={{ position: 'absolute', bottom: '0.35rem', right: '0.35rem', background: 'none', border: 'none', cursor: 'pointer', padding: '0.15rem', fontSize: '0.75rem', color: isFav ? 'var(--warning)' : 'var(--text-muted)', opacity: isFav ? 1 : 0.4 }}
-                      title={isFav ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'}
+                      title={isFav ? 'Remove from favorites' : 'Add to favorites'}
                     >
                       {isFav ? '★' : '☆'}
                     </button>

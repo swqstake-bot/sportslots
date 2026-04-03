@@ -11,7 +11,8 @@ interface ToastState {
 interface UiState {
   currentView: 'sports' | 'casino' | 'logger';
   casinoMode: 'play' | 'originals' | 'challenges' | 'telegram' | 'bonushunt' | 'forum' | 'logs';
-  selectedSport: string | null;
+  /** Ausgewählter Sport-Slug (z. B. soccer, tennis). */
+  selectedSportSlug: string | null;
   /** Live/Upcoming-Filter bei Sportansicht (z.B. Soccer) */
   sportFilterType: 'live' | 'upcoming';
   /** Suchbegriff für Fixture-Namen (Sports) */
@@ -24,7 +25,7 @@ interface UiState {
   setFixtureSearchQuery: (q: string) => void;
   setCurrentView: (view: 'sports' | 'casino' | 'logger') => void;
   setCasinoMode: (mode: 'play' | 'originals' | 'challenges' | 'telegram' | 'bonushunt' | 'forum' | 'logs') => void;
-  setSelectedSport: (sport: string | null) => void;
+  setSelectedSportSlug: (sportSlug: string | null) => void;
   setSportFilterType: (type: 'live' | 'upcoming') => void;
   setRightSidebarTab: (tab: 'autobet' | 'activebets' | 'betslip') => void;
   toggleBetSlip: () => void;
@@ -38,7 +39,7 @@ export const useUiStore = create<UiState>()(
     (set) => ({
       currentView: 'sports',
       casinoMode: 'play',
-      selectedSport: 'soccer',
+      selectedSportSlug: 'soccer',
       sportFilterType: 'upcoming',
       fixtureSearchQuery: '',
       rightSidebarTab: 'activebets',
@@ -49,7 +50,7 @@ export const useUiStore = create<UiState>()(
       setFixtureSearchQuery: (q) => set({ fixtureSearchQuery: q }),
       setCasinoMode: (mode) => set({ casinoMode: mode }),
       setCurrentView: (view) => set({ currentView: view }),
-      setSelectedSport: (sport) => set({ selectedSport: sport }),
+      setSelectedSportSlug: (sportSlug) => set({ selectedSportSlug: sportSlug }),
       setSportFilterType: (type) => set({ sportFilterType: type }),
       setRightSidebarTab: (tab) => set({ rightSidebarTab: tab }),
       toggleBetSlip: () => set((state) => ({ isBetSlipExpanded: !state.isBetSlipExpanded })),
@@ -62,11 +63,20 @@ export const useUiStore = create<UiState>()(
       partialize: (state) => ({
         currentView: state.currentView,
         casinoMode: state.casinoMode,
-        selectedSport: state.selectedSport,
+        selectedSportSlug: state.selectedSportSlug,
         sportFilterType: state.sportFilterType,
         rightSidebarTab: state.rightSidebarTab,
         isBetSlipExpanded: state.isBetSlipExpanded,
       }),
+      migrate: (persistedState: any) => {
+        if (!persistedState || typeof persistedState !== 'object') return persistedState
+        if (persistedState.selectedSportSlug) return persistedState
+        const legacySport = persistedState.selectedSport ?? 'soccer'
+        return {
+          ...persistedState,
+          selectedSportSlug: legacySport,
+        }
+      },
     }
   )
 );

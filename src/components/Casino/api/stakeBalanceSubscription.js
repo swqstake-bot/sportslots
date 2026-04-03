@@ -1,4 +1,5 @@
 import { createClient } from 'graphql-ws'
+import { CASINO_STORAGE_KEYS } from '../utils/storageRegistry'
 
 const BALANCE_UPDATED_SUBSCRIPTION = `
   subscription BalanceUpdated {
@@ -97,7 +98,7 @@ const HOUSEBETS_SUBSCRIPTION = `
 const DEBUG_HOUSEBETS_FORCE = false
 
 /** In DevTools: `localStorage.setItem('slotbot_debug_housebets','1'); location.reload()` — dann RAW/compact Logs. */
-const LS_DEBUG_HOUSEBETS = 'slotbot_debug_housebets'
+const LS_DEBUG_HOUSEBETS = CASINO_STORAGE_KEYS.debugHouseBets
 
 /**
  * @returns {boolean} Roh-Payload (`[houseBets] RAW`), compact OK/SKIP, SlotControl-Multi-Debug

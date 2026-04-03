@@ -87,32 +87,32 @@ export default function LoggerView() {
       return;
     }
     await loadLoggerLogs();
-    setStatusMessage(`${r.bets?.length ?? 0} Wetten importiert.`);
+    setStatusMessage(`${r.bets?.length ?? 0} bets imported.`);
   }, [loadLoggerLogs]);
 
   const handleExport = useCallback(async (bets: LoggerBetEntry[]) => {
     setStatusMessage('');
     if (!bets.length) {
-      setStatusMessage('Keine Wetten zum Exportieren.');
+      setStatusMessage('No bets available to export.');
       return;
     }
     const r = await window.electronAPI.exportLoggerBetLogs(bets);
     if (r?.cancelled) return;
-    if (r?.ok) setStatusMessage(`Exportiert: ${bets.length} Wetten -> ${r.path || 'Gespeichert'}`);
-    else setStatusMessage(r?.error || 'Export fehlgeschlagen');
+    if (r?.ok) setStatusMessage(`Exported: ${bets.length} bets -> ${r.path || 'Saved'}`);
+    else setStatusMessage(r?.error || 'Export failed');
   }, []);
 
   const handleDeleteAll = useCallback(async () => {
-    const confirmed = window.confirm('Wirklich alles löschen? Das entfernt Casino-Logs und leert Sports-Stats.');
+    const confirmed = window.confirm('Delete everything? This removes casino logs and clears sports stats.');
     if (!confirmed) return;
     const r = await window.electronAPI.deleteAllLoggerBetLogs();
     if (!r?.ok) {
-      setStatusMessage(r?.error || 'Löschen fehlgeschlagen');
+      setStatusMessage(r?.error || 'Delete failed');
       return;
     }
     setCasinoBets([]);
     setSportsBets([]);
-    setStatusMessage(`Alles gelöscht: ${r.deleted ?? 0} Log-Datei(en) entfernt.`);
+    setStatusMessage(`Deleted all: ${r.deleted ?? 0} log file(s) removed.`);
   }, []);
 
   useEffect(() => {
@@ -145,7 +145,7 @@ export default function LoggerView() {
   );
 
   return (
-    <div className="logger-root p-6 lg:p-8 max-w-[1800px] mx-auto">
+    <div className="logger-root p-6 lg:p-8 w-full">
       <div className="logger-topbar mb-5">
         <div className="logger-tabs-wrap">
           <button
