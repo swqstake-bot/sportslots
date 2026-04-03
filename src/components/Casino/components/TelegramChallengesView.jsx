@@ -640,7 +640,7 @@ export default function TelegramChallengesView({
             }}
           >
             <span className="hunter-kpi-label" style={{ width: '100%', marginBottom: '0.15rem' }}>
-              Live (recommended over history): new channel messages -> target multipliers + min bet like hunter
+              Live (recommended over history): new channel messages map to target multipliers and min bet like hunter
             </span>
             <Button
               type="button"
