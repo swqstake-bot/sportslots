@@ -112,6 +112,7 @@ export default function BonusHuntControl({
   const [showDetailedProgress, setShowDetailedProgress] = useState(false)
   const [tipCopied, setTipCopied] = useState(false)
   const [showTipMenu, setShowTipMenu] = useState(false)
+  const [firstOpeningBalanceMinor, setFirstOpeningBalanceMinor] = useState(null)
   const tipMenuRef = useRef(null)
   const pendingSpinsRef = useRef([])
   const recentHouseBetsRef = useRef([])
@@ -492,6 +493,9 @@ export default function BonusHuntControl({
 
   const openBonusGamePopup = useCallback(async (slot, trigger = 'manual') => {
     if (!slot?.slug) return
+    if (currentBalance != null) {
+      setFirstOpeningBalanceMinor((prev) => (prev != null ? prev : Number(currentBalance)))
+    }
     const slug = slot.slug
     const slotName = slot.name || slot.slug
     const openedAt = new Date().toISOString()
@@ -527,7 +531,7 @@ export default function BonusHuntControl({
     } catch (_) {
       // Ignore popup open errors; opening can be retried manually.
     }
-  }, [])
+  }, [currentBalance])
 
   useEffect(() => {
     latestBetHistoryRef.current = betHistory
@@ -597,6 +601,7 @@ export default function BonusHuntControl({
     setWheelOpenedSlugs(new Set())
     setLastWheelWinner(null)
     setBonusOpeningResults({})
+    setFirstOpeningBalanceMinor(null)
     setIsRunning(true)
     setError('')
     setBetHistory([])
@@ -1149,9 +1154,23 @@ export default function BonusHuntControl({
     () => openingEntries.filter((entry) => entry?.status === 'opened' || entry?.status === 'closed_pending'),
     [openingEntries]
   )
+  const huntStartBalanceMinor = useMemo(() => {
+    const firstWithBalance = betHistory.find((b) => b?.balance != null)
+    if (!firstWithBalance) return null
+    const firstBet = Number(firstWithBalance?.betAmount || 0)
+    const firstWin = firstWithBalance?.stoppedBonus ? 0 : Number(firstWithBalance?.winAmount || 0)
+    return Number(firstWithBalance.balance || 0) + firstBet - firstWin
+  }, [betHistory])
+  const openingCostMinorFromBalance = useMemo(() => {
+    if (huntStartBalanceMinor == null || firstOpeningBalanceMinor == null) return null
+    return Math.max(0, Math.round(Number(huntStartBalanceMinor) - Number(firstOpeningBalanceMinor)))
+  }, [huntStartBalanceMinor, firstOpeningBalanceMinor])
   const openingTotalWinMinor = resolvedOpeningEntries.reduce((sum, entry) => sum + Number(entry.payoutMinor || 0), 0)
   const openingTotalWinUsd = toUsd(openingTotalWinMinor, statsCurrency)
-  const openingCostUsd = toUsd(totalWagered, statsCurrency)
+  const openingCostUsd =
+    openingCostMinorFromBalance != null
+      ? toUsd(openingCostMinorFromBalance, statsCurrency)
+      : toUsd(totalWagered, statsCurrency)
   const openingProfitUsd = openingTotalWinUsd - openingCostUsd
   const openingProfitPct = openingCostUsd > 0 ? (openingProfitUsd / openingCostUsd) * 100 : 0
   const remainingForBreakEvenUsd = Math.max(0, openingCostUsd - openingTotalWinUsd)
