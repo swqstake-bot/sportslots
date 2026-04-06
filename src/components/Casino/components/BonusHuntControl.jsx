@@ -112,6 +112,7 @@ export default function BonusHuntControl({
   const [showDetailedProgress, setShowDetailedProgress] = useState(false)
   const [tipCopied, setTipCopied] = useState(false)
   const [showTipMenu, setShowTipMenu] = useState(false)
+  const [huntStartBalanceMinorSnapshot, setHuntStartBalanceMinorSnapshot] = useState(null)
   const [firstOpeningBalanceMinor, setFirstOpeningBalanceMinor] = useState(null)
   const tipMenuRef = useRef(null)
   const pendingSpinsRef = useRef([])
@@ -123,6 +124,7 @@ export default function BonusHuntControl({
   const bonusResolveTimersRef = useRef(new Map())
   const latestBetHistoryRef = useRef([])
   const latestBonusOpeningResultsRef = useRef({})
+  const huntStartBalanceMinorSnapshotRef = useRef(null)
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -493,9 +495,20 @@ export default function BonusHuntControl({
 
   const openBonusGamePopup = useCallback(async (slot, trigger = 'manual') => {
     if (!slot?.slug) return
-    if (currentBalance != null) {
-      setFirstOpeningBalanceMinor((prev) => (prev != null ? prev : Number(currentBalance)))
-    }
+    const latestKnownBalanceMinor = (() => {
+      if (currentBalance != null && Number.isFinite(Number(currentBalance))) return Number(currentBalance)
+      const latestWithBalance = [...(latestBetHistoryRef.current || [])].reverse().find((b) => b?.balance != null)
+      if (latestWithBalance?.balance != null && Number.isFinite(Number(latestWithBalance.balance))) {
+        return Number(latestWithBalance.balance)
+      }
+      return null
+    })()
+    setFirstOpeningBalanceMinor((prev) => {
+      if (prev != null) return prev
+      if (latestKnownBalanceMinor != null) return latestKnownBalanceMinor
+      if (huntStartBalanceMinorSnapshotRef.current != null) return Number(huntStartBalanceMinorSnapshotRef.current)
+      return null
+    })
     const slug = slot.slug
     const slotName = slot.name || slot.slug
     const openedAt = new Date().toISOString()
@@ -601,6 +614,16 @@ export default function BonusHuntControl({
     setWheelOpenedSlugs(new Set())
     setLastWheelWinner(null)
     setBonusOpeningResults({})
+    const huntStartSnapshot = (() => {
+      if (currentBalance != null && Number.isFinite(Number(currentBalance))) return Number(currentBalance)
+      const latestWithBalance = [...(latestBetHistoryRef.current || [])].reverse().find((b) => b?.balance != null)
+      if (latestWithBalance?.balance != null && Number.isFinite(Number(latestWithBalance.balance))) {
+        return Number(latestWithBalance.balance)
+      }
+      return null
+    })()
+    setHuntStartBalanceMinorSnapshot(huntStartSnapshot)
+    huntStartBalanceMinorSnapshotRef.current = huntStartSnapshot
     setFirstOpeningBalanceMinor(null)
     setIsRunning(true)
     setError('')
@@ -1155,22 +1178,39 @@ export default function BonusHuntControl({
     [openingEntries]
   )
   const huntStartBalanceMinor = useMemo(() => {
+    if (huntStartBalanceMinorSnapshot != null && Number.isFinite(Number(huntStartBalanceMinorSnapshot))) {
+      return Number(huntStartBalanceMinorSnapshot)
+    }
     const firstWithBalance = betHistory.find((b) => b?.balance != null)
     if (!firstWithBalance) return null
     const firstBet = Number(firstWithBalance?.betAmount || 0)
     const firstWin = firstWithBalance?.stoppedBonus ? 0 : Number(firstWithBalance?.winAmount || 0)
     return Number(firstWithBalance.balance || 0) + firstBet - firstWin
-  }, [betHistory])
+  }, [betHistory, huntStartBalanceMinorSnapshot])
+  const latestKnownBalanceMinor = useMemo(() => {
+    if (currentBalance != null && Number.isFinite(Number(currentBalance))) return Number(currentBalance)
+    const latestWithBalance = [...betHistory].reverse().find((b) => b?.balance != null)
+    if (latestWithBalance?.balance != null && Number.isFinite(Number(latestWithBalance.balance))) {
+      return Number(latestWithBalance.balance)
+    }
+    return null
+  }, [currentBalance, betHistory])
+  const openingReferenceBalanceMinor = useMemo(() => {
+    if (firstOpeningBalanceMinor != null && Number.isFinite(Number(firstOpeningBalanceMinor))) {
+      return Number(firstOpeningBalanceMinor)
+    }
+    // Falls das erste Opening-Snapshot fehlte: best effort mit aktueller/letzter bekannter Balance.
+    if (openingEntries.length > 0 && latestKnownBalanceMinor != null) return Number(latestKnownBalanceMinor)
+    return null
+  }, [firstOpeningBalanceMinor, openingEntries.length, latestKnownBalanceMinor])
   const openingCostMinorFromBalance = useMemo(() => {
-    if (huntStartBalanceMinor == null || firstOpeningBalanceMinor == null) return null
-    return Math.max(0, Math.round(Number(huntStartBalanceMinor) - Number(firstOpeningBalanceMinor)))
-  }, [huntStartBalanceMinor, firstOpeningBalanceMinor])
+    if (huntStartBalanceMinor == null || openingReferenceBalanceMinor == null) return null
+    return Math.max(0, Math.round(Number(huntStartBalanceMinor) - Number(openingReferenceBalanceMinor)))
+  }, [huntStartBalanceMinor, openingReferenceBalanceMinor])
   const openingTotalWinMinor = resolvedOpeningEntries.reduce((sum, entry) => sum + Number(entry.payoutMinor || 0), 0)
   const openingTotalWinUsd = toUsd(openingTotalWinMinor, statsCurrency)
-  const openingCostUsd =
-    openingCostMinorFromBalance != null
-      ? toUsd(openingCostMinorFromBalance, statsCurrency)
-      : toUsd(totalWagered, statsCurrency)
+  // Opening-Stats basieren ausschließlich auf Balance-Differenz (nicht auf Gesamt-Wager/Umsatz).
+  const openingCostUsd = toUsd(openingCostMinorFromBalance ?? 0, statsCurrency)
   const openingProfitUsd = openingTotalWinUsd - openingCostUsd
   const openingProfitPct = openingCostUsd > 0 ? (openingProfitUsd / openingCostUsd) * 100 : 0
   const remainingForBreakEvenUsd = Math.max(0, openingCostUsd - openingTotalWinUsd)
