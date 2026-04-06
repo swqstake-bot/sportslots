@@ -18,7 +18,6 @@ import { CollapsibleSection } from './CollapsibleSection';
 import { BetListCard } from './BetListCard';
 import { extractSportBetFromPreviewResponse, logPreviewCashoutDebug } from '../../utils/previewCashoutResponse';
 import { toUsd } from '../Logger/loggerUtils';
-import { useAccentInlineStyle } from '../../hooks/useAccentInlineStyle';
 
 function hasLiveLeg(bet: SportBet): boolean {
   return (bet.outcomes ?? []).some((o: any) => {
@@ -37,9 +36,8 @@ interface ActiveBetsModalProps {
 }
 
 export function ActiveBetsModal({ onClose, initialPreviewBetId = null }: ActiveBetsModalProps) {
-  /** Portals render under `document.body` — without this, `:root` cyan accent wins over Sports green. */
+  /** Portals render under `document.body`; theme vars come from `document.documentElement` (see useAccentInlineStyle in MainApp). */
   const currentView = useUiStore((s) => s.currentView);
-  const accentInlineStyle = useAccentInlineStyle();
 
   const isBetOpenForCashout = useCallback((bet: SportBet) => {
     const status = String(bet.status || '').toLowerCase();
@@ -324,7 +322,7 @@ export function ActiveBetsModal({ onClose, initialPreviewBetId = null }: ActiveB
     <motion.div
       className="fixed inset-0 bg-black/80 flex items-start justify-center pb-8 overflow-y-auto z-[9999] backdrop-blur-sm px-4 sm:px-6"
       data-app-mode={currentView}
-      style={{ paddingTop: 120, ...(accentInlineStyle || {}) }}
+      style={{ paddingTop: 120 }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}

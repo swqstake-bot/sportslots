@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { ACCENT_BRIGHTNESS } from '../utils/accentTheme';
 
 export type ToastType = 'success' | 'error' | 'info';
 
@@ -25,7 +26,7 @@ interface UiState {
   accentCustomHex: string | null;
   /** Scales border/glow strength (0.4–1.2). */
   accentStrength: number;
-  /** Accent brightness: 1 = neutral, lower = darker, higher = lighter (0.5–1.45). */
+  /** Accent RGB gain: 1 = as picked, below 1 dimmer, above 1 brighter (linear; see ACCENT_BRIGHTNESS). */
   accentBrightness: number;
   toast: ToastState;
 
@@ -80,7 +81,12 @@ export const useUiStore = create<UiState>()(
       setAccentStrength: (n) =>
         set({ accentStrength: Math.min(1.2, Math.max(0.4, Number.isFinite(n) ? n : 1)) }),
       setAccentBrightness: (n) =>
-        set({ accentBrightness: Math.min(1.45, Math.max(0.5, Number.isFinite(n) ? n : 1)) }),
+        set({
+          accentBrightness: Math.min(
+            ACCENT_BRIGHTNESS.max,
+            Math.max(ACCENT_BRIGHTNESS.min, Number.isFinite(n) ? n : 1)
+          ),
+        }),
       resetAccentTheme: () => set({ accentCustomHex: null, accentStrength: 1, accentBrightness: 1 }),
     }),
     {
@@ -101,6 +107,8 @@ export const useUiStore = create<UiState>()(
         let next = persistedState
         if (typeof persistedState.accentBrightness !== 'number') {
           next = { ...next, accentBrightness: 1 }
+        } else if (persistedState.accentBrightness > ACCENT_BRIGHTNESS.max) {
+          next = { ...next, accentBrightness: ACCENT_BRIGHTNESS.max }
         }
         if (persistedState.selectedSportSlug) return next
         const legacySport = persistedState.selectedSport ?? 'soccer'

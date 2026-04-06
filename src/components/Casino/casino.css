@@ -262,7 +262,11 @@ html[data-theme='light'] .casino-root {
 
 .casino-root .casino-topnav-btn.is-active {
   color: var(--bg-deep);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 58%, #4f2a31), color-mix(in srgb, var(--accent) 82%, #6a2a35));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 58%, var(--bg-deep)),
+    color-mix(in srgb, var(--accent) 82%, var(--bg-deep))
+  );
   border-color: transparent;
   box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.12);
 }

@@ -5,7 +5,6 @@ import { getCashoutValue, getEffectiveOdds, resolveCashoutMultiplierForBet } fro
 import { formatAmount } from '../Casino/utils/formatAmount';
 import { toUsd } from '../Logger/loggerUtils';
 import { useUiStore } from '../../store/uiStore';
-import { useAccentInlineStyle } from '../../hooks/useAccentInlineStyle';
 
 function getLegStatus(outcome: SportBetOutcome): 'won' | 'lost' | 'open' {
   const s = (outcome?.status ?? '').toLowerCase();
@@ -32,7 +31,6 @@ function formatCurrency(amount: number, currency: string): string {
 
 export function BetPreviewModal({ bet, onClose, onCashout, usdRates = {} }: BetPreviewModalProps) {
   const currentView = useUiStore((s) => s.currentView);
-  const accentInlineStyle = useAccentInlineStyle();
   const cashoutVal = getCashoutValue(bet);
   const cashoutMult = resolveCashoutMultiplierForBet(bet);
   const statusLower = String(bet.status || '').toLowerCase();
@@ -61,7 +59,6 @@ export function BetPreviewModal({ bet, onClose, onCashout, usdRates = {} }: BetP
     <div
       className="fixed inset-0 bg-black/70 flex items-center justify-center z-[10000] backdrop-blur-sm"
       data-app-mode={currentView}
-      style={accentInlineStyle}
       onClick={onClose}
     >
       <div

@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useUiStore } from '../../store/uiStore'
-import { ACCENT_PRESETS, accentRgbWithBrightness, hexToRgb, normalizeHex } from '../../utils/accentTheme'
+import {
+  ACCENT_BRIGHTNESS,
+  ACCENT_PRESETS,
+  accentRgbWithBrightness,
+  hexToRgb,
+  normalizeHex,
+} from '../../utils/accentTheme'
 
 export function ThemeAccentButton() {
   const accentCustomHex = useUiStore((s) => s.accentCustomHex)
@@ -60,7 +66,9 @@ export function ThemeAccentButton() {
       {open && (
         <div className="theme-accent-popover" role="dialog" aria-label="Accent color settings">
           <div className="theme-accent-popover-title">Accent</div>
-          <p className="theme-accent-popover-hint">Overrides the tab accent until reset.</p>
+          <p className="theme-accent-popover-hint">
+            Overrides the tab accent until reset. Brightness also lifts or dims backgrounds, cards, and text — not only the accent.
+          </p>
 
           <div className="theme-accent-row">
             <label className="theme-accent-label-inline" htmlFor="accent-color-input">
@@ -82,8 +90,8 @@ export function ThemeAccentButton() {
             <input
               id="accent-brightness"
               type="range"
-              min={0.5}
-              max={1.45}
+              min={ACCENT_BRIGHTNESS.min}
+              max={ACCENT_BRIGHTNESS.max}
               step={0.05}
               value={accentBrightness}
               onChange={(e) => setAccentBrightness(Number(e.target.value))}

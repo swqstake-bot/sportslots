@@ -121,9 +121,10 @@
   --app-bg-deep: #09070a;
   --app-bg-card: rgba(14, 14, 18, 0.9);
   --app-bg-elevated: rgba(19, 18, 24, 0.92);
-  --surface-1: linear-gradient(180deg, rgba(182, 31, 52, 0.08) 0%, rgba(182, 31, 52, 0.025) 34%, rgba(8, 8, 12, 0.94) 100%);
-  --surface-2: linear-gradient(165deg, rgba(182, 31, 52, 0.065) 0%, rgba(182, 31, 52, 0.02) 36%, rgba(8, 8, 12, 0.93) 100%);
-  --surface-3: linear-gradient(180deg, rgba(182, 31, 52, 0.05) 0%, rgba(182, 31, 52, 0.015) 42%, rgba(7, 7, 11, 0.93) 100%);
+  /* Use accent RGB so Color / custom accent matches (was hardcoded casino red). */
+  --surface-1: linear-gradient(180deg, rgba(var(--app-accent-rgb), 0.08) 0%, rgba(var(--app-accent-rgb), 0.025) 34%, rgba(8, 8, 12, 0.94) 100%);
+  --surface-2: linear-gradient(165deg, rgba(var(--app-accent-rgb), 0.065) 0%, rgba(var(--app-accent-rgb), 0.02) 36%, rgba(8, 8, 12, 0.93) 100%);
+  --surface-3: linear-gradient(180deg, rgba(var(--app-accent-rgb), 0.05) 0%, rgba(var(--app-accent-rgb), 0.015) 42%, rgba(7, 7, 11, 0.93) 100%);
 }
 
 [data-app-mode="sports"] {

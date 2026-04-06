@@ -1,15 +1,38 @@
-import { useMemo } from 'react'
+import { useLayoutEffect, useMemo } from 'react'
 import type { CSSProperties } from 'react'
 import { useUiStore } from '../store/uiStore'
-import { accentCssVarsFromHex } from '../utils/accentTheme'
+import { ACCENT_THEME_VAR_KEYS, accentCssVarsFromHex } from '../utils/accentTheme'
 
-/** When set, overrides `[data-app-mode]` accent tokens (must be applied on same subtree as `data-app-mode`). */
+/**
+ * Applies custom accent + optional UI brightness to the app shell (inline) and to
+ * `document.documentElement` so `body`, portals, and `[data-app-mode]` surfaces stay in sync.
+ */
 export function useAccentInlineStyle(): CSSProperties | undefined {
   const hex = useUiStore((s) => s.accentCustomHex)
   const strength = useUiStore((s) => s.accentStrength)
   const brightness = useUiStore((s) => s.accentBrightness)
-  return useMemo(() => {
-    if (!hex) return undefined
-    return accentCssVarsFromHex(hex, strength, brightness) as CSSProperties
-  }, [hex, strength, brightness])
+  const mode = useUiStore((s) => s.currentView)
+
+  const vars = useMemo(() => {
+    if (!hex) return null
+    return accentCssVarsFromHex(hex, strength, brightness, mode)
+  }, [hex, strength, brightness, mode])
+
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    for (const key of ACCENT_THEME_VAR_KEYS) {
+      root.style.removeProperty(key)
+    }
+    if (!vars) return
+    for (const [key, value] of Object.entries(vars)) {
+      root.style.setProperty(key, value)
+    }
+    return () => {
+      for (const key of ACCENT_THEME_VAR_KEYS) {
+        root.style.removeProperty(key)
+      }
+    }
+  }, [vars])
+
+  return vars ? (vars as CSSProperties) : undefined
 }
