@@ -9,21 +9,14 @@ import crypto from 'crypto';
 import os from 'os';
 import { DIST, VITE_PUBLIC, SPIN_SAMPLES_DIR, FIRST_SLOT_WINS_DIR, VITE_DEV_SERVER_URL, ELECTRON_DIR } from './config.js';
 import { sessionData, captureSession } from './sessionCapture.js';
-
-/** Stake-Session: bevorzugt stake.com, sonst stake.bet (Cookie vorhanden). */
-async function resolveStakeOrigin(): Promise<string> {
-    await captureSession();
-    try {
-        const forCom = await session.defaultSession.cookies.get({ url: 'https://stake.com' });
-        const forBet = await session.defaultSession.cookies.get({ url: 'https://stake.bet' });
-        const hasCom = forCom.some((c) => c.name === 'session' && String(c.value || '').length > 0);
-        const hasBet = forBet.some((c) => c.name === 'session' && String(c.value || '').length > 0);
-        if (hasBet && !hasCom) return 'https://stake.bet';
-    } catch {
-        /* ignore */
-    }
-    return 'https://stake.com';
-}
+import {
+  ensureValidStakeSession,
+  getStakeSessionStatus,
+  invalidateStakeSessionStatusCache,
+  isStakeOriginUrl,
+  resolveStakeOrigin,
+  type StakeSessionStatus,
+} from './stakeSessionManager.js';
 
 function extractStakeJsonErrorMessage(parsed: unknown): string {
     if (parsed == null) return 'Leere Antwort';
@@ -62,8 +55,171 @@ import {
 
 let win: BrowserWindow | null;
 let loginWin: BrowserWindow | null;
+let stakeBridgeWin: BrowserWindow | null = null;
 let slotPopupSeq = 0;
 const MAX_IPC_RESPONSE_BYTES = 8 * 1024 * 1024; // 8 MB safety cap for IPC responses
+const STAKE_MAX_AUTH_RETRIES = 2;
+const STAKE_COOKIE_DEBUG_NAMES = new Set(['session', 'cf_clearance', '__cf_bm']);
+let lastLoginWindowOpenAt = 0;
+const LOGIN_WINDOW_DEBOUNCE_MS = 4000;
+
+class StakeHttpError extends Error {
+  status: number;
+  body: string;
+  constructor(status: number, body: string, message: string) {
+    super(message);
+    this.status = status;
+    this.body = body;
+  }
+}
+
+function throwIfSessionInvalid(sessionStatus: StakeSessionStatus): void {
+  if (sessionStatus.valid && sessionStatus.sessionToken) return;
+  const missingText = sessionStatus.missingCookies.length
+    ? ` missing=${sessionStatus.missingCookies.join(',')}`
+    : '';
+  const expiredText = sessionStatus.expiredCookies.length
+    ? ` expired=${sessionStatus.expiredCookies.join(',')}`
+    : '';
+  throw new Error(`Session rejected.${missingText}${expiredText}`.trim());
+}
+
+function openLoginWindowForRejectedSession(reason: string): void {
+  const now = Date.now();
+  if (now - lastLoginWindowOpenAt < LOGIN_WINDOW_DEBOUNCE_MS) {
+    return;
+  }
+  lastLoginWindowOpenAt = now;
+  console.warn('[StakeSession] Opening login window due to rejected session:', reason);
+  createLoginWindow();
+}
+
+async function ensureStakeBridgeWindow(origin: string): Promise<BrowserWindow> {
+  if (stakeBridgeWin && !stakeBridgeWin.isDestroyed()) {
+    return stakeBridgeWin;
+  }
+  stakeBridgeWin = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+      backgroundThrottling: false,
+    },
+  });
+  await stakeBridgeWin.loadURL(`${origin}/`);
+  return stakeBridgeWin;
+}
+
+async function stakeBrowserPostJson(
+  url: string,
+  headers: Record<string, string>,
+  payload: unknown
+): Promise<{ status: number; body: string; parsed: unknown }> {
+  const u = new URL(url);
+  const origin = `${u.protocol}//${u.host}`;
+  const w = await ensureStakeBridgeWindow(origin);
+  const script = `
+    (async () => {
+      const res = await fetch(${JSON.stringify(url)}, {
+        method: 'POST',
+        credentials: 'include',
+        headers: ${JSON.stringify(headers)},
+        body: ${JSON.stringify(JSON.stringify(payload))}
+      });
+      const text = await res.text();
+      return { status: res.status, body: text };
+    })();
+  `;
+  const result = (await w.webContents.executeJavaScript(script, true)) as {
+    status: number;
+    body: string;
+  };
+  const status = Number(result?.status || 0);
+  const body = String(result?.body || '');
+  if (status === 401 || status === 403) {
+    throw new StakeHttpError(status, body, `Session rejected (${status})`);
+  }
+  if (status === 429) {
+    throw new StakeHttpError(status, body, 'API rate limited (429). Bitte kurz warten und erneut versuchen.');
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    throw new StakeHttpError(status, body, `API antwortete nicht mit JSON (HTTP ${status}).`);
+  }
+  if (status >= 400) {
+    throw new StakeHttpError(status, body, `HTTP ${status}: ${extractStakeJsonErrorMessage(parsed)}`);
+  }
+  return { status, body, parsed };
+}
+
+async function stakeNetPostJson(
+  url: string,
+  headers: Record<string, string>,
+  payload: unknown
+): Promise<{ status: number; body: string; parsed: unknown }> {
+  return new Promise((resolve, reject) => {
+    const request = net.request({ method: 'POST', url, useSessionCookies: true });
+    for (const [name, value] of Object.entries(headers)) {
+      request.setHeader(name, value);
+    }
+
+    request.on('response', (response) => {
+      const chunks: Buffer[] = [];
+      let total = 0;
+      let abortedForSize = false;
+      response.on('data', (chunk) => {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        total += buf.length;
+        if (total > MAX_IPC_RESPONSE_BYTES) {
+          abortedForSize = true;
+          request.abort();
+          return;
+        }
+        chunks.push(buf);
+      });
+      response.on('end', () => {
+        if (abortedForSize) {
+          reject(new Error(`API response too large (> ${MAX_IPC_RESPONSE_BYTES} bytes).`));
+          return;
+        }
+        const body = Buffer.concat(chunks).toString();
+        const status = response.statusCode ?? 0;
+        if (status === 401 || status === 403) {
+          reject(new StakeHttpError(status, body, `Session rejected (${status})`));
+          return;
+        }
+        if (status === 429) {
+          reject(new StakeHttpError(status, body, 'API rate limited (429). Bitte kurz warten und erneut versuchen.'));
+          return;
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(body);
+        } catch {
+          reject(new StakeHttpError(status, body, `API antwortete nicht mit JSON (HTTP ${status}).`));
+          return;
+        }
+        if (status >= 400) {
+          reject(
+            new StakeHttpError(status, body, `HTTP ${status}: ${extractStakeJsonErrorMessage(parsed)}`)
+          );
+          return;
+        }
+        resolve({ status, body, parsed });
+      });
+    });
+
+    request.on('error', (error) => {
+      reject(error);
+    });
+
+    request.write(JSON.stringify(payload));
+    request.end();
+  });
+}
 
 function getBetLogsDir(): string {
   const dir = path.join(app.getPath('userData'), 'bet-logs');
@@ -174,6 +330,11 @@ function createLoginWindow() {
 
     // Capture session data when navigating
     loginWin.webContents.on('did-navigate', async () => {
+        invalidateStakeSessionStatusCache();
+        await captureSession();
+    });
+    loginWin.webContents.on('did-finish-load', async () => {
+        invalidateStakeSessionStatusCache();
         await captureSession();
     });
 }
@@ -311,11 +472,18 @@ ipcMain.handle('open-slot-popup', async (event, payload: { slug?: string; locale
 });
 
 ipcMain.handle('get-session-token', async () => {
-    if (!sessionData.cookies) {
-        await captureSession();
-    }
-    const sessionTokenMatch = sessionData.cookies.match(/session=([^;]+)/);
-    return sessionTokenMatch ? sessionTokenMatch[1] : null;
+    const status = await getStakeSessionStatus(false);
+    return status.sessionToken;
+});
+
+ipcMain.handle('stake-session-status', async () => {
+    return getStakeSessionStatus(false);
+});
+
+ipcMain.handle('stake-session-revalidate', async () => {
+    invalidateStakeSessionStatusCache();
+    const status = await getStakeSessionStatus(true);
+    return status;
 });
 
 /** WebSocket muss dieselbe Stake-Origin wie die Session nutzen (stake.bet vs stake.com). */
@@ -326,14 +494,16 @@ ipcMain.handle('get-stake-ws-url', async () => {
 
 ipcMain.handle('logger-fetch-currency-rates', async () => {
     try {
-        await captureSession();
-        const origin = await resolveStakeOrigin();
+        const sessionStatus = await ensureValidStakeSession(false);
+        throwIfSessionInvalid(sessionStatus);
+        const origin = sessionStatus.origin;
         const res = await fetch(`${origin}/_api/graphql`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                Cookie: sessionData.cookies || '',
-                'User-Agent': sessionData.userAgent || 'Mozilla/5.0',
+                Cookie: sessionStatus.cookieHeader || '',
+                'User-Agent': sessionStatus.userAgent || 'Mozilla/5.0',
+                'x-access-token': sessionStatus.sessionToken || '',
                 Origin: origin,
                 Referer: origin + '/',
             },
@@ -453,103 +623,82 @@ ipcMain.handle('logger-delete-all-bet-logs', async () => {
 
 ipcMain.handle('api-request', async (_event, payload) => {
     const { query, variables, operationName } = payload;
-    
-    // Ensure we have the latest session data
-    if (!sessionData.cookies) {
-        await captureSession();
-    }
+    let lastError: unknown = null;
 
-    return new Promise((resolve, reject) => {
-        const request = net.request({
-            method: 'POST',
-            url: 'https://stake.com/_api/graphql',
-            useSessionCookies: true, // IMPORTANT: Use the Electron session cookies automatically
-        });
-
-        request.setHeader('Content-Type', 'application/json');
-        
-        // Extract session token from cookies if available, otherwise empty string
-        const sessionTokenMatch = sessionData.cookies.match(/session=([^;]+)/);
-        const sessionToken = sessionTokenMatch ? sessionTokenMatch[1] : '';
-        request.setHeader('x-access-token', sessionToken);
-        
-        // Add mimicry headers
-        request.setHeader('Origin', 'https://stake.com');
-        request.setHeader('Referer', 'https://stake.com/');
-        request.setHeader('x-operation-name', operationName || '');
-        if (sessionData.userAgent) {
-            request.setHeader('User-Agent', sessionData.userAgent);
-        }
-
-        request.on('response', (response) => {
-            const chunks: Buffer[] = [];
-            let total = 0;
-            let abortedForSize = false;
-            response.on('data', (chunk) => {
-                const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-                total += buf.length;
-                if (total > MAX_IPC_RESPONSE_BYTES) {
-                    abortedForSize = true;
-                    request.abort();
-                    return;
-                }
-                chunks.push(buf);
-            });
-            response.on('end', () => {
-                if (abortedForSize) {
-                    reject(new Error(`API response too large (> ${MAX_IPC_RESPONSE_BYTES} bytes).`));
-                    return;
-                }
-                const body = Buffer.concat(chunks).toString();
-                const status = response.statusCode ?? 0;
-                const trimmed = body.trim();
-
-                if (status === 401 || status === 403) {
-                    console.error(`API Error ${status}: ${body.slice(0, 500)}`);
-                    console.log('Session expired or forbidden. Triggering re-login...');
-                    createLoginWindow();
-                    reject(new Error(`Session expired (${status}). Login window opened.`));
-                    return;
-                }
-
-                if (status === 429) {
-                    reject(new Error(`API rate limited (429). Bitte kurz warten und erneut versuchen.`));
-                    return;
-                }
-
-                let parsed: unknown;
+    for (let attempt = 0; attempt < STAKE_MAX_AUTH_RETRIES; attempt++) {
+        const forceCheck = attempt > 0;
+        try {
+            const sessionStatus = await ensureValidStakeSession(forceCheck);
+            throwIfSessionInvalid(sessionStatus);
+            const origin = sessionStatus.origin;
+            const tokenModes: Array<'with_token' | 'without_token'> = sessionStatus.sessionToken
+                ? ['with_token', 'without_token']
+                : ['without_token'];
+            for (const tokenMode of tokenModes) {
                 try {
-                    parsed = JSON.parse(body);
-                } catch {
-                    const cf1015 = /1015|cloudflare/i.test(body);
-                    const hint = cf1015
-                        ? ' Cloudflare 1015: zu viele Requests oder Schutz – kurz warten, ggf. im Browser auf stake.com einloggen.'
-                        : '';
-                    const preview = trimmed.slice(0, 280);
-                    reject(
-                        new Error(
-                            `API antwortete nicht mit JSON (HTTP ${status}).${hint} Body: ${preview}`
-                        )
-                    );
-                    return;
+                    const headers: Record<string, string> = {
+                        'Content-Type': 'application/json',
+                        Accept: 'application/json, text/plain, */*',
+                        Origin: origin,
+                        Referer: `${origin}/`,
+                        'x-operation-name': String(operationName || ''),
+                        'User-Agent': sessionStatus.userAgent || 'Mozilla/5.0',
+                    };
+                    if (tokenMode === 'with_token' && sessionStatus.sessionToken) {
+                        headers['x-access-token'] = sessionStatus.sessionToken;
+                    }
+                    let response;
+                    try {
+                        response = await stakeNetPostJson(`${origin}/_api/graphql`, headers, {
+                            query,
+                            variables,
+                        });
+                    } catch (netError) {
+                        if (netError instanceof StakeHttpError && netError.status === 403) {
+                            const preview = String(netError.body || '').slice(0, 180);
+                            console.warn('[StakeSession] net.request 403, trying browser-context fallback', {
+                                tokenMode,
+                                preview,
+                            });
+                            response = await stakeBrowserPostJson(`${origin}/_api/graphql`, headers, {
+                                query,
+                                variables,
+                            });
+                        } else {
+                            throw netError;
+                        }
+                    }
+                    return response.parsed;
+                } catch (innerError) {
+                    if (
+                        innerError instanceof StakeHttpError &&
+                        (innerError.status === 401 || innerError.status === 403) &&
+                        tokenMode === 'with_token'
+                    ) {
+                        console.warn('[StakeSession] GraphQL rejected with x-access-token, retrying cookie-only');
+                        continue;
+                    }
+                    throw innerError;
                 }
-
-                if (status >= 400) {
-                    console.error(`API Error ${status}: ${body.slice(0, 500)}`);
-                }
-
-                resolve(parsed);
-            });
-        });
-
-        request.on('error', (error) => {
-            console.error('API Request Network Error:', error);
-            reject(error);
-        });
-
-        request.write(JSON.stringify({ query, variables }));
-        request.end();
-    });
+            }
+        } catch (error) {
+            lastError = error;
+            if (error instanceof StakeHttpError && (error.status === 401 || error.status === 403)) {
+                invalidateStakeSessionStatusCache();
+                if (attempt + 1 < STAKE_MAX_AUTH_RETRIES) continue;
+                openLoginWindowForRejectedSession(`api-request ${error.status}`);
+                throw new Error(`Session rejected (${error.status}). Login window opened.`);
+            }
+            if (String((error as Error)?.message || '').includes('Session rejected')) {
+                invalidateStakeSessionStatusCache();
+                if (attempt + 1 < STAKE_MAX_AUTH_RETRIES) continue;
+                openLoginWindowForRejectedSession('api-request session invalid');
+                throw new Error('Session rejected. Login window opened.');
+            }
+            throw error;
+        }
+    }
+    throw lastError instanceof Error ? lastError : new Error('API request failed');
 });
 
 /** Stake Originals REST (z. B. Blackjack) – POST mit Session-Cookies wie GraphQL. */
@@ -560,115 +709,75 @@ ipcMain.handle(
         if (!pathStr.startsWith('/_api/casino/')) {
             return Promise.reject(new Error('Ungültiger Casino-REST-Pfad.'));
         }
-        const origin = await resolveStakeOrigin();
-        const sessionTokenMatch = sessionData.cookies.match(/session=([^;]+)/);
-        const sessionToken = sessionTokenMatch ? sessionTokenMatch[1] : '';
-        if (!sessionToken) {
-            return Promise.reject(
-                new Error('Keine Stake-Session (Cookie session). Bitte einloggen und erneut starten.')
-            );
-        }
         const bodyObj = payload?.body && typeof payload.body === 'object' ? payload.body : {};
-        const referer =
-            typeof payload?.referer === 'string' && payload.referer.trim().startsWith('http')
-                ? payload.referer.trim()
-                : `${origin}/casino/games/blackjack`;
+        let lastError: unknown = null;
 
-        return new Promise((resolve, reject) => {
-            const request = net.request({
-                method: 'POST',
-                url: origin + pathStr,
-                useSessionCookies: true,
-            });
-            request.setHeader('Content-Type', 'application/json');
-            request.setHeader('Accept', 'application/json');
-            request.setHeader('x-access-token', sessionToken);
-            request.setHeader('x-lockdown-token', `sl-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-            request.setHeader('Origin', origin);
-            request.setHeader('Referer', referer);
-            if (sessionData.userAgent) {
-                request.setHeader('User-Agent', sessionData.userAgent);
-            }
-
-            request.on('response', (response) => {
-                const chunks: Buffer[] = [];
-                let total = 0;
-                let abortedForSize = false;
-                response.on('data', (chunk) => {
-                    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-                    total += buf.length;
-                    if (total > MAX_IPC_RESPONSE_BYTES) {
-                        abortedForSize = true;
-                        request.abort();
-                        return;
-                    }
-                    chunks.push(buf);
-                });
-                response.on('end', () => {
-                    if (abortedForSize) {
-                        reject(new Error(`Casino-REST-Antwort zu groß (> ${MAX_IPC_RESPONSE_BYTES} bytes).`));
-                        return;
-                    }
-                    const body = Buffer.concat(chunks).toString();
-                    const status = response.statusCode ?? 0;
-                    const trimmed = body.trim();
-
-                    if (status === 401 || status === 403) {
-                        console.error(`Casino REST ${status}: ${body.slice(0, 500)}`);
-                        console.log('Session expired or forbidden. Triggering re-login...');
-                        createLoginWindow();
-                        reject(new Error(`Session expired (${status}). Login window opened.`));
-                        return;
-                    }
-
-                    if (status === 429) {
-                        reject(new Error(`API rate limited (429). Bitte kurz warten und erneut versuchen.`));
-                        return;
-                    }
-
-                    let parsed: unknown;
+        for (let attempt = 0; attempt < STAKE_MAX_AUTH_RETRIES; attempt++) {
+            const forceCheck = attempt > 0;
+            try {
+                const sessionStatus = await ensureValidStakeSession(forceCheck);
+                throwIfSessionInvalid(sessionStatus);
+                const origin = sessionStatus.origin;
+                const referer =
+                    typeof payload?.referer === 'string' && payload.referer.trim().startsWith('http')
+                        ? payload.referer.trim()
+                        : `${origin}/casino/games/blackjack`;
+                const tokenModes: Array<'with_token' | 'without_token'> = sessionStatus.sessionToken
+                    ? ['with_token', 'without_token']
+                    : ['without_token'];
+                for (const tokenMode of tokenModes) {
                     try {
-                        parsed = JSON.parse(body);
-                    } catch {
-                        const cf1015 = /1015|cloudflare/i.test(body);
-                        const hint = cf1015
-                            ? ' Cloudflare 1015: zu viele Requests oder Schutz – kurz warten, ggf. im Browser auf stake.com einloggen.'
-                            : '';
-                        const preview = trimmed.slice(0, 280);
-                        reject(
-                            new Error(
-                                `Casino-REST antwortete nicht mit JSON (HTTP ${status}).${hint} Body: ${preview}`
-                            )
-                        );
-                        return;
-                    }
-
-                    if (status >= 400) {
-                        console.error(`Casino REST ${status}: ${body.slice(0, 500)}`);
-                        reject(new Error(`Casino-REST HTTP ${status}: ${extractStakeJsonErrorMessage(parsed)}`));
-                        return;
-                    }
-
-                    if (parsed && typeof parsed === 'object') {
-                        const po = parsed as Record<string, unknown>;
-                        if (Array.isArray(po.errors) && po.errors.length > 0) {
-                            reject(new Error(`Casino-REST: ${extractStakeJsonErrorMessage(parsed)}`));
-                            return;
+                        const headers: Record<string, string> = {
+                            'Content-Type': 'application/json',
+                            Accept: 'application/json, text/plain, */*',
+                            'x-lockdown-token': `sl-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                            Origin: origin,
+                            Referer: referer,
+                            'User-Agent': sessionStatus.userAgent || 'Mozilla/5.0',
+                        };
+                        if (tokenMode === 'with_token' && sessionStatus.sessionToken) {
+                            headers['x-access-token'] = sessionStatus.sessionToken;
                         }
+                        const response = await stakeNetPostJson(origin + pathStr, headers, bodyObj);
+                        const parsed = response.parsed;
+                        if (parsed && typeof parsed === 'object') {
+                            const po = parsed as Record<string, unknown>;
+                            if (Array.isArray(po.errors) && po.errors.length > 0) {
+                                throw new Error(`Casino-REST: ${extractStakeJsonErrorMessage(parsed)}`);
+                            }
+                        }
+                        return parsed;
+                    } catch (innerError) {
+                        if (
+                            innerError instanceof StakeHttpError &&
+                            (innerError.status === 401 || innerError.status === 403) &&
+                            tokenMode === 'with_token'
+                        ) {
+                            console.warn('[StakeSession] Casino-REST rejected with x-access-token, retrying cookie-only');
+                            continue;
+                        }
+                        throw innerError;
                     }
+                }
+            } catch (error) {
+                lastError = error;
+                if (error instanceof StakeHttpError && (error.status === 401 || error.status === 403)) {
+                    invalidateStakeSessionStatusCache();
+                    if (attempt + 1 < STAKE_MAX_AUTH_RETRIES) continue;
+                    openLoginWindowForRejectedSession(`stake-casino-rest-post ${error.status}`);
+                    throw new Error(`Session rejected (${error.status}). Login window opened.`);
+                }
+                if (String((error as Error)?.message || '').includes('Session rejected')) {
+                    invalidateStakeSessionStatusCache();
+                    if (attempt + 1 < STAKE_MAX_AUTH_RETRIES) continue;
+                    openLoginWindowForRejectedSession('stake-casino-rest-post session invalid');
+                    throw new Error('Session rejected. Login window opened.');
+                }
+                throw error;
+            }
+        }
 
-                    resolve(parsed);
-                });
-            });
-
-            request.on('error', (error) => {
-                console.error('Casino REST Network Error:', error);
-                reject(error);
-            });
-
-            request.write(JSON.stringify(bodyObj));
-            request.end();
-        });
+        throw lastError instanceof Error ? lastError : new Error('Casino-REST request failed');
     }
 );
 
@@ -933,6 +1042,7 @@ ipcMain.handle('clawbuster-extract-secret', async (_event, configUrl: string) =>
 });
 
 ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = {}, body = null }) => {
+    const stakeOrigin = await resolveStakeOrigin();
     return new Promise((resolve, reject) => {
         // Validation logic from SwaqSlotbot (Hauptslotprojekt)
         let isAllowed = false;
@@ -956,13 +1066,13 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
              // Target: https://stake.com (or stake.bet)
              // Rewrite: /api/stake -> /_api
              const path = url.replace(/^\/api\/stake/, '/_api');
-             url = 'https://stake.com' + path;
+            url = stakeOrigin + path;
              // Usually allowed by generic check, but we set it explicitly
              isAllowed = true;
              type = 'rgs'; // Standard API handling
         } else if (url.startsWith('/')) {
              // Default other relative URLs to stake.com
-             url = 'https://stake.com' + url;
+            url = stakeOrigin + url;
         }
 
         // 1. Pragmatic Logic
@@ -1167,6 +1277,10 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  if (stakeBridgeWin && !stakeBridgeWin.isDestroyed()) {
+    stakeBridgeWin.destroy();
+    stakeBridgeWin = null;
+  }
 });
 
 app.on('activate', () => {
@@ -1176,12 +1290,50 @@ app.on('activate', () => {
 });
 
 app.whenReady().then(() => {
-    // Inject headers for requests to stake.com from Renderer (if any)
+    session.defaultSession.cookies.on(
+      'changed',
+      (
+        _event: Electron.Event,
+        cookie: Electron.Cookie,
+        cause: string,
+        removed: boolean
+      ) => {
+        const domain = String(cookie.domain || '').toLowerCase();
+        const isStakeCookie = domain.includes('stake.com') || domain.includes('stake.bet');
+        if (!isStakeCookie) return;
+        invalidateStakeSessionStatusCache();
+        void captureSession().catch(() => {});
+        if (!STAKE_COOKIE_DEBUG_NAMES.has(String(cookie.name || ''))) return;
+        console.log('[StakeSession] Cookie changed', {
+          name: cookie.name,
+          domain: cookie.domain,
+          path: cookie.path,
+          secure: cookie.secure,
+          httpOnly: cookie.httpOnly,
+          sameSite: cookie.sameSite,
+          cause,
+          removed,
+        });
+      }
+    );
+
+    // Inject headers for requests to Stake origins from Renderer (if any)
     session.defaultSession.webRequest.onBeforeSendHeaders(
-      { urls: ['*://stake.com/*', '*://*.stake.com/*'] },
-      (details: { requestHeaders: Record<string, string> }, callback: (response: { requestHeaders: Record<string, string> }) => void) => {
-        details.requestHeaders['Origin'] = 'https://stake.com';
-        details.requestHeaders['Referer'] = 'https://stake.com/';
+      { urls: ['*://stake.com/*', '*://*.stake.com/*', '*://stake.bet/*', '*://*.stake.bet/*'] },
+      (
+        details: { url: string; requestHeaders: Record<string, string> },
+        callback: (response: { requestHeaders: Record<string, string> }) => void
+      ) => {
+        if (isStakeOriginUrl(details.url)) {
+          try {
+            const u = new URL(details.url);
+            const origin = `${u.protocol}//${u.host}`;
+            details.requestHeaders['Origin'] = origin;
+            details.requestHeaders['Referer'] = `${origin}/`;
+          } catch {
+            // ignore parse errors and keep existing headers
+          }
+        }
         callback({ requestHeaders: details.requestHeaders });
       }
     );

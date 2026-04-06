@@ -14,6 +14,7 @@ interface AppHeaderProps {
   isLoading: boolean
   onRefresh: () => void
   onLogin: () => void
+  onSessionRevalidate?: () => void
 }
 
 export function AppHeader({
@@ -26,6 +27,7 @@ export function AppHeader({
   isLoading,
   onRefresh,
   onLogin,
+  onSessionRevalidate,
 }: AppHeaderProps) {
   const hasUser = Boolean(userName)
   return (
@@ -58,6 +60,9 @@ export function AppHeader({
             <ThemeAccentButton />
             <button type="button" onClick={onRefresh} className={`app-header-refresh-btn ${isLoading ? 'is-loading' : ''}`.trim()}>
               Refresh
+            </button>
+            <button type="button" onClick={onSessionRevalidate} className="app-header-refresh-btn" title="Stake Session neu validieren">
+              Session
             </button>
           </>
         ) : (

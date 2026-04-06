@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     getKeyAuthHwid: () => ipcRenderer.invoke('get-keyauth-hwid'),
     getSessionToken: () => ipcRenderer.invoke('get-session-token'),
+    getStakeSessionStatus: () => ipcRenderer.invoke('stake-session-status'),
+    revalidateStakeSession: () => ipcRenderer.invoke('stake-session-revalidate'),
     fetchLoggerCurrencyRates: () => ipcRenderer.invoke('logger-fetch-currency-rates'),
     saveLoggerBet: (entry: any) => ipcRenderer.invoke('logger-save-bet', entry),
     loadLoggerBetLogs: (options?: { limit?: number; fromDate?: string; toDate?: string }) => ipcRenderer.invoke('logger-load-bet-logs', options),

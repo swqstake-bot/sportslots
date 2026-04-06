@@ -2,6 +2,24 @@
 // and https://www.electronjs.org/docs/api/context-bridge
 
 export interface ElectronAPI {
+  getStakeSessionStatus: () => Promise<{
+    valid: boolean;
+    origin: string;
+    checkedAt: string;
+    reasons: string[];
+    missingCookies: string[];
+    expiredCookies: string[];
+    sessionToken: string | null;
+  }>;
+  revalidateStakeSession: () => Promise<{
+    valid: boolean;
+    origin: string;
+    checkedAt: string;
+    reasons: string[];
+    missingCookies: string[];
+    expiredCookies: string[];
+    sessionToken: string | null;
+  }>;
   login: () => Promise<void>;
   invoke: (channel: string, ...args: any[]) => Promise<any>;
   getKeyAuthHwid: () => Promise<string>;

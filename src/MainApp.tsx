@@ -144,10 +144,45 @@ function App() {
   const handleLogin = async () => {
     try {
       await window.electronAPI.login();
-      setTimeout(fetchData, 2000);
+      // Verhindert Race Condition: nicht blind nach 2s pollen,
+      // sondern warten bis Session wirklich validiert ist.
+      let resolved = false;
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const status = await window.electronAPI.getStakeSessionStatus();
+        if (status?.valid) {
+          resolved = true;
+          break;
+        }
+      }
+      if (resolved) {
+        fetchData();
+      } else {
+        setError('Session noch nicht validiert. Bitte Login-Fenster abschließen.');
+      }
     } catch (err: any) {
       console.error(`Login error: ${err.message}`);
       setError(err.message);
+    }
+  };
+
+  const handleSessionRevalidate = async () => {
+    try {
+      const status = await window.electronAPI.revalidateStakeSession();
+      if (status?.valid) {
+        setError('Session valid');
+        setTimeout(() => setError(null), 2200);
+      } else {
+        const reason =
+          status?.missingCookies?.length
+            ? `missing: ${status.missingCookies.join(', ')}`
+            : status?.expiredCookies?.length
+              ? `expired: ${status.expiredCookies.join(', ')}`
+              : (status?.reasons?.[0] || 'unknown');
+        setError(`Session rejected - ${reason}`);
+      }
+    } catch (err: any) {
+      setError(`Session check failed: ${err?.message || 'unknown error'}`);
     }
   };
 
@@ -276,6 +311,7 @@ function App() {
         isLoading={isLoading}
         onRefresh={fetchData}
         onLogin={handleLogin}
+        onSessionRevalidate={handleSessionRevalidate}
       />
 
       {currentView === 'sports' && (
