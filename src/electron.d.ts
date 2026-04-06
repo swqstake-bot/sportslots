@@ -13,7 +13,8 @@ export interface ElectronAPI {
   exportLoggerBetLogs: (bets: any[]) => Promise<{ ok: boolean; cancelled?: boolean; path?: string; error?: string }>;
   importLoggerBetLogs: () => Promise<{ ok: boolean; cancelled?: boolean; bets?: any[]; saved?: boolean; error?: string }>;
   deleteAllLoggerBetLogs: () => Promise<{ ok: boolean; deleted?: number; error?: string }>;
-  openSlotPopup: (payload: { slug: string; locale?: string }) => Promise<{ ok: boolean; url?: string; error?: string }>;
+  openSlotPopup: (payload: { slug: string; locale?: string }) => Promise<{ ok: boolean; url?: string; popupId?: string; error?: string }>;
+  onSlotPopupClosed: (callback: (payload: { popupId: string; slug: string; closedAt: string }) => void) => () => void;
   proxyRequest: (options: { url: string; method?: string; headers?: Record<string, string>; body?: any }) => Promise<{ status: number; statusText: string; headers: any; data: string; finalUrl: string }>;
   saveSlotSpinSample: (payload: { slotSlug: string; slotName?: string; providerId?: string; request: any; response: any }) => Promise<void>;
   getSlotSpinSamples: () => Promise<Record<string, any[]>>;
@@ -44,3 +45,4 @@ declare global {
     electronAPI: ElectronAPI
   }
 }
+

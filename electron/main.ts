@@ -62,6 +62,7 @@ import {
 
 let win: BrowserWindow | null;
 let loginWin: BrowserWindow | null;
+let slotPopupSeq = 0;
 const MAX_IPC_RESPONSE_BYTES = 8 * 1024 * 1024; // 8 MB safety cap for IPC responses
 
 function getBetLogsDir(): string {
@@ -265,7 +266,7 @@ ipcMain.handle('open-external', async (_event, url) => {
     await shell.openExternal(url);
 });
 
-ipcMain.handle('open-slot-popup', async (_event, payload: { slug?: string; locale?: string } = {}) => {
+ipcMain.handle('open-slot-popup', async (event, payload: { slug?: string; locale?: string } = {}) => {
     const rawSlug = String(payload?.slug || '').trim().toLowerCase();
     const slug = rawSlug.replace(/[^a-z0-9-]/g, '');
     if (!slug) return { ok: false, error: 'invalid_slug' };
@@ -274,6 +275,7 @@ ipcMain.handle('open-slot-popup', async (_event, payload: { slug?: string; local
     const locale = /^[a-z]{2}(-[a-z]{2})?$/.test(localeRaw) ? localeRaw : 'de';
     const origin = await resolveStakeOrigin();
     const targetUrl = `${origin}/${locale}/casino/games/${slug}`;
+    const popupId = `slot-popup-${Date.now()}-${++slotPopupSeq}`;
 
     const popup = new BrowserWindow({
         width: 1360,
@@ -294,8 +296,18 @@ ipcMain.handle('open-slot-popup', async (_event, payload: { slug?: string; local
         return { action: 'deny' };
     });
 
+    popup.on('closed', () => {
+        if (!event.sender.isDestroyed()) {
+            event.sender.send('slot-popup-closed', {
+                popupId,
+                slug,
+                closedAt: new Date().toISOString(),
+            });
+        }
+    });
+
     await popup.loadURL(targetUrl);
-    return { ok: true, url: targetUrl };
+    return { ok: true, url: targetUrl, popupId };
 });
 
 ipcMain.handle('get-session-token', async () => {
@@ -1181,3 +1193,5 @@ app.whenReady().then(() => {
         autoUpdater.checkForUpdates();
     }
 });
+
+

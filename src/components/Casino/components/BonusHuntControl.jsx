@@ -2,7 +2,7 @@
  * Bonus Hunt – mehrere Slots nacheinander spielen bis jeder Bonus bekommt.
  * Nutzt gleiche Währung/Einsatz für alle.
  */
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import styles from './BonusHuntControl.module.css'
 import { getProvider } from '../api/providers'
 import { getImpliedScatterLevel } from '../api/providers/hacksaw'
@@ -95,6 +95,9 @@ export default function BonusHuntControl({
   const cancelRef = useRef(false)
   const [hasBonusSlugs, setHasBonusSlugs] = useState(() => new Set(loadHasBonusSlugs()))
   const [wheelOpenedSlugs, setWheelOpenedSlugs] = useState(() => new Set())
+  const [autoOpenGame, setAutoOpenGame] = useState(true)
+  const [lastWheelWinner, setLastWheelWinner] = useState(null)
+  const [bonusOpeningResults, setBonusOpeningResults] = useState({})
   const [showDetailedProgress, setShowDetailedProgress] = useState(false)
   const [tipCopied, setTipCopied] = useState(false)
   const [showTipMenu, setShowTipMenu] = useState(false)
@@ -102,6 +105,9 @@ export default function BonusHuntControl({
   const pendingSpinsRef = useRef([])
   const recentHouseBetsRef = useRef([])
   const houseBetSubRef = useRef(null)
+  const popupOpeningsRef = useRef(new Map())
+  const bonusResolveTimersRef = useRef(new Map())
+  const latestBetHistoryRef = useRef([])
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -231,6 +237,135 @@ export default function BonusHuntControl({
     setSaveBonusLogsEnabled(checked)
   }
 
+  const clearResolveTimer = useCallback((slotSlug) => {
+    const t = bonusResolveTimersRef.current.get(slotSlug)
+    if (t) {
+      clearTimeout(t)
+      bonusResolveTimersRef.current.delete(slotSlug)
+    }
+  }, [])
+
+  const findResolvedBonusForSlot = useCallback((slotSlug) => {
+    if (!slotSlug) return null
+    const latest = [...latestBetHistoryRef.current]
+      .reverse()
+      .find((b) => b?.slotSlug === slotSlug && b?.isBonus && b?.stoppedBonus)
+    if (!latest) return null
+    const payoutMinor = Number(latest.winAmount ?? 0)
+    const wagerMinor = Number(latest.betAmount ?? 0)
+    if (!Number.isFinite(payoutMinor) || payoutMinor <= 0 || !Number.isFinite(wagerMinor) || wagerMinor <= 0) return null
+    return {
+      payoutMinor,
+      wagerMinor,
+      multiplier: payoutMinor / wagerMinor,
+    }
+  }, [])
+
+  const tryResolveOpeningResult = useCallback((slotSlug, retry = 0, maxRetry = 8) => {
+    const resolved = findResolvedBonusForSlot(slotSlug)
+    if (resolved) {
+      clearResolveTimer(slotSlug)
+      setBonusOpeningResults((prev) => {
+        const current = prev[slotSlug] || { slotSlug }
+        return {
+          ...prev,
+          [slotSlug]: {
+            ...current,
+            status: 'resolved',
+            payoutMinor: resolved.payoutMinor,
+            wagerMinor: resolved.wagerMinor,
+            multiplier: resolved.multiplier,
+            resolvedAt: new Date().toISOString(),
+          },
+        }
+      })
+      return
+    }
+    if (retry >= maxRetry) return
+    clearResolveTimer(slotSlug)
+    const timeout = setTimeout(() => tryResolveOpeningResult(slotSlug, retry + 1, maxRetry), 900)
+    bonusResolveTimersRef.current.set(slotSlug, timeout)
+  }, [clearResolveTimer, findResolvedBonusForSlot])
+
+  const openBonusGamePopup = useCallback(async (slot, trigger = 'manual') => {
+    if (!slot?.slug) return
+    const slug = slot.slug
+    const slotName = slot.name || slot.slug
+    const openedAt = new Date().toISOString()
+    setBonusOpeningResults((prev) => ({
+      ...prev,
+      [slug]: {
+        ...(prev[slug] || {}),
+        slotSlug: slug,
+        slotName,
+        openedAt,
+        status: prev[slug]?.status === 'resolved' ? 'resolved' : 'opened',
+        trigger,
+      },
+    }))
+    if (!window.electronAPI?.openSlotPopup) return
+    try {
+      const res = await window.electronAPI.openSlotPopup({ slug, locale: 'en' })
+      if (res?.ok && res?.popupId) {
+        popupOpeningsRef.current.set(res.popupId, { slotSlug: slug, slotName, openedAt })
+        setBonusOpeningResults((prev) => ({
+          ...prev,
+          [slug]: {
+            ...(prev[slug] || {}),
+            slotSlug: slug,
+            slotName,
+            openedAt,
+            popupId: res.popupId,
+            status: prev[slug]?.status === 'resolved' ? 'resolved' : 'opened',
+            trigger,
+          },
+        }))
+      }
+    } catch (_) {
+      // Ignore popup open errors; opening can be retried manually.
+    }
+  }, [])
+
+  useEffect(() => {
+    latestBetHistoryRef.current = betHistory
+    const unresolved = Object.values(bonusOpeningResults).filter((entry) => entry?.status === 'closed_pending')
+    if (unresolved.length === 0) return
+    unresolved.forEach((entry) => {
+      if (entry?.slotSlug) tryResolveOpeningResult(entry.slotSlug, 0, 0)
+    })
+  }, [betHistory, bonusOpeningResults, tryResolveOpeningResult])
+
+  useEffect(() => {
+    if (!window.electronAPI?.onSlotPopupClosed) return
+    const unsub = window.electronAPI.onSlotPopupClosed((payload) => {
+      const popupId = payload?.popupId
+      const fromMap = popupId ? popupOpeningsRef.current.get(popupId) : null
+      const slotSlug = fromMap?.slotSlug || payload?.slug
+      if (!slotSlug) return
+      const closedAt = payload?.closedAt || new Date().toISOString()
+      setBonusOpeningResults((prev) => {
+        const current = prev[slotSlug] || { slotSlug, slotName: fromMap?.slotName || slotSlug }
+        if (current.status === 'resolved') return prev
+        return {
+          ...prev,
+          [slotSlug]: {
+            ...current,
+            slotSlug,
+            slotName: current.slotName || fromMap?.slotName || slotSlug,
+            popupId: current.popupId || popupId,
+            closedAt,
+            status: 'closed_pending',
+          },
+        }
+      })
+      if (popupId) popupOpeningsRef.current.delete(popupId)
+      tryResolveOpeningResult(slotSlug)
+    })
+    return () => {
+      if (typeof unsub === 'function') unsub()
+    }
+  }, [tryResolveOpeningResult])
+
   async function runHunt(slugsToRun = null) {
     const slugs = slugsToRun ?? selectedSlugs
     const slugsFiltered = slugs.filter((slug) => !hasBonusSlugs.has(slug))
@@ -245,6 +380,8 @@ export default function BonusHuntControl({
 
     cancelRef.current = false
     setWheelOpenedSlugs(new Set())
+    setLastWheelWinner(null)
+    setBonusOpeningResults({})
     setIsRunning(true)
     setError('')
     setBetHistory([])
@@ -252,6 +389,9 @@ export default function BonusHuntControl({
     setCurrencyCode(null)
     pendingSpinsRef.current = []
     recentHouseBetsRef.current = []
+    popupOpeningsRef.current = new Map()
+    bonusResolveTimersRef.current.forEach((t) => clearTimeout(t))
+    bonusResolveTimersRef.current.clear()
     try {
       if (houseBetSubRef.current?.disconnect) houseBetSubRef.current.disconnect()
     } catch (_) {}
@@ -657,6 +797,8 @@ export default function BonusHuntControl({
         if (houseBetSubRef.current?.disconnect) houseBetSubRef.current.disconnect()
       } catch (_) {}
       houseBetSubRef.current = null
+      bonusResolveTimersRef.current.forEach((t) => clearTimeout(t))
+      bonusResolveTimersRef.current.clear()
     }
   }, [])
 
@@ -715,6 +857,26 @@ export default function BonusHuntControl({
     () => sliderBonusSlots.filter((slot) => wheelOpenedSlugs.has(slot.slug)).length,
     [sliderBonusSlots, wheelOpenedSlugs]
   )
+  const openingEntries = useMemo(() => Object.values(bonusOpeningResults), [bonusOpeningResults])
+  const resolvedOpeningEntries = useMemo(
+    () => openingEntries.filter((entry) => entry?.status === 'resolved' && Number(entry?.payoutMinor) > 0),
+    [openingEntries]
+  )
+  const openingInProgressEntries = useMemo(
+    () => openingEntries.filter((entry) => entry?.status === 'opened' || entry?.status === 'closed_pending'),
+    [openingEntries]
+  )
+  const openingTotalWinMinor = resolvedOpeningEntries.reduce((sum, entry) => sum + Number(entry.payoutMinor || 0), 0)
+  const openingTotalWinUsd = toUsd(openingTotalWinMinor, statsCurrency)
+  const openingCostUsd = toUsd(totalWagered, statsCurrency)
+  const openingProfitUsd = openingTotalWinUsd - openingCostUsd
+  const openingProfitPct = openingCostUsd > 0 ? (openingProfitUsd / openingCostUsd) * 100 : 0
+  const remainingForBreakEvenUsd = Math.max(0, openingCostUsd - openingTotalWinUsd)
+  const remainingBonusCount = Math.max(0, (sliderBonusSlots?.length || 0) - resolvedOpeningEntries.length)
+  const avgNeedPerBonusUsd = remainingBonusCount > 0 ? remainingForBreakEvenUsd / remainingBonusCount : 0
+  const avgCostPerBonusUsd = (sliderBonusSlots?.length || 0) > 0 ? openingCostUsd / sliderBonusSlots.length : 0
+  const avgNeedMultiPerBonus = avgCostPerBonusUsd > 0 ? avgNeedPerBonusUsd / avgCostPerBonusUsd : 0
+  const allOpenedAndResolved = (sliderBonusSlots?.length || 0) > 0 && resolvedOpeningEntries.length >= sliderBonusSlots.length
 
   const getDisplayWin = (b) => {
     const win = b.winAmount ?? 0
@@ -739,6 +901,32 @@ export default function BonusHuntControl({
               Opened: <span style={{ color: 'var(--accent)' }}>{openedBonusCount}</span> / {sliderBonusSlots.length}
             </div>
           )}
+          <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={autoOpenGame}
+                onChange={(e) => setAutoOpenGame(e.target.checked)}
+              />
+              Auto Open Game
+            </label>
+            <button
+              type="button"
+              className={styles.btnSecondary}
+              disabled={!lastWheelWinner?.slug}
+              onClick={() => {
+                if (!lastWheelWinner?.slug) return
+                void openBonusGamePopup(lastWheelWinner, 'manual')
+              }}
+            >
+              Open Game
+            </button>
+            {lastWheelWinner?.name && (
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                Current: <strong style={{ color: 'var(--text)' }}>{lastWheelWinner.name}</strong>
+              </span>
+            )}
+          </div>
           <SlotSlider
             slots={huntComplete ? wheelSlots : selectedSlots}
             bonusSlots={huntComplete ? wheelSlots.filter(slot => hasBonusSlugs.has(slot.slug)) : selectedSlots.filter(slot => hasBonusSlugs.has(slot.slug))}
@@ -746,9 +934,10 @@ export default function BonusHuntControl({
             openedSlugs={wheelOpenedSlugs}
             onWinner={(slot) => {
               if (!slot?.slug) return
+              setLastWheelWinner(slot)
               setWheelOpenedSlugs((prev) => new Set([...prev, slot.slug]))
-              if (window.electronAPI?.openSlotPopup) {
-                void window.electronAPI.openSlotPopup({ slug: slot.slug, locale: 'en' }).catch(() => {})
+              if (autoOpenGame) {
+                void openBonusGamePopup(slot, 'auto')
               }
               if (huntComplete) {
                 // Bei Bonus Opening entfernen wir ihn NICHT aus hasBonusSlugs,
@@ -1028,6 +1217,63 @@ export default function BonusHuntControl({
               </label>
             </div>
           ))}
+        </div>
+      )}
+
+      {(openedBonusCount > 0 || openingEntries.length > 0) && (
+        <div className={styles.statsCard} style={{ marginTop: '0.2rem' }}>
+          <div className={styles.statsTitle} style={{ marginBottom: '0.55rem' }}>Bonus Opening Live Stats</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(140px, 1fr))', gap: '0.4rem 0.75rem', fontSize: '0.84rem' }}>
+            <span>Current total win</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--success)' }}>${openingTotalWinUsd.toFixed(2)}</span>
+            <span>Profit / Loss</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: openingProfitUsd >= 0 ? 'var(--success)' : 'var(--error)' }}>
+              {openingProfitUsd >= 0 ? '+' : ''}${openingProfitUsd.toFixed(2)} ({openingProfitPct >= 0 ? '+' : ''}{openingProfitPct.toFixed(1)}%)
+            </span>
+            <span>Break-even missing</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>
+              ${remainingForBreakEvenUsd.toFixed(2)}
+            </span>
+            <span>Need avg per bonus</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>
+              {remainingBonusCount > 0 ? `${avgNeedMultiPerBonus.toFixed(1)}x / $${avgNeedPerBonusUsd.toFixed(2)}` : 'Reached'}
+            </span>
+          </div>
+
+          {openingInProgressEntries.length > 0 && (
+            <div style={{ marginTop: '0.65rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              Waiting for payout confirmation: {openingInProgressEntries.map((entry) => entry.slotName || entry.slotSlug).join(', ')}
+            </div>
+          )}
+
+          {resolvedOpeningEntries.length > 0 && (
+            <div style={{ marginTop: '0.75rem', borderTop: '1px solid var(--border)', paddingTop: '0.55rem' }}>
+              <div className={styles.statsTitle} style={{ marginBottom: '0.4rem' }}>Bonus Opening Logger</div>
+              <div style={{ display: 'grid', gap: '0.3rem' }}>
+                {[...resolvedOpeningEntries].slice().reverse().map((entry) => (
+                  <div key={`openlog_${entry.slotSlug}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.6rem', fontSize: '0.8rem' }}>
+                    <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.slotName || entry.slotSlug}</span>
+                    <span style={{ fontFamily: 'monospace', color: 'var(--text)' }}>
+                      {Number(entry.multiplier || 0).toFixed(1)}x ${toUsd(entry.payoutMinor || 0, statsCurrency).toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {allOpenedAndResolved && (
+            <div style={{ marginTop: '0.85rem', padding: '0.7rem 0.8rem', borderRadius: 'var(--radius-md)', border: `1px solid ${openingProfitUsd >= 0 ? 'var(--success)' : 'var(--error)'}`, background: openingProfitUsd >= 0 ? 'rgba(0,255,136,0.08)' : 'rgba(255,51,102,0.08)' }}>
+              <div style={{ fontSize: '0.9rem', fontWeight: 700, color: openingProfitUsd >= 0 ? 'var(--success)' : 'var(--error)' }}>
+                {openingProfitUsd >= 0 ? 'Profit' : 'Loss'}: {openingProfitUsd >= 0 ? '+' : ''}${openingProfitUsd.toFixed(2)} ({openingProfitPct >= 0 ? '+' : ''}{openingProfitPct.toFixed(1)}%)
+              </div>
+              {remainingForBreakEvenUsd > 0 && (
+                <div style={{ marginTop: '0.3rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Still need avg {avgNeedMultiPerBonus.toFixed(1)}x / ${avgNeedPerBonusUsd.toFixed(2)} per remaining bonus to break even.
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -22,6 +22,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     importLoggerBetLogs: () => ipcRenderer.invoke('logger-import-bet-logs'),
     deleteAllLoggerBetLogs: () => ipcRenderer.invoke('logger-delete-all-bet-logs'),
     openSlotPopup: (payload: { slug: string; locale?: string }) => ipcRenderer.invoke('open-slot-popup', payload),
+    onSlotPopupClosed: (callback: (payload: { popupId: string; slug: string; closedAt: string }) => void) => {
+        const handler = (_event: any, payload: { popupId: string; slug: string; closedAt: string }) => callback(payload);
+        ipcRenderer.on('slot-popup-closed', handler);
+        return () => ipcRenderer.removeListener('slot-popup-closed', handler);
+    },
     proxyRequest: (options: any) => ipcRenderer.invoke('proxy-request', options),
     extractClawbusterSecret: (configUrl: string) => ipcRenderer.invoke('clawbuster-extract-secret', configUrl),
     // Slot Spin Samples – automatisches Lernen in Ordner
@@ -51,3 +56,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ) as Promise<{ saved: boolean; path?: string; csvPath?: string; slotCsvPath?: string }>,
     getSlotFirstWinsDir: () => ipcRenderer.invoke('get-slot-first-wins-dir') as Promise<string>,
 });
+
