@@ -635,6 +635,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   }, [])
 
   const [challenges, setChallenges] = useState([])
+  const [challengeSearch, setChallengeSearch] = useState('')
   /** Pro Challenge: nächste Queue-Zielwährung — '' = Auto (Sortierung / Probes). */
   const [manualTargetCurrencyByChallengeId, setManualTargetCurrencyByChallengeId] = useState({})
   const [queue, setQueue] = useState([])
@@ -714,6 +715,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const pagesToLoadClamped = Math.min(CHALLENGE_SLIDER_MAX, Math.max(1, pagesToLoad))
 
   const runnersRef = useRef({})
+  /** Schutz gegen doppelte Verbuchung desselben Rounds innerhalb eines Runs (z. B. Retry/Timing-Rennen). */
+  const seenRoundKeysByRunRef = useRef({})
   const processedIdsRef = useRef(new Set())
   /** Challenge-IDs, die der Nutzer per „Aus Liste“ o. Ä. aus dem Hunt genommen hat – nicht erneut auto-einreihen. */
   const dismissedChallengeIdsRef = useRef(new Set())
@@ -1644,6 +1647,26 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
           const spinSeq =
             (hunterSpinSeqByRunRef.current[runId] = (hunterSpinSeqByRunRef.current[runId] || 0) + 1)
+          const roundIdForDedup =
+            parsed?.roundId != null
+              ? String(parsed.roundId)
+              : rawRound?.betID != null
+                ? String(rawRound.betID)
+                : rawRound?.roundId != null
+                  ? String(rawRound.roundId)
+                  : rawRound?.id != null
+                    ? String(rawRound.id)
+                    : rawRound?.betId != null
+                      ? String(rawRound.betId)
+                      : null
+          const runSeenRounds = (seenRoundKeysByRunRef.current[runId] ||= new Set())
+          const dedupKey = roundIdForDedup ? `round:${roundIdForDedup}` : `spin:${spinSeq}`
+          if (runSeenRounds.has(dedupKey)) {
+            log(`Doppelten Spin-Eintrag ignoriert (${gName || gSlug} · ${dedupKey}).`)
+            await new Promise((r) => setTimeout(r, HUNTER_SPIN_DELAY_MS))
+            continue
+          }
+          runSeenRounds.add(dedupKey)
 
           // houseBets-Matching: Pending mit HTTP-Multi; UI-Best-Multi erst nach houseBets (oder Fallback).
           const matchEntry = {
@@ -1691,18 +1714,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           }, HOUSEBET_DEFERRED_UI_MULTI_MS)
 
           // RoundId für "Beste Multi" Kopieren (nicht nur wenn Ziel erreicht ist)
-          const resolvedRoundId =
-            parsed?.roundId != null
-              ? String(parsed.roundId)
-              : rawRound?.betID != null
-                ? String(rawRound.betID)
-                : rawRound?.roundId != null
-                  ? String(rawRound.roundId)
-                  : rawRound?.id != null
-                    ? String(rawRound.id)
-                    : rawRound?.betId != null
-                      ? String(rawRound.betId)
-                      : null
+          const resolvedRoundId = roundIdForDedup
 
           if (win > 0) {
             void saveFirstSlotWinIfNeeded({
@@ -1823,6 +1835,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     } finally {
       delete runnersRef.current[runId]
       try {
+        delete seenRoundKeysByRunRef.current[runId]
+      } catch (_) {}
+      try {
         delete runBestMultiSyncRef.current[runId]
       } catch (_) {}
       try {
@@ -1923,6 +1938,43 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       }
     },
     [log]
+  )
+
+  const restartRunByRunId = useCallback(
+    (runId) => {
+      const run = activeRunsRef.current?.[runId]
+      if (!run?.challengeId) return
+      const nextQueueItem = {
+        runId: generateHunterRunId(),
+        challengeId: run.challengeId,
+        currencySlotIndex: Number.isFinite(Number(run.currencySlotIndex)) ? Number(run.currencySlotIndex) : 0,
+        ...(run.forcedTargetCurrency ? { forcedTargetCurrency: String(run.forcedTargetCurrency).toLowerCase() } : {}),
+      }
+
+      // Remove old finished run card before starting/re-queueing.
+      setActiveRuns((prev) => {
+        const next = { ...prev }
+        delete next[runId]
+        return next
+      })
+      try {
+        delete runBestMultiSyncRef.current[runId]
+      } catch (_) {}
+      try {
+        delete hunterSpinSeqByRunRef.current[runId]
+      } catch (_) {}
+      dismissedChallengeIdsRef.current.delete(run.challengeId)
+      processedIdsRef.current.add(run.challengeId)
+
+      if (runningCount < maxParallelClamped) {
+        void startChallengeRun(nextQueueItem)
+        log(`Run erneut gestartet: ${run.slotName || run.challengeId}`)
+        return
+      }
+      setQueue((q) => [...q, nextQueueItem])
+      log(`Run erneut eingereiht: ${run.slotName || run.challengeId}`)
+    },
+    [log, maxParallelClamped, runningCount]
   )
 
   const removeRun = (runId) => {
@@ -2216,6 +2268,16 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       </div>
     )
   }
+
+  const visibleChallenges = useMemo(() => {
+    const q = String(challengeSearch || '').trim().toLowerCase()
+    if (!q) return challenges
+    return challenges.filter((c) => {
+      const name = String(c?.gameName || c?.game?.name || '').toLowerCase()
+      const slug = String(c?.gameSlug || c?.game?.slug || '').toLowerCase()
+      return name.includes(q) || slug.includes(q)
+    })
+  }, [challengeSearch, challenges])
 
   return (
     <div className="hunter-dashboard" style={STYLES.container}>
@@ -2925,6 +2987,20 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                         Nach Spin stoppen
                       </Button>
                       <Button
+                        onClick={() => restartRunByRunId(run.id)}
+                        variant="primary"
+                        disabled={run.status === 'running' || run.status === 'completed'}
+                        title={
+                          run.status === 'running'
+                            ? 'Erst nach dem Stop möglich'
+                            : run.status === 'completed'
+                              ? 'Stake-Challenge abgeschlossen'
+                              : 'Diesen Run erneut starten'
+                        }
+                      >
+                        Erneut starten
+                      </Button>
+                      <Button
                         onClick={() => removeRun(run.id)}
                         variant="outline"
                         title="Aus Liste und Queue entfernen"
@@ -2954,10 +3030,28 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           <span style={{ display: 'block', fontWeight: 400, fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
             Alle Challenges aus der Stake-Liste (RGS) · Klick = Warteschlange · „Neu laden“ füllt die Liste
           </span>
+          <div style={{ marginTop: '0.55rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <input
+              type="search"
+              value={challengeSearch}
+              onChange={(e) => setChallengeSearch(e.target.value)}
+              placeholder="Slot suchen (Name oder Slug)"
+              style={{ ...STYLES.input, minWidth: 220, flex: '1 1 280px' }}
+              aria-label="Challenge-Slot suchen"
+            />
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              {visibleChallenges.length} / {challenges.length}
+            </span>
+          </div>
         </div>
         <div className="hunter-found-body">
+          {visibleChallenges.length === 0 ? (
+            <div style={{ padding: '0.75rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Keine Challenge passt zu "{challengeSearch}".
+            </div>
+          ) : null}
           <div className="hunter-found-grid">
-          {challenges.map((c) => {
+          {visibleChallenges.map((c) => {
             const meta = getChallengeMeta(c)
             return renderChallengeCard(c, false, meta, true)
           })}

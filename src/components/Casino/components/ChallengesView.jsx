@@ -136,6 +136,16 @@ const STYLES = {
     color: 'var(--text)',
     cursor: 'pointer',
   },
+  searchInput: {
+    minWidth: 220,
+    flex: 1,
+    padding: 'var(--space-2) var(--space-3)',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-sm)',
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text)',
+  },
 }
 
 function sortChallenges(list, sortKey) {
@@ -170,6 +180,7 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
     } catch {}
     return 'einsatz-asc'
   })
+  const [searchTerm, setSearchTerm] = useState('')
   const [tab, setTab] = useState(TAB_ACTIVE)
   const [completionVersion, setCompletionVersion] = useState(0)
   const completedIds = useMemo(() => getCompletedChallengeIds(), [completionVersion])
@@ -177,6 +188,15 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
     () => sortChallenges(challenges, sortBy),
     [challenges, sortBy],
   )
+  const filteredChallenges = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase()
+    if (!q) return sortedChallenges
+    return sortedChallenges.filter((c) => {
+      const name = String(c?.gameName || '').toLowerCase()
+      const slug = String(c?.gameSlug || '').toLowerCase()
+      return name.includes(q) || slug.includes(q)
+    })
+  }, [searchTerm, sortedChallenges])
 
   useEffect(() => {
     try {
@@ -336,9 +356,22 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
             </option>
           ))}
         </select>
+        <input
+          type="search"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Slot suchen (Name oder Slug)..."
+          aria-label="Challenge Slot suchen"
+          style={STYLES.searchInput}
+        />
       </div>
       <div style={STYLES.list}>
-        {sortedChallenges.map((c) => {
+        {filteredChallenges.length === 0 && (
+          <div style={STYLES.empty}>
+            Keine Challenge passt zu "{searchTerm}".
+          </div>
+        )}
+        {filteredChallenges.map((c) => {
           const isCompleted = completedIds.has(c.id) || !!c.completedAt
           return (
             <div
