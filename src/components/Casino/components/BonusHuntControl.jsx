@@ -1419,9 +1419,17 @@ export default function BonusHuntControl({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.45rem' }}>
             {progressRows.map(({ slot, state }) => {
               const opened = wheelOpenedSlugs.has(slot.slug)
+              const hasBonusState =
+                hasBonusSlugs.has(slot.slug) ||
+                Number(state?.bonusWin || 0) > 0 ||
+                Number(state?.multiWin || 0) > 0 ||
+                (state?.status === 'done' && Number(state?.scatterCount || 0) >= 3)
               const running = state?.status === 'spinning'
-              const failed = state?.status === 'done' && (state?.skipped || state?.error || state?.balanceEmpty)
-              const done = state?.status === 'done' && !failed
+              const failed =
+                state?.status === 'done' &&
+                !hasBonusState &&
+                (state?.skipped || state?.error || state?.balanceEmpty)
+              const done = (state?.status === 'done' && !failed) || hasBonusState
               const marker = opened ? 'OPEN' : running ? 'RUN' : failed ? 'ERR' : done ? 'DONE' : 'WAIT'
               const markerColor = opened
                 ? 'var(--accent)'
