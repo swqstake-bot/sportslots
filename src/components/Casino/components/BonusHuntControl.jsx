@@ -677,6 +677,14 @@ export default function BonusHuntControl({
           setBetHistory((prev) =>
             prev.map((e) => {
               if (e.id !== historyId) return e
+              // Bonus wurde nur "gesichert" (nicht ausgespielt): nie in Hunt-Win übernehmen.
+              if (e.stoppedBonus) {
+                return {
+                  ...e,
+                  betAmount: amountTargetMinor > 0 ? amountTargetMinor : e.betAmount,
+                  winAmount: 0,
+                }
+              }
               const existing = e.winAmount ?? 0
               if (existing > 0 && payoutMinor <= 0) return e
               return {
@@ -1165,8 +1173,8 @@ export default function BonusHuntControl({
   const allOpenedAndResolved = (sliderBonusSlots?.length || 0) > 0 && resolvedOpeningEntries.length >= sliderBonusSlots.length
 
   const getDisplayWin = (b) => {
-    const win = b.winAmount ?? 0
-    if (b.isBonus && b.stoppedBonus && win === 0) return 0
+    if (b?.stoppedBonus) return 0
+    const win = b?.winAmount ?? 0
     return win
   }
 
@@ -1889,13 +1897,13 @@ export default function BonusHuntControl({
                       {b.slotName}
                     </span>
                     <span>{format(b.betAmount)}</span>
-                    <span style={{ color: b.winAmount > 0 ? 'var(--success)' : undefined }}>
-                      {b.isBonus ? 'Bonus' : format(b.winAmount)}
+                    <span style={{ color: displayWin > 0 ? 'var(--success)' : undefined }}>
+                      {b.isBonus ? 'Bonus' : format(displayWin)}
                     </span>
                     <span style={{ color: net >= 0 ? 'var(--success)' : 'var(--error)' }}>
                       {b.isBonus ? '–' : `${net >= 0 ? '+' : ''}${format(net)}`}
                     </span>
-                    <span style={{ color: b.winAmount > 0 ? 'var(--success)' : undefined }}>{b.isBonus ? '–' : `${mult}×`}</span>
+                    <span style={{ color: displayWin > 0 ? 'var(--success)' : undefined }}>{b.isBonus ? '–' : `${mult}×`}</span>
                   </div>
                 )
               })}
