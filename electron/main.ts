@@ -62,6 +62,8 @@ const STAKE_MAX_AUTH_RETRIES = 2;
 const STAKE_COOKIE_DEBUG_NAMES = new Set(['session', 'cf_clearance', '__cf_bm']);
 let lastLoginWindowOpenAt = 0;
 const LOGIN_WINDOW_DEBOUNCE_MS = 4000;
+let lastNet403FallbackLogAt = 0;
+const NET_403_FALLBACK_LOG_DEBOUNCE_MS = 15000;
 
 class StakeHttpError extends Error {
   status: number;
@@ -656,10 +658,14 @@ ipcMain.handle('api-request', async (_event, payload) => {
                     } catch (netError) {
                         if (netError instanceof StakeHttpError && netError.status === 403) {
                             const preview = String(netError.body || '').slice(0, 180);
-                            console.warn('[StakeSession] net.request 403, trying browser-context fallback', {
-                                tokenMode,
-                                preview,
-                            });
+                            const now = Date.now();
+                            if (now - lastNet403FallbackLogAt >= NET_403_FALLBACK_LOG_DEBOUNCE_MS) {
+                                console.warn('[StakeSession] net.request 403, trying browser-context fallback', {
+                                    tokenMode,
+                                    preview,
+                                });
+                                lastNet403FallbackLogAt = now;
+                            }
                             response = await stakeBrowserPostJson(`${origin}/_api/graphql`, headers, {
                                 query,
                                 variables,
@@ -1301,9 +1307,9 @@ app.whenReady().then(() => {
         const domain = String(cookie.domain || '').toLowerCase();
         const isStakeCookie = domain.includes('stake.com') || domain.includes('stake.bet');
         if (!isStakeCookie) return;
+        if (!STAKE_COOKIE_DEBUG_NAMES.has(String(cookie.name || ''))) return;
         invalidateStakeSessionStatusCache();
         void captureSession().catch(() => {});
-        if (!STAKE_COOKIE_DEBUG_NAMES.has(String(cookie.name || ''))) return;
         console.log('[StakeSession] Cookie changed', {
           name: cookie.name,
           domain: cookie.domain,
