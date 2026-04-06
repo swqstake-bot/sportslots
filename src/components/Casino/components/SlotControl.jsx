@@ -136,6 +136,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const [error, setError] = useState('')
   const [lastResult, setLastResult] = useState(null)
   const [betHistory, setBetHistory] = useState([])
+  const betHistoryLengthRef = useRef(0)
   const [logRefreshKey, setLogRefreshKey] = useState(0)
   const triggerLogRefresh = useCallback(() => {
     setLogRefreshKey((k) => k + 1)
@@ -342,6 +343,10 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   }, [slot.slug])
 
   useEffect(() => {
+    betHistoryLengthRef.current = betHistory.length
+  }, [betHistory.length])
+
+  useEffect(() => {
     const hasSession = session?.sessionUuid || session?.sessionID
     if (!provider || !hasSession || isAutospinning) return
     const sendKeepAlive = provider.sendKeepAlive
@@ -388,6 +393,19 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       return [...prev, entry]
     })
   }, [slot.slug])
+
+  /**
+   * Realtime (houseBets) ist primär, aber in manchen Sessions bleibt sie leer/verspätet.
+   * Dann fallbacken wir pro Spin auf parseBetResponse, damit Stats/BetList im Play-Mode nicht leer bleiben.
+   */
+  const scheduleFallbackHistoryAppend = useCallback((parsed, baselineCount, delayMs = 1400) => {
+    if (fillBetHistoryFromPlaceBet) return
+    if (!parsed?.success) return
+    setTimeout(() => {
+      if (betHistoryLengthRef.current > baselineCount) return
+      addToBetHistory({ ...parsed, winAmount: parsed.winAmount ?? 0 })
+    }, delayMs)
+  }, [fillBetHistoryFromPlaceBet, addToBetHistory])
 
   const isStakeEngine = slot?.providerId === 'stakeEngine' || PROVIDERS_META[slot?.providerId]?.aliasOf === 'stakeEngine'
   const fillBetHistoryFromPlaceBet = isStakeEngine
@@ -470,6 +488,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     setSpinLoading(true)
     setError('')
     try {
+      const beforeCount = betHistoryLengthRef.current
       let currentSession = session
       if (sessionRefreshSpins > 0 && spinsSinceRefreshRef.current >= sessionRefreshSpins) {
         currentSession = await provider.startSession(accessToken, slot.slug, effectiveSource, effectiveTarget)
@@ -484,6 +503,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       setSession((prev) => (updatedSession ? updatedSession : prev ? { ...prev, seq: nextSeq } : null))
       const effectiveBet = getEffectiveBetAmount(betAmount, extraBet, slot.slug)
       const parsed = parseBetResponse(data, effectiveBet)
+      scheduleFallbackHistoryAppend(parsed, beforeCount)
       if (isSaveBonusLogsEnabled() && parsed.isBonus) {
         saveBonusLog({
           slotSlug: slot.slug,
@@ -541,6 +561,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
 
     while ((autospinCount === 0 || spinsDone < autospinCount) && !autospinCancelRef.current) {
       try {
+        const beforeCount = betHistoryLengthRef.current
         if (sessionRefreshSpins > 0 && spinsSinceRefresh >= sessionRefreshSpins) {
           let newSession
           try {
@@ -565,6 +586,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         spinsSinceRefresh += 1
         const effectiveBet = getEffectiveBetAmount(betAmount, extraBet, slot.slug)
         const parsed = parseBetResponse(data, effectiveBet)
+        scheduleFallbackHistoryAppend(parsed, beforeCount)
 
         if (isSaveBonusLogsEnabled() && parsed.isBonus) {
           saveBonusLog({
