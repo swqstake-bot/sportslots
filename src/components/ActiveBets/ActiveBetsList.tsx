@@ -1,33 +1,62 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useUserStore } from '../../store/userStore';
 import { useUiStore } from '../../store/uiStore';
 import { getCashoutValue, getEffectiveOdds, getOpenLegsCount, getClosedLegsCount } from '../../services/cashoutService';
+import { toUsd } from '../Logger/loggerUtils';
+import { formatStakeAmount } from '../../utils/formatStakeAmount';
+import { StakeApi } from '../../api/client';
+import { Queries } from '../../api/queries';
 
 const TOP_N = 15;
 
-function formatShort(amount: number, currency: string): string {
-  const c = (currency || '').toUpperCase();
-  if (amount >= 1000) return `${(amount / 1000).toFixed(1)}k ${c}`;
-  if (amount >= 1) return `${amount.toFixed(2)} ${c}`;
-  return `${amount.toFixed(4)} ${c}`;
-}
-
 export const ActiveBetsList: React.FC = () => {
   const { activeBets } = useUserStore();
-  const { toggleActiveBetsModal } = useUiStore();
+  const { openActiveBetsModal } = useUiStore();
+  const [usdRates, setUsdRates] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await StakeApi.query<{ info?: { currencies?: Array<{ name?: string; usd?: number }> } }>(
+          Queries.CurrencyConfiguration,
+          {}
+        );
+        if (cancelled) return;
+        const list = res?.data?.info?.currencies ?? [];
+        const map: Record<string, number> = {};
+        for (const c of list) {
+          const name = String(c?.name ?? '').toLowerCase();
+          const usd = Number(c?.usd ?? 0);
+          if (name && Number.isFinite(usd) && usd > 0) map[name] = usd;
+        }
+        setUsdRates(map);
+      } catch {
+        if (!cancelled) setUsdRates({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const formatUsdShort = (amount: number, currency: string): string => {
+    const usd = toUsd(amount, currency, usdRates);
+    return formatStakeAmount(usd, 'usd');
+  };
 
   const topBets = useMemo(() => {
     if (!activeBets?.length) return [];
     return [...activeBets]
       .sort((a, b) => {
-        const cashA = getCashoutValue(a);
-        const cashB = getCashoutValue(b);
+        const cashA = toUsd(getCashoutValue(a), a.currency, usdRates);
+        const cashB = toUsd(getCashoutValue(b), b.currency, usdRates);
         if (cashB !== cashA) return cashB - cashA;
         // Sekundär: mehr erledigte Legs = besser (11/12 vor 11/11)
         return getClosedLegsCount(b) - getClosedLegsCount(a);
       })
       .slice(0, TOP_N);
-  }, [activeBets]);
+  }, [activeBets, usdRates]);
 
   if (!activeBets) return null;
 
@@ -35,7 +64,7 @@ export const ActiveBetsList: React.FC = () => {
     <div className="flex flex-col h-full overflow-hidden" style={{ background: 'var(--app-bg-deep)' }}>
       <div className="p-2 border-b" style={{ borderColor: 'var(--app-border)', background: 'var(--app-bg-card)' }}>
         <button
-          onClick={toggleActiveBetsModal}
+          onClick={() => openActiveBetsModal(null)}
           className="w-full rounded-lg py-2 px-3 text-xs font-bold uppercase tracking-wide transition-all flex items-center justify-center gap-2 border hover:border-[var(--app-accent)] hover:bg-[rgba(var(--app-accent-rgb),0.08)] hover:text-[var(--app-text)]"
           style={{ background: 'var(--app-bg-deep)', borderColor: 'var(--app-border)', color: 'var(--app-text-muted)' }}
         >
@@ -82,7 +111,7 @@ export const ActiveBetsList: React.FC = () => {
                     return (
                       <tr
                         key={bet.id}
-                        onClick={toggleActiveBetsModal}
+                        onClick={() => openActiveBetsModal(bet.id)}
                         className="cursor-pointer transition-colors hover:bg-[rgba(var(--app-accent-rgb),0.06)]"
                         style={{ borderBottom: '1px solid var(--app-border)', color: 'var(--app-text-muted)' }}
                       >
@@ -94,7 +123,7 @@ export const ActiveBetsList: React.FC = () => {
                           {getEffectiveOdds(bet) > 0 ? `${getEffectiveOdds(bet).toFixed(1)}x` : '–'}
                         </td>
                         <td className="py-1.5 px-2 text-right font-mono" style={{ color: 'var(--app-accent)' }}>
-                          {cashout > 0 ? formatShort(cashout, bet.currency) : '–'}
+                          {cashout > 0 ? formatUsdShort(cashout, bet.currency) : '–'}
                         </td>
                         <td className="py-1.5 px-2 text-center">
                           <span className="inline-block font-mono text-[10px] font-bold px-1.5 py-0.5 rounded" style={legsStyle}>

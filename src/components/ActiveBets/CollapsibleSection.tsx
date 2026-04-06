@@ -29,11 +29,11 @@ export function CollapsibleSection({
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <section className="rounded-xl overflow-hidden mb-4" style={{ border: '1px solid var(--app-border)', background: 'var(--app-bg-card)' }}>
+    <section className="rounded-lg overflow-hidden mb-3" style={{ border: '1px solid var(--app-border)', background: 'var(--app-bg-card)' }}>
       <button
         type="button"
         onClick={() => setIsOpen((o) => !o)}
-        className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left transition-colors cursor-pointer hover:opacity-90"
+        className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors cursor-pointer hover:opacity-90"
         style={{ background: 'transparent' }}
         onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.2)'; }}
         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
@@ -46,17 +46,17 @@ export function CollapsibleSection({
               aria-hidden
             />
           )}
-          <span className="font-bold uppercase tracking-wider text-sm" style={{ color: 'var(--app-text)' }}>
+          <span className="font-bold uppercase tracking-wider text-xs" style={{ color: 'var(--app-text)' }}>
             {title}
           </span>
           {count >= 0 && (
-            <span className="text-sm font-medium tabular-nums" style={{ color: 'var(--app-text-muted)' }}>
+            <span className="text-xs font-medium tabular-nums" style={{ color: 'var(--app-text-muted)' }}>
               {count}
             </span>
           )}
         </div>
         <span
-          className={`shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center -my-2 -mr-2 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          className={`shrink-0 flex items-center justify-center transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
           style={{ color: 'var(--app-text-muted)' }}
           aria-hidden
         >
@@ -72,7 +72,7 @@ export function CollapsibleSection({
             transition={{ duration: 0.2, ease: 'easeInOut' }}
             className="overflow-hidden"
           >
-            <div className="px-4 pb-4 pt-1 space-y-4">
+            <div className="px-2.5 pb-2.5 pt-1 space-y-2.5">
               {children}
             </div>
           </motion.div>

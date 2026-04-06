@@ -281,6 +281,9 @@ const SportBetPreview_SportBet = `fragment SportBetPreview_SportBet on SportBet 
       name
     }
   }
+  customPrices {
+    type
+  }
   adjustments {
     payoutMultiplier
   }

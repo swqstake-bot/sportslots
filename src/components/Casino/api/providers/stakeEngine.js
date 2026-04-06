@@ -114,6 +114,18 @@ const ZERO_DECIMAL_CURRENCIES = ['idr', 'jpy', 'krw', 'vnd']
 // Fiat-Währungen haben meist 2 Dezimalstellen, Crypto meist 8
 const FIAT_CURRENCIES = ['eur', 'usd', 'brl', 'cad', 'cny', 'inr', 'mxn', 'php', 'pln', 'pkr', 'rub', 'try', 'ngn', 'ars', 'cop', 'pen', 'clp']
 const STAKEENGINE_MIN_DELAY_MS = 50
+const STAKE_ENGINE_PLAY_MODE_BY_SLOT_PREFIX = {
+  'coreffectinteractive-cut-n-crash': '688_base',
+}
+
+function getStakeEnginePlayModeForSlot(slotSlug) {
+  const slug = String(slotSlug || '').toLowerCase()
+  if (!slug) return null
+  for (const [prefix, mode] of Object.entries(STAKE_ENGINE_PLAY_MODE_BY_SLOT_PREFIX)) {
+    if (slug.startsWith(prefix)) return mode
+  }
+  return null
+}
 
 function parseConfigFromUrl(config) {
   try {
@@ -226,6 +238,8 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   logApiCall({ type: 'stakeEngine/authenticate', endpoint: authUrl, request: { sessionID: parsed.sessionID }, response: { config: authData?.config, balance: authData?.balance }, error: null, durationMs: null })
 
   const configData = authData?.config || {}
+  const configMode = configData?.mode || configData?.baseMode || configData?.defaultMode || null
+  const playMode = configMode || getStakeEnginePlayModeForSlot(slotSlug) || null
   const betLevelsRaw = configData?.betLevels?.map((v) => Number(v)).filter((b) => b > 0) ?? []
   const betLevels = betLevelsRaw.map((v) => {
     const units = v / STAKE_ENGINE_API_MULTIPLIER
@@ -266,6 +280,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     maxBet,
     initialBalance,
     slotSlug: slotSlug || '',
+    playMode,
   }
 }
 
@@ -333,7 +348,9 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
 
   const endUrl = buildRgsUrl(session.rgsUrl, '/wallet/end-round')
   const playUrl = buildRgsUrl(session.rgsUrl, '/wallet/play')
-  const mode = useAnte ? 'ANTE' : 'base'
+  const mode = useAnte
+    ? 'ANTE'
+    : (options?.mode || session?.playMode || getStakeEnginePlayModeForSlot(slotSlug) || 'base')
   const playBody = { sessionID: session.sessionID, amount, mode, currency }
   const t0 = Date.now()
   let playRes = await rgsPost(playUrl, playBody)

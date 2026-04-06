@@ -5,12 +5,17 @@ import { BetSlip } from './BetSlip';
 import { useBetSlipStore } from '../store/betSlipStore';
 
 export function RightSidebar() {
-  const { rightSidebarTab, setRightSidebarTab, isBetSlipExpanded, toggleBetSlip, isActiveBetsModalOpen, toggleActiveBetsModal } = useUiStore();
+  const { rightSidebarTab, setRightSidebarTab, isBetSlipExpanded, toggleBetSlip, isActiveBetsModalOpen, activeBetsPreviewBetId, closeActiveBetsModal } = useUiStore();
   const { outcomes } = useBetSlipStore();
 
   return (
     <aside className="sports-right-rail">
-      {isActiveBetsModalOpen && <ActiveBetsModal onClose={toggleActiveBetsModal} />}
+      {isActiveBetsModalOpen && (
+        <ActiveBetsModal
+          onClose={closeActiveBetsModal}
+          initialPreviewBetId={activeBetsPreviewBetId}
+        />
+      )}
 
       <div className="sports-right-rail-tabs">
         {(['activebets', 'autobet'] as const).map((tab) => (

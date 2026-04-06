@@ -1,5 +1,6 @@
 import { WalletSelector } from '../WalletSelector'
 import { PrimaryNav } from './PrimaryNav'
+import { ThemeAccentButton } from './ThemeAccentButton'
 
 type AppView = 'casino' | 'sports' | 'logger'
 
@@ -54,6 +55,7 @@ export function AppHeader({
               <span className="app-run-state-dot" />
             </div>
             <WalletSelector />
+            <ThemeAccentButton />
             <button type="button" onClick={onRefresh} className={`app-header-refresh-btn ${isLoading ? 'is-loading' : ''}`.trim()}>
               Refresh
             </button>

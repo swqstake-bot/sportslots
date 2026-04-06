@@ -18,7 +18,7 @@ export const BetGraph: React.FC<BetGraphProps> = ({
   currentValue, 
   maxValue, 
   label = 'Value', 
-  color = '#00e701', // Stake Green
+  color = 'var(--app-accent)',
   height = 60
 }) => {
   const [data, setData] = useState<DataPoint[]>(() => [{ time: Date.now(), value: currentValue }]);
@@ -59,7 +59,14 @@ export const BetGraph: React.FC<BetGraphProps> = ({
     }
   }, [currentValue]);
 
-  if (data.length < 2) return <div className="h-full w-full bg-[#0f212e] animate-pulse rounded" />;
+  if (data.length < 2) {
+    return (
+      <div
+        className="h-full w-full animate-pulse rounded"
+        style={{ background: 'color-mix(in srgb, var(--app-bg-deep) 85%, transparent)' }}
+      />
+    );
+  }
 
   const minVal = Math.min(...data.map(d => d.value)) * 0.95;
   const maxVal = maxValue || Math.max(...data.map(d => d.value)) * 1.05;
@@ -84,8 +91,14 @@ export const BetGraph: React.FC<BetGraphProps> = ({
             domain={[minVal, maxVal]} 
           />
           <Tooltip 
-            contentStyle={{ backgroundColor: '#1a2c38', borderColor: '#2f4553', fontSize: '10px', color: '#b1bad3' }}
-            itemStyle={{ color: '#white' }}
+            contentStyle={{
+              backgroundColor: 'var(--app-bg-card)',
+              borderColor: 'var(--app-border)',
+              borderRadius: 8,
+              fontSize: '10px',
+              color: 'var(--app-text-muted)',
+            }}
+            itemStyle={{ color: 'var(--app-text)' }}
             labelFormatter={() => ''}
             formatter={(value: any) => [value.toFixed(2), label]}
           />

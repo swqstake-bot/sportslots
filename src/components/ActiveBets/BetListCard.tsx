@@ -30,6 +30,7 @@ export function BetListCard({
   const openLegsCount = getOpenLegsCount(bet);
   const legsLabel = outcomes.length > 0 ? `${openLegsCount}/${outcomes.length}` : null;
   const dateLabel = bet.createdAt ? new Date(bet.createdAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : null;
+  const currentCashoutValue = getCashoutValue(bet);
 
   const legsBadgeStyle =
     openLegsCount <= 1
@@ -56,7 +57,8 @@ export function BetListCard({
   const statusStyle = isLostLike
     ? { background: 'rgba(255,51,102,0.12)', color: 'var(--app-error)', border: '1px solid rgba(255,51,102,0.3)' }
     : statusStyles[statusLower] ?? { background: 'var(--app-border)', color: 'var(--app-text-muted)', border: '1px solid transparent' };
-  const displayStatus = isCashout ? 'Cashout' : isLostLike ? 'Verloren' : bet.status;
+  const displayStatus = isCashout ? 'Cashout' : isLostLike ? 'Lost' : bet.status;
+  const showStatusBadge = statusLower !== 'confirmed';
 
   const handleCashout = async () => {
     if (bet.cashoutDisabled) return;
@@ -73,83 +75,35 @@ export function BetListCard({
   return (
     <motion.article
       layout
-      className="rounded-xl overflow-hidden transition-colors hover:opacity-95"
-      style={{ border: '1px solid var(--app-border)', background: 'var(--app-bg-card)' }}
+      className="rounded-lg overflow-hidden transition-colors hover:opacity-95"
+      style={{ border: '1px solid var(--app-border)', background: 'color-mix(in srgb, var(--app-bg-card) 90%, transparent)' }}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2 }}
     >
-      {/* Card header: one-line summary, lots of padding */}
       <button
         type="button"
         onClick={() => onPreview(bet)}
-        className="w-full text-left p-5 pb-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] rounded-t-xl"
+        className="w-full text-left p-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)]"
       >
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <h3 className="text-base font-bold truncate pr-2" style={{ color: 'var(--app-text)' }}>
+            <h3 className="text-sm font-semibold truncate pr-2" style={{ color: 'var(--app-text)' }}>
               {firstFixture}
-              {hasMultipleLegs && (
-                <span className="font-normal ml-2" style={{ color: 'var(--app-text-muted)' }}>
-                  +{outcomes.length - 1} more
-                </span>
-              )}
             </h3>
-            <p className="text-sm mt-1" style={{ color: 'var(--app-text-muted)' }}>
-              {isCashout && bet.payout != null && bet.payout > 0 ? (
-                <>
-                  Ausgezahlt:{' '}
-                  <span className="font-mono font-semibold" style={{ color: 'var(--app-accent)' }}>
-                    {formatCurrency(bet.payout, bet.currency)}
-                  </span>
-                </>
-              ) : bet.status === 'active' ? (
-                <>
-                  {formatCurrency(bet.amount, bet.currency)} →{' '}
-                  <span className="font-mono font-semibold" style={{ color: 'var(--app-accent)' }}>
-                    {!bet.cashoutDisabled && getCashoutValue(bet) > 0
-                      ? formatCurrency(getCashoutValue(bet), bet.currency)
-                      : '–'}
-                  </span>
-                  <span className="ml-2 text-xs" style={{ color: 'var(--app-text-muted)', opacity: 0.8 }}>Cashout</span>
-                </>
-              ) : (
-                <>
-                  {formatCurrency(bet.amount, bet.currency)} →{' '}
-                  <span className="font-mono" style={{ color: 'var(--app-text-muted)' }}>
-                    {bet.payout != null && bet.payout > 0 ? formatCurrency(bet.payout, bet.currency) : '–'}
-                  </span>
-                </>
-              )}
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--app-text-muted)' }}>
+              {hasMultipleLegs ? `${outcomes.length} legs total` : 'Single leg'}{dateLabel ? ` • ${dateLabel}` : ''}
             </p>
-            {getEffectiveOdds(bet) > 0 && (
-              <p className="text-sm mt-1" style={{ color: 'var(--app-text-muted)' }}>
-                Quote:{' '}
-                <span className="font-mono font-semibold" style={{ color: 'var(--app-accent)' }}>
-                  {getEffectiveOdds(bet).toFixed(2)}x
-                </span>
-              </p>
-            )}
-            {(legsLabel != null || dateLabel != null) && (
-              <p className="mt-2 flex flex-wrap items-center gap-2">
-                {legsLabel != null && (
-                  <span className="inline-flex items-center px-2.5 py-1 rounded-md border text-sm font-bold font-mono" style={legsBadgeStyle}>
-                    {legsLabel} Legs offen
-                  </span>
-                )}
-                {dateLabel != null && (
-                  <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>{dateLabel}</span>
-                )}
-              </p>
-            )}
           </div>
-          <div className="flex items-center gap-3 shrink-0">
-            <span
-              className="text-xs font-bold px-3 py-1.5 rounded-lg uppercase tracking-wider border"
-              style={statusStyle}
-            >
-              {displayStatus}
-            </span>
+          <div className="flex items-center gap-2 shrink-0">
+            {showStatusBadge && (
+              <span
+                className="text-[10px] font-bold px-2 py-1 rounded-md uppercase tracking-wider border"
+                style={statusStyle}
+              >
+                {displayStatus}
+              </span>
+            )}
             {onCopyLink && (
               <button
                 type="button"
@@ -157,16 +111,46 @@ export function BetListCard({
                   e.stopPropagation();
                   onCopyLink(bet.id, bet.bet?.iid ?? bet.iid);
                 }}
-                className="p-2 rounded-lg transition-colors hover:opacity-90"
+                className="h-7 w-7 rounded-md transition-colors hover:opacity-90"
                 style={{ background: 'var(--app-border)', color: 'var(--app-text-muted)' }}
-                title="Link kopieren"
+                title="Copy link"
               >
                 {copiedId === bet.id ? (
-                  <span className="text-sm" style={{ color: 'var(--app-accent)' }}>✓</span>
+                  <span className="text-xs" style={{ color: 'var(--app-accent)' }}>✓</span>
                 ) : (
-                  <span className="text-sm">⎘</span>
+                  <span className="text-xs">⎘</span>
                 )}
               </button>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-1.5">
+          <div className="rounded-md px-2 py-1.5 border" style={{ borderColor: 'color-mix(in srgb, var(--app-border) 70%, transparent)', background: 'var(--app-bg-deep)' }}>
+            <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--app-text-muted)' }}>Stake</div>
+            <div className="font-mono text-xs" style={{ color: 'var(--app-text)' }}>{formatCurrency(bet.amount, bet.currency)}</div>
+          </div>
+          <div className="rounded-md px-2 py-1.5 border" style={{ borderColor: 'color-mix(in srgb, var(--app-border) 70%, transparent)', background: 'var(--app-bg-deep)' }}>
+            <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--app-text-muted)' }}>Odds</div>
+            <div className="font-mono text-xs" style={{ color: 'var(--app-accent)' }}>
+              {getEffectiveOdds(bet) > 0 ? `${getEffectiveOdds(bet).toFixed(2)}x` : '–'}
+            </div>
+          </div>
+          <div className="rounded-md px-2 py-1.5 border" style={{ borderColor: 'color-mix(in srgb, var(--app-border) 70%, transparent)', background: 'var(--app-bg-deep)' }}>
+            <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--app-text-muted)' }}>Current cashout</div>
+            <div className="font-mono text-xs" style={{ color: 'var(--app-accent)' }}>
+              {!bet.cashoutDisabled && currentCashoutValue > 0 ? formatCurrency(currentCashoutValue, bet.currency) : '–'}
+            </div>
+          </div>
+          <div className="rounded-md px-2 py-1.5 border flex items-center justify-between" style={{ borderColor: 'color-mix(in srgb, var(--app-border) 70%, transparent)', background: 'var(--app-bg-deep)' }}>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--app-text-muted)' }}>Legs</div>
+              <div className="font-mono text-xs" style={{ color: 'var(--app-text)' }}>{legsLabel ?? '–'}</div>
+            </div>
+            {legsLabel != null && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-bold font-mono" style={legsBadgeStyle}>
+                Open
+              </span>
             )}
           </div>
         </div>
@@ -177,7 +161,7 @@ export function BetListCard({
         <button
           type="button"
           onClick={() => setSelectionsOpen((o) => !o)}
-          className="w-full flex items-center justify-between px-5 py-3 transition-colors text-sm cursor-pointer hover:opacity-90"
+          className="w-full flex items-center justify-between px-3 py-2 transition-colors text-xs cursor-pointer hover:opacity-90"
           style={{ color: 'var(--app-text-muted)' }}
           onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.15)'; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
@@ -186,7 +170,7 @@ export function BetListCard({
             Selections {outcomes.length > 0 && `(${outcomes.length})`}
           </span>
           <span
-            className={`shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center -my-1 -mr-1 transition-transform duration-200 ${selectionsOpen ? 'rotate-180' : ''}`}
+            className={`shrink-0 transition-transform duration-200 ${selectionsOpen ? 'rotate-180' : ''}`}
           >
             ▼
           </span>
@@ -200,25 +184,25 @@ export function BetListCard({
               transition={{ duration: 0.2 }}
               className="overflow-hidden"
             >
-              <div className="px-5 pb-5 pt-0 space-y-4">
+              <div className="px-3 pb-3 pt-0 space-y-2">
                 {outcomes.map((o: any, i: number) => (
                   <div
                     key={o?.id ?? i}
-                    className="rounded-lg p-4 space-y-2"
+                    className="rounded-md p-2.5 space-y-1.5"
                     style={{ background: 'color-mix(in srgb, var(--app-bg-deep) 50%, transparent)', border: '1px solid color-mix(in srgb, var(--app-border) 50%, transparent)' }}
                   >
                     {o?.fixture?.eventStatus && (
                       <MatchTracker fixture={o.fixture} />
                     )}
                     <div className="flex justify-between items-start gap-2">
-                      <span className="font-medium text-sm truncate" style={{ color: 'var(--app-text)' }}>
+                      <span className="font-medium text-xs truncate" style={{ color: 'var(--app-text)' }}>
                         {o?.outcome?.name ?? '—'}
                       </span>
-                      <span className="font-mono text-sm shrink-0" style={{ color: 'var(--app-accent)' }}>
+                      <span className="font-mono text-xs shrink-0" style={{ color: 'var(--app-accent)' }}>
                         {(o?.odds ?? o?.outcome?.odds ?? 0).toFixed(2)}x
                       </span>
                     </div>
-                    <p className="text-xs truncate" style={{ color: 'var(--app-text-muted)' }}>
+                    <p className="text-[11px] truncate" style={{ color: 'var(--app-text-muted)' }}>
                       {o?.market?.name} · {o?.fixture?.name}
                     </p>
                   </div>
@@ -232,22 +216,22 @@ export function BetListCard({
       {/* Cashout CTA – show when we have a cashout value (Preview or estimate) */}
       {bet.status === 'active' &&
         !bet.cashoutDisabled &&
-        getCashoutValue(bet) > 0 && (
-          <div className="border-t px-5 py-4" style={{ borderColor: 'var(--app-border)', background: 'rgba(0,0,0,0.15)' }}>
+        currentCashoutValue > 0 && (
+          <div className="border-t px-3 py-2.5" style={{ borderColor: 'var(--app-border)', background: 'rgba(0,0,0,0.15)' }}>
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <div>
-                <p className="text-xs uppercase tracking-wider mb-0.5" style={{ color: 'var(--app-text-muted)' }}>
+                <p className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: 'var(--app-text-muted)' }}>
                   Cashout value
                 </p>
-                <p className="text-lg font-bold font-mono" style={{ color: 'var(--app-accent)' }}>
-                  {formatCurrency(getCashoutValue(bet), bet.currency)}
+                <p className="text-sm font-bold font-mono" style={{ color: 'var(--app-accent)' }}>
+                  {formatCurrency(currentCashoutValue, bet.currency)}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={handleCashout}
                 disabled={isCashingOut}
-                className="px-5 py-3 rounded-xl font-bold border disabled:opacity-60 disabled:cursor-not-allowed transition-colors hover:opacity-90"
+                className="px-3 py-1.5 rounded-md text-xs font-bold border disabled:opacity-60 disabled:cursor-not-allowed transition-colors hover:opacity-90"
                 style={{ background: 'rgba(var(--app-accent-rgb), 0.15)', color: 'var(--app-accent)', borderColor: 'color-mix(in srgb, var(--app-accent) 50%, transparent)' }}
               >
                 {isCashingOut ? 'Cashing out…' : 'Cashout'}

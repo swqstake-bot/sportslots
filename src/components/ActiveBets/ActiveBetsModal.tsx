@@ -17,6 +17,8 @@ import { BetTableSkeleton } from '../ui/BetTableSkeleton';
 import { CollapsibleSection } from './CollapsibleSection';
 import { BetListCard } from './BetListCard';
 import { extractSportBetFromPreviewResponse, logPreviewCashoutDebug } from '../../utils/previewCashoutResponse';
+import { toUsd } from '../Logger/loggerUtils';
+import { useAccentInlineStyle } from '../../hooks/useAccentInlineStyle';
 
 function hasLiveLeg(bet: SportBet): boolean {
   return (bet.outcomes ?? []).some((o: any) => {
@@ -31,9 +33,21 @@ function hasLiveLeg(bet: SportBet): boolean {
 
 interface ActiveBetsModalProps {
   onClose: () => void;
+  initialPreviewBetId?: string | null;
 }
 
-export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
+export function ActiveBetsModal({ onClose, initialPreviewBetId = null }: ActiveBetsModalProps) {
+  /** Portals render under `document.body` — without this, `:root` cyan accent wins over Sports green. */
+  const currentView = useUiStore((s) => s.currentView);
+  const accentInlineStyle = useAccentInlineStyle();
+
+  const isBetOpenForCashout = useCallback((bet: SportBet) => {
+    const status = String(bet.status || '').toLowerCase();
+    if (bet.active) return true;
+    if (status === 'active' || status === 'confirmed' || status === 'pending' || status === 'open') return true;
+    return false;
+  }, []);
+
   const { user } = useUserStore();
   const userName = user?.name;
 
@@ -57,6 +71,11 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     },
   });
 
+  const formatCurrencyUsd = useCallback((amount: number, currency: string) => {
+    const usdAmount = toUsd(amount, currency, usdRates);
+    return formatStakeAmount(usdAmount, 'usd');
+  }, [usdRates]);
+
   const [sortField, setSortField] = useState<string>('createdAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
@@ -75,6 +94,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
 
   const [selectedBetIds, setSelectedBetIds] = useState<Set<string>>(new Set());
   const [previewBet, setPreviewBet] = useState<SportBet | null>(null);
+  const didOpenInitialPreviewRef = useRef(false);
   const showToast = useUiStore((s) => s.showToast);
 
   const { checkSingleBetAutoCashout, evaluateAutoCashout } = useAutoCashout({
@@ -185,6 +205,20 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
     setPreviewBet(bet);
   }, [setActiveBets]);
 
+  useEffect(() => {
+    if (!initialPreviewBetId || didOpenInitialPreviewRef.current) return;
+    const target =
+      activeBets.find((b) => b.id === initialPreviewBetId) ??
+      finishedBets.find((b) => b.id === initialPreviewBetId) ??
+      null;
+    if (!target) return;
+    didOpenInitialPreviewRef.current = true;
+    const t = setTimeout(() => {
+      void handlePreviewBet(target);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [initialPreviewBetId, activeBets, finishedBets, handlePreviewBet]);
+
   const copyLink = (betId: string, iid?: string) => {
     // Construct URL based on old tool behavior
     // If iid (ShareIdentifier) exists, use the stake slip sharing URL
@@ -216,8 +250,8 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
 
         switch (sortField) {
             case 'amount':
-                valA = a.amount;
-                valB = b.amount;
+                valA = toUsd(a.amount, a.currency, usdRates);
+                valB = toUsd(b.amount, b.currency, usdRates);
                 break;
             case 'payoutMultiplier':
                 valA = getEffectiveOdds(a);
@@ -245,11 +279,11 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                 }
                 break;
             case 'cashout':
-                valA = getCashoutValue(a);
-                valB = getCashoutValue(b);
+                valA = toUsd(getCashoutValue(a), a.currency, usdRates);
+                valB = toUsd(getCashoutValue(b), b.currency, usdRates);
                 break;
             case 'openLegs':
-                // Sortieren nach Fortschritt: mehr erledigte Legs = besser (11/12 vor 11/11)
+                // Sort by progress: more resolved legs first (11/12 before 11/11)
                 valA = getClosedLegsCount(a);
                 valB = getClosedLegsCount(b);
                 break;
@@ -264,7 +298,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
         if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
         return 0;
     });
-  }, [activeBets, finishedBets, activeTab, sortField, sortDirection]);
+  }, [activeBets, finishedBets, activeTab, sortField, sortDirection, usdRates]);
 
   const { liveBets, upcomingBets, wonBets, lostBets, cashoutBets } = useMemo(() => {
     const live: SportBet[] = [];
@@ -289,7 +323,8 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
   const modalContent = (
     <motion.div
       className="fixed inset-0 bg-black/80 flex items-start justify-center pb-8 overflow-y-auto z-[9999] backdrop-blur-sm px-4 sm:px-6"
-      style={{ paddingTop: 120 }}
+      data-app-mode={currentView}
+      style={{ paddingTop: 120, ...(accentInlineStyle || {}) }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -300,23 +335,29 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
           <BetPreviewModal
             bet={previewBet}
             onClose={() => setPreviewBet(null)}
-            onCashout={previewBet.status === 'active' ? handleCashout : undefined}
+            onCashout={isBetOpenForCashout(previewBet) ? handleCashout : undefined}
+            usdRates={usdRates}
           />
         )}
       </AnimatePresence>
       <motion.div
-        className="rounded-lg shadow-2xl w-full max-w-4xl min-h-[50vh] max-h-[calc(100vh-11rem)] flex flex-col overflow-hidden shrink-0"
-        style={{ background: 'var(--app-bg-card)', border: '1px solid var(--app-border)' }}
+        className="rounded-xl shadow-2xl w-full max-w-5xl min-h-[52vh] max-h-[calc(100vh-9rem)] flex flex-col overflow-hidden shrink-0"
+        style={{
+          background:
+            'linear-gradient(180deg, rgba(var(--app-accent-rgb), 0.07) 0%, rgba(var(--app-accent-rgb), 0.02) 38%, transparent 72%), var(--app-bg-card)',
+          border: '1px solid var(--app-border)',
+          boxShadow: '0 18px 48px rgba(0, 0, 0, 0.35), 0 0 0 1px color-mix(in srgb, var(--app-border) 65%, transparent)',
+        }}
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}
         transition={{ duration: 0.2, ease: 'easeOut' }}
       >
         {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b" style={{ borderColor: 'var(--app-border)', background: 'var(--app-bg-deep)' }}>
-          <h2 className="text-xl font-bold flex items-center gap-3" style={{ color: 'var(--app-text)' }}>
+        <div className="flex justify-between items-center p-3 border-b" style={{ borderColor: 'var(--app-border)', background: 'var(--app-bg-deep)' }}>
+          <h2 className="text-lg font-bold flex items-center gap-2.5" style={{ color: 'var(--app-text)' }}>
             {activeTab === 'active' ? 'Active Bets' : 'Finished Bets'}
-            <span className="text-sm font-normal px-2 py-0.5 rounded-full" style={{ color: 'var(--app-text-muted)', background: 'var(--app-border)' }}>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ color: 'var(--app-text-muted)', background: 'var(--app-border)' }}>
               {activeTab === 'active' ? activeBets.length : finishedBets.length}
             </span>
           </h2>
@@ -343,7 +384,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
         <div className="flex border-b p-1" style={{ borderColor: 'var(--app-border)', background: 'var(--app-bg-deep)' }}>
           <button
             onClick={() => setActiveTab('active')}
-            className={`flex-1 py-3 font-bold text-xs transition-all relative uppercase tracking-wider rounded-t-lg ${
+            className={`flex-1 py-2.5 font-bold text-[11px] transition-all relative uppercase tracking-wider rounded-md ${
               activeTab === 'active'
                 ? ''
                 : 'hover:opacity-90'
@@ -364,7 +405,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
 
           <button
             onClick={() => setActiveTab('finished')}
-            className={`flex-1 py-3 font-bold text-xs transition-all relative uppercase tracking-wider rounded-t-lg ${
+            className={`flex-1 py-2.5 font-bold text-[11px] transition-all relative uppercase tracking-wider rounded-md ${
               activeTab === 'finished'
                 ? ''
                 : 'hover:opacity-90'
@@ -376,9 +417,9 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
         </div>
 
         {/* Sort bar */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b flex-wrap" style={{ borderColor: 'var(--app-border)', background: 'color-mix(in srgb, var(--app-bg-deep) 80%, transparent)' }}>
-          <span className="text-xs uppercase tracking-wider" style={{ color: 'var(--app-text-muted)' }}>Sort:</span>
-          <div className="flex flex-wrap gap-1.5">
+        <div className="flex items-center gap-2 px-3 py-2 border-b flex-wrap" style={{ borderColor: 'var(--app-border)', background: 'color-mix(in srgb, var(--app-bg-deep) 80%, transparent)' }}>
+          <span className="text-[11px] uppercase tracking-wider" style={{ color: 'var(--app-text-muted)' }}>Sort:</span>
+          <div className="flex flex-wrap gap-1">
             {[
               { key: 'createdAt', label: 'Date' },
               { key: 'cashout', label: 'Cashout' },
@@ -389,7 +430,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                 key={key}
                 type="button"
                 onClick={() => handleSort(key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
                   sortField === key
                     ? 'border'
                     : 'border border-transparent hover:opacity-90'
@@ -405,7 +446,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
             <button
               type="button"
               onClick={() => setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'))}
-              className="p-1.5 rounded-lg border border-transparent hover:opacity-90"
+              className="p-1 rounded-md border border-transparent hover:opacity-90"
               style={{ background: 'color-mix(in srgb, var(--app-border) 50%, transparent)', color: 'var(--app-text-muted)' }}
               title={sortDirection === 'asc' ? 'Ascending (oldest first)' : 'Descending (newest first)'}
             >
@@ -420,7 +461,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
           (activeTab === 'active' ? activeBets.length : finishedBets.length) === 0 ? (
             <BetTableSkeleton rows={10} />
           ) : (
-            <div className="flex-1 overflow-auto scrollbar-thin p-5" style={{ scrollbarColor: 'var(--app-border) transparent' }}>
+            <div className="flex-1 overflow-auto scrollbar-thin p-3" style={{ scrollbarColor: 'var(--app-border) transparent' }}>
               {activeTab === 'active' ? (
                 <>
                   <CollapsibleSection
@@ -436,7 +477,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                         <BetListCard
                           key={bet.id}
                           bet={bet}
-                          formatCurrency={formatStakeAmount}
+                          formatCurrency={formatCurrencyUsd}
                           onCashout={handleCashout}
                           onPreview={handlePreviewBet}
                           onCopyLink={copyLink}
@@ -458,7 +499,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                         <BetListCard
                           key={bet.id}
                           bet={bet}
-                          formatCurrency={formatStakeAmount}
+                          formatCurrency={formatCurrencyUsd}
                           onCashout={handleCashout}
                           onPreview={handlePreviewBet}
                           onCopyLink={copyLink}
@@ -483,7 +524,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                         <BetListCard
                           key={bet.id}
                           bet={bet}
-                          formatCurrency={formatStakeAmount}
+                          formatCurrency={formatCurrencyUsd}
                           onCashout={handleCashout}
                           onPreview={handlePreviewBet}
                           onCopyLink={copyLink}
@@ -505,7 +546,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                         <BetListCard
                           key={bet.id}
                           bet={bet}
-                          formatCurrency={formatStakeAmount}
+                          formatCurrency={formatCurrencyUsd}
                           onCashout={handleCashout}
                           onPreview={handlePreviewBet}
                           onCopyLink={copyLink}
@@ -525,7 +566,7 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
                         <BetListCard
                           key={bet.id}
                           bet={bet}
-                          formatCurrency={formatStakeAmount}
+                          formatCurrency={formatCurrencyUsd}
                           onCashout={handleCashout}
                           onPreview={handlePreviewBet}
                           onCopyLink={copyLink}
@@ -561,9 +602,9 @@ export function ActiveBetsModal({ onClose }: ActiveBetsModalProps) {
           )}
         </div>
 
-        <div className="p-4 border-t flex justify-between items-center text-xs gap-4" style={{ borderColor: 'var(--app-border)', background: 'var(--app-bg-card)', color: 'var(--app-text-muted)' }}>
+        <div className="p-3 border-t flex justify-between items-center text-xs gap-3" style={{ borderColor: 'var(--app-border)', background: 'var(--app-bg-card)', color: 'var(--app-text-muted)' }}>
             <span>{activeTab === 'active' ? `Total Active: ${activeBets.length}` : `Total Finished: ${finishedBets.length}`}</span>
-            <button onClick={onClose} className="px-4 py-2 font-bold rounded-lg border transition-colors uppercase tracking-wider shrink-0 hover:opacity-90" style={{ background: 'rgba(var(--app-accent-rgb), 0.15)', color: 'var(--app-accent)', borderColor: 'color-mix(in srgb, var(--app-accent) 50%, transparent)' }}>
+            <button onClick={onClose} className="px-3 py-1.5 text-[11px] font-bold rounded-md border transition-colors uppercase tracking-wider shrink-0 hover:opacity-90" style={{ background: 'rgba(var(--app-accent-rgb), 0.15)', color: 'var(--app-accent)', borderColor: 'color-mix(in srgb, var(--app-accent) 50%, transparent)' }}>
               Close
             </button>
         </div>

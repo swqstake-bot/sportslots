@@ -10,6 +10,7 @@ import { RightSidebar } from './components/RightSidebar';
 import { useUserStore, type SportBet } from './store/userStore';
 import { useAutoBetStore } from './store/autoBetStore';
 import { useUiStore } from './store/uiStore';
+import { useAccentInlineStyle } from './hooks/useAccentInlineStyle';
 import { AutoBetManager } from './components/AutoBet/AutoBetManager';
 import CasinoView from './components/Casino/CasinoView';
 import LoggerView from './components/Logger/LoggerView';
@@ -83,6 +84,7 @@ function App() {
     fixtureSearchQuery,
     setFixtureSearchQuery,
   } = useUiStore();
+  const accentInlineStyle = useAccentInlineStyle();
   const [isChallengeRunning, setIsChallengeRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,7 +126,7 @@ function App() {
         if (cancelled) return;
         const list = response?.data?.sportList || [];
         setSportsMenu(Array.isArray(list) ? list : []);
-      } catch (_) {
+      } catch {
         if (!cancelled) setSportsMenu([]);
       }
     }
@@ -247,7 +249,12 @@ function App() {
   return (
     <div 
       className="flex flex-col h-screen overflow-hidden select-none"
-      style={{ background: 'var(--app-bg-deep)', color: 'var(--app-text)', fontFamily: 'var(--font-body)' }}
+      style={{
+        background: 'var(--app-bg-deep)',
+        color: 'var(--app-text)',
+        fontFamily: 'var(--font-body)',
+        ...(accentInlineStyle || {}),
+      }}
       data-app-mode={currentView}
     >
       <GlobalToast />
