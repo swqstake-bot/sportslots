@@ -19,6 +19,7 @@ import { notifyBonusHit } from '../utils/notifications'
 import { saveBonusLog, isSaveBonusLogsEnabled, setSaveBonusLogsEnabled, exportBonusLogsAsFile, clearBonusLogs } from '../utils/apiLogger'
 import { saveSlotSpinSample, saveBonusSpinSample } from '../utils/slotSpinSamples'
 import { subscribeToHouseBets } from '../api/stakeRealtimeFacade'
+import { subscribeToBetUpdates } from '../api/stakeBalanceSubscription'
 import { PROVIDERS as PROVIDERS_META } from '../constants/providers'
 import { houseBetSlugMatchesSessionSlug } from '../utils/slotSlugMatching'
 import { TipMenu } from '../../ui/TipMenu'
@@ -28,6 +29,7 @@ const HUNT_BET_LEVELS = [
 ]
 const CLOUDFLARE_RETRY_WAIT_MS = 5000
 const CLOUDFLARE_MAX_RETRIES = 3
+const GENERIC_RETRY_WAIT_MS = 5000
 
 function isCloudflareError(err) {
   const msg = (err?.message || '').toLowerCase()
@@ -52,6 +54,14 @@ function smoothPathFromPoints(points, tension = 0.22) {
     d += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2[0]},${p2[1]}`
   }
   return d
+}
+
+function normalizeNameToken(v) {
+  return String(v || '')
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 export default function BonusHuntControl({
@@ -98,16 +108,20 @@ export default function BonusHuntControl({
   const [autoOpenGame, setAutoOpenGame] = useState(true)
   const [lastWheelWinner, setLastWheelWinner] = useState(null)
   const [bonusOpeningResults, setBonusOpeningResults] = useState({})
+  const [loggerUpdateSignal, setLoggerUpdateSignal] = useState(0)
   const [showDetailedProgress, setShowDetailedProgress] = useState(false)
   const [tipCopied, setTipCopied] = useState(false)
   const [showTipMenu, setShowTipMenu] = useState(false)
   const tipMenuRef = useRef(null)
   const pendingSpinsRef = useRef([])
   const recentHouseBetsRef = useRef([])
+  const recentLoggerBetsRef = useRef([])
   const houseBetSubRef = useRef(null)
+  const loggerBetSubRef = useRef(null)
   const popupOpeningsRef = useRef(new Map())
   const bonusResolveTimersRef = useRef(new Map())
   const latestBetHistoryRef = useRef([])
+  const latestBonusOpeningResultsRef = useRef({})
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -237,6 +251,60 @@ export default function BonusHuntControl({
     setSaveBonusLogsEnabled(checked)
   }
 
+  const slotMatchesGame = useCallback((slotSlug, gameSlug) => houseBetSlugMatchesSessionSlug(gameSlug, slotSlug), [])
+  const slotNameBySlug = useMemo(() => {
+    const map = new Map()
+    for (const s of slots || []) {
+      if (s?.slug) map.set(String(s.slug), String(s.name || s.slug))
+    }
+    return map
+  }, [slots])
+
+  useEffect(() => {
+    let cancelled = false
+    const startLoggerStream = async () => {
+      try {
+        let token = accessToken
+        if (!token && window.electronAPI?.getSessionToken) {
+          token = await window.electronAPI.getSessionToken()
+        }
+        if (!token || cancelled) return
+        try {
+          if (loggerBetSubRef.current?.disconnect) loggerBetSubRef.current.disconnect()
+        } catch (_) {}
+        loggerBetSubRef.current = await subscribeToBetUpdates(token, (b) => {
+          const ts = Date.parse(String(b?.receivedAt || ''))
+          recentLoggerBetsRef.current = [
+            {
+              gameSlug: String(b?.gameSlug || '').toLowerCase(),
+              gameName: String(b?.gameName || '').toLowerCase(),
+              amount: Number(b?.amount ?? 0),
+              payout: Number(b?.payout ?? 0),
+              payoutMultiplier: Number(b?.payoutMultiplier ?? 0),
+              currency: String(b?.currency || '').toLowerCase(),
+              ts: Number.isFinite(ts) ? ts : Date.now(),
+            },
+            ...recentLoggerBetsRef.current,
+          ].slice(0, 500)
+          const hasPendingOpenings = Object.values(latestBonusOpeningResultsRef.current || {}).some(
+            (entry) => entry?.status === 'opened' || entry?.status === 'closed_pending'
+          )
+          if (hasPendingOpenings) setLoggerUpdateSignal((n) => n + 1)
+        })
+      } catch (_) {
+        // Ignore background logger stream errors for Bonus Hunt panel.
+      }
+    }
+    void startLoggerStream()
+    return () => {
+      cancelled = true
+      try {
+        if (loggerBetSubRef.current?.disconnect) loggerBetSubRef.current.disconnect()
+      } catch (_) {}
+      loggerBetSubRef.current = null
+    }
+  }, [accessToken])
+
   const clearResolveTimer = useCallback((slotSlug) => {
     const t = bonusResolveTimersRef.current.get(slotSlug)
     if (t) {
@@ -245,47 +313,182 @@ export default function BonusHuntControl({
     }
   }, [])
 
-  const findResolvedBonusForSlot = useCallback((slotSlug) => {
+  const findResolvedBonusForSlot = useCallback((slotSlug, openingMeta = null) => {
     if (!slotSlug) return null
     const latest = [...latestBetHistoryRef.current]
       .reverse()
       .find((b) => b?.slotSlug === slotSlug && b?.isBonus && b?.stoppedBonus)
-    if (!latest) return null
-    const payoutMinor = Number(latest.winAmount ?? 0)
-    const wagerMinor = Number(latest.betAmount ?? 0)
-    if (!Number.isFinite(payoutMinor) || payoutMinor <= 0 || !Number.isFinite(wagerMinor) || wagerMinor <= 0) return null
-    return {
-      payoutMinor,
-      wagerMinor,
-      multiplier: payoutMinor / wagerMinor,
-    }
-  }, [])
-
-  const tryResolveOpeningResult = useCallback((slotSlug, retry = 0, maxRetry = 8) => {
-    const resolved = findResolvedBonusForSlot(slotSlug)
-    if (resolved) {
-      clearResolveTimer(slotSlug)
-      setBonusOpeningResults((prev) => {
-        const current = prev[slotSlug] || { slotSlug }
+    if (latest) {
+      const payoutMinor = Number(latest.winAmount ?? 0)
+      const wagerMinor = Number(latest.betAmount ?? 0)
+      if (Number.isFinite(payoutMinor) && payoutMinor > 0 && Number.isFinite(wagerMinor) && wagerMinor > 0) {
         return {
-          ...prev,
-          [slotSlug]: {
-            ...current,
-            status: 'resolved',
-            payoutMinor: resolved.payoutMinor,
-            wagerMinor: resolved.wagerMinor,
-            multiplier: resolved.multiplier,
-            resolvedAt: new Date().toISOString(),
-          },
+          payoutMinor,
+          wagerMinor,
+          multiplier: payoutMinor / wagerMinor,
+        }
+      }
+    }
+
+    // Resolve opened bonus rounds from the same stream used by the Game Logger.
+    const openedTs = Date.parse(String(openingMeta?.openedAt || ''))
+    const closedTs = Date.parse(String(openingMeta?.closedAt || ''))
+    const now = Date.now()
+    const fromTs = Number.isFinite(openedTs) ? openedTs - 15000 : now - 10 * 60 * 1000
+    const toTs = Number.isFinite(closedTs) ? closedTs + 120000 : now + 120000
+    const slotName = String(openingMeta?.slotName || slotNameBySlug.get(slotSlug) || slotSlug)
+    const slotNameNorm = normalizeNameToken(slotName)
+    const candidates = recentLoggerBetsRef.current
+      .filter((lb) => {
+        if (slotMatchesGame(slotSlug, lb?.gameSlug)) return true
+        const gameNameNorm = normalizeNameToken(lb?.gameName || '')
+        if (!slotNameNorm || !gameNameNorm) return false
+        return (
+          gameNameNorm === slotNameNorm ||
+          gameNameNorm.includes(slotNameNorm) ||
+          slotNameNorm.includes(gameNameNorm)
+        )
+      })
+      .filter((lb) => {
+        const ts = Number(lb?.ts || 0)
+        if (!Number.isFinite(ts) || ts <= 0) return true
+        return ts >= fromTs && ts <= toTs
+      })
+      .map((lb) => {
+        const curr = String(lb?.currency || targetCurrency || sourceCurrency || 'usdc').toLowerCase()
+        const amountMajor = Number(lb?.amount || 0)
+        const payoutMajor = Number(lb?.payout || 0)
+        const payoutMultiplier = Number(lb?.payoutMultiplier || 0)
+        const wagerMinor = amountMajor > 0 ? toMinor(amountMajor, curr) : 0
+        let payoutMinor = payoutMajor > 0 ? toMinor(payoutMajor, curr) : 0
+        if (payoutMinor <= 0 && wagerMinor > 0 && Number.isFinite(payoutMultiplier) && payoutMultiplier > 0) {
+          payoutMinor = Math.round(wagerMinor * payoutMultiplier)
+        }
+        const multiplier = wagerMinor > 0
+          ? (Number.isFinite(payoutMultiplier) && payoutMultiplier > 0 ? payoutMultiplier : payoutMinor / wagerMinor)
+          : 0
+        return {
+          payoutMinor,
+          wagerMinor,
+          multiplier,
+          ts: Number(lb?.ts || 0),
         }
       })
-      return
+      .filter((x) => x.payoutMinor > 0)
+      .sort((a, b) => {
+        const byTs = (Number(b.ts) || 0) - (Number(a.ts) || 0)
+        if (byTs !== 0) return byTs
+        return Number(b.payoutMinor || 0) - Number(a.payoutMinor || 0)
+      })
+    if (candidates.length > 0) {
+      const best = candidates[0]
+      const wagerMinor = best.wagerMinor > 0 ? best.wagerMinor : Number(latest?.betAmount || 0)
+      return {
+        payoutMinor: best.payoutMinor,
+        wagerMinor,
+        multiplier: best.multiplier > 0 ? best.multiplier : (wagerMinor > 0 ? best.payoutMinor / wagerMinor : 0),
+      }
     }
-    if (retry >= maxRetry) return
+    return null
+  }, [slotMatchesGame, slotNameBySlug, sourceCurrency, targetCurrency])
+
+  const findResolvedBonusFromPersistedLogger = useCallback(async (slotSlug, openingMeta = null) => {
+    if (!slotSlug || !window.electronAPI?.loadLoggerBetLogs) return null
+    try {
+      const openedTs = Date.parse(String(openingMeta?.openedAt || ''))
+      const closedTs = Date.parse(String(openingMeta?.closedAt || ''))
+      const now = Date.now()
+      const fromTs = Number.isFinite(openedTs) ? openedTs - 15000 : now - 20 * 60 * 1000
+      const toTs = Number.isFinite(closedTs) ? closedTs + 240000 : now + 240000
+      const slotName = String(openingMeta?.slotName || slotNameBySlug.get(slotSlug) || slotSlug)
+      const slotNameNorm = normalizeNameToken(slotName)
+
+      const rows = await window.electronAPI.loadLoggerBetLogs({ limit: 1000 })
+      if (!Array.isArray(rows) || rows.length === 0) return null
+
+      const candidates = rows
+        .map((row) => {
+          const ts = Date.parse(String(row?.receivedAt || row?.createdAt || row?.timestamp || ''))
+          return { row, ts: Number.isFinite(ts) ? ts : 0 }
+        })
+        .filter(({ row, ts }) => {
+          if (ts > 0 && (ts < fromTs || ts > toTs)) return false
+          const rowSlug = row?.gameSlug
+          if (slotMatchesGame(slotSlug, rowSlug)) return true
+          const gameNameNorm = normalizeNameToken(row?.gameName || row?.slotName || '')
+          if (!slotNameNorm || !gameNameNorm) return false
+          return (
+            gameNameNorm === slotNameNorm ||
+            gameNameNorm.includes(slotNameNorm) ||
+            slotNameNorm.includes(gameNameNorm)
+          )
+        })
+        .map(({ row, ts }) => {
+          const curr = String(row?.currency || targetCurrency || sourceCurrency || 'usdc').toLowerCase()
+          const amountMajor = Number(row?.amount || 0)
+          const payoutMajor = Number(row?.payout || 0)
+          const payoutMultiplier = Number(row?.payoutMultiplier || 0)
+          const wagerMinor = amountMajor > 0 ? toMinor(amountMajor, curr) : 0
+          let payoutMinor = payoutMajor > 0 ? toMinor(payoutMajor, curr) : 0
+          if (payoutMinor <= 0 && wagerMinor > 0 && Number.isFinite(payoutMultiplier) && payoutMultiplier > 0) {
+            payoutMinor = Math.round(wagerMinor * payoutMultiplier)
+          }
+          const multiplier = wagerMinor > 0
+            ? (Number.isFinite(payoutMultiplier) && payoutMultiplier > 0 ? payoutMultiplier : payoutMinor / wagerMinor)
+            : 0
+          return { payoutMinor, wagerMinor, multiplier, ts }
+        })
+        .filter((c) => Number(c.payoutMinor) > 0)
+        .sort((a, b) => {
+          const byTs = (Number(b.ts) || 0) - (Number(a.ts) || 0)
+          if (byTs !== 0) return byTs
+          return Number(b.payoutMinor || 0) - Number(a.payoutMinor || 0)
+        })
+      if (candidates.length === 0) return null
+      return candidates[0]
+    } catch (_) {
+      return null
+    }
+  }, [slotMatchesGame, slotNameBySlug, sourceCurrency, targetCurrency])
+
+  const applyResolvedOpening = useCallback((slotSlug, resolved) => {
+    if (!slotSlug || !resolved) return false
     clearResolveTimer(slotSlug)
-    const timeout = setTimeout(() => tryResolveOpeningResult(slotSlug, retry + 1, maxRetry), 900)
+    setBonusOpeningResults((prev) => {
+      const current = prev[slotSlug] || { slotSlug }
+      return {
+        ...prev,
+        [slotSlug]: {
+          ...current,
+          status: 'resolved',
+          payoutMinor: resolved.payoutMinor,
+          wagerMinor: resolved.wagerMinor,
+          multiplier: resolved.multiplier,
+          resolvedAt: new Date().toISOString(),
+        },
+      }
+    })
+    return true
+  }, [clearResolveTimer])
+
+  const tryResolveOpeningResult = useCallback(async (slotSlug, openingMeta = null, retry = 0, maxRetry = 18) => {
+    if (!slotSlug) return false
+    const resolved = findResolvedBonusForSlot(slotSlug, openingMeta)
+    if (resolved) {
+      return applyResolvedOpening(slotSlug, resolved)
+    }
+    if (retry === 0 || retry % 3 === 0) {
+      const persisted = await findResolvedBonusFromPersistedLogger(slotSlug, openingMeta)
+      if (persisted) return applyResolvedOpening(slotSlug, persisted)
+    }
+    if (retry >= maxRetry) return false
+    clearResolveTimer(slotSlug)
+    const timeout = setTimeout(() => {
+      void tryResolveOpeningResult(slotSlug, openingMeta, retry + 1, maxRetry)
+    }, 900)
     bonusResolveTimersRef.current.set(slotSlug, timeout)
-  }, [clearResolveTimer, findResolvedBonusForSlot])
+    return false
+  }, [applyResolvedOpening, clearResolveTimer, findResolvedBonusForSlot, findResolvedBonusFromPersistedLogger])
 
   const openBonusGamePopup = useCallback(async (slot, trigger = 'manual') => {
     if (!slot?.slug) return
@@ -328,12 +531,24 @@ export default function BonusHuntControl({
 
   useEffect(() => {
     latestBetHistoryRef.current = betHistory
+    latestBonusOpeningResultsRef.current = bonusOpeningResults
     const unresolved = Object.values(bonusOpeningResults).filter((entry) => entry?.status === 'closed_pending')
     if (unresolved.length === 0) return
     unresolved.forEach((entry) => {
-      if (entry?.slotSlug) tryResolveOpeningResult(entry.slotSlug, 0, 0)
+      if (entry?.slotSlug) void tryResolveOpeningResult(entry.slotSlug, entry, 0, 18)
     })
   }, [betHistory, bonusOpeningResults, tryResolveOpeningResult])
+
+  useEffect(() => {
+    if (!loggerUpdateSignal) return
+    const unresolved = Object.values(latestBonusOpeningResultsRef.current || {}).filter(
+      (entry) => entry?.status === 'opened' || entry?.status === 'closed_pending'
+    )
+    if (unresolved.length === 0) return
+    unresolved.forEach((entry) => {
+      if (entry?.slotSlug) void tryResolveOpeningResult(entry.slotSlug, entry, 0, 6)
+    })
+  }, [loggerUpdateSignal, tryResolveOpeningResult])
 
   useEffect(() => {
     if (!window.electronAPI?.onSlotPopupClosed) return
@@ -359,7 +574,7 @@ export default function BonusHuntControl({
         }
       })
       if (popupId) popupOpeningsRef.current.delete(popupId)
-      tryResolveOpeningResult(slotSlug)
+      void tryResolveOpeningResult(slotSlug, { ...fromMap, closedAt }, 0, 18)
     })
     return () => {
       if (typeof unsub === 'function') unsub()
@@ -389,13 +604,13 @@ export default function BonusHuntControl({
     setCurrencyCode(null)
     pendingSpinsRef.current = []
     recentHouseBetsRef.current = []
+    recentLoggerBetsRef.current = []
     popupOpeningsRef.current = new Map()
     bonusResolveTimersRef.current.forEach((t) => clearTimeout(t))
     bonusResolveTimersRef.current.clear()
     try {
       if (houseBetSubRef.current?.disconnect) houseBetSubRef.current.disconnect()
     } catch (_) {}
-    const slotMatchesHouseBet = (slotSlug, gameSlug) => houseBetSlugMatchesSessionSlug(gameSlug, slotSlug)
     houseBetSubRef.current = await subscribeToHouseBets(accessToken, (b) => {
       const gameSlug = String(b?.gameSlug || '').toLowerCase()
       const hbCurrency = (b?.currency || '').toLowerCase()
@@ -415,6 +630,15 @@ export default function BonusHuntControl({
       const targetRate = ['usd', 'usdc', 'usdt'].includes(target) ? 1 : Number(currencyRates[target] || 0)
       const toUsdFromTarget = (minor) => toUnits(minor, target) * targetRate
       const hbRate = ['usd', 'usdc', 'usdt'].includes(curr) ? 1 : Number(currencyRates[curr] || 0)
+      const stakeSendsMajor = rawAmount < 500
+      const amountTargetMinor =
+        curr === target
+          ? (stakeSendsMajor ? toMinor(rawAmount, curr) : rawAmount)
+          : (() => {
+              const amountUsd = stakeSendsMajor ? rawAmount * hbRate : toUnits(rawAmount, curr) * hbRate
+              const targetMajor = targetRate > 0 ? amountUsd / targetRate : 0
+              return toMinor(targetMajor, target)
+            })()
       const rawAmountUsd = hbRate > 0 ? (rawAmount < 500 ? rawAmount * hbRate : toUnits(rawAmount, curr) * hbRate) : 0
       const amountMatches = (p) => {
         const m1 = Math.abs(p.effectiveBet - rawAmount) <= tol(rawAmount)
@@ -432,7 +656,7 @@ export default function BonusHuntControl({
         return ok
       }
       const idx = pending.findIndex(
-        (p) => slotMatchesHouseBet(p.slotSlug, gameSlug) && amountMatches(p)
+        (p) => slotMatchesGame(p.slotSlug, gameSlug) && amountMatches(p)
       )
       if (idx >= 0) {
         const { historyId, slotSlug } = pending[idx]
@@ -441,7 +665,6 @@ export default function BonusHuntControl({
         pendingSpinsRef.current = pending.filter((_, i) => i !== idx)
         // Stake Engine: RGS liefert korrekte Daten; houseBets kann Duplikate/0x erzeugen → nicht überschreiben
         if (!isStakeEngine) {
-          const stakeSendsMajor = rawAmount < 500
           let payoutMinor
           if (curr === target) {
             payoutMinor = stakeSendsMajor ? toMinor(rawPayout, curr) : rawPayout
@@ -456,7 +679,12 @@ export default function BonusHuntControl({
               if (e.id !== historyId) return e
               const existing = e.winAmount ?? 0
               if (existing > 0 && payoutMinor <= 0) return e
-              return { ...e, winAmount: payoutMinor }
+              return {
+                ...e,
+                // Source of truth: actual stake from houseBets/logger stream (handles provider-specific extra-bet differences).
+                betAmount: amountTargetMinor > 0 ? amountTargetMinor : e.betAmount,
+                winAmount: payoutMinor,
+              }
             })
           )
         }
@@ -502,7 +730,9 @@ export default function BonusHuntControl({
 
       setHuntState((h) => ({ ...h, [slot.slug]: { ...h[slot.slug], status: 'spinning' } }))
 
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
       let session = null
+      let genericSessionRetryUsed = false
       for (let sessAttempt = 0; sessAttempt <= CLOUDFLARE_MAX_RETRIES; sessAttempt++) {
         try {
           session = await provider.startSession(accessToken, slot.slug, sourceCurrency, targetCurrency)
@@ -510,6 +740,11 @@ export default function BonusHuntControl({
         } catch (err) {
           if (sessAttempt < CLOUDFLARE_MAX_RETRIES && isCloudflareError(err)) {
             await new Promise((r) => setTimeout(r, CLOUDFLARE_RETRY_WAIT_MS))
+            continue
+          }
+          if (!isCloudflareError(err) && !genericSessionRetryUsed) {
+            genericSessionRetryUsed = true
+            await sleep(GENERIC_RETRY_WAIT_MS)
             continue
           }
           setError(`${slot.name}: ${err?.message || 'Session failed'}`)
@@ -524,6 +759,7 @@ export default function BonusHuntControl({
       let spinsSinceRefresh = 0
       let lastBalance = session?.initialBalance ?? null
       const initialBalance = session?.initialBalance ?? lastBalance ?? 0
+      let genericSpinRetryUsed = false
 
       while (!cancelRef.current && !gotBonus) {
         if (maxLossLimit > 0 && initialBalance != null && lastBalance != null) {
@@ -551,6 +787,7 @@ export default function BonusHuntControl({
 
         try {
           if (sessionRefreshSpins > 0 && spinsSinceRefresh >= sessionRefreshSpins) {
+            let genericRefreshRetryUsed = false
             for (let srAttempt = 0; srAttempt <= CLOUDFLARE_MAX_RETRIES; srAttempt++) {
               try {
                 session = await provider.startSession(accessToken, slot.slug, sourceCurrency, targetCurrency)
@@ -559,6 +796,11 @@ export default function BonusHuntControl({
               } catch (srErr) {
                 if (srAttempt < CLOUDFLARE_MAX_RETRIES && isCloudflareError(srErr)) {
                   await new Promise((r) => setTimeout(r, CLOUDFLARE_RETRY_WAIT_MS))
+                  continue
+                }
+                if (!isCloudflareError(srErr) && !genericRefreshRetryUsed) {
+                  genericRefreshRetryUsed = true
+                  await sleep(GENERIC_RETRY_WAIT_MS)
                   continue
                 }
                 throw srErr
@@ -576,6 +818,7 @@ export default function BonusHuntControl({
           let result
           let usedExtraBet = useExtraBet
           let lastPlaceBetErr = null
+          let genericPlaceBetRetryUsed = false
           for (let cfAttempt = 0; cfAttempt <= CLOUDFLARE_MAX_RETRIES; cfAttempt++) {
             try {
               result = await provider.placeBet(session, betAmount, useExtraBet, false, placeBetOpts)
@@ -587,8 +830,14 @@ export default function BonusHuntControl({
                 await new Promise((r) => setTimeout(r, CLOUDFLARE_RETRY_WAIT_MS))
                 continue
               }
+              if (!isCloudflareError(err) && !genericPlaceBetRetryUsed) {
+                genericPlaceBetRetryUsed = true
+                await sleep(GENERIC_RETRY_WAIT_MS)
+                continue
+              }
               if (useExtraBet) {
                 let noExtraOk = false
+                let genericNoExtraRetryUsed = false
                 for (let neAttempt = 0; neAttempt <= CLOUDFLARE_MAX_RETRIES && !noExtraOk; neAttempt++) {
                   try {
                     session = await provider.startSession(accessToken, slot.slug, sourceCurrency, targetCurrency)
@@ -602,6 +851,11 @@ export default function BonusHuntControl({
                   } catch (retryErr) {
                     if (neAttempt < CLOUDFLARE_MAX_RETRIES && isCloudflareError(retryErr)) {
                       await new Promise((r) => setTimeout(r, CLOUDFLARE_RETRY_WAIT_MS))
+                      continue
+                    }
+                    if (!isCloudflareError(retryErr) && !genericNoExtraRetryUsed) {
+                      genericNoExtraRetryUsed = true
+                      await sleep(GENERIC_RETRY_WAIT_MS)
                       continue
                     }
                     setError(`${slot.name}: ${retryErr?.message || 'Spin failed'}`)
@@ -658,7 +912,7 @@ export default function BonusHuntControl({
           const recentHb = recentHouseBetsRef.current
           const tol = (v) => Math.max(1, Math.abs(v) * 0.02)
           const hbIdx = recentHb.findIndex((hb) => {
-            if (!slotMatchesHouseBet(slot.slug, hb.gameSlug)) return false
+          if (!slotMatchesGame(slot.slug, hb.gameSlug)) return false
             const amtMinor = hb.amountAsMinor ?? hb.rawAmount
             return (
               Math.abs(effectiveBet - hb.rawAmount) <= tol(hb.rawAmount) ||
@@ -761,7 +1015,13 @@ export default function BonusHuntControl({
               [slot.slug]: { ...h[slot.slug], spins: slotSpins, totalWagered: slotWagered },
             }))
           }
+          genericSpinRetryUsed = false
         } catch (err) {
+          if (!isCloudflareError(err) && !genericSpinRetryUsed) {
+            genericSpinRetryUsed = true
+            await sleep(GENERIC_RETRY_WAIT_MS)
+            continue
+          }
           setError(`${slot.name}: ${err?.message || 'Spin failed'}`)
           setHuntState((h) => ({ ...h, [slot.slug]: { ...h[slot.slug], status: 'done', error: err?.message } }))
           break
@@ -797,6 +1057,10 @@ export default function BonusHuntControl({
         if (houseBetSubRef.current?.disconnect) houseBetSubRef.current.disconnect()
       } catch (_) {}
       houseBetSubRef.current = null
+      try {
+        if (loggerBetSubRef.current?.disconnect) loggerBetSubRef.current.disconnect()
+      } catch (_) {}
+      loggerBetSubRef.current = null
       bonusResolveTimersRef.current.forEach((t) => clearTimeout(t))
       bonusResolveTimersRef.current.clear()
     }
@@ -843,12 +1107,23 @@ export default function BonusHuntControl({
   }, [completedBonusSlots, selectedSlots, hasBonusSlugs])
   const skippedCount = Object.values(huntState).filter((h) => h?.skipped || h?.stoppedLoss).length
   const totalSpins = Object.values(huntState).reduce((s, h) => s + (h?.spins || 0), 0)
-  const totalWagered = Object.values(huntState).reduce((s, h) => s + (h?.totalWagered || 0), 0)
+  const totalWageredFromHistory = betHistory.reduce((sum, b) => sum + (Number(b?.betAmount) || 0), 0)
+  const totalWageredFromState = Object.values(huntState).reduce((s, h) => s + (h?.totalWagered || 0), 0)
+  const totalWagered = totalWageredFromHistory > 0 ? totalWageredFromHistory : totalWageredFromState
   const progressRows = useMemo(() => {
     return selectedSlugs
       .map((slug) => ({ slot: slots.find((s) => s.slug === slug), state: huntState[slug] }))
       .filter(({ slot }) => slot)
   }, [selectedSlugs, slots, huntState])
+  const slotWageredByHistory = useMemo(() => {
+    const map = {}
+    for (const b of betHistory) {
+      const slug = b?.slotSlug
+      if (!slug) continue
+      map[slug] = (map[slug] || 0) + (Number(b?.betAmount) || 0)
+    }
+    return map
+  }, [betHistory])
   const sliderBonusSlots = useMemo(() => {
     const source = huntComplete ? wheelSlots : selectedSlots
     return source.filter((slot) => hasBonusSlugs.has(slot.slug))
@@ -874,8 +1149,19 @@ export default function BonusHuntControl({
   const remainingForBreakEvenUsd = Math.max(0, openingCostUsd - openingTotalWinUsd)
   const remainingBonusCount = Math.max(0, (sliderBonusSlots?.length || 0) - resolvedOpeningEntries.length)
   const avgNeedPerBonusUsd = remainingBonusCount > 0 ? remainingForBreakEvenUsd / remainingBonusCount : 0
-  const avgCostPerBonusUsd = (sliderBonusSlots?.length || 0) > 0 ? openingCostUsd / sliderBonusSlots.length : 0
-  const avgNeedMultiPerBonus = avgCostPerBonusUsd > 0 ? avgNeedPerBonusUsd / avgCostPerBonusUsd : 0
+  const avgStakeMinor = useMemo(() => {
+    const openedResolvedStakes = resolvedOpeningEntries
+      .map((entry) => Number(entry?.wagerMinor || 0))
+      .filter((n) => Number.isFinite(n) && n > 0)
+    if (openedResolvedStakes.length > 0) {
+      return openedResolvedStakes.reduce((sum, n) => sum + n, 0) / openedResolvedStakes.length
+    }
+    const bets = betHistory.filter((b) => Number(b?.betAmount) > 0)
+    if (bets.length === 0) return Number(betAmount || 0)
+    return bets.reduce((sum, b) => sum + Number(b.betAmount || 0), 0) / bets.length
+  }, [betAmount, betHistory, resolvedOpeningEntries])
+  const avgStakeUsd = toUsd(avgStakeMinor, statsCurrency)
+  const avgNeedMultiPerBonus = avgStakeUsd > 0 ? avgNeedPerBonusUsd / avgStakeUsd : 0
   const allOpenedAndResolved = (sliderBonusSlots?.length || 0) > 0 && resolvedOpeningEntries.length >= sliderBonusSlots.length
 
   const getDisplayWin = (b) => {
@@ -1202,7 +1488,7 @@ export default function BonusHuntControl({
                 {slot.name}
                 {state?.spins != null && state.spins > 0 && (
                   <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
-                    ({state.spins} Spins{state.scatterCount != null ? `, ${state.scatterCount} Scatter` : ''}{state.totalWagered ? `, ${format(state.totalWagered)}` : ''})
+                    ({state.spins} Spins{state.scatterCount != null ? `, ${state.scatterCount} Scatter` : ''}{(slotWageredByHistory[slot.slug] || state.totalWagered) ? `, ${format(slotWageredByHistory[slot.slug] || state.totalWagered)}` : ''})
                   </span>
                 )}
               </span>
