@@ -404,6 +404,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     })
   }, [slot.slug])
 
+  const isStakeEngine = slot?.providerId === 'stakeEngine' || PROVIDERS_META[slot?.providerId]?.aliasOf === 'stakeEngine'
+  const fillBetHistoryFromPlaceBet = isStakeEngine
+
   /**
    * Realtime (houseBets) ist primär, aber in manchen Sessions bleibt sie leer/verspätet.
    * Dann fallbacken wir pro Spin auf parseBetResponse, damit Stats/BetList im Play-Mode nicht leer bleiben.
@@ -416,9 +419,6 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       addToBetHistory({ ...parsed, winAmount: parsed.winAmount ?? 0 })
     }, delayMs)
   }, [fillBetHistoryFromPlaceBet, addToBetHistory])
-
-  const isStakeEngine = slot?.providerId === 'stakeEngine' || PROVIDERS_META[slot?.providerId]?.aliasOf === 'stakeEngine'
-  const fillBetHistoryFromPlaceBet = isStakeEngine
 
   const updateStatsFromResult = useCallback((result, betAmt, useExtraBet = false) => {
     const effectiveBet = getEffectiveBetAmount(betAmt ?? 0, useExtraBet, slot?.slug)
