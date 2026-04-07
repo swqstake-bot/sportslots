@@ -5,6 +5,7 @@ import { PROVIDERS as PROVIDERS_META } from '../constants/providers'
 import { ALL_CURRENCIES, filterCurrenciesByProvider } from '../constants/currencies'
 import { fetchSupportedCurrencies } from '../api/stakeChallenges'
 import { isFiat, isStable } from '../utils/formatAmount'
+import { isUsdLikeCurrency } from '../utils/currencyMeta'
 import { getEffectiveBetAmount } from '../constants/bet'
 import { parseBetResponse } from '../utils/parseBetResponse'
 import { formatBetLabel, formatAmount, toUnits, toMinor } from '../utils/formatAmount'
@@ -244,7 +245,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const toUsdCents = useCallback((amount, curr) => {
     if (amount == null || amount === 0) return amount
     const c = (curr || 'usd').toLowerCase()
-    const rate = ['usd', 'usdc', 'usdt'].includes(c) ? 1 : (currencyRates[c] ?? 0.001)
+    const rate = isUsdLikeCurrency(c) ? 1 : currencyRates[c]
+    if (!Number.isFinite(rate) || rate <= 0) return null
     return Math.round(toUnits(amount, c) * rate * 100)
   }, [currencyRates])
   // BetList + Stats ausschließlich aus WebSocket (houseBets) – Single Source of Truth
@@ -253,7 +255,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     [betHistory, sessionStartAt]
   )
   const stats = useMemo(() => {
-    let spins = 0, totalWageredUsd = 0, totalWonUsd = 0, winCount = 0, lossCount = 0
+    let spins = 0, totalWageredUsd = 0, totalWonUsd = 0, winCount = 0, lossCount = 0, breakEvenCount = 0, fxMissingCount = 0
     let biggestWinUsd = 0, biggestMultiplier = 0, multiOver100xCount = 0, multiOver100xSum = 0
     let lastBalance = null, lastCurrency = null
     for (const b of sessionBets) {
@@ -263,11 +265,19 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       const betUsd = toUsdCents(bet, curr)
       const winUsd = toUsdCents(win, curr)
       spins += 1
-      totalWageredUsd += betUsd || 0
-      totalWonUsd += winUsd || 0
-      if (win > 0) winCount += 1
-      else lossCount += 1
-      if ((winUsd || 0) > biggestWinUsd) biggestWinUsd = winUsd || 0
+      const hasBetUsd = typeof betUsd === 'number' && Number.isFinite(betUsd)
+      const hasWinUsd = typeof winUsd === 'number' && Number.isFinite(winUsd)
+      if (hasBetUsd && hasWinUsd) {
+        totalWageredUsd += betUsd
+        totalWonUsd += winUsd
+        if (winUsd > biggestWinUsd) biggestWinUsd = winUsd
+      } else if (bet > 0 || win > 0) {
+        fxMissingCount += 1
+      }
+      const netMinor = win - bet
+      if (netMinor > 0) winCount += 1
+      else if (netMinor < 0) lossCount += 1
+      else breakEvenCount += 1
       if (bet > 0 && win > 0) {
         const m = win / bet
         if (m > biggestMultiplier) biggestMultiplier = m
@@ -281,7 +291,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     const currentBalanceUsd = currentBalance != null ? toUsdCents(currentBalance, balanceCurr) : null
     const sessionStartBalanceUsd = sessionStartBalance != null ? toUsdCents(sessionStartBalance, effectiveTarget) : null
     return {
-      spins, totalWagered: totalWageredUsd, totalWon: totalWonUsd, winCount, lossCount,
+      spins, totalWagered: totalWageredUsd, totalWon: totalWonUsd, winCount, lossCount, breakEvenCount, fxMissingCount,
       biggestWin: biggestWinUsd, biggestMultiplier, multiOver100xCount, multiOver100xSum,
       currentBalance: currentBalanceUsd, sessionStartBalance: sessionStartBalanceUsd,
     }
@@ -609,8 +619,10 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         const betCurr = (parsed.currencyCode || effectiveTarget || 'usd').toLowerCase()
         const betUsdCentsRaw = toUsdCents(effectiveBet, betCurr)
         const winUsdCentsRaw = toUsdCents(winAmount, betCurr)
-        const betUsdCents = typeof betUsdCentsRaw === 'number' && Number.isFinite(betUsdCentsRaw) ? betUsdCentsRaw : 0
-        const winUsdCents = typeof winUsdCentsRaw === 'number' && Number.isFinite(winUsdCentsRaw) ? winUsdCentsRaw : 0
+        const hasBetUsdCents = typeof betUsdCentsRaw === 'number' && Number.isFinite(betUsdCentsRaw)
+        const hasWinUsdCents = typeof winUsdCentsRaw === 'number' && Number.isFinite(winUsdCentsRaw)
+        const betUsdCents = hasBetUsdCents ? betUsdCentsRaw : 0
+        const winUsdCents = hasWinUsdCents ? winUsdCentsRaw : 0
         const netAfterUsdCents = (aggWonUsdCents + winUsdCents) - (aggWageredUsdCents + betUsdCents)
         const profitThresholdUsdCents = Math.max(0, autospinStopProfitValue) * 100
         const lossThresholdUsdCents = Math.max(0, autospinStopLossValue) * 100
@@ -646,7 +658,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           const mult = winAmount / effectiveBet
           const stakeOkForMultiStop =
             !autospinStopMultiOnlyAt010Usd ||
-            (betUsdCents >= 9 && betUsdCents <= 11)
+            (hasBetUsdCents && betUsdCents >= 9 && betUsdCents <= 11)
           if (mult >= autospinStopMultiplier && stakeOkForMultiStop) {
             lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
             addToBetHistory({ ...parsed, winAmount })
@@ -706,8 +718,10 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         updateStatsFromResult(data, betAmount, extraBet)
         triggerLogRefresh()
         spinsDone += 1
-        aggWageredUsdCents += betUsdCents
-        aggWonUsdCents += winUsdCents
+        if (hasBetUsdCents && hasWinUsdCents) {
+          aggWageredUsdCents += betUsdCents
+          aggWonUsdCents += winUsdCents
+        }
         setAutospinProgress(spinsDone)
       } catch (err) {
         const msg = err?.message || 'Spin failed'
@@ -1218,13 +1232,16 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       })()}
       <BetList bets={betHistory.slice(-30).map((b) => {
           const curr = (b.currencyCode || 'usd').toLowerCase()
+          const betUsd = toUsdCents(b.betAmount, curr)
+          const winUsd = toUsdCents(b.winAmount, curr)
+          const hasUsd = Number.isFinite(betUsd) && Number.isFinite(winUsd)
           return {
             ...b,
-            betAmount: toUsdCents(b.betAmount, curr) ?? b.betAmount,
-            winAmount: toUsdCents(b.winAmount, curr) ?? b.winAmount,
-            currencyCode: 'USD',
+            betAmount: hasUsd ? betUsd : b.betAmount,
+            winAmount: hasUsd ? winUsd : b.winAmount,
+            currencyCode: hasUsd ? 'USD' : (b.currencyCode || effectiveTarget || 'USD'),
           }
-        })} totalCount={betHistory.length} currencyCode="usd" compact={compact} minimal={settingsCollapsed} />
+        })} totalCount={betHistory.length} currencyCode={effectiveTarget || 'usd'} compact={compact} minimal={settingsCollapsed} />
 
       {!compact && (
       <details style={{ marginTop: '0.5rem' }}>

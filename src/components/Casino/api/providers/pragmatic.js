@@ -4,6 +4,7 @@
  */
 import { startThirdPartySession } from '../stake'
 import { logApiCall } from '../../utils/apiLogger'
+import { isZeroDecimalCurrency } from '../../utils/currencyMeta'
 
 const GAME_SERVICE_PATH_V4 = '/gs2c/ge/v4/gameService'
 const GAME_SERVICE_PATH_V3 = '/gs2c/ge/v3/gameService'
@@ -43,7 +44,6 @@ function parseUrlParams(urlStr) {
 
 const PRAGMATIC_PROXY_FETCH = null
 const PRAGMATIC_PROXY_POST = null
-const ZERO_DECIMAL_CURRENCIES = ['idr', 'jpy', 'krw', 'vnd']
 
 async function safeFetch(url, options = {}) {
   if (!url || typeof url !== 'string') {
@@ -161,7 +161,7 @@ const PRAGMATIC_WIDE_CURRENCIES = ['vnd', 'idr', 'ars']
 function parseBetLevels(doInitText, targetCurrency, symbol = '') {
   if (!doInitText || typeof doInitText !== 'string') return PRAGMATIC_DEFAULT_BET_LEVELS
   const curr = (targetCurrency || 'eur').toLowerCase()
-  const isZeroDec = ZERO_DECIMAL_CURRENCIES.includes(curr)
+  const isZeroDec = isZeroDecimalCurrency(curr)
   const linesMatch = symbol?.match(/^vs(\d+)/i)
   const lines = linesMatch ? parseInt(linesMatch[1], 10) : 20
 
@@ -282,7 +282,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   // Lines aus Symbol: vs20sugarrushx → 20, vs10bbboom → 10
   const linesMatch = symbol?.match(/^vs(\d+)/i)
   const lines = linesMatch ? parseInt(linesMatch[1], 10) : 20
-  const isZeroDec = ZERO_DECIMAL_CURRENCIES.includes((targetCurrency || 'eur').toLowerCase())
+  const isZeroDec = isZeroDecimalCurrency((targetCurrency || 'eur').toLowerCase())
   const bal = Number(parsed.balance) || 0
   const initialBalance = bal ? (isZeroDec ? Math.round(bal) : Math.round(bal * 100)) : null
 
@@ -341,7 +341,7 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     throw new Error('Bonus aktiv – bitte im Spielfenster manuell weiterspielen.')
   }
   const curr = (session.targetCurrency || 'eur').toLowerCase()
-  const isZeroDec = ZERO_DECIMAL_CURRENCIES.includes(curr)
+  const isZeroDec = isZeroDecimalCurrency(curr)
 
   const lines = session.lines || 20
   const betLevels = session.betLevels || []

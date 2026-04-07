@@ -3,22 +3,22 @@
  * value = Minor Units (Cent, Satoshi, etc.)
  * Fiat: /100, Crypto: unverändert
  */
+import {
+  FIAT_CURRENCIES,
+  ZERO_DECIMAL_CURRENCIES,
+  isFiatCurrency,
+  isStableCurrency,
+  isZeroDecimalCurrency,
+} from './currencyMeta'
 
-/** 2-Dezimal-Fiat (Kopeken/Cent); mit Stake PROVIDER_CURRENCIES / stakeEngine FIAT abgleichen */
-export const FIAT_CURRENCIES = [
-  'eur', 'usd', 'usdc', 'usdt', 'ars', 'brl', 'mxn', 'cad', 'aud', 'clp', 'jpy', 'krw', 'inr', 'idr', 'php',
-  'pkr', 'pln', 'ngn', 'cny', 'rub', 'try', 'dkk', 'pen', 'cop',
-]
-// Ohne Dezimalstellen – Wert = Betrag direkt (1000 = 1000 IDR)
-export const ZERO_DECIMAL_CURRENCIES = ['idr', 'jpy', 'krw', 'vnd']
+export { FIAT_CURRENCIES, ZERO_DECIMAL_CURRENCIES }
 
 export function isFiat(currencyCode) {
-  return FIAT_CURRENCIES.includes((currencyCode || '').toLowerCase())
+  return isFiatCurrency(currencyCode)
 }
 
 export function isStable(currencyCode) {
-  const c = (currencyCode || '').toLowerCase()
-  return c === 'usdc' || c === 'usdt'
+  return isStableCurrency(currencyCode)
 }
 
 /**
@@ -30,11 +30,11 @@ export function formatAmount(value, currencyCode) {
   if (value == null || isNaN(value)) return '–'
   const n = Number(value)
   const curr = (currencyCode || '').toLowerCase()
-  const divideBy100 = isFiat(curr) && !ZERO_DECIMAL_CURRENCIES.includes(curr)
+  const divideBy100 = isFiat(curr) && !isZeroDecimalCurrency(curr)
   const displayValue = divideBy100 ? n / 100 : n
   return displayValue.toLocaleString('de-DE', {
     minimumFractionDigits: divideBy100 ? 2 : 0,
-    maximumFractionDigits: ZERO_DECIMAL_CURRENCIES.includes(curr) ? 0 : (divideBy100 ? 2 : 8),
+    maximumFractionDigits: isZeroDecimalCurrency(curr) ? 0 : (divideBy100 ? 2 : 8),
   })
 }
 
@@ -64,7 +64,7 @@ export function formatBetLabel(value, currencyCode, opts = {}) {
  */
 export function toUnits(amount, currency) {
   const c = (currency || '').toLowerCase()
-  if (ZERO_DECIMAL_CURRENCIES.includes(c)) return Number(amount)
+  if (isZeroDecimalCurrency(c)) return Number(amount)
   if (isFiat(c)) return Number(amount) / 100
   // Crypto: Stake uses 8 decimals (Satoshis) for internal calculation mostly
   return Number(amount) / 1e8
@@ -78,7 +78,7 @@ export function toUnits(amount, currency) {
  */
 export function toMinor(units, currency) {
   const c = (currency || '').toLowerCase()
-  if (ZERO_DECIMAL_CURRENCIES.includes(c)) return Math.round(Number(units))
+  if (isZeroDecimalCurrency(c)) return Math.round(Number(units))
   if (isFiat(c)) return Math.round(Number(units) * 100)
   // Crypto: Convert to Satoshis
   return Math.round(Number(units) * 1e8)
@@ -89,7 +89,7 @@ export function formatChallengeAmount(value, currencyCode) {
   if (value == null || isNaN(value)) return '–'
   const n = Number(value)
   const curr = (currencyCode || 'usd').toLowerCase()
-  const maxDec = ZERO_DECIMAL_CURRENCIES.includes(curr) ? 0 : (['btc', 'eth', 'ltc', 'doge'].includes(curr) ? 8 : 4)
+  const maxDec = isZeroDecimalCurrency(curr) ? 0 : (['btc', 'eth', 'ltc', 'doge'].includes(curr) ? 8 : 4)
   const minDec = n >= 1 || n === 0 ? 2 : (n >= 0.01 ? 2 : 4)
   return n.toLocaleString('de-DE', {
     minimumFractionDigits: Math.min(minDec, maxDec),

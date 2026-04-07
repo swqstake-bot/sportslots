@@ -12,7 +12,8 @@ export function BetSlip() {
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const totalOdds = outcomes.reduce((acc, o) => acc * o.odds, 1);
-  const potentialPayout = parseFloat(amount || '0') * totalOdds;
+  const stakeAmount = parseFloat(amount || '0');
+  const potentialPayout = stakeAmount * totalOdds;
 
   const generateUUID = () => {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -26,6 +27,10 @@ export function BetSlip() {
 
   const handlePlaceBet = async () => {
     if (outcomes.length === 0) return;
+    if (!Number.isFinite(stakeAmount) || stakeAmount <= 0) {
+      setResult({ success: false, message: 'Please enter a valid stake amount.' });
+      return;
+    }
     
     setPlacing(true);
     setResult(null);
@@ -35,7 +40,7 @@ export function BetSlip() {
       const identifier = generateUUID();
 
       const variables = {
-        amount: parseFloat(amount || '0'),
+        amount: stakeAmount,
         currency: selectedCurrency,
         outcomeIds: outcomes.map(o => o.id),
         betType: 'sports',
@@ -173,7 +178,7 @@ export function BetSlip() {
 
         <button
           onClick={handlePlaceBet}
-          disabled={placing || outcomes.length === 0}
+          disabled={placing || outcomes.length === 0 || !Number.isFinite(stakeAmount) || stakeAmount <= 0}
           className="w-full font-bold py-3 rounded text-sm transition-all shadow-lg uppercase tracking-wider transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           style={placing || outcomes.length === 0
             ? { background: 'var(--app-border)', color: 'var(--app-text-muted)' }

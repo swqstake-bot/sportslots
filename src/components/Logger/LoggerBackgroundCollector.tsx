@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { subscribeToBetUpdates } from '../Casino/api/stakeBalanceSubscription';
+import { subscribeToHouseBets } from '../Casino/api/stakeRealtimeFacade';
 import { Queries } from '../../api/queries';
 
 function mapLoggerEntry(b: any) {
@@ -78,7 +78,7 @@ export default function LoggerBackgroundCollector() {
         scheduleRetry();
         return;
       }
-      const sub = await subscribeToBetUpdates(token, (b: any) => {
+      const sub = await subscribeToHouseBets(token, (b: any) => {
         const entry = mapLoggerEntry(b);
         enrichSportsBetFromIid(entry)
           .then((enriched) => window.electronAPI.saveLoggerBet(enriched))

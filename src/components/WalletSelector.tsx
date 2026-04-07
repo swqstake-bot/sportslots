@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useUserStore } from '../store/userStore';
+import { isFiat, ZERO_DECIMAL_CURRENCIES } from './Casino/utils/formatAmount';
 
 export function WalletSelector() {
   const { balances, selectedCurrency, setSelectedCurrency } = useUserStore();
@@ -27,10 +28,12 @@ export function WalletSelector() {
   }, [dropdownRef]);
 
   const formatBalance = (amount: number, currency: string) => {
-    if (['usd', 'eur', 'jpy', 'brl', 'inr'].includes(currency.toLowerCase())) {
-      return amount.toFixed(2);
-    }
-    return amount.toFixed(8);
+    const curr = (currency || '').toLowerCase();
+    const digits = ZERO_DECIMAL_CURRENCIES.includes(curr) ? 0 : (isFiat(curr) ? 2 : 8);
+    return Number(amount || 0).toLocaleString('en-US', {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
   };
 
   const currentBalance = balances[selectedCurrency] || 0;

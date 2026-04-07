@@ -98,8 +98,11 @@ export async function fetchSupportedCurrencies(accessToken) {
       durationMs: Date.now() - t0,
     })
 
-    const list = (json?.currencyConfiguration?.currencies || [])
-      .map((c) => String(c?.name || '').toLowerCase())
+    // Keep parser aligned with CURRENCY_CONFIG_QUERY (baseRates only).
+    // Stake returns one entry per currency in baseRates, which is enough
+    // to derive the supported currency code list.
+    const list = (json?.currencyConfiguration?.baseRates || [])
+      .map((c) => String(c?.currency || '').toLowerCase())
       .filter(Boolean)
 
     try {

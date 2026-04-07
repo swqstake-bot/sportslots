@@ -62,6 +62,8 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
       netResult: stats.totalWon - stats.totalWagered,
       winCount: stats.winCount,
       lossCount: stats.lossCount,
+      breakEvenCount: stats.breakEvenCount ?? 0,
+      fxMissingCount: stats.fxMissingCount ?? 0,
       biggestWin: stats.biggestWin,
       biggestMultiplier: stats.biggestMultiplier,
       multiOver100xCount: stats.multiOver100xCount,
@@ -116,11 +118,17 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
           </span>
         </div>
         <div style={STYLES.item}>
-          <span style={STYLES.label}>Gewinne / Verluste</span>
+          <span style={STYLES.label}>Gewinne / Verluste / Even</span>
           <span style={valueStyle}>
-            {displayStats.winCount} / {displayStats.lossCount}
+            {displayStats.winCount} / {displayStats.lossCount} / {displayStats.breakEvenCount}
           </span>
         </div>
+        {(displayStats.fxMissingCount > 0) && (
+        <div style={STYLES.item}>
+          <span style={STYLES.label}>FX nicht bewertet</span>
+          <span style={valueStyle}>{displayStats.fxMissingCount} Spin(s)</span>
+        </div>
+        )}
         <div style={STYLES.item}>
           <span style={STYLES.label}>Größter Gewinn</span>
           <span style={{ ...valueStyle, ...STYLES.valuePositive }}>

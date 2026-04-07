@@ -21,6 +21,7 @@
 import { startThirdPartySession } from '../stake'
 import { getEffectiveBetAmount } from '../../constants/bet'
 import { logApiCall } from '../../utils/apiLogger'
+import { isFiatCurrency, isZeroDecimalCurrency } from '../../utils/currencyMeta'
 
 /** RGS: ganzzahliger Betrag; 1.000.000 = 1,0 Währungseinheit (vgl. stake-engine API_MULTIPLIER). */
 export const STAKE_ENGINE_API_MULTIPLIER = 1_000_000
@@ -110,9 +111,6 @@ function winRawFromPayoutMultiplierDisambiguated(
   return win
 }
 
-const ZERO_DECIMAL_CURRENCIES = ['idr', 'jpy', 'krw', 'vnd']
-// Fiat-Währungen haben meist 2 Dezimalstellen, Crypto meist 8
-const FIAT_CURRENCIES = ['eur', 'usd', 'brl', 'cad', 'cny', 'inr', 'mxn', 'php', 'pln', 'pkr', 'rub', 'try', 'ngn', 'ars', 'cop', 'pen', 'clp']
 const STAKEENGINE_MIN_DELAY_MS = 50
 const STAKE_ENGINE_PLAY_MODE_BY_SLOT_PREFIX = {
   'coreffectinteractive-cut-n-crash': '688_base',
@@ -145,13 +143,13 @@ function parseConfigFromUrl(config) {
 /** Betrag in Stake Engine Format: STAKE_ENGINE_API_MULTIPLIER = 1 Einheit */
 function toStakeEngineAmount(betAmount, targetCurrency) {
   const curr = (targetCurrency || 'eur').toLowerCase()
-  const isZeroDec = ZERO_DECIMAL_CURRENCIES.includes(curr)
-  const isFiat = FIAT_CURRENCIES.includes(curr)
+  const isZeroDec = isZeroDecimalCurrency(curr)
+  const fiatCurrency = isFiatCurrency(curr)
   
   let units
   if (isZeroDec) {
     units = Number(betAmount)
-  } else if (isFiat) {
+  } else if (fiatCurrency) {
     units = Number(betAmount) / 100
   } else {
     // Crypto: Input ist in Satoshis (1e8), wir brauchen Major Units
@@ -245,9 +243,9 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     const units = v / STAKE_ENGINE_API_MULTIPLIER
     const curr = (targetCurrency || 'eur').toLowerCase()
     
-    if (ZERO_DECIMAL_CURRENCIES.includes(curr)) {
+    if (isZeroDecimalCurrency(curr)) {
       return Math.round(units)
-    } else if (FIAT_CURRENCIES.includes(curr)) {
+    } else if (isFiatCurrency(curr)) {
       return Math.round(units * 100)
     } else {
       // Crypto: Major -> Satoshis (1e8)
@@ -264,7 +262,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const authCurrency = (authBalance?.currency || targetCurrency || 'eur').toLowerCase()
   const authBalanceUnits = authBalanceRaw != null ? authBalanceRaw / STAKE_ENGINE_API_MULTIPLIER : null
   const initialBalance = authBalanceUnits != null
-    ? ZERO_DECIMAL_CURRENCIES.includes(authCurrency)
+    ? isZeroDecimalCurrency(authCurrency)
       ? Math.round(authBalanceUnits)
       : Math.round(authBalanceUnits * 100)
     : null
@@ -442,8 +440,8 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
     // da einige Slots (z.B. Maze Quest) winAmount in anderem Format liefern können.
     const winInUnitsFromRaw = winAmount / STAKE_ENGINE_API_MULTIPLIER
     const curr = (playData?.balance?.currency || session?.currencyCode || 'eur').toLowerCase()
-    const isFiat = FIAT_CURRENCIES.includes(curr)
-    const wouldBeZero = isFiat && winInUnitsFromRaw < 0.001
+    const fiatCurrency = isFiatCurrency(curr)
+    const wouldBeZero = fiatCurrency && winInUnitsFromRaw < 0.001
     if (wouldBeZero) winAmount = fromPayoutMult
   }
   const balanceObj = playData?.balance || {}
@@ -451,14 +449,14 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
   const respCurrency = (balanceObj?.currency || session?.currencyCode || 'EUR').toLowerCase()
   const balanceUnits = balanceRaw != null ? balanceRaw / STAKE_ENGINE_API_MULTIPLIER : null
   const balanceMinor = balanceUnits != null
-    ? ZERO_DECIMAL_CURRENCIES.includes(respCurrency)
+    ? isZeroDecimalCurrency(respCurrency)
       ? Math.round(balanceUnits)
       : Math.round(balanceUnits * 100)
     : null
 
   const winInUnits = winAmount / STAKE_ENGINE_API_MULTIPLIER
   let winDisplay
-  if (ZERO_DECIMAL_CURRENCIES.includes(respCurrency)) {
+  if (isZeroDecimalCurrency(respCurrency)) {
     winDisplay = Math.round(winInUnits)
     // VND: RGS liefert teils 1 Einheit = 100 VND (14→1400), teils bereits in VND (z.B. payoutMult-Pfad)
     // Heuristik: winInUnits >= 1000 = bereits VND; sonst RGS-Format (×100)

@@ -1,5 +1,6 @@
 import { createClient } from 'graphql-ws'
 import { CASINO_STORAGE_KEYS } from '../utils/storageRegistry'
+import { toMinor } from '../utils/formatAmount'
 
 const BALANCE_UPDATED_SUBSCRIPTION = `
   subscription BalanceUpdated {
@@ -316,7 +317,14 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
  * Subscribes to balance updates via Stake GraphQL WebSocket.
  *
  * @param {string} accessToken - Session token (von getSessionToken)
- * @param {function} onUpdate - callback({ currency, amount })
+ * @param {function} onUpdate - callback({
+ *   currency: string,
+ *   // Contract: GraphQL balanceUpdated is treated as major units.
+ *   amount: number,        // alias for amountMajor (backward compatible)
+ *   amountMajor: number,   // major units, e.g. USD / BTC
+ *   amountMinor: number,   // normalized app minor units (cents/sats/zero-decimal integer)
+ *   unit: 'major',
+ * })
  */
 export async function subscribeToBalanceUpdates(accessToken, onUpdate) {
   if (!accessToken?.trim()) {
@@ -351,10 +359,15 @@ export async function subscribeToBalanceUpdates(accessToken, onUpdate) {
         next: (result) => {
           const bu = result?.data?.balanceUpdated
           if (!bu?.currency) return
-          const amount = bu.amount != null ? Number(bu.amount) : 0
+          const currency = (bu.currency || '').toLowerCase()
+          const amountMajor = bu.amount != null ? Number(bu.amount) : 0
+          const amountMinor = Number.isFinite(amountMajor) ? toMinor(amountMajor, currency) : 0
           onUpdate({
-            currency: (bu.currency || '').toLowerCase(),
-            amount,
+            currency,
+            amount: amountMajor,
+            amountMajor,
+            amountMinor,
+            unit: 'major',
           })
         },
         error: (err) => {

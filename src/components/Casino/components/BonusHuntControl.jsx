@@ -9,6 +9,7 @@ import { getImpliedScatterLevel } from '../api/providers/hacksaw'
 import { ALL_CURRENCIES, filterCurrenciesByProvider } from '../constants/currencies'
 import { fetchSupportedCurrencies, fetchCurrencyRates } from '../api/stakeChallenges'
 import { formatAmount, formatBetLabel, isFiat, isStable, toMinor, toUnits } from '../utils/formatAmount'
+import { isUsdLikeCurrency } from '../utils/currencyMeta'
 import { getEffectiveBetAmount } from '../constants/bet'
 import { SlotSelectMulti } from './SlotSelectGrouped'
 import SlotSlider from './SlotSlider'
@@ -19,7 +20,6 @@ import { notifyBonusHit } from '../utils/notifications'
 import { saveBonusLog, isSaveBonusLogsEnabled, setSaveBonusLogsEnabled, exportBonusLogsAsFile, clearBonusLogs } from '../utils/apiLogger'
 import { saveSlotSpinSample, saveBonusSpinSample } from '../utils/slotSpinSamples'
 import { subscribeToHouseBets } from '../api/stakeRealtimeFacade'
-import { subscribeToBetUpdates } from '../api/stakeBalanceSubscription'
 import { PROVIDERS as PROVIDERS_META } from '../constants/providers'
 import { houseBetSlugMatchesSessionSlug } from '../utils/slotSlugMatching'
 import { TipMenu } from '../../ui/TipMenu'
@@ -275,7 +275,7 @@ export default function BonusHuntControl({
         try {
           if (loggerBetSubRef.current?.disconnect) loggerBetSubRef.current.disconnect()
         } catch (_) {}
-        loggerBetSubRef.current = await subscribeToBetUpdates(token, (b) => {
+        loggerBetSubRef.current = await subscribeToHouseBets(token, (b) => {
           const ts = Date.parse(String(b?.receivedAt || ''))
           recentLoggerBetsRef.current = [
             {
@@ -655,9 +655,11 @@ export default function BonusHuntControl({
       const amountAsMinor = rawAmount < 500 ? toMinor(rawAmount, curr) : rawAmount
       const pending = pendingSpinsRef.current
       const tol = (v) => Math.max(1, Math.abs(v) * 0.08)
-      const targetRate = ['usd', 'usdc', 'usdt'].includes(target) ? 1 : Number(currencyRates[target] || 0)
+      const targetRate = isUsdLikeCurrency(target) ? 1 : Number(currencyRates[target] || 0)
       const toUsdFromTarget = (minor) => toUnits(minor, target) * targetRate
-      const hbRate = ['usd', 'usdc', 'usdt'].includes(curr) ? 1 : Number(currencyRates[curr] || 0)
+      const hbRate = isUsdLikeCurrency(curr) ? 1 : Number(currencyRates[curr] || 0)
+      // If we cannot value one side in USD, skip cross-currency matching to avoid false 0-valued comparisons.
+      if ((curr !== target) && (targetRate <= 0 || hbRate <= 0)) return
       const stakeSendsMajor = rawAmount < 500
       const amountTargetMinor =
         curr === target
@@ -970,8 +972,9 @@ export default function BonusHuntControl({
             if (BONUS_HUNT_DEBUG) {
               const curr = parsed.currencyCode || targetCurrency
               const u = toUnits(parsed.balance, curr)
-              const usd = ['usd', 'usdc', 'usdt'].includes((curr || '').toLowerCase()) ? u : (currencyRates[(curr || '').toLowerCase()] || 0.001) * u
-              console.log('[BH balance]', { raw: parsed.balance, curr, units: u, usdEst: usd.toFixed(2) })
+              const rate = isUsdLikeCurrency((curr || '').toLowerCase()) ? 1 : Number(currencyRates[(curr || '').toLowerCase()] || 0)
+              const usd = rate > 0 ? u * rate : null
+              console.log('[BH balance]', { raw: parsed.balance, curr, units: u, usdEst: usd != null ? usd.toFixed(2) : 'n/a(no-rate)' })
             }
             setCurrentBalance(parsed.balance)
             setCurrencyCode(parsed.currencyCode)
@@ -1107,10 +1110,23 @@ export default function BonusHuntControl({
   }
 
   const statsCurrency = currencyCode || targetCurrency || sourceCurrency || 'usdc'
+  const statsCurrencyRateMissing = !isUsdLikeCurrency(statsCurrency) && !(Number(currencyRates[statsCurrency] || 0) > 0)
+  const fxMissingCount = useMemo(() => {
+    let count = 0
+    for (const b of betHistory) {
+      const c = String(b?.currencyCode || statsCurrency || '').toLowerCase()
+      if (isUsdLikeCurrency(c)) continue
+      const rate = Number(currencyRates[c] || 0)
+      if (!(rate > 0) && ((Number(b?.betAmount) || 0) > 0 || (Number(b?.winAmount) || 0) > 0 || b?.balance != null)) {
+        count += 1
+      }
+    }
+    return count
+  }, [betHistory, currencyRates, statsCurrency])
   const toUsd = (v, curr) => {
     const c = (curr || statsCurrency || 'usdc').toLowerCase()
     const units = toUnits(v, c)
-    if (['usd', 'usdc', 'usdt'].includes(c)) return units
+    if (isUsdLikeCurrency(c)) return units
     const rate = c ? Number(currencyRates[c] || 0) : 0
     return rate > 0 ? units * rate : 0
   }
@@ -1705,6 +1721,11 @@ export default function BonusHuntControl({
               </div>
             )}
             <div className={styles.statsTitle}>Bonus Hunt Statistics</div>
+          {(statsCurrencyRateMissing || fxMissingCount > 0) && (
+            <div style={{ marginBottom: '0.65rem', fontSize: '0.75rem', color: 'var(--warning, #f59e0b)' }}>
+              FX Hinweis: {statsCurrencyRateMissing ? `fehlender Rate fuer ${String(statsCurrency).toUpperCase()}` : `${fxMissingCount} Eintrag(e) ohne FX-Rate`}
+            </div>
+          )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', fontSize: '0.95rem', marginBottom: slotStats.length > 1 ? '1rem' : 0 }}>
               <span>Total spins</span>
               <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{totalSpins}</span>

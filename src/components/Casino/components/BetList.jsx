@@ -84,8 +84,7 @@ export default function BetList({ bets, totalCount, currencyCode, compact = fals
     )
   }
 
-  const cc = (currencyCode || '').toUpperCase()
-  const suffix = cc ? ` ${cc}` : ''
+  const defaultCurrency = (currencyCode || '').toUpperCase()
 
   return (
     <div style={cardStyle}>
@@ -110,6 +109,8 @@ export default function BetList({ bets, totalCount, currencyCode, compact = fals
           const win = b.winAmount ?? 0
           const net = win - bet
           const isBonus = b.isBonus
+          const rowCurrency = String(b.currencyCode || defaultCurrency || '').toUpperCase()
+          const rowSuffix = rowCurrency ? ` ${rowCurrency}` : ''
           // Bei Stopp auf Bonus: Platzhalter "Bonus". Sonst Win anzeigen (auch bei durchgespieltem Bonus)
           const showWin = !(isBonus && b.stoppedBonus)
           const multiplier = bet > 0 ? (win / bet).toFixed(1) : '0'
@@ -127,12 +128,12 @@ export default function BetList({ bets, totalCount, currencyCode, compact = fals
                   {b.slotName || b.slotSlug || '–'}
                 </span>
               )}
-              <span>{fmt(bet, cc)}{suffix}</span>
+              <span>{fmt(bet, rowCurrency)}{rowSuffix}</span>
               <span style={win > 0 ? STYLES.win : {}}>
-                {!showWin ? ' Bonus' : `${fmt(win, cc)}${suffix}`}
+                {!showWin ? ' Bonus' : `${fmt(win, rowCurrency)}${rowSuffix}`}
               </span>
               <span style={net >= 0 ? STYLES.win : STYLES.loss}>
-                {!showWin ? '–' : `${net >= 0 ? '+' : ''}${fmt(net, cc)}${suffix}`}
+                {!showWin ? '–' : `${net >= 0 ? '+' : ''}${fmt(net, rowCurrency)}${rowSuffix}`}
               </span>
               <span style={win > 0 ? STYLES.win : {}} title={`${multiplier}× Einsatz`}>
                 {!showWin ? '–' : `${multiplier}×`}

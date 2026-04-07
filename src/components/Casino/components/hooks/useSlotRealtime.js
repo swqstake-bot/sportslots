@@ -20,7 +20,10 @@ export function useSlotRealtime({
       if (!payload?.currency) return
       const curr = (payload.currency || '').toLowerCase()
       if (curr === String(effectiveTarget || '').toLowerCase()) {
-        setWsBalance(payload.amount != null ? Number(payload.amount) : null)
+        // SlotControl expects balances in minor units for toUsdCents/toUnits.
+        const amountMinor = payload?.amountMinor
+        const next = amountMinor != null ? Number(amountMinor) : null
+        setWsBalance(Number.isFinite(next) ? next : null)
       }
     }).then((s) => {
       if (cancelled) {

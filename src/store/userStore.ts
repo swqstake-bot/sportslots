@@ -158,10 +158,10 @@ export const useUserStore = create<UserState>((set, get) => ({
     let newSelected = 'btc';
     const currentSelected = get().selectedCurrency;
     
-    // If current selection is valid and not 'usd' (unless we want 'usd'), keep it.
-    // If user wants BTC standard, we default to BTC.
-    // However, if the user explicitly selected something else (like XRP) and it's valid, keep it.
-    if (currentSelected && currencies.includes(currentSelected) && currentSelected !== 'usd') {
+    // Keep the current selection whenever it is still available.
+    // Falling back to BTC only when the current selection disappears avoids
+    // unexpected currency switches during balance refresh.
+    if (currentSelected && currencies.includes(currentSelected)) {
         newSelected = currentSelected;
     }
     

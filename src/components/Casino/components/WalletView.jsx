@@ -178,7 +178,8 @@ export default function WalletView({ accessToken, compact = false, hideTitle = f
       if (!payload?.currency) return
       setLiveBalances((prev) => ({
         ...prev,
-        [payload.currency]: payload.amount,
+        // Wallet works in major units (same convention as fetchUserBalances).
+        [payload.currency]: payload.amountMajor != null ? payload.amountMajor : payload.amount,
       }))
     }).then((s) => {
       if (cancelled) {

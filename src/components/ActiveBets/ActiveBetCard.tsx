@@ -1,7 +1,7 @@
 import React from 'react';
 import { BetGraph } from './BetGraph';
 import { MatchTracker } from './MatchTracker';
-import { getEffectiveOdds } from '../../services/cashoutService';
+import { getEffectiveOdds, resolveCashoutMultiplierForBet } from '../../services/cashoutService';
 
 interface ActiveBetCardProps {
   bet: any;
@@ -18,7 +18,7 @@ export function ActiveBetCard({ bet, onCashout }: ActiveBetCardProps) {
   const handleCashoutClick = async () => {
     setIsCashingOut(true);
     try {
-        await onCashout(bet.id, bet.cashoutMultiplier);
+        await onCashout(bet.id, resolveCashoutMultiplierForBet(bet));
     } finally {
         setIsCashingOut(false);
     }
