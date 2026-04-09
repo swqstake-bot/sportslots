@@ -79,7 +79,7 @@ export const PromotionsView = memo(function PromotionsView({ accessToken, webSlo
     if (!stakeVsEddiePromo || !slot?.slug) return
     const ui = useUiStore.getState()
     ui.setCurrentView('casino')
-    ui.setCasinoMode('challengeHub')
+    ;(ui.setCasinoMode as any)('challengeHub')
     try {
       window.dispatchEvent(
         new CustomEvent('challenge-hub-open-tab', {

@@ -6,6 +6,19 @@ export interface CasinoSlotInstance {
   challengeTargetMultiplier?: number
   challengeTargetMultipliers?: number[]
   minBetUsd?: number
+  promoSource?: string
+}
+
+export interface CasinoChallengeSelection {
+  gameSlug: string
+  gameName?: string
+  currency?: string
+  targetMultiplier?: number
+  targetMultipliers?: number[]
+  minBetUsd?: number
+  autoStart?: boolean
+  autospinCount?: number
+  promoSource?: string
 }
 
 export interface SlotSet {

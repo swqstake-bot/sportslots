@@ -35,6 +35,7 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
   setTelegramEnabled,
   telegramUsage,
 }: ChallengeHubTabContentProps) {
+  const TelegramChallengeHunterAny = TelegramChallengeHunter as any
   const visibleStyle = (visible: boolean) => ({ display: visible ? 'block' : 'none' })
   return (
     <>
@@ -61,7 +62,7 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
             </button>
           </div>
           {telegramEnabled ? (
-            <TelegramChallengeHunter
+            <TelegramChallengeHunterAny
               accessToken={accessToken}
               webSlots={webSlots as any}
               onDiscoveredSlots={onDiscoveredSlots}

@@ -11,12 +11,19 @@ interface ChallengeHubViewProps {
   webSlots: any[]
   onDiscoveredSlots: (added: { slug: string; name: string; providerId: string; thumbnailUrl?: string }[]) => void
   onSelectChallenge: (challenge: CasinoChallengeSelection) => void
+  onHubStatsChange?: (payload: HubStatsPayload) => void
 }
 
 const TELEGRAM_GATE_KEY = 'slotbot_hub_telegram_enabled_v1'
 const TELEGRAM_USAGE_KEY = 'slotbot_hub_telegram_usage_count_v1'
 
-export function ChallengeHubView({ accessToken, webSlots, onDiscoveredSlots, onSelectChallenge }: ChallengeHubViewProps) {
+export function ChallengeHubView({
+  accessToken,
+  webSlots,
+  onDiscoveredSlots,
+  onSelectChallenge,
+  onHubStatsChange,
+}: ChallengeHubViewProps) {
   const [tab, setTab] = useState<HubTab>('casino')
   const [hubStatsBySource, setHubStatsBySource] = useState<Record<string, HubStatsPayload>>({})
   const [telegramEnabled, setTelegramEnabled] = useState<boolean>(() => {
@@ -86,7 +93,8 @@ export function ChallengeHubView({ accessToken, webSlots, onDiscoveredSlots, onS
   const handleHubStatsChange = useCallback((payload: HubStatsPayload) => {
     if (!payload?.source) return
     setHubStatsBySource((prev) => ({ ...prev, [payload.source]: payload }))
-  }, [])
+    onHubStatsChange?.(payload)
+  }, [onHubStatsChange])
 
   return (
     <div className="challenge-hub-root space-y-4">

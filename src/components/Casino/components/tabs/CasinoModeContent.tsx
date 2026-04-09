@@ -1,13 +1,11 @@
 import OriginalsView from '../OriginalsView'
-import AutoChallengeHunter from '../AutoChallengeHunter'
-import TelegramChallengeHunter from '../TelegramChallengeHunter'
 import BonusHuntControl from '../BonusHuntControl'
-import ForumChallengeView from '../ForumChallengeView'
 import BetList from '../BetList'
 import LogViewer from '../LogViewer'
 import { PlayModeContent } from './PlayModeContent'
 import { SectionCard } from '../ui/SectionCard'
-import type { CasinoSlotInstance, SlotSet } from '../../types'
+import { ChallengeHubView } from '../ChallengeHubView'
+import type { CasinoSlotInstance, SlotSet, CasinoChallengeSelection } from '../../types'
 
 interface CasinoModeContentProps {
   mode: string
@@ -48,7 +46,7 @@ interface CasinoModeContentProps {
   getSlotControlRef: (instanceId: string) => any
   handlePlayLogUpdate: () => void
   handleDiscoveredSlots: (added: { slug: string; name: string; providerId: string; thumbnailUrl?: string }[]) => void
-  handleSelectChallenge: (challenge: { gameSlug: string; gameName?: string; currency?: string; targetMultiplier?: number }) => void
+  handleSelectChallenge: (challenge: CasinoChallengeSelection) => void
 }
 
 export function CasinoModeContent(props: CasinoModeContentProps) {
@@ -93,7 +91,6 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
     handleDiscoveredSlots,
     handleSelectChallenge,
   } = props
-
   if (mode === 'originals') return <OriginalsView accessToken={token} />
 
   if (mode === 'play') {
@@ -135,19 +132,15 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
     )
   }
 
-  if (mode === 'challenges') {
+  if (mode === 'challengeHub' || mode === 'challenges' || mode === 'telegram' || mode === 'forum') {
     return (
-      <SectionCard title="Auto Hunter">
-        <AutoChallengeHunter accessToken={token} webSlots={webSlots as any} onDiscoveredSlots={handleDiscoveredSlots} />
-      </SectionCard>
-    )
-  }
-
-  if (mode === 'telegram') {
-    return (
-      <SectionCard title="Telegram Hunter">
-        <TelegramChallengeHunter accessToken={token} webSlots={webSlots as any} onDiscoveredSlots={handleDiscoveredSlots} />
-      </SectionCard>
+      <ChallengeHubView
+        accessToken={token}
+        webSlots={webSlots as any}
+        onDiscoveredSlots={handleDiscoveredSlots}
+        onSelectChallenge={handleSelectChallenge}
+        onHubStatsChange={() => {}}
+      />
     )
   }
 
@@ -180,10 +173,6 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
         />
       </div>
     )
-  }
-
-  if (mode === 'forum') {
-    return <ForumChallengeView accessToken={token} webSlots={webSlots as any} onSelectChallenge={handleSelectChallenge} />
   }
 
   if (mode === 'logs') {
