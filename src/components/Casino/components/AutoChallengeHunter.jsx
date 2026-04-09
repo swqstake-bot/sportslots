@@ -53,7 +53,6 @@ const HUNTER_TARGET_CANDIDATES = [
   ...CURRENCY_GROUPS.fiat.map((c) => c.value),
   ...CURRENCY_GROUPS.crypto.map((c) => c.value),
 ]
-const HUNTER_TARGET_WHITELIST = new Set(['pkr', 'idr', 'ars', 'usd', 'eur'])
 
 function generateHunterRunId() {
   return `h_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
@@ -265,10 +264,11 @@ function getAllowedTargetCurrenciesForSlot(providerId) {
   return HUNTER_TARGET_CANDIDATES.filter((c) => allowed.has(c))
 }
 
-function getWhitelistedTargetCurrencies(candidates) {
-  const list = Array.isArray(candidates) ? candidates.map((c) => String(c || '').toLowerCase()).filter(Boolean) : []
-  const filtered = list.filter((c) => HUNTER_TARGET_WHITELIST.has(c))
-  return filtered
+function getProbeTargetCurrencies(candidates) {
+  const list = Array.isArray(candidates)
+    ? candidates.map((c) => String(c || '').toLowerCase()).filter(Boolean)
+    : []
+  return Array.from(new Set(list))
 }
 
 /** Kleinster Bet-Level in Minor, der minBetUsd (USD) noch erfüllt. */
@@ -662,8 +662,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   /** Dropdown: gleiche Kandidaten wie Session-Probes (stakeEngine). */
   const hunterTargetCurrencyOptions = useMemo(() => {
     const allowed = getAllowedTargetCurrenciesForSlot('stakeEngine')
-    const whitelisted = getWhitelistedTargetCurrencies(allowed)
-    return [...whitelisted].sort((a, b) => a.localeCompare(b))
+    const probeCandidates = getProbeTargetCurrencies(allowed)
+    return [...probeCandidates].sort((a, b) => a.localeCompare(b))
   }, [])
 
   const prefersReducedMotion = usePrefersReducedMotion()
@@ -1635,7 +1635,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         )
       } else if (autoOptimalTargetCurrency) {
         const allowed = getAllowedTargetCurrenciesForSlot(providerId)
-        const probeAllowed = getWhitelistedTargetCurrencies(allowed).filter((c) => {
+        const probeAllowed = getProbeTargetCurrencies(allowed).filter((c) => {
           const cc = String(c).toLowerCase()
           return !AUTO_PROBE_EXCLUDED_CURRENCIES.has(cc)
         })
@@ -1677,8 +1677,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         }
 
         if (currencySlotIndex === 0 && ordered.length > 0) {
-          const hasPersistedRanking = cachedOrder.length > 0
-          const probeLimit = hasPersistedRanking ? 1 : ordered.length
+          const probeLimit = ordered.length
           let bestProbe = null
           const measuredProbes = []
 
@@ -1703,7 +1702,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           }
 
           if (bestProbe) {
-            if (measuredProbes.length > 0 && !hasPersistedRanking) {
+            if (measuredProbes.length > 0) {
               const dedup = new Map()
               for (const p of measuredProbes) {
                 const k = String(p.tCurr || '').toLowerCase()
@@ -1725,8 +1724,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             )
             if (probeLimit > 1) {
               log(`  (${probeLimit} Proben; gewählt: geringster effektiver USD-Bet)`)
-            } else if (hasPersistedRanking) {
-              log('  (verwendet gespeicherte Probe-Rangliste aus vorherigem Vollscan)')
             }
           }
         } else if (currencySlotIndex > 0 && ordered.length > 0) {
