@@ -2,7 +2,7 @@
   "name": "stakesportselectron",
   "private": true,
   "type": "module",
-  "version": "1.0.124",
+  "version": "1.0.125",
   "description": "StakeSports Electron App",
   "author": "StakeSports",
   "repository": {
@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.2.0",
+    "@tanstack/react-virtual": "^3.13.23",
     "autoprefixer": "^10.4.24",
     "axios": "^1.13.5",
     "clsx": "^2.1.1",
