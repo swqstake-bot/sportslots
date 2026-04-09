@@ -1,0 +1,26 @@
+{
+  "cases": [
+    {
+      "name": "usd-major",
+      "value": 12.5,
+      "currency": "usd",
+      "unit": "major",
+      "expectedMinor": 1250
+    },
+    {
+      "name": "idr-major-zero-decimal",
+      "value": 1250,
+      "currency": "idr",
+      "unit": "major",
+      "expectedMinor": 1250
+    },
+    {
+      "name": "btc-major",
+      "value": 0.001,
+      "currency": "btc",
+      "unit": "major",
+      "expectedMinor": 100000
+    }
+  ]
+}
+
