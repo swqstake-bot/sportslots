@@ -2,7 +2,7 @@
   "name": "stakesportselectron",
   "private": true,
   "type": "module",
-  "version": "1.0.121",
+  "version": "1.0.122",
   "description": "StakeSports Electron App",
   "author": "StakeSports",
   "repository": {
@@ -16,7 +16,10 @@
     "package": "npm run build:compile && electron-packager . --overwrite --out=release-final --platform=win32 --arch=x64 --prune=true --asar --extra-resource=app-update.yml --ignore=\"^/(src|electron|tsconfig|vite\\.config|\\.git|\\.gitignore|README|LICENSE|builder-cache|release|release_old|release-packager|release-final)\"",
     "build": "npm run build:compile && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --publish always",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "qa:contracts": "node scripts/qa/contract-harness.mjs",
+    "qa:replay": "node scripts/qa/replay-harness.mjs",
+    "qa:gate": "npm run qa:contracts && npm run qa:replay"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.2.0",

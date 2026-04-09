@@ -9,8 +9,10 @@
 export const PROVIDER_CURRENCIES = {
   hacksaw: ['eur', 'usd', 'ars', 'cad', 'clp', 'cny', 'dkk', 'idr', 'inr', 'jpy', 'krw', 'mxn', 'ngn', 'pen', 'php', 'pln', 'rub', 'try', 'vnd', 'usdc', 'usdt', 'btc', 'eth', 'ltc', 'bch', 'doge', 'shib', 'sol', 'xrp', 'trx', 'matic', 'ada', 'bnb'],
   stakeEngine: ['eur', 'usd', 'ars', 'cad', 'clp', 'cny', 'dkk', 'idr', 'inr', 'jpy', 'krw', 'mxn', 'pen', 'php', 'pln', 'pkr', 'rub', 'try', 'vnd', 'usdc', 'usdt', 'btc', 'eth', 'ltc', 'bch', 'doge', 'shib', 'sol', 'xrp', 'trx', 'matic', 'ada', 'bnb'],
-  pragmatic: ['eur', 'usd', 'ars', 'cad', 'clp', 'cny', 'dkk', 'idr', 'inr', 'jpy', 'krw', 'mxn', 'ngn', 'pen', 'php', 'pln', 'rub', 'try', 'vnd', 'usdc', 'usdt', 'btc', 'eth', 'ltc', 'bch', 'doge', 'shib', 'sol', 'xrp', 'trx', 'matic', 'ada', 'bnb'],
+  pragmatic: ['eur', 'usd', 'ars', 'cad', 'clp', 'cny', 'dkk', 'idr', 'inr', 'jpy', 'krw', 'mxn', 'ngn', 'pen', 'php', 'pkr', 'pln', 'rub', 'try', 'vnd', 'usdc', 'usdt', 'btc', 'eth', 'ltc', 'bch', 'doge', 'shib', 'sol', 'xrp', 'trx', 'matic', 'ada', 'bnb'],
   nolimit: ['eur', 'usd', 'ars', 'cad', 'clp', 'cny', 'dkk', 'idr', 'inr', 'jpy', 'krw', 'mxn', 'ngn', 'pen', 'php', 'pln', 'rub', 'try', 'vnd', 'usdc', 'usdt', 'btc', 'eth', 'ltc', 'bch', 'doge', 'shib', 'sol', 'xrp', 'trx', 'matic', 'ada', 'bnb'],
+  gamesglobal: ['eur', 'usd', 'ars', 'cad', 'clp', 'cny', 'dkk', 'idr', 'inr', 'jpy', 'krw', 'mxn', 'ngn', 'pen', 'php', 'pln', 'rub', 'try', 'vnd', 'usdc', 'usdt', 'btc', 'eth', 'ltc', 'bch', 'doge', 'shib', 'sol', 'xrp', 'trx', 'matic', 'ada', 'bnb'],
+  jaderabbit: ['eur', 'usd', 'ars', 'cad', 'clp', 'cny', 'dkk', 'idr', 'inr', 'jpy', 'krw', 'mxn', 'ngn', 'pen', 'php', 'pln', 'rub', 'try', 'vnd', 'usdc', 'usdt', 'btc', 'eth', 'ltc', 'bch', 'doge', 'shib', 'sol', 'xrp', 'trx', 'matic', 'ada', 'bnb'],
 }
 
 /** Gemeinsame Währungen für gegebene Slots (Schnittmenge) */

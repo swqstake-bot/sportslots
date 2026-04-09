@@ -26,6 +26,10 @@ import {
   isUsdLimitInputCharsOk,
 } from '../utils/usdLimitInput'
 import { saveFirstSlotWinIfNeeded } from '../utils/slotFirstWin'
+import { getHunterState, saveHunterState, clearHunterState } from '../utils/challengeCompletion'
+import { publishChallengeHubBet } from '../utils/challengeHubLiveFeed'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { usePrefersReducedMotion } from '../../../hooks/usePrefersReducedMotion'
 
 /** Challenge-Liste: alle Einträge wie von Stake; Session/Spins über stakeEngine — nicht unterstützte Slots scheitern zur Laufzeit. */
 
@@ -41,7 +45,7 @@ const HOUSEBET_RETRY_BUFFER_MAX_MS = 25000
 const HOUSEBET_RETRY_BUFFER_MAX = 40
 /** Wenn houseBets nie matcht: Best-Multi-UI trotzdem aus HTTP (sonst hängt die Anzeige). */
 const HOUSEBET_DEFERRED_UI_MULTI_MS = 5000
-const PAGE_SIZE = 24 // Stake Default
+const PAGE_SIZE = 20 // sichere Challenge-Page-Size (Stake number_less_equal Schutz)
 /** UI-Obergrenze für parallele Läufe & Anzahl Challenge-Listen-Seiten (Slider). */
 const CHALLENGE_SLIDER_MAX = 100
 
@@ -49,6 +53,7 @@ const HUNTER_TARGET_CANDIDATES = [
   ...CURRENCY_GROUPS.fiat.map((c) => c.value),
   ...CURRENCY_GROUPS.crypto.map((c) => c.value),
 ]
+const HUNTER_TARGET_WHITELIST = new Set(['pkr', 'idr', 'ars', 'usd', 'eur'])
 
 function generateHunterRunId() {
   return `h_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
@@ -76,30 +81,17 @@ function normalizeQueueItem(raw) {
   }
 }
 
-function countHunterSlotsForChallenge(challengeId, queue, activeRuns) {
-  const cid = String(challengeId)
-  let n = 0
-  for (const item of queue) {
-    const q = normalizeQueueItem(item)
-    if (q.challengeId === cid) n++
-  }
-  for (const run of Object.values(activeRuns)) {
-    if (run?.challengeId === cid && run?.status === 'running') n++
-  }
-  return n
-}
-
-function buildProbeCacheKey(challengeId, slotSlug, sourceCurr, minBetUsd) {
-  const cid = String(challengeId || '')
+function buildProbeCacheKey(providerId, slotSlug, sourceCurr, minBetUsd) {
+  const pid = String(providerId || 'stakeengine').toLowerCase()
   const slug = String(slotSlug || '').toLowerCase()
   const src = String(sourceCurr || '').toLowerCase()
   const min = Number(minBetUsd || 0)
-  return `${cid}|${slug}|${src}|${Number.isFinite(min) ? min.toFixed(6) : '0.000000'}`
+  return `${pid}|${slug}|${src}|${Number.isFinite(min) ? min.toFixed(6) : '0.000000'}`
 }
 
 function getRateForCurrency(rates, tCurr) {
   const c = (tCurr || '').toLowerCase()
-  if (c === 'usd') return 1
+  if (c === 'usd' || c === 'usdc' || c === 'usdt') return 1
   return rates[c] || 0
 }
 
@@ -194,9 +186,11 @@ function comparePkrVsInrInSort(a, b) {
  * 1) Fiat vor Crypto (PKR/RUB/… vor LTC/DOGE; USDC/USDT aus Probe-Pool)
  * 2) niedrigster effektiver USD-Bet (nach Rundung)
  * 3) bei ~gleichem USD: Fiat-Priorität (PKR vor ARS), dann bevorzugte Zielwährung
+ * 4) Source-Währung kann optional hart priorisiert werden (SSP-like wallet safety)
  */
-function sortTargetCandidatesForProbe(allowedList, rates, minBetUsd, preferred) {
+function sortTargetCandidatesForProbe(allowedList, rates, minBetUsd, preferred, sourceCurrencyPreferred = '') {
   const pref = (preferred || 'usd').toLowerCase()
+  const sourcePref = String(sourceCurrencyPreferred || '').toLowerCase()
   const candidates = []
   for (const tCurr of allowedList) {
     const rate = getRateForCurrency(rates, tCurr)
@@ -208,6 +202,11 @@ function sortTargetCandidatesForProbe(allowedList, rates, minBetUsd, preferred) 
   }
   if (candidates.length === 0) return []
   candidates.sort((a, b) => {
+    if (sourcePref) {
+      const aIsSource = a.tCurr === sourcePref
+      const bIsSource = b.tCurr === sourcePref
+      if (aIsSource !== bIsSource) return aIsSource ? -1 : 1
+    }
     if (a.fiat !== b.fiat) return a.fiat ? -1 : 1
     const pkrInr = comparePkrVsInrInSort(a, b)
     if (pkrInr !== null) return pkrInr
@@ -223,8 +222,6 @@ function sortTargetCandidatesForProbe(allowedList, rates, minBetUsd, preferred) 
   return candidates.map((c) => c.tCurr)
 }
 
-/** Genug Proben, damit PKR & Co. nicht hinter den ersten 6 „Alphabet“-Kandidaten verschwinden. */
-const MAX_TARGET_SESSION_PROBES = 20
 /** Pause zwischen Session-Probes gegen „Please slow down“ / Rate-Limits */
 const SESSION_PROBE_DELAY_MS = 400
 /** Pause zwischen erfolgreichen Spins (Challenge Hunter) — niedrig hält RGS-Stress, zu niedrig → Fehler */
@@ -232,11 +229,8 @@ const HUNTER_SPIN_DELAY_MS = 150
 const HUNTER_SPIN_ERROR_RETRY_MS = 2000
 /** Ohne Limit: bei mehreren parallelen Läufen wächst die Recharts-Serie unbegrenzt → Renderer-Abstürze (OOM). */
 const SESSION_NET_SERIES_MAX_POINTS = 5000
-/** Stablecoins: aus Session-Probes (wie BTC/LTC — Nutzer will klassische Fiat wie PKR/RUB) */
-const AUTO_PROBE_EXCLUDED_CURRENCIES = new Set(['usdc', 'usdt'])
-/** Frühabbruch nur wenn sehr nah am Challenge-Minimum (nicht bei +$0.02 wie zuvor). */
-const TARGET_PROBE_EARLY_STOP_REL = 0.02
-const TARGET_PROBE_EARLY_STOP_ABS_USD = 0.002
+/** Probe-Candidates: kein harter Stablecoin-Ausschluss mehr (USDC/USDT-Funding häufig). */
+const AUTO_PROBE_EXCLUDED_CURRENCIES = new Set()
 
 /**
  * MinBet → Einsatz inkl. Bet-Levels; usdAt = effektiver USD-Wert des gewählten Levels.
@@ -269,6 +263,12 @@ function getAllowedTargetCurrenciesForSlot(providerId) {
   const list = PROVIDER_CURRENCIES[providerId] || PROVIDER_CURRENCIES.stakeEngine
   const allowed = new Set(list.map((c) => c.toLowerCase()))
   return HUNTER_TARGET_CANDIDATES.filter((c) => allowed.has(c))
+}
+
+function getWhitelistedTargetCurrencies(candidates) {
+  const list = Array.isArray(candidates) ? candidates.map((c) => String(c || '').toLowerCase()).filter(Boolean) : []
+  const filtered = list.filter((c) => HUNTER_TARGET_WHITELIST.has(c))
+  return filtered
 }
 
 /** Kleinster Bet-Level in Minor, der minBetUsd (USD) noch erfüllt. */
@@ -310,6 +310,7 @@ const BEST_MULTI_STORAGE_KEY = 'slotbot_hunter_best_multi_by_slug'
 /** Lifetime: Share-ID zum höchsten jemals getroffenen Multi pro Slot (nur houseBets). */
 const BEST_BET_ID_OVERALL_KEY = 'slotbot_hunter_best_betid_by_slug'
 const CHALLENGE_HITS_STORAGE_KEY = 'slotbot_hunter_challenge_hits'
+const PROBE_RANKING_STORAGE_KEY = 'slotbot_hunter_probe_rankings_v1'
 
 function persistChallengeHitRecord(entry) {
   try {
@@ -367,6 +368,36 @@ function loadBestBetIdMap() {
 function persistBestBetIdMap(map) {
   try {
     localStorage.setItem(BEST_BET_ID_OVERALL_KEY, JSON.stringify(map))
+  } catch (_) {}
+}
+
+function loadProbeRankingMap() {
+  try {
+    const raw = localStorage.getItem(PROBE_RANKING_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    const out = {}
+    for (const [k, list] of Object.entries(parsed)) {
+      if (!k || !Array.isArray(list)) continue
+      const clean = list
+        .map((x) => ({
+          tCurr: String(x?.tCurr || '').toLowerCase(),
+          usdAt: Number(x?.usdAt),
+        }))
+        .filter((x) => x.tCurr && Number.isFinite(x.usdAt) && x.usdAt > 0)
+        .slice(0, 40)
+      if (clean.length > 0) out[k] = clean
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function persistProbeRankingMap(map) {
+  try {
+    localStorage.setItem(PROBE_RANKING_STORAGE_KEY, JSON.stringify(map || {}))
   } catch (_) {}
 }
 
@@ -604,7 +635,7 @@ const STYLES = {
   }
 }
 
-export default function AutoChallengeHunter({ accessToken, webSlots = [], onDiscoveredSlots }) {
+export default function AutoChallengeHunter({ accessToken, webSlots = [], onDiscoveredSlots, onHubStatsChange }) {
   const [minMinBet, setMinMinBet] = useState(hunterFiltersInitial.minMinBet)
   const [maxMinBet, setMaxMinBet] = useState(hunterFiltersInitial.maxMinBet)
   const [minPrizeUsd, setMinPrizeUsd] = useState(hunterFiltersInitial.minPrizeUsd)
@@ -631,14 +662,19 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   /** Dropdown: gleiche Kandidaten wie Session-Probes (stakeEngine). */
   const hunterTargetCurrencyOptions = useMemo(() => {
     const allowed = getAllowedTargetCurrenciesForSlot('stakeEngine')
-    return [...allowed].sort((a, b) => a.localeCompare(b))
+    const whitelisted = getWhitelistedTargetCurrencies(allowed)
+    return [...whitelisted].sort((a, b) => a.localeCompare(b))
   }, [])
+
+  const prefersReducedMotion = usePrefersReducedMotion()
 
   const [challenges, setChallenges] = useState([])
   const [challengeSearch, setChallengeSearch] = useState('')
+  const [challengeSort, setChallengeSort] = useState('prize-desc')
   /** Pro Challenge: nächste Queue-Zielwährung — '' = Auto (Sortierung / Probes). */
   const [manualTargetCurrencyByChallengeId, setManualTargetCurrencyByChallengeId] = useState({})
   const [queue, setQueue] = useState([])
+  const foundScrollRef = useRef(null)
   const queueRef = useRef([])
   useEffect(() => {
     queueRef.current = queue
@@ -655,6 +691,24 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const [sessionNetSeries, setSessionNetSeries] = useState(() => [{ time: Date.now(), netUsd: 0 }])
   /** Höchster getroffener Multiplikator pro Slot-Slug (persistiert). */
   const [bestMultiBySlot, setBestMultiBySlot] = useState(() => loadBestMultiMap())
+  useEffect(() => {
+    if (typeof onHubStatsChange !== 'function') return
+    const running = Object.values(activeRuns).filter((run) => run?.status === 'running').length
+    const completed = Object.values(activeRuns).filter((run) => run?.status === 'target_hit' || run?.status === 'completed').length
+    const bestMulti = Object.values(bestMultiBySlot).reduce((max, value) => {
+      const n = Number(value)
+      return Number.isFinite(n) ? Math.max(max, n) : max
+    }, 0)
+    onHubStatsChange({
+      source: 'casino',
+      queued: queue.length,
+      running,
+      completed,
+      bestMulti,
+      ts: Date.now(),
+    })
+  }, [queue.length, activeRuns, bestMultiBySlot, onHubStatsChange])
+
   const setBestMultiBySlotRef = useRef(setBestMultiBySlot)
   setBestMultiBySlotRef.current = setBestMultiBySlot
   const bestMultiBySlotRef = useRef(bestMultiBySlot)
@@ -664,7 +718,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   /** Pro Run: max. Multi — wird mit houseBets bestätigt (wie bestMultiRun im State nach WS). */
   const runBestMultiSyncRef = useRef({})
   /** Memoized measured ranking from first probe pass: [{ tCurr, usdAt }] sorted by real effective USD. */
-  const challengeProbeRankingRef = useRef({})
+  const challengeProbeRankingRef = useRef(loadProbeRankingMap())
   /** Nach Persist der Overall-Bet-ID: UI/Konsole neu lesen. */
   const [hunterStorageTick, setHunterStorageTick] = useState(0)
   const bumpHunterStorageRef = useRef(() => {})
@@ -730,6 +784,27 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const onDiscoveredSlotsRef = useRef(onDiscoveredSlots)
   onDiscoveredSlotsRef.current = onDiscoveredSlots
 
+  useEffect(() => {
+    const persisted = getHunterState()
+    processedIdsRef.current = new Set(persisted.processedIds || [])
+    dismissedChallengeIdsRef.current = new Set(persisted.dismissedIds || [])
+  }, [])
+
+  useEffect(() => {
+    const persist = () => {
+      saveHunterState(
+        Array.from(processedIdsRef.current || []),
+        Array.from(dismissedChallengeIdsRef.current || [])
+      )
+    }
+    persist()
+    const id = setInterval(persist, 2500)
+    return () => {
+      clearInterval(id)
+      persist()
+    }
+  }, [])
+
   // Debug/Test: in Challenge-Mode Subscription unabhängig von SlotControl sichtbar machen
   // (SlotControl wird im "challenges"-Tab typischerweise nicht gemountet.)
   /** Nach placeBet in Reihenfolge; nächstes houseBets mit gleichem Slug → Bet-ID (FIFO, wie FRIDA: iid ohne Betrag/Multi-Match). */
@@ -747,15 +822,106 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const houseBetRetryBufferRef = useRef([]) // { key, bItem, at }[]
   const scheduleHouseBetWorkerRef = useRef(() => {})
   const HOUSEBET_WORKER_MAX_EVENTS = 20
+  const logBufferRef = useRef([])
+  const logFlushTimerRef = useRef(null)
 
   const runningChallengeCount = useMemo(
     () => Object.values(activeRuns).filter((r) => r?.status === 'running').length,
     [activeRuns]
   )
 
-  const log = useCallback((msg) => {
-    setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 100))
+  const flushLogsNow = useCallback(() => {
+    if (logBufferRef.current.length === 0) return
+    const buffered = logBufferRef.current.splice(0, logBufferRef.current.length)
+    setLogs((prev) => [...buffered.reverse(), ...prev].slice(0, 100))
   }, [])
+
+  const log = useCallback((msg) => {
+    logBufferRef.current.push(`[${new Date().toLocaleTimeString()}] ${msg}`)
+    if (logFlushTimerRef.current) return
+    logFlushTimerRef.current = setTimeout(() => {
+      logFlushTimerRef.current = null
+      flushLogsNow()
+    }, 120)
+  }, [flushLogsNow])
+
+  useEffect(() => {
+    return () => {
+      if (logFlushTimerRef.current) {
+        clearTimeout(logFlushTimerRef.current)
+        logFlushTimerRef.current = null
+      }
+      flushLogsNow()
+    }
+  }, [flushLogsNow])
+
+  useEffect(() => {
+    function onExternalPromoQueue(ev) {
+      const detail = ev?.detail || {}
+      const slotSlug = String(detail.gameSlug || '').trim().toLowerCase()
+      if (!slotSlug) return
+      const gameName = String(detail.gameName || slotSlug)
+      const providerId = String(detail.providerId || 'stakeEngine')
+      const promoSource = String(detail.promoSource || 'promotion').trim().toLowerCase()
+      const targetMultiplierRaw = Number(detail.targetMultiplier || 0)
+      const targetMultiplier = Number.isFinite(targetMultiplierRaw) && targetMultiplierRaw > 1 ? targetMultiplierRaw : 2
+      const minBetUsdRaw = Number(detail.minBetUsd || 0)
+      const minBetUsd = Number.isFinite(minBetUsdRaw) && minBetUsdRaw > 0 ? minBetUsdRaw : 0.09
+      const challengeId =
+        String(detail.challengeId || '').trim() ||
+        `promo:${promoSource}:${slotSlug}:${targetMultiplier.toFixed(2)}`
+
+      const syntheticChallenge = {
+        id: challengeId,
+        title: `${gameName} (${promoSource})`,
+        gameSlug: slotSlug,
+        gameName,
+        game: { slug: slotSlug, name: gameName, providerId },
+        targetMultiplier,
+        minBetUsd,
+        award: Math.max(1, minBetUsd * 10),
+        currency: 'usd',
+        active: true,
+        completedAt: null,
+        source: promoSource,
+        createdAt: new Date().toISOString(),
+      }
+
+      setChallenges((prev) => [
+        syntheticChallenge,
+        ...prev.filter((c) => String(c?.id || '') !== challengeId),
+      ])
+
+      let queuedNow = false
+      setQueue((prev) => {
+        if (prev.some((item) => normalizeQueueItem(item).challengeId === challengeId)) return prev
+        queuedNow = true
+        return [
+          ...prev,
+          { runId: generateHunterRunId(), challengeId, currencySlotIndex: 0 },
+        ]
+      })
+
+      processedIdsRef.current.add(challengeId)
+      dismissedChallengeIdsRef.current.delete(challengeId)
+      try {
+        onDiscoveredSlotsRef.current?.([{ slug: slotSlug, name: gameName, providerId }])
+      } catch {
+        // ignore discovery sync errors
+      }
+      // Promo-queued items should appear as cards only; start remains manual (Start Next / Auto Hunt).
+      setAutoStart(false)
+      setLastRefresh(Date.now())
+      log(
+        queuedNow
+          ? `Promo queued: ${gameName} (${targetMultiplier.toFixed(2)}x)`
+          : `Promo already queued: ${gameName} (${targetMultiplier.toFixed(2)}x)`
+      )
+    }
+
+    window.addEventListener('challenge-hunt-queue-add', onExternalPromoQueue)
+    return () => window.removeEventListener('challenge-hunt-queue-add', onExternalPromoQueue)
+  }, [log])
 
   const hunterConsoleSnapshotRef = useRef('')
   useEffect(() => {
@@ -898,6 +1064,15 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               ) {
                 betIdToPersistOverall[key] = shareId
               }
+            }
+            if (shareId && p.feedEntryId) {
+              publishChallengeHubBet({
+                id: p.feedEntryId,
+                shareIid: shareId,
+                houseTopId: bItem?.houseTopId ?? null,
+                houseId: bItem?.houseId ?? null,
+                iid: bItem?.iid ?? null,
+              })
             }
           }
 
@@ -1311,6 +1486,30 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   }, [activeRuns])
 
   const runningCount = activeRunList.filter(r => r.status === 'running').length
+  const runningCountByChallengeId = useMemo(() => {
+    const map = {}
+    for (const run of Object.values(activeRuns)) {
+      if (!run?.challengeId || run?.status !== 'running') continue
+      map[run.challengeId] = (map[run.challengeId] || 0) + 1
+    }
+    return map
+  }, [activeRuns])
+  const finishedCountByChallengeId = useMemo(() => {
+    const map = {}
+    for (const run of Object.values(activeRuns)) {
+      if (!run?.challengeId || run?.status === 'running') continue
+      map[run.challengeId] = (map[run.challengeId] || 0) + 1
+    }
+    return map
+  }, [activeRuns])
+  const queueCountByChallengeId = useMemo(() => {
+    const map = {}
+    for (const item of queue) {
+      const normalized = normalizeQueueItem(item)
+      map[normalized.challengeId] = (map[normalized.challengeId] || 0) + 1
+    }
+    return map
+  }, [queue])
 
   const netUsd = totalSessionStats.won - totalSessionStats.lost
   const sessionNetChartData = useMemo(
@@ -1415,7 +1614,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       const providerId = slot.providerId || 'stakeEngine'
       const preferredTarget = (targetCurrency || 'usd').toLowerCase()
       const minBetUsd = challenge.minBetUsd
-      const probeCacheKey = buildProbeCacheKey(challenge.id, slot.slug, sCurr, minBetUsd)
+      const probeCacheKey = buildProbeCacheKey(providerId, slot.slug, sCurr, minBetUsd)
 
       let session = null
       let tCurr = preferredTarget
@@ -1436,31 +1635,59 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         )
       } else if (autoOptimalTargetCurrency) {
         const allowed = getAllowedTargetCurrenciesForSlot(providerId)
-        const probeAllowed = allowed.filter(
-          (c) => !AUTO_PROBE_EXCLUDED_CURRENCIES.has(String(c).toLowerCase())
-        )
+        const probeAllowed = getWhitelistedTargetCurrencies(allowed).filter((c) => {
+          const cc = String(c).toLowerCase()
+          return !AUTO_PROBE_EXCLUDED_CURRENCIES.has(cc)
+        })
         const allowedFiat = probeAllowed.filter((c) => isFiat(c))
         const probePool = allowedFiat.length > 0 ? allowedFiat : probeAllowed
-        const ordered =
+        let probeRates = rates
+        let ordered =
           probePool.length && minBetUsd != null
-            ? sortTargetCandidatesForProbe(probePool, rates, minBetUsd, preferredTarget)
+            ? sortTargetCandidatesForProbe(probePool, probeRates, minBetUsd, preferredTarget, sCurr)
             : []
+        const cachedRanking = Array.isArray(challengeProbeRankingRef.current[probeCacheKey])
+          ? challengeProbeRankingRef.current[probeCacheKey]
+          : []
+        const cachedOrder = cachedRanking
+          .map((x) => String(x?.tCurr || '').toLowerCase())
+          .filter((c) => c && ordered.includes(c))
+        if (cachedOrder.length > 0) {
+          const unseen = ordered.filter((c) => !cachedOrder.includes(c))
+          ordered = [...cachedOrder, ...unseen]
+        }
+
+        // Wenn wegen fehlender FX-Rates nur USD übrig bleibt, einmal aktiv Rates neu laden.
+        if (ordered.length <= 1 && probePool.length > 1) {
+          try {
+            log('Probe-Rates unvollständig — lade FX-Rates neu für Zielwährungs-Probe…')
+            const freshRates = await fetchCurrencyRates(accessToken, { force: true })
+            if (freshRates && typeof freshRates === 'object') {
+              const mergedRates = { ...(probeRates || {}), ...freshRates }
+              probeRates = mergedRates
+              setRates((prev) => ({ ...(prev || {}), ...freshRates }))
+              ordered =
+                probePool.length && minBetUsd != null
+                  ? sortTargetCandidatesForProbe(probePool, probeRates, minBetUsd, preferredTarget, sCurr)
+                  : ordered
+            }
+          } catch (rateErr) {
+            log(`FX-Refresh für Probe fehlgeschlagen: ${String(rateErr?.message || rateErr)}`)
+          }
+        }
 
         if (currencySlotIndex === 0 && ordered.length > 0) {
-          const probeLimit = Math.min(ordered.length, MAX_TARGET_SESSION_PROBES)
+          const hasPersistedRanking = cachedOrder.length > 0
+          const probeLimit = hasPersistedRanking ? 1 : ordered.length
           let bestProbe = null
           const measuredProbes = []
-          const tightUsd =
-            minBetUsd != null
-              ? minBetUsd + Math.max(TARGET_PROBE_EARLY_STOP_ABS_USD, minBetUsd * TARGET_PROBE_EARLY_STOP_REL)
-              : Infinity
 
           for (let i = 0; i < probeLimit; i++) {
             if (i > 0) {
               await new Promise((res) => setTimeout(res, SESSION_PROBE_DELAY_MS))
             }
             const cand = ordered[i]
-            const r = getRateForCurrency(rates, cand)
+            const r = getRateForCurrency(probeRates, cand)
             if (!r) continue
             try {
               log(`Session-Probe: ${sCurr.toUpperCase()} -> ${cand.toUpperCase()}…`)
@@ -1470,14 +1697,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               if (!bestProbe || usdAt < bestProbe.usdAt - 1e-9) {
                 bestProbe = { session: sess, tCurr: cand, rate: r, betAmount: ba, usdAt }
               }
-              if (usdAt <= tightUsd) break
             } catch (e) {
               log(`Probe ${cand.toUpperCase()}: ${e?.message || e}`)
             }
           }
 
           if (bestProbe) {
-            if (measuredProbes.length > 0) {
+            if (measuredProbes.length > 0 && !hasPersistedRanking) {
               const dedup = new Map()
               for (const p of measuredProbes) {
                 const k = String(p.tCurr || '').toLowerCase()
@@ -1488,6 +1714,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               challengeProbeRankingRef.current[probeCacheKey] = Array.from(dedup.values()).sort(
                 (a, b) => a.usdAt - b.usdAt
               )
+              persistProbeRankingMap(challengeProbeRankingRef.current)
             }
             session = bestProbe.session
             tCurr = bestProbe.tCurr
@@ -1497,7 +1724,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               `Zielwährung auto (Bet-Levels): ${tCurr.toUpperCase()} — Einsatz effektiv ~$${bestProbe.usdAt.toFixed(2)} USD · Challenge-Min (Stake, USD): $${minBetUsd}`
             )
             if (probeLimit > 1) {
-              log(`  (bis zu ${probeLimit} Proben; gewählt: geringster effektiver USD-Bet)`)
+              log(`  (${probeLimit} Proben; gewählt: geringster effektiver USD-Bet)`)
+            } else if (hasPersistedRanking) {
+              log('  (verwendet gespeicherte Probe-Rangliste aus vorherigem Vollscan)')
             }
           }
         } else if (currencySlotIndex > 0 && ordered.length > 0) {
@@ -1507,7 +1736,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           const ranked = measured.length > 0 ? measured : ordered
           const idx = Math.min(currencySlotIndex, ranked.length - 1)
           const cand = ranked[idx]
-          const r = getRateForCurrency(rates, cand)
+          const r = getRateForCurrency(probeRates, cand)
           if (!r) {
             log(`Kein Kurs für ${String(cand).toUpperCase()} — Fallback manuelle Zielwährung.`)
           } else {
@@ -1572,6 +1801,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
       let stopReason = null
       let targetHit = false
+      let pragmaticRecoveryAttempts = 0
       while (!runnersRef.current[runId]?.stop) {
         const total = totalStatsRef.current
         const net = total.won - total.lost
@@ -1679,6 +1909,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             at: Date.now(),
             multi: safeMulti,
             spinSeq,
+            feedEntryId: `${runId}:${spinSeq}`,
           }
           pendingHouseBetMatchRef.current.push(matchEntry)
           flushHouseBetRetryBufferForSlug(
@@ -1754,6 +1985,31 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             },
           }))
 
+          // Keep BetList live: persist each successful spin, not only target hits.
+          const cc = (parsed.currencyCode || tCurr || 'usd').toUpperCase()
+          appendBet(
+            gSlug,
+            {
+              betAmount,
+              winAmount: win,
+              isBonus: false,
+              balance: parsed.balance,
+              currencyCode: cc,
+              roundId: resolvedRoundId ?? undefined,
+            },
+            gName
+          ).catch(() => {})
+          publishChallengeHubBet({
+            id: `${runId}:${spinSeq}`,
+            slotSlug: gSlug,
+            slotName: gName,
+            betAmount,
+            winAmount: win,
+            currencyCode: cc,
+            roundId: resolvedRoundId ?? null,
+            sourceTag: `casino:${gSlug}`,
+          })
+
           const multi = safeMulti
           if (multi >= challenge.targetMultiplier) {
             log(`ZIEL ERREICHT! Multi: ${multi.toFixed(2)}x (Ziel: ${challenge.targetMultiplier}x)`)
@@ -1772,19 +2028,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             log(
               'Ziel erreicht — Bet-ID für Share-Link nur aus houseBets (WebSocket); „Copy ID“ auf der Run-Karte'
             )
-            const cc = (parsed.currencyCode || tCurr || 'usd').toUpperCase()
-            appendBet(
-              gSlug,
-              {
-                betAmount,
-                winAmount: win,
-                isBonus: false,
-                balance: parsed.balance,
-                currencyCode: cc,
-                roundId: roundId ?? undefined,
-              },
-              gName
-            ).catch(() => {})
             persistChallengeHitRecord({
               challengeId,
               roundId,
@@ -1814,6 +2057,39 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             setHuntEnabled(false)
             stopReason = 'insufficient_balance'
             break
+          }
+          const msgLower = msg.toLowerCase()
+          const providerKey = String(providerId || '').toLowerCase()
+          const isPragmaticFamily =
+            providerKey === 'pragmatic' ||
+            providerKey === 'fat-panda' ||
+            providerKey === 'sexy-rabbit' ||
+            providerKey === 'sexyrabbit' ||
+            providerKey === 'videoslots'
+          const isSystemError =
+            msgLower.includes('systemfehler') ||
+            msgLower.includes('systemerror') ||
+            msgLower.includes('spiel-server')
+          if (isPragmaticFamily && isSystemError && pragmaticRecoveryAttempts < 2) {
+            pragmaticRecoveryAttempts += 1
+            try {
+              log(`Pragmatic recovery #${pragmaticRecoveryAttempts}: starte Session neu (${sCurr.toUpperCase()} → ${tCurr.toUpperCase()}).`)
+              session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
+              const computed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
+              betAmount = computed.betAmount
+              setActiveRuns((prev) => ({
+                ...prev,
+                [runId]: {
+                  ...prev[runId],
+                  currentBet: betAmount,
+                  runCurrency: tCurr,
+                },
+              }))
+              await new Promise((r) => setTimeout(r, 350))
+              continue
+            } catch (recoveryErr) {
+              log(`Pragmatic recovery fehlgeschlagen: ${String(recoveryErr?.message || recoveryErr)}`)
+            }
           }
           await new Promise((r) => setTimeout(r, HUNTER_SPIN_ERROR_RETRY_MS))
         }
@@ -1860,6 +2136,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     setQueue([])
     processedIdsRef.current.clear()
     dismissedChallengeIdsRef.current.clear()
+    clearHunterState()
     log('Alles gestoppt: aktive Spins, Scan, Auto-Start, Warteschlange geleert.')
   }
 
@@ -1870,6 +2147,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     runnersRef.current = {}
     processedIdsRef.current.clear()
     dismissedChallengeIdsRef.current.clear()
+    clearHunterState()
     setQueue([])
     setActiveRuns({})
     setHunterSlotTargets({})
@@ -1883,6 +2161,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   }
 
   const clearLogs = () => {
+    logBufferRef.current = []
+    if (logFlushTimerRef.current) {
+      clearTimeout(logFlushTimerRef.current)
+      logFlushTimerRef.current = null
+    }
     setLogs([])
   }
 
@@ -1892,6 +2175,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     if (queue.length === 0 && runningCount === 0) {
       processedIdsRef.current.clear()
       dismissedChallengeIdsRef.current.clear()
+      clearHunterState()
       refreshChallenges()
     }
   }
@@ -2005,16 +2289,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const renderChallengeCard = (c, inQueue = false, metaOverride = null, showReasons = false, queueItem = null) => {
     const meta = metaOverride || getChallengeMeta(c)
     const { main: prizeMain, hint: prizeHint } = formatChallengePrize(c)
-    const runsForChallenge = Object.values(activeRuns).filter(
-      (r) => r.challengeId === c.id && r.status === 'running'
-    )
-    const runningCountForC = runsForChallenge.length
+    const runningCountForC = runningCountByChallengeId[c.id] || 0
     const isRunning = runningCountForC > 0
-    const hasFinishedRun = Object.values(activeRuns).some(
-      (r) => r.challengeId === c.id && r.status !== 'running'
-    )
-    const inQueueLocal = queue.some((x) => normalizeQueueItem(x).challengeId === c.id)
-    const queueCountForC = queue.filter((x) => normalizeQueueItem(x).challengeId === c.id).length
+    const hasFinishedRun = (finishedCountByChallengeId[c.id] || 0) > 0
+    const queueCountForC = queueCountByChallengeId[c.id] || 0
+    const inQueueLocal = queueCountForC > 0
     const stakeClosed = !!(c.completedAt || c.active === false)
     const canQueue = !stakeClosed
     const filterEligible = meta.eligible
@@ -2054,7 +2333,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         onClick={() => {
           if (!canQueue) return
           dismissedChallengeIdsRef.current.delete(c.id)
-          const slotIndex = countHunterSlotsForChallenge(c.id, queue, activeRuns)
+          const slotIndex = queueCountForC + runningCountForC
           const manual = (manualTargetCurrencyByChallengeId[c.id] || '').trim().toLowerCase()
           setQueue((q) => [
             ...q,
@@ -2269,6 +2548,126 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     )
   }
 
+  const renderFoundChallengeRow = (c, metaOverride = null) => {
+    const meta = metaOverride || getChallengeMeta(c)
+    const { main: prizeMain } = formatChallengePrize(c)
+    const queueCountForC = queueCountByChallengeId[c.id] || 0
+    const inQueueLocal = queueCountForC > 0
+    const runningCountForC = runningCountByChallengeId[c.id] || 0
+    const stakeClosed = !!(c.completedAt || c.active === false)
+    const canQueue = !stakeClosed
+    const slotName = c.gameName || c.gameSlug || c.game?.name || c.game?.slug
+    const manual = (manualTargetCurrencyByChallengeId[c.id] || '').trim().toLowerCase()
+    const statusLabel = stakeClosed
+      ? 'closed'
+      : runningCountForC > 0
+        ? `running (${runningCountForC})`
+        : inQueueLocal
+          ? `queued${queueCountForC > 1 ? ` (${queueCountForC})` : ''}`
+          : meta.eligible
+            ? 'ready'
+            : 'filter-mismatch'
+
+    return (
+      <div
+        key={c.id}
+        className={
+          prefersReducedMotion ? 'hunter-found-row hunter-found-row--reduce-motion' : 'hunter-found-row'
+        }
+        onClick={() => {
+          if (!canQueue) return
+          dismissedChallengeIdsRef.current.delete(c.id)
+          const slotIndex = queueCountForC + runningCountForC
+          setQueue((q) => [
+            ...q,
+            {
+              runId: generateHunterRunId(),
+              challengeId: c.id,
+              currencySlotIndex: slotIndex,
+              ...(manual ? { forcedTargetCurrency: manual } : {}),
+            },
+          ])
+          processedIdsRef.current.add(c.id)
+        }}
+        title={canQueue ? 'Click row to add challenge to queue' : 'Challenge closed on Stake'}
+      >
+        <div className="hunter-found-col hunter-found-name">
+          <div className="hunter-found-title">{slotName}</div>
+          <div className="hunter-found-sub">{String(c.gameSlug || c.game?.slug || '').toLowerCase()}</div>
+        </div>
+        <div className="hunter-found-col">
+          <div className="hunter-found-key">Target</div>
+          <div className="hunter-found-val">{Number(c.targetMultiplier || 0).toFixed(2)}x</div>
+        </div>
+        <div className="hunter-found-col">
+          <div className="hunter-found-key">Min Bet</div>
+          <div className="hunter-found-val">${Number(c.minBetUsd || 0).toFixed(2)}</div>
+        </div>
+        <div className="hunter-found-col">
+          <div className="hunter-found-key">Prize</div>
+          <div className="hunter-found-val">{prizeMain}</div>
+        </div>
+        <div className="hunter-found-col">
+          <div className="hunter-found-key">Status</div>
+          <div className="hunter-found-val">{statusLabel}</div>
+        </div>
+        <div
+          className="hunter-found-actions"
+          role="presentation"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <select
+            value={manualTargetCurrencyByChallengeId[c.id] ?? ''}
+            onChange={(e) => {
+              const v = e.target.value
+              setManualTargetCurrencyByChallengeId((prev) => ({ ...prev, [c.id]: v }))
+            }}
+            style={{
+              width: '100%',
+              fontSize: '0.7rem',
+              padding: '0.22rem 0.3rem',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border)',
+              background: 'var(--bg-deep)',
+              color: 'var(--text)',
+            }}
+          >
+            <option value="">Auto</option>
+            {hunterTargetCurrencyOptions.map((cc) => (
+              <option key={cc} value={cc}>
+                {cc.toUpperCase()}
+              </option>
+            ))}
+          </select>
+          <Button
+            size="small"
+            variant="primary"
+            disabled={!canQueue}
+            onClick={() => {
+              if (!canQueue) return
+              dismissedChallengeIdsRef.current.delete(c.id)
+              const slotIndex = queueCountForC + runningCountForC
+              setQueue((q) => [
+                ...q,
+                {
+                  runId: generateHunterRunId(),
+                  challengeId: c.id,
+                  currencySlotIndex: slotIndex,
+                  ...(manual ? { forcedTargetCurrency: manual } : {}),
+                },
+              ])
+              processedIdsRef.current.add(c.id)
+            }}
+            title={canQueue ? 'Add challenge to queue' : 'Challenge closed'}
+          >
+            Queue
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   const visibleChallenges = useMemo(() => {
     const q = String(challengeSearch || '').trim().toLowerCase()
     if (!q) return challenges
@@ -2279,31 +2678,58 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     })
   }, [challengeSearch, challenges])
 
+  const sortedFoundChallenges = useMemo(() => {
+    const list = [...visibleChallenges]
+    const getNum = (value, fallback) => {
+      const n = Number(value)
+      return Number.isFinite(n) ? n : fallback
+    }
+    if (challengeSort === 'prize-asc') {
+      return list.sort((a, b) => getNum(a?.award, Number.POSITIVE_INFINITY) - getNum(b?.award, Number.POSITIVE_INFINITY))
+    }
+    if (challengeSort === 'prize-desc') {
+      return list.sort((a, b) => getNum(b?.award, Number.NEGATIVE_INFINITY) - getNum(a?.award, Number.NEGATIVE_INFINITY))
+    }
+    if (challengeSort === 'stake-asc') {
+      return list.sort((a, b) => getNum(a?.minBetUsd, Number.POSITIVE_INFINITY) - getNum(b?.minBetUsd, Number.POSITIVE_INFINITY))
+    }
+    if (challengeSort === 'stake-desc') {
+      return list.sort((a, b) => getNum(b?.minBetUsd, Number.NEGATIVE_INFINITY) - getNum(a?.minBetUsd, Number.NEGATIVE_INFINITY))
+    }
+    return list
+  }, [visibleChallenges, challengeSort])
+  const foundRowVirtualizer = useVirtualizer({
+    count: sortedFoundChallenges.length,
+    getScrollElement: () => foundScrollRef.current,
+    estimateSize: () => 74,
+    overscan: 6,
+  })
+
   return (
     <div className="hunter-dashboard" style={STYLES.container}>
       <div className="hunter-header">
-        <div className="hunter-title">Auto Challenge Hunter</div>
+        <div className="hunter-title">Casino Challenge Ops</div>
         <div className="hunter-controls">
            <div className="hunter-meta" style={{ marginRight: '1rem' }}>
              {lastRefresh ? `Update: ${new Date(lastRefresh).toLocaleTimeString()}` : ''}
            </div>
-           <Button onClick={clearLogs}>Logs löschen</Button>
+           <Button onClick={clearLogs}>Clear logs</Button>
            <Button
              onClick={resetSession}
              variant="secondary"
              title="Queue, Statistik und Scan zurücksetzen (wie neu starten)"
            >
-             Alles zurücksetzen
+             Reset all
            </Button>
            <Button onClick={refreshChallenges} disabled={!accessToken} title="Challenges jetzt neu laden">
-             Neu laden
+             Refresh
            </Button>
            <Button
              variant={huntEnabled ? 'primary' : 'outline'}
              onClick={() => setHuntEnabled(!huntEnabled)}
              title={huntEnabled ? 'Challenge-Liste nicht mehr automatisch aktualisieren' : 'Regelmäßig Challenges von Stake laden'}
            >
-             {huntEnabled ? 'Scan: ein' : 'Scan: aus'}
+             {huntEnabled ? 'Scan: on' : 'Scan: off'}
            </Button>
            {huntEnabled && (
              <Button
@@ -2311,7 +2737,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                onClick={() => setAutoStart(!autoStart)}
                title={autoStart ? 'Keine neuen Runs aus der Warteschlange starten' : 'Warteschlange automatisch abarbeiten, sobald ein Slot frei ist'}
              >
-               Auto-Start: {autoStart ? 'an' : 'aus'}
+               Auto-Start: {autoStart ? 'on' : 'off'}
              </Button>
            )}
         </div>
@@ -2586,7 +3012,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 const c = challenges.find((ch) => ch.id === q.challengeId)
                 return c ? renderChallengeCard(c, true, null, true, item) : null
               })}
-              {queue.length === 0 && <div style={{color: 'var(--text-muted)', fontSize: '0.8rem'}}>Leer</div>}
+              {queue.length === 0 && <div style={{color: 'var(--text-muted)', fontSize: '0.8rem'}}>Empty</div>}
             </div>
           </div>
         </div>
@@ -2594,9 +3020,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         <div className="hunter-main">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
             <div className="hunter-help-bar">
-              <strong>Neu laden</strong> = Challenges holen (ohne Scan) · Karten unten <strong>Ziel</strong>-Dropdown &amp; <strong>klicken</strong> = Warteschlange ·{' '}
-              <strong>Nächsten starten</strong> = manuell ohne Auto-Hunt · <strong>Scan</strong> = Liste dauernd aktualisieren ·{' '}
-              <strong>Auto-Start</strong> = Queue automatisch · <strong>Alles stoppen</strong> = Stop &amp; Queue leer
+              <strong>Refresh</strong> = fetch challenge list · set <strong>Target</strong> and <strong>click</strong> to queue ·{' '}
+              <strong>Start Next</strong> = manual single run · <strong>Scan</strong> = keep list synced ·{' '}
+              <strong>Auto-Start</strong> = process queue automatically · <strong>Stop All</strong> = stop runs and clear queue
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
               <div className="hunter-meta" style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
@@ -2609,14 +3035,14 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                   disabled={queue.length === 0 || runningCount >= maxParallelClamped}
                   title="Startet genau einen Lauf aus der Warteschlange — ohne Scan und ohne Auto-Start"
                 >
-                  Nächsten starten
+                  Start Next
                 </Button>
                 <Button
                   onClick={startAllRunners}
                   variant="secondary"
                   title="Scan + Auto-Start einschalten und ggf. sofort Challenges neu laden (Auto-Hunt)"
                 >
-                  Auto-Hunt starten
+                  Start Auto Hunt
                 </Button>
                 <Button
                   onClick={stopAllRunners}
@@ -2628,7 +3054,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                       : 'Nichts aktiv (keine Läufe, Scan aus, Queue leer)'
                   }
                 >
-                  Alles stoppen
+                  Stop All
                 </Button>
               </div>
             </div>
@@ -2733,8 +3159,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           </div>
           {activeRunList.length === 0 ? (
             <div className="hunter-empty">
-              Keine aktive Challenge. <br/>
-              Unten Karten in die Warteschlange klicken, dann <strong>Nächsten starten</strong> — oder Auto-Hunt mit Scan.
+              No active challenge. <br/>
+              Add items to queue below, then press <strong>Start Next</strong> or run Auto Hunt.
             </div>
           ) : (
             <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem'}}>
@@ -3026,36 +3452,70 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
       <div className="hunter-found-panel">
         <div className="hunter-found-head">
-          Gefundene Challenges
+          Found Challenges
           <span style={{ display: 'block', fontWeight: 400, fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-            Alle Challenges aus der Stake-Liste (RGS) · Klick = Warteschlange · „Neu laden“ füllt die Liste
+            List layout: Slot, Target, Min Bet, Prize, Status. Click row to queue.
           </span>
           <div style={{ marginTop: '0.55rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <input
               type="search"
               value={challengeSearch}
               onChange={(e) => setChallengeSearch(e.target.value)}
-              placeholder="Slot suchen (Name oder Slug)"
+              placeholder="Search slot by name or slug"
               style={{ ...STYLES.input, minWidth: 220, flex: '1 1 280px' }}
-              aria-label="Challenge-Slot suchen"
+              aria-label="Search challenge slot"
             />
+            <select
+              value={challengeSort}
+              onChange={(e) => setChallengeSort(e.target.value)}
+              style={{ ...STYLES.input, minWidth: 200, flex: '0 0 auto' }}
+              aria-label="Sort found challenges"
+            >
+              <option value="prize-desc">Prize: high to low</option>
+              <option value="prize-asc">Prize: low to high</option>
+              <option value="stake-desc">Stake: high to low</option>
+              <option value="stake-asc">Stake: low to high</option>
+            </select>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               {visibleChallenges.length} / {challenges.length}
             </span>
           </div>
         </div>
-        <div className="hunter-found-body">
-          {visibleChallenges.length === 0 ? (
+        <div className="hunter-found-body" ref={foundScrollRef}>
+          {sortedFoundChallenges.length === 0 ? (
             <div style={{ padding: '0.75rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Keine Challenge passt zu "{challengeSearch}".
+              No challenges match "{challengeSearch}".
             </div>
-          ) : null}
-          <div className="hunter-found-grid">
-          {visibleChallenges.map((c) => {
-            const meta = getChallengeMeta(c)
-            return renderChallengeCard(c, false, meta, true)
-          })}
-          </div>
+          ) : (
+            <div
+              className="hunter-found-grid"
+              style={{
+                height: `${foundRowVirtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative',
+              }}
+            >
+              {foundRowVirtualizer.getVirtualItems().map((virtualRow) => {
+                const c = sortedFoundChallenges[virtualRow.index]
+                if (!c) return null
+                const meta = getChallengeMeta(c)
+                return (
+                  <div
+                    key={c.id}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    {renderFoundChallengeRow(c, meta)}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

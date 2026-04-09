@@ -5,9 +5,12 @@
 import { startThirdPartySession } from '../stake'
 import { logApiCall } from '../../utils/apiLogger'
 import { isZeroDecimalCurrency } from '../../utils/currencyMeta'
+import { normalizeProviderError } from './providerErrors'
 
 const GAME_SERVICE_PATH_V4 = '/gs2c/ge/v4/gameService'
 const GAME_SERVICE_PATH_V3 = '/gs2c/ge/v3/gameService'
+const SSP_FALLBACK_V3_URL = 'http://277bdnt1n6.iumtibif.net/gs2c/ge/v3/gameService'
+const SSP_FALLBACK_V4_URL = 'https://441f8864ac.ukffjfmmka.net/gs2c/ge/v4/gameService'
 
 function parseUrlParams(urlStr) {
   try {
@@ -45,9 +48,13 @@ function parseUrlParams(urlStr) {
 const PRAGMATIC_PROXY_FETCH = null
 const PRAGMATIC_PROXY_POST = null
 
+function pragmaticError(message, cause) {
+  return normalizeProviderError('pragmatic', cause || new Error(message), message)
+}
+
 async function safeFetch(url, options = {}) {
   if (!url || typeof url !== 'string') {
-    throw new Error('Session ungültig. Bitte Session neu starten.')
+    throw pragmaticError('Session ungültig. Bitte Session neu starten.')
   }
   if (window.electronAPI?.proxyRequest) {
     const { method = 'GET', headers = {}, body } = options
@@ -65,7 +72,7 @@ async function safeFetch(url, options = {}) {
       }
     } catch (e) {
       console.error('Proxy request failed', e)
-      throw e
+      throw pragmaticError('Proxy request failed', e)
     }
   }
   return fetch(url, options)
@@ -101,7 +108,7 @@ async function resolveGameUrl(config) {
     logApiCall({ type: 'pragmatic/resolve', endpoint: url, request: null, response: null, error: String(e), durationMs: null })
     const directParams = parseUrlParams(trimmed)
     if (directParams.mgckey && directParams.symbol && directParams.host) return trimmed
-    throw e
+    throw pragmaticError('resolveGameUrl failed', e)
   }
   return null
 }
@@ -132,20 +139,156 @@ function parsePragmaticResponse(text) {
     systemError: text?.includes('ext_code=SystemError'),
     fs: text?.includes('&fs=') || params.has('fs'),
     fs_opt: text?.includes('fs_opt=') || params.has('fs_opt'),
+    mo: text?.includes('&mo=') || params.has('mo'),
+    rs_c: text?.includes('&rs_c=') || params.has('rs_c'),
+    bgid: params.get('bgid') || null,
+    ch_v: params.get('ch_v') || '',
+    unlogged: String(text || '').includes('unlogged'),
     raw: text,
   }
 }
 
-// Fallback, falls doInit keine Bet-Levels liefert (bls/sc fehlt)
-// Sugar Rush 1000 IDR: Min 500
-const PRAGMATIC_DEFAULT_BET_LEVELS = [500, 1000, 2000, 5000, 10000, 20000, 50000, 100000]
-// Big Bass Boom IDR: 1 Münze/Linie × 25 = 250 … 10 Münzen × 280.000 = 28 Mio
-const PRAGMATIC_DEFAULT_BET_LEVELS_BIGBASS = [250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000, 2800000, 28000000]
-// Staffelung wie Rabbit Heist: Min 100, Max 52M (VND/IDR direkt, ARS in Minor)
-const PRAGMATIC_WIDE_BET_LEVELS = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000, 2000000, 5000000, 10000000, 26000000, 52000000]
+function nextPragmaticCursorValue(raw, step, fallback) {
+  const n = parseInt(String(raw ?? ''), 10)
+  if (!Number.isFinite(n) || n <= 0) return fallback
+  return String(n + step)
+}
 
-/** Währungen wo doInit/bls oft falsche Range liefert – stattdessen VND-Style-Staffelung nutzen */
-const PRAGMATIC_WIDE_CURRENCIES = ['vnd', 'idr', 'ars']
+function toV3ServiceUrl(url) {
+  if (!url || typeof url !== 'string') return url
+  return url.replace('/ge/v4/gameService', '/ge/v3/gameService')
+}
+
+function pickFsOption(rawText) {
+  const txt = String(rawText || '')
+  const m = txt.match(/(?:[?&]|^)fs_opt=([^&]+)/i)
+  if (!m?.[1]) return '0'
+  const opts = m[1]
+    .split('~')
+    .map((x) => x.trim())
+    .filter(Boolean)
+  return opts.includes('1') ? '1' : '0'
+}
+
+function parseBonusContext(rawText) {
+  const txt = String(rawText || '')
+  const out = {
+    ask: null,
+    trail: '',
+    statusArr: [],
+    winsMask: [],
+  }
+  const gMatch = txt.match(/g=\{([^]*?)\}(?:&|$)/)
+  const gRaw = gMatch ? gMatch[1] : ''
+  if (gRaw) {
+    const askMatch = gRaw.match(/ask:"?(\d+)"?/i)
+    if (askMatch) out.ask = parseInt(askMatch[1], 10)
+    const trailMatch = gRaw.match(/trail:"([^"]+)"/i)
+    if (trailMatch) out.trail = trailMatch[1]
+    const winsMaskMatch = gRaw.match(/wins_mask:"([^"]+)"/i)
+    if (winsMaskMatch) out.winsMask = winsMaskMatch[1].split(',').map((x) => x.trim()).filter(Boolean)
+    const statusMatch = gRaw.match(/status:"([^"]+)"/i)
+    if (statusMatch) {
+      out.statusArr = statusMatch[1]
+        .split(',')
+        .map((x) => parseInt(x.trim(), 10))
+        .filter((n) => Number.isFinite(n))
+    }
+  }
+  if (out.statusArr.length === 0) {
+    const p = new URLSearchParams(txt.startsWith('?') ? txt : `?${txt}`)
+    const status = p.get('status')
+    if (status) {
+      out.statusArr = status
+        .split(',')
+        .map((x) => parseInt(x.trim(), 10))
+        .filter((n) => Number.isFinite(n))
+    }
+  }
+  return out
+}
+
+function parseTrailScore(trailToken) {
+  const m = String(trailToken || '').match(/f(\d+)_m(\d+)/i)
+  if (!m) return 0
+  return parseInt(m[1], 10) * parseInt(m[2], 10)
+}
+
+function resolveBonusDecisionMode(session) {
+  const fromSession = String(
+    session?.bonusDecisionMode ||
+    session?.bonusChoiceMode ||
+    session?.strategy ||
+    ''
+  ).toLowerCase()
+  if (fromSession === 'deal' || fromSession === 'stand') return fromSession
+  try {
+    const raw = String(window?.localStorage?.getItem('slotbot_pragmatic_bonus_mode') || '').toLowerCase()
+    if (raw === 'deal' || raw === 'stand') return raw
+  } catch (_) {
+    // Ignore storage read issues.
+  }
+  return 'stand'
+}
+
+function pickBonusInd(parsed, currentSession, decisionMode = 'stand') {
+  const raw = String(parsed?.raw || '')
+  const context = parseBonusContext(raw)
+  const chv = String(parsed?.ch_v || '')
+  const seen = new Set(Array.isArray(currentSession?._bonusSeenChoices) ? currentSession._bonusSeenChoices : [])
+
+  // SSP-nah: ask-basierte Entscheidungen bei Semikolon-Trails.
+  if (chv.includes(';')) {
+    if (context.ask === 3) return '1'
+    if (context.ask === 2 && context.statusArr.length > 0) {
+      const open = []
+      for (let i = 0; i < context.statusArr.length; i += 1) {
+        if (context.statusArr[i] === 0) open.push(i)
+      }
+      if (open.length > 0) return String(open[0])
+      return '0'
+    }
+    if (context.ask === 1) {
+      const trailParts = chv.split(';')
+      let currentTrail = ''
+      const statusTokens = []
+      for (const part of trailParts) {
+        if (part.startsWith('trail~')) currentTrail = part.replace('trail~', '')
+        else if (part.startsWith('status~')) {
+          statusTokens.push(...part.replace('status~', '').split(',').map((x) => x.trim()).filter(Boolean))
+        }
+      }
+      const currentScore = parseTrailScore(currentTrail)
+      const remaining = statusTokens.map(parseTrailScore).filter((n) => n > 0)
+      const avg = remaining.length > 0 ? (remaining.reduce((a, b) => a + b, 0) / remaining.length) : 0
+      return currentScore >= avg ? '0' : '1'
+    }
+    if (context.ask === 0) return decisionMode === 'deal' ? '0' : '1'
+  }
+
+  if (context.statusArr.length > 0) {
+    const opts = context.statusArr.filter((v) => !seen.has(v))
+    const choice = opts.length > 0 ? opts[0] : context.statusArr[0]
+    return String(choice)
+  }
+
+  if (chv.includes(',') && !chv.includes(';')) {
+    const vals = chv
+      .split(',')
+      .map((x) => parseFloat(x.trim()))
+      .map((n) => (Number.isFinite(n) && n > 0 ? 0 : 1))
+    if (vals.length > 0) {
+      const opts = vals.filter((v) => !seen.has(v))
+      const choice = opts.length > 0 ? opts[0] : vals[0]
+      return String(choice)
+    }
+  }
+
+  return '0'
+}
+
+// Fallback, falls doInit keine Bet-Levels liefert (bls/sc fehlt)
+const PRAGMATIC_DEFAULT_BET_LEVELS = [10, 20, 50, 100, 200, 500, 1000, 2000]
 
 /**
  * Parst Bet-Levels aus doInit-Response (währungsabhängig).
@@ -162,52 +305,48 @@ function parseBetLevels(doInitText, targetCurrency, symbol = '') {
   if (!doInitText || typeof doInitText !== 'string') return PRAGMATIC_DEFAULT_BET_LEVELS
   const curr = (targetCurrency || 'eur').toLowerCase()
   const isZeroDec = isZeroDecimalCurrency(curr)
-  const linesMatch = symbol?.match(/^vs(\d+)/i)
-  const lines = linesMatch ? parseInt(linesMatch[1], 10) : 20
-
-  // VND, IDR, ARS: doInit/bls liefert oft falsche Range. Real: Min 100, Max 52M (bzw. ARS in Minor)
-  if (PRAGMATIC_WIDE_CURRENCIES.includes(curr)) {
-    return PRAGMATIC_WIDE_BET_LEVELS
-  }
-
-  // bls=min,max: c-Werte (Coin pro Linie). Bet = c × lines → wir geben Beträge zurück.
-  const blsMatch = doInitText.match(/[?&]bls=(\d+),(\d+)/)
-  if (blsMatch) {
-    const low = parseInt(blsMatch[1], 10)
-    const high = parseInt(blsMatch[2], 10)
-    if (low < high) {
-      const steps = Math.min(12, high - low)
-      const inc = Math.max(1, Math.floor((high - low) / steps))
-      const cValues = []
-      for (let v = low; v <= high; v += inc) cValues.push(v)
-      if (cValues[cValues.length - 1] !== high) cValues.push(high)
-      // Beträge = c × lines (Minor für Fiat, direkt für Zero-Dec)
-      return cValues.map((c) => c * lines)
+  const params = new URLSearchParams(doInitText.startsWith('?') ? doInitText : `?${doInitText}`)
+  const scRaw = params.get('sc')
+  const lRaw = params.get('l')
+  const blsRaw = params.get('bls')
+  const lineMultipliers = []
+  if (blsRaw) {
+    for (const part of blsRaw.split(',')) {
+      const n = Number(part)
+      if (Number.isFinite(n) && n > 0) lineMultipliers.push(n)
     }
+  } else if (lRaw) {
+    const n = Number(lRaw)
+    if (Number.isFinite(n) && n > 0) lineMultipliers.push(n)
+  }
+  if (lineMultipliers.length === 0) {
+    const linesMatch = symbol?.match(/^vs(\d+)/i)
+    lineMultipliers.push(linesMatch ? parseInt(linesMatch[1], 10) : 20)
   }
 
-  // sc=… – bei IDR/JPY: Werte = Beträge; bei EUR: Werte * 100 = Minor
-  const scMatch = doInitText.match(/[?&]sc=([\d.,]+)/)
-  if (scMatch) {
-    const vals = scMatch[1].split(',').map((s) => parseFloat(s.trim().replace(',', '.')))
-    if (vals.length > 0) {
-      let levels = vals
-        .map((v) => Math.round(isZeroDec ? v : v * 100))
-        .filter((n) => n > 0)
-        .sort((a, b) => a - b)
-      levels = [...new Set(levels)]
-      // IDR: wenn geparste Levels zu hoch, symbol-spezifischen Fallback nutzen
-      if (levels.length > 0) {
-        const min = levels[0]
-        if (isZeroDec && min > 250) {
-          return /bbboom/i.test(symbol) ? PRAGMATIC_DEFAULT_BET_LEVELS_BIGBASS : PRAGMATIC_DEFAULT_BET_LEVELS
-        }
-        return levels
+  if (!scRaw) return PRAGMATIC_DEFAULT_BET_LEVELS
+  const scValues = scRaw
+    .split(',')
+    .map((x) => Number(String(x).trim().replace(',', '.')))
+    .filter((v) => Number.isFinite(v) && v > 0)
+  if (scValues.length === 0) return PRAGMATIC_DEFAULT_BET_LEVELS
+
+  const useMinorAsIs = !isZeroDec && scValues.every((v) => Number.isInteger(v) && v >= 1)
+  const ladders = [1,2,3,4,5,6,7,8,9,10]
+  const out = []
+  for (const sc of scValues) {
+    for (const mul of ladders) {
+      for (const line of lineMultipliers) {
+        const major = sc * mul * line
+        const minor = isZeroDec
+          ? Math.round(major)
+          : (useMinorAsIs ? Math.round(major) : Math.round(major * 100))
+        if (minor > 0 && Number.isFinite(minor)) out.push(minor)
       }
     }
   }
-
-  return /bbboom/i.test(symbol) ? PRAGMATIC_DEFAULT_BET_LEVELS_BIGBASS : PRAGMATIC_DEFAULT_BET_LEVELS
+  const uniq = [...new Set(out)].sort((a, b) => a - b)
+  return uniq.length > 0 ? uniq : PRAGMATIC_DEFAULT_BET_LEVELS
 }
 
 export async function startSession(accessToken, slotSlug, sourceCurrency, targetCurrency) {
@@ -217,14 +356,14 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     sourceCurrency?.toLowerCase() || 'usdc',
     targetCurrency?.toLowerCase() || 'eur'
   )
-  if (!session?.config) throw new Error('Keine Config von Stake erhalten.')
+  if (!session?.config) throw pragmaticError('Keine Config von Stake erhalten.')
 
   const gameUrl = await resolveGameUrl(session.config)
-  if (!gameUrl) throw new Error('Game-URL konnte nicht aufgelöst werden.')
+  if (!gameUrl) throw pragmaticError('Game-URL konnte nicht aufgelöst werden.')
 
   const { mgckey, symbol, host } = parseUrlParams(gameUrl)
   if (!mgckey || !symbol || !host) {
-    throw new Error('mgckey, symbol oder host fehlt in der Game-URL.')
+    throw pragmaticError('mgckey, symbol oder host fehlt in der Game-URL.')
   }
 
   const doInitBody = new URLSearchParams({
@@ -246,39 +385,70 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
             body: doInitBody.toString(),
         })
     } catch (e) {
-        throw new Error(`Fetch failed: ${e.message}`)
+        throw pragmaticError(`Fetch failed: ${e.message}`, e)
     }
     return { res: doInitRes, text: await doInitRes.text() }
   }
 
   const t0 = Date.now()
-  let gameServiceUrl = `https://${host}${GAME_SERVICE_PATH_V4}`
+  const doInitCandidates = [
+    `https://${host}${GAME_SERVICE_PATH_V4}`,
+    `https://${host}${GAME_SERVICE_PATH_V3}`,
+    SSP_FALLBACK_V3_URL,
+    SSP_FALLBACK_V4_URL,
+  ]
+  let gameServiceUrl = doInitCandidates[0]
   let doInitText
-  try {
-    let result = await tryDoInit(gameServiceUrl)
-    doInitText = result.text
-    logApiCall({ type: 'pragmatic/doInit', endpoint: gameServiceUrl, request: Object.fromEntries(doInitBody), response: doInitText?.slice(0, 500), error: !result.res.ok ? `HTTP ${result.res.status}` : null, durationMs: Date.now() - t0 })
-    // Bei 400: v3 probieren (Big Bass etc. – ssp nutzt v3 zuerst)
-    if (!result.res.ok && result.res.status === 400) {
-      gameServiceUrl = `https://${host}${GAME_SERVICE_PATH_V3}`
-      result = await tryDoInit(gameServiceUrl)
+  let lastErr = null
+  let lastStatus = null
+  for (const candidate of doInitCandidates) {
+    gameServiceUrl = candidate
+    try {
+      const result = await tryDoInit(candidate)
       doInitText = result.text
-      logApiCall({ type: 'pragmatic/doInit', endpoint: gameServiceUrl, request: Object.fromEntries(doInitBody), response: doInitText?.slice(0, 500), error: !result.res.ok ? `HTTP ${result.res.status}` : null, durationMs: Date.now() - t0 })
+      lastStatus = result?.res?.status ?? null
+      logApiCall({
+        type: 'pragmatic/doInit',
+        endpoint: candidate,
+        request: Object.fromEntries(doInitBody),
+        response: doInitText?.slice(0, 500),
+        error: !result.res.ok ? `HTTP ${result.res.status}` : null,
+        durationMs: Date.now() - t0,
+      })
+      if (result.res.ok && doInitText && doInitText !== 'unlogged') {
+        lastErr = null
+        break
+      }
+      lastErr = pragmaticError(
+        doInitText === 'unlogged'
+          ? 'Session ungültig. Bitte erneut verbinden.'
+          : `DoInit HTTP ${result.res.status}`
+      )
+    } catch (e) {
+      lastErr = e
+      logApiCall({
+        type: 'pragmatic/doInit',
+        endpoint: candidate,
+        request: Object.fromEntries(doInitBody),
+        response: null,
+        error: String(e),
+        durationMs: Date.now() - t0,
+      })
     }
-    if (!result.res.ok) throw new Error(`DoInit HTTP ${result.res.status}`)
-  } catch (e) {
-    if (e.message?.startsWith('DoInit HTTP')) throw e
-    logApiCall({ type: 'pragmatic/doInit', endpoint: gameServiceUrl, request: Object.fromEntries(doInitBody), response: null, error: String(e), durationMs: Date.now() - t0 })
-    throw new Error(`DoInit fehlgeschlagen: ${e.message}`)
   }
-  if (doInitText === 'unlogged') throw new Error('Session ungültig. Bitte erneut verbinden.')
-  if (doInitText?.includes('nomoney=')) throw new Error('Nicht genügend Guthaben.')
+  if (!doInitText || doInitText === 'unlogged') {
+    throw pragmaticError(
+      lastStatus ? `DoInit fehlgeschlagen (HTTP ${lastStatus})` : 'DoInit fehlgeschlagen: Alle Pragmatic-Server nicht erreichbar.',
+      lastErr || undefined
+    )
+  }
+  if (doInitText?.includes('nomoney=')) throw pragmaticError('Nicht genügend Guthaben.')
 
   const betLevels = parseBetLevels(doInitText, targetCurrency, symbol)
   const parsed = parsePragmaticResponse(doInitText)
-  // Erster doSpin braucht index=2, counter=3 (Pragmatic-Konvention)
-  const firstIndex = '2'
-  const firstCounter = '3'
+  // SSP-nah: doInit liefert die Cursor-Basis; erster doSpin = index+1 / counter+2
+  const firstIndex = nextPragmaticCursorValue(parsed.index, 1, '2')
+  const firstCounter = nextPragmaticCursorValue(parsed.counter, 2, '3')
   // Lines aus Symbol: vs20sugarrushx → 20, vs10bbboom → 10
   const linesMatch = symbol?.match(/^vs(\d+)/i)
   const lines = linesMatch ? parseInt(linesMatch[1], 10) : 20
@@ -291,6 +461,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     symbol,
     host,
     gameServiceUrl,
+    spinServiceUrl: toV3ServiceUrl(gameServiceUrl),
     index: firstIndex,
     counter: firstCounter,
     betLevels,
@@ -301,9 +472,9 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
 }
 
 async function postGameService(session, body) {
-  const url = session?.gameServiceUrl
+  const url = session?.spinServiceUrl || session?.gameServiceUrl
   if (!url || typeof url !== 'string') {
-    throw new Error('Session ungültig. Bitte Session neu starten.')
+    throw pragmaticError('Session ungültig. Bitte Session neu starten.')
   }
   const t0 = Date.now()
   const formBody = new URLSearchParams(body).toString()
@@ -315,12 +486,12 @@ async function postGameService(session, body) {
         body: formBody,
     })
   } catch(e) {
-    logApiCall({ type: 'pragmatic/request', endpoint: session.gameServiceUrl, request: body, response: null, error: String(e), durationMs: Date.now() - t0 })
-    throw e
+    logApiCall({ type: 'pragmatic/request', endpoint: url, request: body, response: null, error: String(e), durationMs: Date.now() - t0 })
+    throw pragmaticError('pragmatic request failed', e)
   }
   
   const text = await res.text()
-  logApiCall({ type: 'pragmatic/request', endpoint: session.gameServiceUrl, request: body, response: text?.slice(0, 300), error: !res.ok ? `HTTP ${res.status}` : null, durationMs: Date.now() - t0 })
+  logApiCall({ type: 'pragmatic/request', endpoint: url, request: body, response: text?.slice(0, 300), error: !res.ok ? `HTTP ${res.status}` : null, durationMs: Date.now() - t0 })
   return text
 }
 
@@ -337,9 +508,6 @@ const BIGBASS_SYMBOL = /bbboom/i
  * Bet-Levels sind immer in Minor (bzw. Währung für Zero-Dec).
  */
 export async function placeBet(session, betAmount, extraBet = false, autoplay = false) {
-  if (session.na === 'b') {
-    throw new Error('Bonus aktiv – bitte im Spielfenster manuell weiterspielen.')
-  }
   const curr = (session.targetCurrency || 'eur').toLowerCase()
   const isZeroDec = isZeroDecimalCurrency(curr)
 
@@ -351,14 +519,25 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     : betAmount
   const b = Number(snapped)
 
-  // Pragmatic: Gesamteinsatz = c × l. c = Coin-Wert pro Linie (in Minor bzw. Währung)
+  // Pragmatic: Gesamteinsatz = c × l, wobei c als MAJOR-Coin pro Linie erwartet wird.
+  // Intern arbeiten wir mit Minor-Betlevels -> vor doSpin sauber in major umrechnen.
   const minC = BIGBASS_SYMBOL.test(session.symbol || '') && curr === 'idr' ? 25 : 1
-  const cVal = Math.max(minC, Math.round(b / lines))
+  const betMajor = isZeroDec ? b : b / 100
+  const cRaw = lines > 0 ? (betMajor / lines) : betMajor
+  const cVal = BIGBASS_SYMBOL.test(session.symbol || '') && curr === 'idr'
+    ? Math.max(minC, Math.round(cRaw))
+    : Math.max(0, Number(cRaw))
+  const cSerialized = isZeroDec
+    ? String(Math.round(cVal))
+    : String(Number(cVal.toFixed(4))).replace(/\.?0+$/, '')
   const l = lines
 
   let currentSession = { ...session }
+  const bonusDecisionMode = resolveBonusDecisionMode(currentSession)
+  currentSession = { ...currentSession, bonusDecisionMode }
   let lastData = null
   let lastParsed = null
+  let bonusFlowDetected = false
 
   const doCollect = async () => {
     const body = {
@@ -377,6 +556,25 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     currentSession = { ...currentSession, index: nextIdx, counter: nextCnt, na: lastParsed.na }
   }
 
+  const doAction = async (action, extra = {}) => {
+    const body = {
+      action,
+      symbol: currentSession.symbol,
+      index: currentSession.index,
+      counter: currentSession.counter,
+      repeat: '0',
+      mgckey: currentSession.mgckey,
+      ...extra,
+    }
+    const text = await postGameService(currentSession, body)
+    lastData = text
+    lastParsed = parsePragmaticResponse(text)
+    const nextIdx = nextPragmaticCursorValue(lastParsed.index, 1, nextPragmaticCursorValue(currentSession.index, 1, '2'))
+    const nextCnt = nextPragmaticCursorValue(lastParsed.counter, 2, nextPragmaticCursorValue(currentSession.counter, 2, '3'))
+    currentSession = { ...currentSession, index: nextIdx, counter: nextCnt, na: lastParsed.na }
+    return text
+  }
+
   if (session.na === 'c') {
     await doCollect()
     while (lastParsed.na === 'c') {
@@ -386,37 +584,106 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
 
   let firstSpinBalance = null
   let hadCascade = false
+  let lastSpinBody = null
 
-  // vs20rabbit (Sexy Rabbit) erwartet sInfo=n, bl=0 (Bonus-Level); andere Pragmatic sInfo=t
-  const sInfo = (currentSession.symbol || '').toLowerCase().includes('vs20rabbit') ? 'n' : 't'
-  const spinBody = {
-    action: 'doSpin',
-    symbol: currentSession.symbol,
-    c: String(cVal),
-    l: String(l),
-    sInfo,
-    bl: '0',
-    index: currentSession.index,
-    counter: currentSession.counter,
-    repeat: '0',
-    mgckey: currentSession.mgckey,
+  const doSpin = async () => {
+    const spinBody = {
+      action: 'doSpin',
+      symbol: currentSession.symbol,
+      c: cSerialized,
+      l: Number(l),
+      bl: extraBet ? '1' : '0',
+      index: currentSession.index,
+      counter: currentSession.counter,
+      repeat: '0',
+      mgckey: currentSession.mgckey,
+    }
+    const spinText = await postGameService(currentSession, spinBody)
+    return { spinBody, spinText, parsed: parsePragmaticResponse(spinText) }
   }
-  const spinText = await postGameService(currentSession, spinBody)
-  lastData = spinText
-  lastParsed = parsePragmaticResponse(spinText)
+
+  let spinResult
+  try {
+    spinResult = await doSpin()
+  } catch (e) {
+    throw pragmaticError(`Pragmatic doSpin failed: ${String(e?.message || e)}`, e)
+  }
+
+  lastSpinBody = spinResult?.spinBody || null
+  lastData = spinResult.spinText
+  lastParsed = spinResult.parsed
+  if (lastParsed.unlogged) {
+    throw pragmaticError('Session ungültig. Bitte Session neu starten.')
+  }
   firstSpinBalance = lastParsed.balance
-  // Nächster Request: index+1, counter+2 (Pragmatic-Konvention)
-  const nextIndex = String(parseInt(lastParsed.index, 10) + 1)
-  const nextCounter = String(parseInt(lastParsed.counter, 10) + 2)
+  let nextIndex = nextPragmaticCursorValue(lastParsed.index, 1, nextPragmaticCursorValue(currentSession.index, 1, '2'))
+  let nextCounter = nextPragmaticCursorValue(lastParsed.counter, 2, nextPragmaticCursorValue(currentSession.counter, 2, '3'))
   currentSession = { ...currentSession, index: nextIndex, counter: nextCounter, na: lastParsed.na }
 
-  while (lastParsed.na === 'c') {
-    hadCascade = true
-    await doCollect()
+  if (lastParsed.na === 'b' || lastParsed.fs || lastParsed.fs_opt || lastParsed.mo || lastParsed.rs_c || lastParsed.bgid) {
+    bonusFlowDetected = true
   }
 
-  if (lastParsed.noMoney) throw new Error('Nicht genügend Guthaben.')
-  if (lastParsed.systemError) throw new Error('Systemfehler vom Spiel-Server.')
+  // SSP-Flow: Wenn na=s und w>0, weitere doSpin-Schritte mit ++index/+=2 counter
+  while (lastParsed.na === 's' && Number(lastParsed.w || 0) > 0) {
+    const chained = await doSpin()
+    lastSpinBody = chained?.spinBody || lastSpinBody
+    lastData = chained.spinText
+    lastParsed = chained.parsed
+    nextIndex = nextPragmaticCursorValue(lastParsed.index, 1, nextPragmaticCursorValue(currentSession.index, 1, '2'))
+    nextCounter = nextPragmaticCursorValue(lastParsed.counter, 2, nextPragmaticCursorValue(currentSession.counter, 2, '3'))
+    currentSession = { ...currentSession, index: nextIndex, counter: nextCounter, na: lastParsed.na }
+    if (lastParsed.na === 'b' || lastParsed.fs || lastParsed.fs_opt || lastParsed.mo || lastParsed.rs_c || lastParsed.bgid) {
+      bonusFlowDetected = true
+    }
+    if (lastParsed.unlogged) {
+      throw pragmaticError('Session ungültig. Bitte Session neu starten.')
+    }
+    if (lastParsed.noMoney || lastParsed.systemError || lastParsed.na === 'b') break
+  }
+
+  let settleGuard = 0
+  while (settleGuard < 60) {
+    settleGuard += 1
+    if (lastParsed.unlogged) {
+      throw pragmaticError('Session ungültig. Bitte Session neu starten.')
+    }
+    if (lastParsed.noMoney || lastParsed.systemError) break
+    if (lastParsed.na === 'c') {
+      hadCascade = true
+      await doCollect()
+      continue
+    }
+    if (lastParsed.na === 'cb') {
+      bonusFlowDetected = true
+      await doAction('doCollectBonus')
+      continue
+    }
+    if (lastParsed.na === 'fso') {
+      bonusFlowDetected = true
+      const ind = pickFsOption(lastParsed.raw)
+      await doAction('doFSOption', { ind })
+      continue
+    }
+    if (lastParsed.na === 'b') {
+      bonusFlowDetected = true
+      const ind = pickBonusInd(lastParsed, currentSession, bonusDecisionMode)
+      const seen = Array.isArray(currentSession._bonusSeenChoices) ? currentSession._bonusSeenChoices.slice(0, 24) : []
+      const indNum = parseInt(String(ind), 10)
+      if (Number.isFinite(indNum) && !seen.includes(indNum)) seen.push(indNum)
+      currentSession = { ...currentSession, _bonusSeenChoices: seen }
+      await doAction('doBonus', { ind })
+      continue
+    }
+    break
+  }
+
+  if (settleGuard >= 60) {
+    throw pragmaticError('Pragmatic settle-loop exceeded safety limit.')
+  }
+
+  if (lastParsed.noMoney) throw pragmaticError('Nicht genügend Guthaben.')
+  if (lastParsed.systemError) throw pragmaticError('Systemfehler vom Spiel-Server.')
 
   // Gewinn: bei Cascade aus Balance-Delta (doCollect hat kein w), sonst aus w/tw
   const totalWin = hadCascade
@@ -436,15 +703,15 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     _pragmatic: { raw: lastData, ...lastParsed },
   }
 
-  if (lastParsed.fs || lastParsed.fs_opt || lastParsed.na === 'b') {
+  if (bonusFlowDetected || lastParsed.fs || lastParsed.fs_opt || lastParsed.na === 'b') {
     responseForParser.freeRoundOffer = true
   }
   
   // LOGGING: Geparste Response loggen, um Fehler besser zu sehen
   logApiCall({ 
     type: 'pragmatic/bet', 
-    endpoint: session.gameServiceUrl, 
-    request: spinBody, 
+    endpoint: currentSession?.spinServiceUrl || currentSession?.gameServiceUrl || session.gameServiceUrl, 
+    request: lastSpinBody || null, 
     response: { ...lastParsed, raw: undefined, _rawPreview: (lastParsed.raw || '').slice(0, 50) }, 
     error: null, 
     durationMs: null 

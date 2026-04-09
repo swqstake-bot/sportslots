@@ -10,12 +10,14 @@ const CURRENCY_CONFIG_QUERY = `query CurrencyConfiguration($isAcp: Boolean!) {
 /**
  * Holt Wechselkurse (Währung → USD). Gibt Map zurück: { usdt: 1, eur: 0.84, ... }
  * @param {string} accessToken - unused in Electron
+ * @param {{ force?: boolean }} options
  * @returns {Promise<Record<string, number>>}
  */
-export async function fetchCurrencyRates(accessToken) {
+export async function fetchCurrencyRates(accessToken, options = {}) {
+  const force = !!options?.force
   try {
-    const raw = localStorage.getItem('slotbot_currency_rates_cache')
-    if (raw) {
+    const raw = force ? null : localStorage.getItem('slotbot_currency_rates_cache')
+    if (raw && !force) {
       const { ts, map } = JSON.parse(raw)
       if (map && ts && Date.now() - ts < 30 * 60 * 1000) {
         return map
@@ -166,8 +168,8 @@ fragment UserTags on User {
   preferenceHideBets
 }`
 
-/** Stake-API erlaubt max. 24 pro Request (number_less_equal sonst). */
-const PAGE_SIZE = 24
+/** Stake-API akzeptiert in der Praxis teils strengere Grenzen als 24. */
+const PAGE_SIZE = 20
 
 /** Provider-Gruppen-Slug (z. B. paperclip-gaming) aus Challenge.game — für Hunter-Filter. */
 export function extractProviderGroupSlug(game) {
@@ -184,13 +186,15 @@ export function extractProviderGroupSlug(game) {
  */
 export async function fetchChallengeList(accessToken, options = {}) {
   const { limit = PAGE_SIZE, offset = 0, sort = 'startAt', type = 'available', count = 'available' } = options
+  const safeLimit = Math.max(1, Math.min(PAGE_SIZE, Number(limit) || PAGE_SIZE))
+  const safeOffset = Math.max(0, Number(offset) || 0)
   const t0 = Date.now()
   const variables = {
       sort,
       type,
       count,
-      limit,
-      offset,
+      limit: safeLimit,
+      offset: safeOffset,
       includeAffiliateData: true,
   }
 
@@ -235,7 +239,39 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms))
 /**
  * Lädt alle aktiven Challenges seitenweise.
  */
-export async function fetchAllChallenges(accessToken) {
+function mapChallengeRow(c) {
+  return {
+    id: c.id,
+    type: c.type,
+    active: c.active,
+    completedAt: c.completedAt,
+    targetMultiplier: c.targetMultiplier,
+    award: c.award,
+    currency: c.currency,
+    minBetUsd: c.minBetUsd,
+    gameSlug: c.game.slug,
+    gameName: c.game.name,
+    thumbnailUrl: c.game.thumbnailUrl,
+    providerGroupSlug: extractProviderGroupSlug(c.game),
+    startAt: c.startAt,
+    expireAt: c.expireAt,
+    adminCreated: !!c.adminCreated,
+    updatedAt: c.updatedAt,
+  }
+}
+
+function isWeeklyChallenge(row) {
+  const startMs = row?.startAt ? Date.parse(row.startAt) : NaN
+  const endMs = row?.expireAt ? Date.parse(row.expireAt) : NaN
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return !!row?.adminCreated
+  }
+  const days = (endMs - startMs) / (24 * 60 * 60 * 1000)
+  return days >= 5.5 && days <= 8.5
+}
+
+export async function fetchAllChallenges(accessToken, options = {}) {
+  const { segment = 'all' } = options
   const all = []
   let offset = 0
   let totalCount = 0
@@ -257,69 +293,26 @@ export async function fetchAllChallenges(accessToken) {
     // Filter & map consistent with original SwaqSlotbot logic
     const mapped = challenges
       .filter((c) => c.type === 'casino' && c.game?.slug)
-      .map((c) => ({
-        id: c.id,
-        type: c.type,
-        active: c.active,
-        completedAt: c.completedAt,
-        targetMultiplier: c.targetMultiplier,
-        award: c.award,
-        currency: c.currency,
-        minBetUsd: c.minBetUsd,
-        gameSlug: c.game.slug,
-        gameName: c.game.name,
-        thumbnailUrl: c.game.thumbnailUrl,
-        providerGroupSlug: extractProviderGroupSlug(c.game),
-      }))
+      .map(mapChallengeRow)
       
     all.push(...mapped)
     if (challenges.length < PAGE_SIZE || all.length >= totalCount) break
     offset += PAGE_SIZE
     await delay(500)
   }
-  return { challenges: all, totalCount }
+  const filtered = segment === 'weekly' ? all.filter(isWeeklyChallenge) : all
+  return { challenges: filtered, totalCount: filtered.length || totalCount }
 }
 
 /**
  * Lädt abgeschlossene Challenges (type: completed).
  */
-export async function fetchCompletedChallenges(accessToken) {
-  const all = []
-  let offset = 0
-  while (true) {
-    const result = await fetchChallengeList(accessToken, { 
-        limit: PAGE_SIZE, 
-        offset, 
-        sort: 'completedAt', 
-        type: 'completed', 
-        count: 'completed' 
-    })
-    
-    const { challenges } = result
-    
-    if (!challenges || challenges.length === 0) break
-    
-    const mapped = challenges
-      .filter((c) => c.type === 'casino' && c.game?.slug)
-      .map((c) => ({
-        id: c.id,
-        type: c.type,
-        active: c.active,
-        targetMultiplier: c.targetMultiplier,
-        award: c.award,
-        currency: c.currency,
-        minBetUsd: c.minBetUsd,
-        gameSlug: c.game.slug,
-        gameName: c.game.name,
-        thumbnailUrl: c.game.thumbnailUrl,
-        completedAt: c.completedAt,
-        providerGroupSlug: extractProviderGroupSlug(c.game),
-      }))
-
-    all.push(...mapped)
-    if (challenges.length < PAGE_SIZE) break
-    offset += PAGE_SIZE
-    await delay(500)
-  }
-  return { challenges: all }
+export async function fetchCompletedChallenges(accessToken, options = {}) {
+  const { segment = 'all' } = options
+  // Stake enum variants for "completed" differ between environments and can trigger HTTP 400.
+  // Keep this function non-breaking by deriving completion from the safe available feed.
+  const { challenges: safeRows = [] } = await fetchAllChallenges(accessToken, { segment })
+  const all = safeRows.filter((row) => !!row?.completedAt || row?.active === false)
+  const filtered = segment === 'weekly' ? all.filter(isWeeklyChallenge) : all
+  return { challenges: filtered }
 }
