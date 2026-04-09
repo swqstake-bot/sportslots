@@ -23,6 +23,8 @@ export interface AutoBetLog {
   timestamp: number;
   message: string;
   type: 'info' | 'success' | 'warning' | 'error';
+  correlationId?: string;
+  source?: string;
 }
 
 export interface AutoBetSettings {
@@ -76,6 +78,7 @@ export interface AutoBetState {
   start: () => void;
   stop: () => void;
   addLog: (message: string, type?: AutoBetLog['type']) => void;
+  addRuntimeLog: (message: string, source: string, correlationId?: string, type?: AutoBetLog['type']) => void;
   clearLogs: () => void;
   openModal: () => void;
   closeModal: () => void;
@@ -146,6 +149,22 @@ export const useAutoBetStore = create<AutoBetState>()(
           } catch {
             /* ignore quota / private mode */
           }
+          return { logs: next };
+        }),
+
+      addRuntimeLog: (message, source, correlationId, type = 'info') =>
+        set((state) => {
+          const next = [
+            {
+              id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              timestamp: Date.now(),
+              message,
+              type,
+              source,
+              correlationId,
+            },
+            ...state.logs,
+          ].slice(0, 150);
           return { logs: next };
         }),
 

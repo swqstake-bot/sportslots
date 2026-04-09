@@ -286,6 +286,78 @@ html[data-theme='light'] .casino-root {
   box-shadow: var(--shadow-card);
 }
 
+.casino-root .challenge-hub-root {
+  position: relative;
+}
+
+.casino-root .challenge-hub-hero {
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border-subtle));
+  border-radius: var(--radius-lg);
+  padding: 0.65rem 0.85rem;
+  background:
+    linear-gradient(120deg, rgba(var(--accent-rgb), 0.12) 0%, rgba(var(--accent-rgb), 0.04) 44%, transparent 100%),
+    color-mix(in srgb, var(--bg-elevated) 92%, var(--bg-deep));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.26);
+}
+
+.casino-root .challenge-hub-kpi {
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-deep) 90%, var(--accent) 4%);
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.casino-root .challenge-hub-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.casino-root .challenge-hub-tab {
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 0.36rem 0.82rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-card) 92%, rgba(var(--accent-rgb), 0.04));
+  transition: all var(--transition-fast);
+}
+
+.casino-root .challenge-hub-tab:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+  color: var(--text);
+}
+
+.casino-root .challenge-hub-tab.is-active {
+  border-color: transparent;
+  color: var(--bg-deep);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 62%, var(--bg-deep)), var(--accent));
+  box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.24);
+}
+
+.casino-root .challenge-hub-action {
+  padding: 0.36rem 0.78rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-deep) 90%, var(--accent) 6%);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  transition: all var(--transition-fast);
+}
+
+.casino-root .challenge-hub-action:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border-subtle));
+  transform: translateY(-1px);
+}
+
 /* Slot pills – Neon-Glow Hover */
 .casino-root .slot-pill {
   transition: all var(--transition-fast);
@@ -660,8 +732,8 @@ html[data-theme='light'] .casino-root {
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-muted);
-  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
-  backdrop-filter: blur(10px);
+  /* Solid header avoids backdrop blur cost while the challenge list scrolls/updates underneath */
+  background: color-mix(in srgb, var(--bg-elevated) 98%, var(--bg-deep));
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -672,9 +744,97 @@ html[data-theme='light'] .casino-root {
 }
 
 .casino-root .hunter-found-grid {
-  display: flex;
-  flex-wrap: wrap;
+  position: relative;
+}
+
+.casino-root .hunter-found-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.6fr) 0.7fr 0.7fr 1fr 0.9fr minmax(150px, 1.1fr);
+  align-items: center;
   gap: 0.55rem;
+  padding: 0.48rem 0.55rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-deep) 92%, var(--accent) 4%);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.casino-root .hunter-found-row:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border-subtle));
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+}
+
+.casino-root .hunter-found-row.hunter-found-row--reduce-motion {
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.casino-root .hunter-found-row.hunter-found-row--reduce-motion:hover {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .casino-root .hunter-found-row:hover {
+    transform: none;
+  }
+}
+
+.casino-root .hunter-found-col {
+  min-width: 0;
+}
+
+.casino-root .hunter-found-name {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.casino-root .hunter-found-title {
+  font-size: 0.79rem;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.casino-root .hunter-found-sub {
+  font-size: 0.67rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.casino-root .hunter-found-key {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.casino-root .hunter-found-val {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.casino-root .hunter-found-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+@media (max-width: 1200px) {
+  .casino-root .hunter-found-row {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+  .casino-root .hunter-found-actions {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .casino-root .hunter-help-bar {
@@ -688,6 +848,11 @@ html[data-theme='light'] .casino-root {
   position: relative;
   border-radius: var(--radius-md);
   overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 78%, var(--accent) 22%);
+  background:
+    linear-gradient(180deg, rgba(var(--accent-rgb), 0.06) 0%, transparent 55%),
+    color-mix(in srgb, var(--bg-deep) 94%, var(--bg-elevated));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
   transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
@@ -700,4 +865,20 @@ html[data-theme='light'] .casino-root {
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--accent), transparent);
   opacity: 0.5;
+}
+
+.casino-root .hunter-challenge-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42), 0 0 24px rgba(var(--accent-rgb), 0.09);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .casino-root *,
+  .casino-root *::before,
+  .casino-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

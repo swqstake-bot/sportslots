@@ -9,6 +9,9 @@ import { parseConfig } from './genericProviders'
 import { getEffectiveBetAmount } from '../../constants/bet'
 import { startThirdPartySession } from '../stake'
 import { logApiCall } from '../../utils/apiLogger'
+import { executeProviderMethod } from './providerRuntime'
+import { normalizeProviderError } from './providerErrors'
+import { getProviderCapabilities } from '../../constants/providers'
 
 function getWebviewBridge() {
   if (typeof window === 'undefined') return null
@@ -134,9 +137,16 @@ const WEB_PROVIDERS = {
   hacksaw,
   pragmatic,
   prag: pragmatic,
+  'fat-panda': pragmatic,
   'sexy-rabbit': pragmatic, // Rabbit Heist – gs2c wie Pragmatic
   sexyrabbit: pragmatic,
   stakeEngine,
+  'hacksaw-gaming': hacksaw,
+  'hacksaw-openrgs': hacksaw,
+  'backseat-gaming': hacksaw,
+  backseatgaming: hacksaw,
+  'bullshark-games': hacksaw,
+  bullsharkgames: hacksaw,
   clawbuster,
   nolimit,
   avatarux,
@@ -152,54 +162,85 @@ const WEB_PROVIDERS = {
   btg: genericProviders.btg,
   oak: genericProviders.oak,
   redtiger: genericProviders.redtiger,
+  'b-gaming': genericProviders.bgaming,
   playngo: genericProviders.playngo,
+  'playn-go': genericProviders.playngo,
+  'print-studios': genericProviders.relax,
+  printstudios: genericProviders.relax,
   octoplay: genericProviders.octoplay,
+  'penguin-king': genericProviders.octoplay,
   peterandsons: genericProviders.peterandsons,
+  'peter-and-sons': genericProviders.peterandsons,
   shady: genericProviders.shady,
   shuffle: genericProviders.shuffle,
   titan: genericProviders.titan,
+  'titan-gaming': genericProviders.twist,
   twist: genericProviders.twist,
+  valkyrie: genericProviders.twist,
   popiplay: genericProviders.popiplay,
   helio: genericProviders.helio,
   samurai: genericProviders.samurai,
+  bgaming: genericProviders.bgaming,
+  gamomat: genericProviders.gamomat,
+  justslots: genericProviders.justslots,
+  massive: genericProviders.massive,
+  onetouch: genericProviders.onetouch,
+  truelab: genericProviders.truelab,
+  slotmill: genericProviders.slotmill,
+  petersons: genericProviders.petersons,
+  'jade-rabbit': genericProviders.jaderabbit,
+  jaderabbit: genericProviders.jaderabbit,
+  'games-global': genericProviders.gamesglobal,
+  gamesglobal: genericProviders.gamesglobal,
+  'peter-sons': genericProviders.peterandsons,
+  'one-touch': genericProviders.onetouch,
+  'one-touch-games': genericProviders.onetouch,
+  'play-n-go': genericProviders.playngo,
+  'red-tiger-gaming': genericProviders.redtiger,
+  'no-limit-city': nolimit,
+  'no-limit': nolimit,
+  nlc: nolimit,
 }
 
-const GENERIC_BACKEND_PROVIDER = {
-  async startSession(_accessToken, _slug, _sourceCurrency, targetCurrency) {
-    return {
-      provider: 'backend-simulated',
-      seq: 0,
-      betLevels: [1000, 5000, 25000, 100000, 500000, 1000000],
-      currencyCode: (targetCurrency || 'USD').toUpperCase(),
-      initialBalance: null,
-    }
-  },
-  async placeBet(session, betAmount, extraBet, _autoplay = false) {
-    const effectiveBet = getEffectiveBetAmount(betAmount, extraBet)
-    const currencyCode = (session?.currencyCode || 'USD').toUpperCase()
-    const mult = Math.random() < 0.75 ? Math.random() * 2 : Math.random() * 50
-    const winAmount = Math.round(effectiveBet * mult)
-    const data = {
-      statusCode: 0,
-      accountBalance: { balance: null, currencyCode },
-      round: {
-        status: 'complete',
-        events: [{ awa: winAmount }],
-        winAmountDisplay: winAmount,
-      },
-    }
-    return {
-      data,
-      nextSeq: (session?.seq || 0) + 1,
-      session: { ...session, seq: (session?.seq || 0) + 1 },
-    }
-  },
-  async sendContinue() {
-    return { ok: true }
-  },
-  async sendKeepAlive() {
-    return { ok: true }
-  },
+const GENERIC_BACKEND_PROVIDER = genericProviders.genericUniversal
+
+const AUTO_FALLBACK_IMPLS = {
+  stakeEngine,
+  nolimit,
+  pragmatic,
+  hacksaw,
+  generic: GENERIC_BACKEND_PROVIDER,
+}
+
+function buildUnknownProviderFallbackOrder(providerId, slotSlug) {
+  const pid = String(providerId || '').toLowerCase()
+  const slug = String(slotSlug || '').toLowerCase()
+  const order = []
+  const push = (id) => {
+    if (!order.includes(id)) order.push(id)
+  }
+
+  if (pid.includes('nolimit') || pid === 'nlc' || slug.startsWith('nolimit-') || slug.includes('nolimit')) {
+    push('nolimit')
+  }
+  if (
+    pid.includes('prag') ||
+    pid.includes('fat-panda') ||
+    pid.includes('sexyrabbit') ||
+    slug.includes('pragmatic') ||
+    slug.includes('fatpanda') ||
+    slug.includes('sexyrabbit')
+  ) {
+    push('pragmatic')
+  }
+  if (pid.includes('hacksaw') || slug.includes('hacksaw')) {
+    push('hacksaw')
+  }
+
+  // Most unknown providers on Stake are still routed through a stake-engine style session.
+  push('stakeEngine')
+  push('generic')
+  return order
 }
 
 /**
@@ -207,7 +248,61 @@ const GENERIC_BACKEND_PROVIDER = {
  * @returns {{ startSession, placeBet, sendContinue, sendKeepAlive } | null}
  */
 export function getProvider(providerId) {
-  return WEB_PROVIDERS[providerId] ?? GENERIC_BACKEND_PROVIDER
+  const isKnownProvider = providerId in WEB_PROVIDERS
+  const resolvedProviderId = isKnownProvider ? providerId : 'generic'
+  const impl = WEB_PROVIDERS[providerId] ?? GENERIC_BACKEND_PROVIDER
+  const caps = getProviderCapabilities(providerId)
+  return {
+    ...impl,
+    capabilities: caps,
+    async startSession(...args) {
+      if (typeof impl.startSession !== 'function') throw normalizeProviderError(resolvedProviderId, new Error('startSession not implemented'))
+
+      // Unknown provider ids: try smart fallback chain before giving up on generic.
+      if (!isKnownProvider) {
+        const slotSlug = args[1]
+        const fallbackOrder = buildUnknownProviderFallbackOrder(providerId, slotSlug)
+        let lastErr = null
+        for (const implId of fallbackOrder) {
+          const fallbackImpl = AUTO_FALLBACK_IMPLS[implId]
+          if (!fallbackImpl || typeof fallbackImpl.startSession !== 'function') continue
+          try {
+            const session = await executeProviderMethod(resolvedProviderId, 'startSession', () => fallbackImpl.startSession(...args))
+            return {
+              ...session,
+              __resolvedProviderImplId: implId,
+            }
+          } catch (err) {
+            lastErr = err
+          }
+        }
+        if (lastErr) throw lastErr
+      }
+      return executeProviderMethod(resolvedProviderId, 'startSession', () => impl.startSession(...args))
+    },
+    async placeBet(...args) {
+      if (typeof impl.placeBet !== 'function') throw normalizeProviderError(resolvedProviderId, new Error('placeBet not implemented'))
+
+      if (!isKnownProvider) {
+        const session = args[0]
+        const implId = session?.__resolvedProviderImplId
+        const fallbackImpl = implId ? AUTO_FALLBACK_IMPLS[implId] : null
+        if (fallbackImpl && typeof fallbackImpl.placeBet === 'function') {
+          return executeProviderMethod(resolvedProviderId, 'placeBet', () => fallbackImpl.placeBet(...args))
+        }
+      }
+
+      return executeProviderMethod(resolvedProviderId, 'placeBet', () => impl.placeBet(...args))
+    },
+    async sendContinue(...args) {
+      if (typeof impl.sendContinue !== 'function') return { ok: true }
+      return executeProviderMethod(resolvedProviderId, 'sendContinue', () => impl.sendContinue(...args))
+    },
+    async sendKeepAlive(...args) {
+      if (typeof impl.sendKeepAlive !== 'function') return { ok: true }
+      return executeProviderMethod(resolvedProviderId, 'sendKeepAlive', () => impl.sendKeepAlive(...args))
+    },
+  }
 }
 
 /**

@@ -64,12 +64,14 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
       lossCount: stats.lossCount,
       breakEvenCount: stats.breakEvenCount ?? 0,
       fxMissingCount: stats.fxMissingCount ?? 0,
+      fxValuatedCount: stats.fxValuatedCount ?? 0,
       biggestWin: stats.biggestWin,
       biggestMultiplier: stats.biggestMultiplier,
       multiOver100xCount: stats.multiOver100xCount,
       multiOver100xSum: stats.multiOver100xSum,
       currentBalance: stats.currentBalance,
       sessionStartBalance: stats.sessionStartBalance,
+      roiPercent: stats.totalWagered > 0 ? ((stats.totalWon - stats.totalWagered) / stats.totalWagered) * 100 : 0,
     }
   }, [stats])
 
@@ -129,6 +131,16 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
           <span style={valueStyle}>{displayStats.fxMissingCount} Spin(s)</span>
         </div>
         )}
+        <div style={STYLES.item}>
+          <span style={STYLES.label}>FX bewertet</span>
+          <span style={valueStyle}>{displayStats.fxValuatedCount} Spin(s)</span>
+        </div>
+        <div style={STYLES.item}>
+          <span style={STYLES.label}>ROI</span>
+          <span style={{ ...valueStyle, ...(displayStats.roiPercent >= 0 ? STYLES.valuePositive : STYLES.valueNegative) }}>
+            {displayStats.roiPercent >= 0 ? '+' : ''}{displayStats.roiPercent.toFixed(2)}%
+          </span>
+        </div>
         <div style={STYLES.item}>
           <span style={STYLES.label}>Größter Gewinn</span>
           <span style={{ ...valueStyle, ...STYLES.valuePositive }}>

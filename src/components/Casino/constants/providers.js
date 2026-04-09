@@ -1,4 +1,12 @@
 import { HACKSAW_API_BASE, HACKSAW_USER_AGENT } from '../api/providers/hacksawShared'
+
+const DEFAULT_PROVIDER_CAPABILITIES = {
+  supportsBonus: true,
+  needsKeepAlive: false,
+  unitProfile: 'minor',
+  retryProfile: { maxAttempts: 1, baseDelayMs: 0 },
+  sessionShape: 'standard',
+}
 export const PROVIDERS = {
   hacksaw: {
     id: 'hacksaw',
@@ -9,6 +17,10 @@ export const PROVIDERS = {
     betLevelsSource: 'api',
     continuePolicy: 'instructions-or-win_presentation_complete',
     supportsMultiCurrencySameSlot: false,
+    needsKeepAlive: true,
+    unitProfile: 'major-housebets/minor-parser',
+    retryProfile: { maxAttempts: 2, baseDelayMs: 250 },
+    sessionShape: 'token-seq',
   },
   pragmatic: {
     id: 'pragmatic',
@@ -20,6 +32,10 @@ export const PROVIDERS = {
     sessionFields: ['mgckey', 'symbol', 'host', 'index', 'counter'],
     betLevelsSource: 'doInit-parse',
     cUnitPolicy: 'minor-or-zero-decimal',
+    needsKeepAlive: false,
+    unitProfile: 'provider-major->minor-parser',
+    retryProfile: { maxAttempts: 3, baseDelayMs: 300 },
+    sessionShape: 'index-counter',
   },
   stakeEngine: {
     id: 'stakeEngine',
@@ -32,6 +48,10 @@ export const PROVIDERS = {
     playEndpoints: { play: '/wallet/play', endRound: '/wallet/end-round', authenticate: '/wallet/authenticate' },
     bonusResolution: 'server-autoplay',
     instantBonus: true,
+    needsKeepAlive: false,
+    unitProfile: 'api-multiplier-1e6',
+    retryProfile: { maxAttempts: 2, baseDelayMs: 300 },
+    sessionShape: 'session-id',
   },
   '1000lakes': {
     id: '1000lakes',
@@ -46,7 +66,9 @@ export const PROVIDERS = {
     requiresExtPlayerKey: true,
     modes: { standard: 'CAP_MODE_STANDARD' },
     freeSpinModes: ['NORMAL_AVALANCHE', 'FREESPIN_AVALANCHE', 'FREESPIN_COOL_AVALANCHE'],
-    betLevelsSource: 'sessionConfig.availableBetLevels',
+    betLevelsSource: 'open_game.chipAmounts',
+    retryProfile: { maxAttempts: 2, baseDelayMs: 350 },
+    sessionShape: 'ext-player-key',
   },
   paperclip: {
     id: 'paperclip',
@@ -183,6 +205,175 @@ export const PROVIDERS = {
     betDisplayDivisorSlots: ['clawbuster-3-claws-of-leprechaun-gold-hold-and-win'],
     betDisplayDivisor: 100,
   },
+  bgaming: {
+    id: 'bgaming',
+    name: 'BGaming',
+    sessionFields: ['token', 'gameId', 'host'],
+    betLevelsSource: 'sessionConfig',
+  },
+  gamomat: {
+    id: 'gamomat',
+    name: 'Gamomat',
+    sessionFields: ['token', 'gameId', 'host'],
+    betLevelsSource: 'sessionConfig',
+  },
+  justslots: {
+    id: 'justslots',
+    name: 'Just Slots',
+    sessionFields: ['token', 'gameId', 'host'],
+    betLevelsSource: 'sessionConfig',
+  },
+  massive: {
+    id: 'massive',
+    name: 'Massive Studios',
+    sessionFields: ['token', 'gameId', 'host'],
+    betLevelsSource: 'sessionConfig',
+  },
+  onetouch: {
+    id: 'onetouch',
+    name: 'One Touch',
+    sessionFields: ['token', 'gameId', 'host'],
+    betLevelsSource: 'sessionConfig',
+  },
+  truelab: {
+    id: 'truelab',
+    name: 'True Lab',
+    sessionFields: ['token', 'gameId', 'host'],
+    betLevelsSource: 'sessionConfig',
+  },
+  slotmill: {
+    id: 'slotmill',
+    name: 'Slotmill',
+    sessionFields: ['token', 'gameId', 'host'],
+    betLevelsSource: 'sessionConfig',
+  },
+  gamesglobal: {
+    id: 'gamesglobal',
+    name: 'Games Global',
+    sessionFields: ['token', 'gameId', 'host'],
+    betLevelsSource: 'sessionConfig',
+  },
+  jaderabbit: {
+    id: 'jaderabbit',
+    name: 'Jade Rabbit',
+    sessionFields: ['token', 'gameId', 'host'],
+    betLevelsSource: 'sessionConfig',
+  },
+  'fat-panda': {
+    id: 'fat-panda',
+    name: 'Fat Panda alias',
+    aliasOf: 'pragmatic',
+  },
+  'hacksaw-gaming': {
+    id: 'hacksaw-gaming',
+    name: 'Hacksaw Gaming alias',
+    aliasOf: 'hacksaw',
+  },
+  'hacksaw-openrgs': {
+    id: 'hacksaw-openrgs',
+    name: 'Hacksaw OpenRGS alias',
+    aliasOf: 'hacksaw',
+  },
+  'backseat-gaming': {
+    id: 'backseat-gaming',
+    name: 'Backseat Gaming alias',
+    aliasOf: 'hacksaw',
+  },
+  backseatgaming: {
+    id: 'backseatgaming',
+    name: 'Backseat Gaming alias',
+    aliasOf: 'hacksaw',
+  },
+  'bullshark-games': {
+    id: 'bullshark-games',
+    name: 'Bullshark Games alias',
+    aliasOf: 'hacksaw',
+  },
+  bullsharkgames: {
+    id: 'bullsharkgames',
+    name: 'Bullshark Games alias',
+    aliasOf: 'hacksaw',
+  },
+  'games-global': {
+    id: 'games-global',
+    name: 'Games Global alias',
+    aliasOf: 'gamesglobal',
+  },
+  'jade-rabbit': {
+    id: 'jade-rabbit',
+    name: 'Jade Rabbit alias',
+    aliasOf: 'jaderabbit',
+  },
+  'penguin-king': {
+    id: 'penguin-king',
+    name: 'Penguin King',
+    aliasOf: 'octoplay',
+  },
+  'titan-gaming': {
+    id: 'titan-gaming',
+    name: 'Titan Gaming',
+    aliasOf: 'twist',
+  },
+  valkyrie: {
+    id: 'valkyrie',
+    name: 'Valkyrie',
+    aliasOf: 'twist',
+  },
+  'print-studios': {
+    id: 'print-studios',
+    name: 'Print Studios',
+    aliasOf: 'relax',
+  },
+  printstudios: {
+    id: 'printstudios',
+    name: 'Print Studios alias',
+    aliasOf: 'relax',
+  },
+  petersons: {
+    id: 'petersons',
+    name: 'Peter & Sons',
+    aliasOf: 'peterandsons',
+  },
+  'peter-sons': {
+    id: 'peter-sons',
+    name: 'Peter & Sons',
+    aliasOf: 'peterandsons',
+  },
+  'one-touch': {
+    id: 'one-touch',
+    name: 'One Touch alias',
+    aliasOf: 'onetouch',
+  },
+  'one-touch-games': {
+    id: 'one-touch-games',
+    name: 'One Touch Games alias',
+    aliasOf: 'onetouch',
+  },
+  'play-n-go': {
+    id: 'play-n-go',
+    name: 'Play’n GO alias',
+    aliasOf: 'playngo',
+  },
+  'red-tiger-gaming': {
+    id: 'red-tiger-gaming',
+    name: 'Red Tiger alias',
+    aliasOf: 'redtiger',
+  },
+  'no-limit-city': {
+    id: 'no-limit-city',
+    name: 'NoLimit City alias',
+    aliasOf: 'nolimit',
+  },
+  'no-limit': {
+    id: 'no-limit',
+    name: 'NoLimit alias',
+    aliasOf: 'nolimit',
+  },
+  nlc: {
+    id: 'nlc',
+    name: 'NoLimit City alias',
+    aliasOf: 'nolimit',
+  },
   // aliases
   rt: { id: 'rt', name: 'Red Tiger alias', aliasOf: 'redtiger' },
   png: { id: 'png', name: 'Play’n GO alias', aliasOf: 'playngo' },
@@ -199,4 +390,13 @@ export function supportsMultiCurrencySameSlot(providerId) {
   const p = PROVIDERS[providerId] || {}
   const base = p.aliasOf ? (PROVIDERS[p.aliasOf] || {}) : p
   return base.supportsMultiCurrencySameSlot !== false
+}
+
+export function getProviderCapabilities(providerId) {
+  const p = PROVIDERS[providerId] || {}
+  const base = p.aliasOf ? (PROVIDERS[p.aliasOf] || {}) : p
+  return {
+    ...DEFAULT_PROVIDER_CAPABILITIES,
+    ...base,
+  }
 }

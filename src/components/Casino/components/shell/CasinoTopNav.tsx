@@ -1,4 +1,4 @@
-type CasinoMode = 'play' | 'originals' | 'challenges' | 'telegram' | 'bonushunt' | 'forum' | 'logs'
+type CasinoMode = 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs'
 
 interface CasinoTopNavProps {
   mode: string
@@ -8,10 +8,8 @@ interface CasinoTopNavProps {
 const MODES: { id: CasinoMode; label: string }[] = [
   { id: 'play', label: 'Play' },
   { id: 'originals', label: 'Originals' },
-  { id: 'challenges', label: 'Challenges' },
-  { id: 'telegram', label: 'Telegram' },
+  { id: 'challengeHub', label: 'Challenge Hub' },
   { id: 'bonushunt', label: 'Bonus Hunt' },
-  { id: 'forum', label: 'Forum' },
   { id: 'logs', label: 'Logs' },
 ]
 

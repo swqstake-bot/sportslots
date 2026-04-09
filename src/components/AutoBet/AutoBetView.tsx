@@ -322,7 +322,18 @@ export function AutoBetView() {
                                     {log.type === 'warning' && <svg className="w-4 h-4 mt-1" style={{ color: 'var(--app-warning)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>}
                                     {log.type === 'info' && <svg className="w-4 h-4 mt-1" style={{ color: 'var(--app-text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
                                 </div>
-                                <div className="flex-1 break-words font-medium">{log.message}</div>
+                                <div className="flex-1 break-words font-medium">
+                                  <div>{log.message}</div>
+                                  {(log.source || log.correlationId) && (
+                                    <div
+                                      className="mt-1 text-[10px] opacity-80 truncate"
+                                      style={{ color: 'var(--app-text-muted)' }}
+                                      title={`${log.source ? `src=${log.source}` : ''}${log.source && log.correlationId ? ' · ' : ''}${log.correlationId ? `corr=${log.correlationId}` : ''}`}
+                                    >
+                                      {log.source ? `src=${log.source}` : ''}{log.source && log.correlationId ? ' · ' : ''}{log.correlationId ? `corr=${log.correlationId}` : ''}
+                                    </div>
+                                  )}
+                                </div>
                             </div>
                         );
                         })

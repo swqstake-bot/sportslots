@@ -2,6 +2,8 @@ import {
   subscribeToBetUpdates as subscribeToBetUpdatesRaw,
   subscribeToBalanceUpdates as subscribeToBalanceUpdatesRaw,
 } from './stakeBalanceSubscription'
+import { createEventEnvelope } from '../../../utils/eventEnvelope'
+import { getRealtimeBusAudit, publishRealtimeEvent } from '../../../services/realtimeBus'
 
 /**
  * Multiplexed Realtime-Fassade:
@@ -12,6 +14,13 @@ import {
 
 const houseBetChannels = new Map()
 const balanceChannels = new Map()
+const realtimeAudit = {
+  houseBetsReceived: 0,
+  houseBetsDuplicate: 0,
+  balanceReceived: 0,
+  lastHouseBetKey: null,
+  lastBalanceCurrency: null,
+}
 
 function getTokenKey(accessToken) {
   return String(accessToken || '').trim()
@@ -25,15 +34,38 @@ async function ensureChannel(map, tokenKey, createRawSubscription) {
     listeners: new Set(),
     disconnectRaw: null,
     connecting: null,
+    seenKeys: new Set(),
   }
   map.set(tokenKey, channel)
 
   channel.connecting = createRawSubscription(tokenKey, (payload) => {
+    if (map === houseBetChannels) {
+      realtimeAudit.houseBetsReceived += 1
+      const key = String(payload?.houseId || payload?.iid || payload?.betId || '')
+      realtimeAudit.lastHouseBetKey = key || null
+      if (key) {
+        if (channel.seenKeys.has(key)) realtimeAudit.houseBetsDuplicate += 1
+        channel.seenKeys.add(key)
+        if (channel.seenKeys.size > 500) {
+          const first = channel.seenKeys.values().next().value
+          channel.seenKeys.delete(first)
+        }
+      }
+    } else if (map === balanceChannels) {
+      realtimeAudit.balanceReceived += 1
+      realtimeAudit.lastBalanceCurrency = payload?.currency || null
+    }
     for (const cb of channel.listeners) {
       try {
         cb(payload)
       } catch (_) {}
     }
+    try {
+      const eventSource = map === houseBetChannels ? 'realtime.houseBets' : 'realtime.balanceUpdated'
+      const envelope = createEventEnvelope(eventSource, payload)
+      publishRealtimeEvent(eventSource, payload, envelope.correlationId)
+      window.dispatchEvent(new CustomEvent('sportslots-realtime-event', { detail: envelope }))
+    } catch (_) {}
   })
     .then((sub) => {
       channel.disconnectRaw = typeof sub?.disconnect === 'function' ? sub.disconnect : null
@@ -81,4 +113,28 @@ export const subscribeToStakeBalance = makeSubscriber(
   balanceChannels,
   (token, cb) => subscribeToBalanceUpdatesRaw(token, cb)
 )
+
+export function getRealtimeAuditSnapshot() {
+  return { ...realtimeAudit }
+}
+
+export function resetRealtimeAudit() {
+  realtimeAudit.houseBetsReceived = 0
+  realtimeAudit.houseBetsDuplicate = 0
+  realtimeAudit.balanceReceived = 0
+  realtimeAudit.lastHouseBetKey = null
+  realtimeAudit.lastBalanceCurrency = null
+}
+
+export function getRealtimeReconcileSnapshot() {
+  const bus = getRealtimeBusAudit()
+  return {
+    ...realtimeAudit,
+    busPublished: bus.published,
+    busDuplicates: bus.duplicates,
+    busDroppedOutOfOrder: bus.droppedOutOfOrder,
+    busBufferedEvents: bus.bufferedEvents,
+    busLastSource: bus.lastEventSource,
+  }
+}
 

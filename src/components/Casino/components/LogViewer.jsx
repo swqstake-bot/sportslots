@@ -10,6 +10,9 @@ import {
   setSaveBonusLogsEnabled,
 } from '../utils/apiLogger'
 import { getSlotSpinSamples, clearSlotSpinSamples, exportSlotSpinSamplesAsFile } from '../utils/slotSpinSamples'
+import { getRealtimeReconcileSnapshot, resetRealtimeAudit } from '../api/stakeRealtimeFacade'
+import { clearBetHistoryAudit, getBetHistoryAudit } from '../utils/betHistoryDb'
+import { getRealtimeBusRecentEvents } from '../../../services/realtimeBus'
 
 const STYLES = {
   card: {
@@ -74,6 +77,12 @@ const STYLES = {
     maxHeight: 80,
     overflow: 'auto',
   },
+  metaLine: {
+    marginTop: '0.3rem',
+    fontSize: '0.68rem',
+    color: 'var(--text-muted)',
+    wordBreak: 'break-all',
+  },
 }
 
 export default function LogViewer({ refreshKey }) {
@@ -81,11 +90,17 @@ export default function LogViewer({ refreshKey }) {
   const [bonusLogs, setBonusLogs] = useState([])
   const [spinSamples, setSpinSamples] = useState({})
   const [saveBonus, setSaveBonus] = useState(isSaveBonusLogsEnabled())
+  const [realtimeAudit, setRealtimeAudit] = useState(getRealtimeReconcileSnapshot())
+  const [historyAudit, setHistoryAudit] = useState([])
+  const [realtimeTimeline, setRealtimeTimeline] = useState([])
 
   useEffect(() => {
     setLogs(getApiLogs())
     setBonusLogs(getBonusLogsExport())
     getSlotSpinSamples().then(setSpinSamples)
+    setRealtimeAudit(getRealtimeReconcileSnapshot())
+    setHistoryAudit(getBetHistoryAudit())
+    setRealtimeTimeline(getRealtimeBusRecentEvents(80))
   }, [refreshKey])
 
   function handleSaveBonusChange(checked) {
@@ -95,17 +110,40 @@ export default function LogViewer({ refreshKey }) {
 
   function handleRefresh() {
     setLogs(getApiLogs())
+    setRealtimeAudit(getRealtimeReconcileSnapshot())
+    setHistoryAudit(getBetHistoryAudit())
+    setRealtimeTimeline(getRealtimeBusRecentEvents(80))
   }
 
   function handleClear() {
     if (confirm('Alle Logs löschen?')) {
       clearLogs()
       setLogs([])
+      clearBetHistoryAudit()
+      setHistoryAudit([])
     }
   }
 
   function handleExport() {
     exportLogsAsFile()
+  }
+
+  function handleExportForensicBundle() {
+    const forensic = {
+      exportedAt: new Date().toISOString(),
+      apiLogs: getApiLogs(),
+      bonusLogs: getBonusLogsExport(),
+      realtimeAudit: getRealtimeReconcileSnapshot(),
+      betHistoryAudit: getBetHistoryAudit(),
+      realtimeTimeline: getRealtimeBusRecentEvents(200),
+    }
+    const blob = new Blob([JSON.stringify(forensic, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `slotbot-forensic-bundle-${new Date().toISOString().slice(0, 19).replace(/[:-]/g, '')}.json`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   function handleBonusRefresh() {
@@ -191,6 +229,9 @@ export default function LogViewer({ refreshKey }) {
           <button onClick={handleExport} style={{ ...STYLES.btn, ...STYLES.btnPrimary }}>
             Als JSON exportieren
           </button>
+          <button onClick={handleExportForensicBundle} style={STYLES.btn} title="API + Realtime + Audit in einem Bundle">
+            Forensic Bundle
+          </button>
           <button onClick={() => exportBonusLogsAsFile()} style={STYLES.btn} title="Bonus-Responses als JSON exportieren">
             Bonus-Logs exportieren
           </button>
@@ -199,6 +240,65 @@ export default function LogViewer({ refreshKey }) {
           </button>
         </div>
       </div>
+
+      <details style={{ marginTop: '0.75rem' }}>
+        <summary style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer' }}>
+          Realtime Audit
+        </summary>
+        <div style={{ marginTop: '0.5rem', fontSize: '0.78rem' }}>
+          <div>houseBets received: {realtimeAudit.houseBetsReceived}</div>
+          <div>houseBets duplicates: {realtimeAudit.houseBetsDuplicate}</div>
+          <div>balance events: {realtimeAudit.balanceReceived}</div>
+          <div>last houseBet key: {realtimeAudit.lastHouseBetKey || '—'}</div>
+          <div>last balance currency: {realtimeAudit.lastBalanceCurrency || '—'}</div>
+          <div>bus published: {realtimeAudit.busPublished ?? 0}</div>
+          <div>bus duplicates: {realtimeAudit.busDuplicates ?? 0}</div>
+          <div>bus out-of-order: {realtimeAudit.busDroppedOutOfOrder ?? 0}</div>
+          <div style={{ marginTop: '0.4rem', display: 'flex', gap: '0.45rem' }}>
+            <button
+              onClick={() => {
+                resetRealtimeAudit()
+                setRealtimeAudit(getRealtimeReconcileSnapshot())
+              }}
+              style={STYLES.btn}
+            >
+              Realtime Audit reset
+            </button>
+          </div>
+          <div style={{ marginTop: '0.55rem', color: 'var(--text-muted)' }}>
+            BetHistory audit entries: {historyAudit.length}
+          </div>
+          <div style={{ ...STYLES.logList, maxHeight: 130, marginTop: '0.35rem' }}>
+            {historyAudit.length === 0 ? (
+              <div style={{ padding: '0.5rem', color: 'var(--text-muted)' }}>Keine BetHistory-Audit-Einträge.</div>
+            ) : (
+              [...historyAudit].reverse().slice(0, 30).map((entry, i) => (
+                <div key={i} style={STYLES.logEntry}>
+                  <span style={STYLES.logTs}>{String(entry.ts || '').slice(11, 19)}</span>
+                  <span style={STYLES.logType}>{entry.event}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>{entry.slotSlug || '-'}</span>
+                </div>
+              ))
+            )}
+          </div>
+          <div style={{ marginTop: '0.55rem', color: 'var(--text-muted)' }}>
+            Realtime timeline events: {realtimeTimeline.length}
+          </div>
+          <div style={{ ...STYLES.logList, maxHeight: 130, marginTop: '0.35rem' }}>
+            {realtimeTimeline.length === 0 ? (
+              <div style={{ padding: '0.5rem', color: 'var(--text-muted)' }}>Keine Realtime-Timeline-Einträge.</div>
+            ) : (
+              [...realtimeTimeline].reverse().slice(0, 40).map((entry, i) => (
+                <div key={i} style={STYLES.logEntry}>
+                  <span style={STYLES.logTs}>{String(entry?.emittedAt || '').slice(11, 19)}</span>
+                  <span style={STYLES.logType}>{entry?.eventSource || 'event'}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>corr={String(entry?.correlationId || '').slice(0, 18)}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </details>
       <div style={STYLES.logList}>
         {logs.length === 0 ? (
           <div style={{ padding: '1rem', color: 'var(--text-muted)' }}>
@@ -220,6 +320,11 @@ export default function LogViewer({ refreshKey }) {
               )}
               {entry.error && (
                 <div style={STYLES.logError}>{entry.error}</div>
+              )}
+              {(entry.correlationId || entry.eventSource) && (
+                <div style={STYLES.metaLine}>
+                  {entry.eventSource ? `src=${entry.eventSource}` : ''}{entry.eventSource && entry.correlationId ? ' · ' : ''}{entry.correlationId ? `corr=${entry.correlationId}` : ''}
+                </div>
               )}
               <details style={STYLES.logDetails}>
                 <summary>Request/Response</summary>

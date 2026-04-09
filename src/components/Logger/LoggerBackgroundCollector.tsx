@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { subscribeToHouseBets } from '../Casino/api/stakeRealtimeFacade';
 import { Queries } from '../../api/queries';
+import { createEventEnvelope } from '../../utils/eventEnvelope';
 
 function mapLoggerEntry(b: any) {
   const slug = String(b?.gameSlug || '').toLowerCase();
@@ -21,11 +22,16 @@ function mapLoggerEntry(b: any) {
     gameName: b?.gameName ?? null,
     gameSlug: b?.gameSlug ?? null,
     amount: b?.amount != null ? Number(b.amount) : null,
+    amountMajor: b?.amountMajor != null ? Number(b.amountMajor) : null,
+    amountMinor: b?.amountMinor != null ? Number(b.amountMinor) : null,
     payout: b?.payout != null ? Number(b.payout) : null,
+    payoutMajor: b?.payoutMajor != null ? Number(b.payoutMajor) : null,
+    payoutMinor: b?.payoutMinor != null ? Number(b.payoutMinor) : null,
     currency: b?.currency ? String(b.currency).toLowerCase() : null,
     payoutMultiplier: b?.payoutMultiplier != null ? Number(b.payoutMultiplier) : null,
     amountMultiplier: b?.amountMultiplier != null ? Number(b.amountMultiplier) : null,
     category: isSports ? 'sports' : 'casino',
+    eventSource: 'realtime.houseBets',
   };
 }
 
@@ -80,9 +86,10 @@ export default function LoggerBackgroundCollector() {
       }
       const sub = await subscribeToHouseBets(token, (b: any) => {
         const entry = mapLoggerEntry(b);
+        const envelope = createEventEnvelope('logger.houseBet.persist', entry);
         enrichSportsBetFromIid(entry)
-          .then((enriched) => window.electronAPI.saveLoggerBet(enriched))
-          .catch(() => window.electronAPI.saveLoggerBet(entry))
+          .then((enriched) => window.electronAPI.saveLoggerBet({ ...enriched, eventEnvelope: envelope }))
+          .catch(() => window.electronAPI.saveLoggerBet({ ...entry, eventEnvelope: envelope }))
           .catch(() => {});
       });
       if (cancelled) {

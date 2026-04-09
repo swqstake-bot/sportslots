@@ -84,6 +84,7 @@ function App() {
     fixtureSearchQuery,
     setFixtureSearchQuery,
   } = useUiStore();
+
   const accentInlineStyle = useAccentInlineStyle();
   const [isChallengeRunning, setIsChallengeRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -349,62 +350,62 @@ function App() {
         {/* Casino View stays mounted so challenge/hunter processes keep running across tab switches */}
         <div
           className="app-view-casino"
-          style={{ display: currentView === 'casino' ? 'block' : 'none' }}
+          style={{
+            display: currentView === 'casino' ? 'block' : 'none',
+          }}
         >
           <CasinoView />
         </div>
 
-        {/* Sports View & Right Sidebar */}
         {currentView === 'sports' && (
-          <>
-            <div className="sports-view app-view-sports">
-              {user ? (
-                selectedSportSlug ? (
-                  <FixtureList sportSlug={selectedSportSlug} />
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-center p-12">
-                    <div 
-                      className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6"
-                      style={{ background: 'var(--app-bg-card)', border: '1px solid var(--app-border)', boxShadow: '0 0 24px var(--app-accent-glow)' }}
-                    >
-                      <svg className="w-10 h-10" style={{ color: 'var(--app-accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <>
+                <div className="sports-view app-view-sports">
+                  {user ? (
+                    selectedSportSlug ? (
+                      <FixtureList sportSlug={selectedSportSlug} />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-center p-12">
+                        <div 
+                          className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6"
+                          style={{ background: 'var(--app-bg-card)', border: '1px solid var(--app-border)', boxShadow: '0 0 24px var(--app-accent-glow)' }}
+                        >
+                          <svg className="w-10 h-10" style={{ color: 'var(--app-accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        </div>
+                        <span className="font-bold text-lg" style={{ color: 'var(--app-text-muted)' }}>Select a sport for fixtures</span>
+                        <span className="text-sm mt-2" style={{ color: 'var(--app-text-muted)', opacity: 0.8 }}>Live events, starting soon, or pick a sport from the list</span>
+                      </div>
+                    )
+                  ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-center p-8" style={{ background: 'var(--app-bg-deep)' }}>
+                      <div 
+                        className="w-24 h-24 rounded-2xl flex items-center justify-center mb-8"
+                        style={{ background: 'var(--app-bg-card)', border: '1px solid var(--app-border)', boxShadow: '0 0 32px var(--app-accent-glow)' }}
+                      >
+                        <svg className="w-12 h-12" style={{ color: 'var(--app-accent)' }} viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12 2L2 7l10 5 10-5-10-5zm0 9l2.5-1.25L12 8.5l-2.5 1.25L12 11zm0 2.5l-5-2.5-5 2.5L12 22l10-8.5-5-2.5-5 2.5z"/>
+                        </svg>
+                      </div>
+                      <h2 className="text-2xl font-black mb-3 tracking-wide uppercase" style={{ color: 'var(--app-text)', fontFamily: 'var(--font-heading)' }}>
+                        Welcome to STAKE<span style={{ color: 'var(--app-accent)' }}>SPORTS</span>
+                      </h2>
+                      <p className="mb-8 max-w-md text-sm leading-relaxed" style={{ color: 'var(--app-text-muted)' }}>
+                        Login with Stake.com to view fixtures, place bets, and manage your portfolio.
+                      </p>
+                      <button 
+                        onClick={handleLogin}
+                        className="px-8 py-3.5 rounded-xl font-bold text-sm transition-all uppercase tracking-wider hover:-translate-y-0.5"
+                        style={{ background: 'var(--app-accent)', color: 'var(--app-bg-deep)', boxShadow: '0 0 24px var(--app-accent-glow)' }}
+                      >
+                        Login with Stake
+                      </button>
                     </div>
-                    <span className="font-bold text-lg" style={{ color: 'var(--app-text-muted)' }}>Select a sport for fixtures</span>
-                    <span className="text-sm mt-2" style={{ color: 'var(--app-text-muted)', opacity: 0.8 }}>Live events, starting soon, or pick a sport from the list</span>
-                  </div>
-                )
-              ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-center p-8" style={{ background: 'var(--app-bg-deep)' }}>
-                  <div 
-                    className="w-24 h-24 rounded-2xl flex items-center justify-center mb-8"
-                    style={{ background: 'var(--app-bg-card)', border: '1px solid var(--app-border)', boxShadow: '0 0 32px var(--app-accent-glow)' }}
-                  >
-                    <svg className="w-12 h-12" style={{ color: 'var(--app-accent)' }} viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2L2 7l10 5 10-5-10-5zm0 9l2.5-1.25L12 8.5l-2.5 1.25L12 11zm0 2.5l-5-2.5-5 2.5L12 22l10-8.5-5-2.5-5 2.5z"/>
-                    </svg>
-                  </div>
-                  <h2 className="text-2xl font-black mb-3 tracking-wide uppercase" style={{ color: 'var(--app-text)', fontFamily: 'var(--font-heading)' }}>
-                    Welcome to STAKE<span style={{ color: 'var(--app-accent)' }}>SPORTS</span>
-                  </h2>
-                  <p className="mb-8 max-w-md text-sm leading-relaxed" style={{ color: 'var(--app-text-muted)' }}>
-                    Login with Stake.com to view fixtures, place bets, and manage your portfolio.
-                  </p>
-                  <button 
-                    onClick={handleLogin}
-                    className="px-8 py-3.5 rounded-xl font-bold text-sm transition-all uppercase tracking-wider hover:-translate-y-0.5"
-                    style={{ background: 'var(--app-accent)', color: 'var(--app-bg-deep)', boxShadow: '0 0 24px var(--app-accent-glow)' }}
-                  >
-                    Login with Stake
-                  </button>
+                  )}
                 </div>
-              )}
-            </div>
-            
-            <RightSidebar />
-          </>
+                
+                <RightSidebar />
+              </>
         )}
 
-        {/* Logger View */}
         {currentView === 'logger' && (
           <div className="app-view-logger">
             <LoggerView />

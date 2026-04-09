@@ -1,6 +1,10 @@
 import { createClient } from 'graphql-ws'
 import { CASINO_STORAGE_KEYS } from '../utils/storageRegistry'
-import { toMinor } from '../utils/formatAmount'
+import {
+  convertMinorToUsdCents,
+  normalizeHouseBetAmount,
+  normalizeMajorAmount,
+} from '../utils/monetaryContract'
 
 const BALANCE_UPDATED_SUBSCRIPTION = `
   subscription BalanceUpdated {
@@ -241,17 +245,21 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
             return
           }
           const amountRaw = Number(bet?.amount)
-          const hasValidAmount = Number.isFinite(amountRaw) && amountRaw > 0
+          const amountCanonical = normalizeHouseBetAmount(amountRaw, bet?.currency)
+          const hasValidAmount = Number.isFinite(amountCanonical.amountMajor) && amountCanonical.amountMajor > 0
           if (!hasValidAmount && !isSportsType) {
             if (doCompactLog) console.warn('[houseBets] SKIP: amount<=0', { amount: amountRaw, bet })
             return
           }
           const payoutRaw = Number(bet?.payout)
-          const payout = Number.isFinite(payoutRaw) && payoutRaw >= 0 ? payoutRaw : (isSportsType ? null : 0)
+          const payoutCanonical = normalizeHouseBetAmount(payoutRaw, bet?.currency)
+          const payout = Number.isFinite(payoutCanonical.amountMajor) && payoutCanonical.amountMajor >= 0
+            ? payoutCanonical.amountMajor
+            : (isSportsType ? null : 0)
           const directPayoutMultiplier = Number(bet?.payoutMultiplier)
           const payoutMultiplier = Number.isFinite(directPayoutMultiplier) && directPayoutMultiplier > 0
             ? directPayoutMultiplier
-            : (hasValidAmount && Number.isFinite(payout) ? payout / amountRaw : null)
+            : (hasValidAmount && Number.isFinite(payout) ? payout / amountCanonical.amountMajor : null)
           const houseId = hb?.iid ?? bet?.id ?? hb?.id
           const gameSlug = game?.slug || gameNameToSlug(game?.name) || ''
           const name = (game?.name || '').toLowerCase()
@@ -282,11 +290,17 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
             /** Top-Level `houseBets.id` — Fallback wenn `iid` fehlt */
             houseTopId: hb?.id != null && String(hb.id).trim() !== '' ? String(hb.id).trim() : null,
             gameSlug,
-            amount: hasValidAmount ? amountRaw : null,
+            amount: hasValidAmount ? amountCanonical.amountMajor : null,
+            amountMajor: hasValidAmount ? amountCanonical.amountMajor : null,
+            amountMinor: hasValidAmount ? amountCanonical.amountMinor : null,
             payout,
+            payoutMajor: Number.isFinite(payoutCanonical.amountMajor) ? payoutCanonical.amountMajor : null,
+            payoutMinor: Number.isFinite(payoutCanonical.amountMinor) ? payoutCanonical.amountMinor : null,
             currency: (bet?.currency || '').toLowerCase(),
             payoutMultiplier,
             amountMultiplier: Number(bet?.amountMultiplier) || 0,
+            unit: 'major',
+            source: 'houseBets',
           }
           if (doCompactLog) console.warn('[houseBets] OK → onUpdate:', payload)
           onUpdate(payload)
@@ -360,14 +374,16 @@ export async function subscribeToBalanceUpdates(accessToken, onUpdate) {
           const bu = result?.data?.balanceUpdated
           if (!bu?.currency) return
           const currency = (bu.currency || '').toLowerCase()
-          const amountMajor = bu.amount != null ? Number(bu.amount) : 0
-          const amountMinor = Number.isFinite(amountMajor) ? toMinor(amountMajor, currency) : 0
+          const amountCanonical = normalizeMajorAmount(bu.amount != null ? Number(bu.amount) : 0, currency)
+          const usd = convertMinorToUsdCents(amountCanonical.amountMinor, currency, {})
           onUpdate({
             currency,
-            amount: amountMajor,
-            amountMajor,
-            amountMinor,
+            amount: amountCanonical.amountMajor,
+            amountMajor: amountCanonical.amountMajor,
+            amountMinor: amountCanonical.amountMinor,
             unit: 'major',
+            source: 'balanceUpdated',
+            fxStatus: usd.fxStatus,
           })
         },
         error: (err) => {

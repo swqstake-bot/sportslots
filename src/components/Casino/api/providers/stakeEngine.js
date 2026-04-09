@@ -22,9 +22,14 @@ import { startThirdPartySession } from '../stake'
 import { getEffectiveBetAmount } from '../../constants/bet'
 import { logApiCall } from '../../utils/apiLogger'
 import { isFiatCurrency, isZeroDecimalCurrency } from '../../utils/currencyMeta'
+import { normalizeProviderError } from './providerErrors'
 
 /** RGS: ganzzahliger Betrag; 1.000.000 = 1,0 Währungseinheit (vgl. stake-engine API_MULTIPLIER). */
 export const STAKE_ENGINE_API_MULTIPLIER = 1_000_000
+
+function stakeEngineError(message, cause) {
+  return normalizeProviderError('stakeEngine', cause || new Error(message), message)
+}
 
 /**
  * RGS `payoutMultiplier`: oft Hundertstel (3900 = 39x, 1150 = 11.5x), teils Ganzzahl (39 = 39x).
@@ -187,7 +192,7 @@ async function rgsPost(rgsUrl, body) {
       }
     } catch (e) {
       console.error('Stake Engine Proxy Error:', e)
-      throw e
+      throw stakeEngineError('Stake Engine Proxy Error', e)
     }
   }
 
@@ -215,7 +220,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const config = typeof session?.config === 'string' ? session.config : session?.config?.url
   const parsed = parseConfigFromUrl(config)
   if (!parsed?.sessionID || !parsed?.rgsUrl) {
-    throw new Error('Keine gültige Stake-Engine-Session. Ist das ein Stake-Engine-Slot?')
+    throw stakeEngineError('Keine gültige Stake-Engine-Session. Ist das ein Stake-Engine-Slot?')
   }
 
   const authUrl = buildRgsUrl(parsed.rgsUrl, '/wallet/authenticate')
@@ -225,12 +230,12 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     authData = await authRes.json()
   } catch (e) {
     const text = await authRes.text()
-    throw new Error(`Stake Engine Auth fehlgeschlagen: ${text || authRes.status}`)
+    throw stakeEngineError(`Stake Engine Auth fehlgeschlagen: ${text || authRes.status}`)
   }
 
   if (!authRes.ok) {
     const err = authData?.error || authData?.message || authRes.status
-    throw new Error(`Stake Engine: ${err}`)
+    throw stakeEngineError(`Stake Engine: ${err}`)
   }
 
   logApiCall({ type: 'stakeEngine/authenticate', endpoint: authUrl, request: { sessionID: parsed.sessionID }, response: { config: authData?.config, balance: authData?.balance }, error: null, durationMs: null })
@@ -359,19 +364,19 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
   } catch (e) {
     const text = await playRes.text()
     logApiCall({ type: 'stakeEngine/play', endpoint: playUrl, request: playBody, response: null, error: text || String(e), durationMs: Date.now() - t0 })
-    throw new Error(`Stake Engine Play fehlgeschlagen: ${text || playRes.status}`)
+    throw stakeEngineError(`Stake Engine Play fehlgeschlagen: ${text || playRes.status}`)
   }
 
   if (!playRes.ok) {
     const err = playData?.error || playRes.status
     const msg = playData?.message || ''
     if (err === 'ERR_IPB' || String(err).includes('ERR_IPB')) {
-      const ex = new Error(`Stake Engine: ${err}`)
+      const ex = stakeEngineError(`Stake Engine: ${err}`)
       ex.insufficientBalance = true
       throw ex
     }
     if (err === 'ERR_IS' || String(err).includes('ERR_IS')) {
-      const ex = new Error('Session abgelaufen. Bitte Session neu starten.')
+      const ex = stakeEngineError('Session abgelaufen. Bitte Session neu starten.')
       ex.sessionClosed = true
       throw ex
     }
@@ -384,7 +389,7 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
       } catch (e) {
         const text = await playRes.text()
         logApiCall({ type: 'stakeEngine/play', endpoint: playUrl, request: playBody, response: null, error: text || String(e), durationMs: Date.now() - t0 })
-        throw new Error(`Stake Engine Play fehlgeschlagen: ${text || playRes.status}`)
+        throw stakeEngineError(`Stake Engine Play fehlgeschlagen: ${text || playRes.status}`)
       }
     }
   }
@@ -393,19 +398,19 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
     logApiCall({ type: 'stakeEngine/play', endpoint: playUrl, request: playBody, response: playData, error: playData?.error || playRes.status, durationMs: Date.now() - t0 })
     const err = playData?.error || playRes.status
     if (err === 'ERR_IS' || String(err).includes('ERR_IS')) {
-      const ex = new Error('Session abgelaufen. Bitte Session neu starten.')
+      const ex = stakeEngineError('Session abgelaufen. Bitte Session neu starten.')
       ex.sessionClosed = true
       throw ex
     }
     if (err === 'ERR_IPB' || String(err).includes('ERR_IPB')) {
-      const ex = new Error(`Stake Engine: ${err}`)
+      const ex = stakeEngineError(`Stake Engine: ${err}`)
       ex.insufficientBalance = true
       throw ex
     }
     if (err === 'ERR_VAL' || String(err).includes('ERR_VAL')) {
-      throw new Error(`Ungültiger Einsatz (ERR_VAL). Bitte Einsatz prüfen.`)
+      throw stakeEngineError('Ungültiger Einsatz (ERR_VAL). Bitte Einsatz prüfen.')
     }
-    throw new Error(`Stake Engine: ${err}`)
+    throw stakeEngineError(`Stake Engine: ${err}`)
   }
 
   const round = playData?.round || {}

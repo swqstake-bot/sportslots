@@ -160,6 +160,8 @@ function sortChallenges(list, sortKey) {
 
 const TAB_ACTIVE = 'active'
 const TAB_COMPLETED = 'completed'
+const SEGMENT_ALL = 'all'
+const SEGMENT_WEEKLY = 'weekly'
 const SORT_STORAGE_KEY = 'slotbot_challenges_sort'
 
 export default function ChallengesView({ accessToken, onSelectChallenge, webSlots = [], onDiscoveredSlots }) {
@@ -182,6 +184,7 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
   })
   const [searchTerm, setSearchTerm] = useState('')
   const [tab, setTab] = useState(TAB_ACTIVE)
+  const [segment, setSegment] = useState(SEGMENT_ALL)
   const [completionVersion, setCompletionVersion] = useState(0)
   const completedIds = useMemo(() => getCompletedChallengeIds(), [completionVersion])
   const sortedChallenges = useMemo(
@@ -221,7 +224,7 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
     setLoading(true)
     setError('')
     const fetchFn = tab === TAB_COMPLETED ? fetchCompletedChallenges : fetchAllChallenges
-    Promise.all([fetchFn(accessToken), fetchCurrencyRates(accessToken)])
+    Promise.all([fetchFn(accessToken, { segment }), fetchCurrencyRates(accessToken)])
       .then(([{ challenges: list }, ratesMap]) => {
         if (!cancelled) {
           setChallenges(list)
@@ -239,7 +242,7 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [accessToken, tab])
+  }, [accessToken, tab, segment])
 
   if (!accessToken) {
     return (
@@ -268,6 +271,14 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
             Abgeschlossen
           </button>
         </div>
+        <div style={{ ...STYLES.sortRow, marginBottom: 'var(--space-3)' }}>
+          <button type="button" onClick={() => setSegment(SEGMENT_ALL)} style={{ padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: segment === SEGMENT_ALL ? 'var(--accent)' : 'var(--bg-elevated)', color: segment === SEGMENT_ALL ? 'var(--bg-deep)' : 'var(--text)', cursor: 'pointer', fontSize: '0.8rem' }}>
+            Alle
+          </button>
+          <button type="button" onClick={() => setSegment(SEGMENT_WEEKLY)} style={{ padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: segment === SEGMENT_WEEKLY ? 'var(--accent)' : 'var(--bg-elevated)', color: segment === SEGMENT_WEEKLY ? 'var(--bg-deep)' : 'var(--text)', cursor: 'pointer', fontSize: '0.8rem', marginLeft: '0.25rem' }}>
+            Weekly
+          </button>
+        </div>
         <div style={STYLES.error}>{error}</div>
       </div>
     )
@@ -288,6 +299,14 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
           </button>
           <button type="button" onClick={() => setTab(TAB_COMPLETED)} style={{ padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: tab === TAB_COMPLETED ? 'var(--accent)' : 'var(--bg-elevated)', color: tab === TAB_COMPLETED ? 'var(--bg-deep)' : 'var(--text)', cursor: 'pointer', fontSize: '0.8rem', marginLeft: '0.25rem' }}>
             Abgeschlossen
+          </button>
+        </div>
+        <div style={{ ...STYLES.sortRow, marginBottom: 'var(--space-3)' }}>
+          <button type="button" onClick={() => setSegment(SEGMENT_ALL)} style={{ padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: segment === SEGMENT_ALL ? 'var(--accent)' : 'var(--bg-elevated)', color: segment === SEGMENT_ALL ? 'var(--bg-deep)' : 'var(--text)', cursor: 'pointer', fontSize: '0.8rem' }}>
+            Alle
+          </button>
+          <button type="button" onClick={() => setSegment(SEGMENT_WEEKLY)} style={{ padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: segment === SEGMENT_WEEKLY ? 'var(--accent)' : 'var(--bg-elevated)', color: segment === SEGMENT_WEEKLY ? 'var(--bg-deep)' : 'var(--text)', cursor: 'pointer', fontSize: '0.8rem', marginLeft: '0.25rem' }}>
+            Weekly
           </button>
         </div>
         <div style={STYLES.empty}>
@@ -342,6 +361,38 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
             }}
           >
             Abgeschlossen
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: '0.25rem' }}>
+          <button
+            type="button"
+            onClick={() => setSegment(SEGMENT_ALL)}
+            style={{
+              padding: '0.35rem 0.75rem',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border)',
+              background: segment === SEGMENT_ALL ? 'var(--accent)' : 'var(--bg-elevated)',
+              color: segment === SEGMENT_ALL ? 'var(--bg-deep)' : 'var(--text)',
+              cursor: 'pointer',
+              fontSize: '0.8rem',
+            }}
+          >
+            Alle
+          </button>
+          <button
+            type="button"
+            onClick={() => setSegment(SEGMENT_WEEKLY)}
+            style={{
+              padding: '0.35rem 0.75rem',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border)',
+              background: segment === SEGMENT_WEEKLY ? 'var(--accent)' : 'var(--bg-elevated)',
+              color: segment === SEGMENT_WEEKLY ? 'var(--bg-deep)' : 'var(--text)',
+              cursor: 'pointer',
+              fontSize: '0.8rem',
+            }}
+          >
+            Weekly
           </button>
         </div>
         <select

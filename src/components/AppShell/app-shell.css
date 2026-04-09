@@ -28,6 +28,12 @@
   justify-content: flex-end;
 }
 
+.app-header-shell {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .app-header-kicker {
   margin: 0;
   font-size: 0.67rem;
@@ -231,6 +237,11 @@
 @media (max-width: 1280px) {
   .app-header {
     grid-template-columns: 1fr;
+  }
+
+  .app-header-shell {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .app-header-right {

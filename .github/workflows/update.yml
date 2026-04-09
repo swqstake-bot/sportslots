@@ -38,6 +38,11 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      - name: Quality Gate (Lint + QA Harness)
+        run: |
+          npm run lint
+          npm run qa:gate
+
       - name: Build and Publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

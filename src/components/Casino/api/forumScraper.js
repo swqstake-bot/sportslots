@@ -4,6 +4,7 @@
  */
 
 import { StakeApi } from '../../../api/client'
+import { logApiCall } from '../utils/apiLogger'
 
 // Stake Bet-IDs: casino:uuid (hex+hyphen) oder house:numeric
 const BET_ID_REGEX = /(casino|house):([a-f0-9-]+)/gi
@@ -207,6 +208,7 @@ export async function scrapeForumBets(forumUrl, accessToken, opts = {}) {
   let totalPagesHint = 1
   let page = 1
   const maxPages = 100
+  const startedAt = Date.now()
 
   while (page <= maxPages) {
     const pageUrl = page === 1 ? baseUrl + '/' : `${baseUrl}/page/${page}/`
@@ -227,12 +229,28 @@ export async function scrapeForumBets(forumUrl, accessToken, opts = {}) {
       await new Promise((r) => setTimeout(r, 150))
     } catch (e) {
       console.error('Forum page fetch failed', page, e)
+      logApiCall({
+        type: 'forum/scrape/page',
+        endpoint: pageUrl,
+        request: { page, totalPagesHint },
+        response: null,
+        error: e?.message || String(e),
+        durationMs: null,
+      })
       break
     }
   }
 
   const ids = Array.from(allIds)
   if (ids.length === 0) {
+    logApiCall({
+      type: 'forum/scrape',
+      endpoint: baseUrl,
+      request: { maxBets },
+      response: { totalScraped: 0, totalWithDetails: 0, totalPages: page },
+      error: null,
+      durationMs: Date.now() - startedAt,
+    })
     return { bets: [], totalScraped: 0, totalWithDetails: 0, totalPages: page }
   }
 
@@ -247,10 +265,23 @@ export async function scrapeForumBets(forumUrl, accessToken, opts = {}) {
     if (i + CONCURRENCY < toFetch.length) await new Promise((r) => setTimeout(r, 80))
   }
 
-  return {
+  const out = {
     bets,
     totalScraped: ids.length,
     totalWithDetails: bets.length,
     totalPages: page,
   }
+  logApiCall({
+    type: 'forum/scrape',
+    endpoint: baseUrl,
+    request: { maxBets },
+    response: {
+      totalScraped: out.totalScraped,
+      totalWithDetails: out.totalWithDetails,
+      totalPages: out.totalPages,
+    },
+    error: null,
+    durationMs: Date.now() - startedAt,
+  })
+  return out
 }

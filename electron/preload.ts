@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import pkg from '../package.json' with { type: 'json' };
+import type { StakebotxRendererBridgeInfo } from './stakebotxBridgeTypes.js';
 
 contextBridge.exposeInMainWorld('electronAPI', {
     getAppVersion: () => ipcRenderer.invoke('get-app-version') as Promise<string>,
@@ -57,5 +58,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
             payload
         ) as Promise<{ saved: boolean; path?: string; csvPath?: string; slotCsvPath?: string }>,
     getSlotFirstWinsDir: () => ipcRenderer.invoke('get-slot-first-wins-dir') as Promise<string>,
+    /** StakeBot-X: resolve safe mount target (dev URL, static export, or env). Legacy shell when `available` is false. */
+    getStakebotxRendererBridge: (options?: { refresh?: boolean; probe?: boolean }) =>
+        ipcRenderer.invoke('stakebotx-renderer-bridge', options ?? {}) as Promise<StakebotxRendererBridgeInfo>,
 });
 

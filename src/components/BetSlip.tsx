@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useBetSlipStore } from '../store/betSlipStore';
 import { useUserStore } from '../store/userStore';
-import { StakeApi } from '../api/client';
-import { Queries } from '../api/queries';
+import { placeSportBetWithPolicy } from '../services/sportsRuntime';
 
 export function BetSlip() {
   const { outcomes, removeOutcome, clearSlip } = useBetSlipStore();
@@ -48,18 +47,15 @@ export function BetSlip() {
         identifier: identifier
       };
 
-      const response = await StakeApi.query(Queries.PlaceSportBet, variables);
-
-      if (response.data?.sportBet) {
+      const response = await placeSportBetWithPolicy(variables, { maxAttempts: 2 });
+      if (response.bet) {
         setResult({ success: true, message: 'Bet placed successfully!' });
-        addActiveBet(response.data.sportBet);
+        addActiveBet(response.bet);
         setTimeout(() => {
           clearSlip();
           setResult(null);
           setAmount('');
         }, 3000);
-      } else if (response.errors) {
-        throw new Error(response.errors[0].message);
       }
     } catch (err: any) {
       console.error('Bet placement failed:', err);

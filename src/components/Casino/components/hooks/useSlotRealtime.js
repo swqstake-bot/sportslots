@@ -78,8 +78,8 @@ export function useSlotRealtime({
       if (!slug || !matches) return
 
       const curr = (b?.currency || 'usd').toLowerCase()
-      const betAmountMajor = Number(b?.amount) || 0
-      const payoutMajorRaw = Number(b?.payout) || 0
+      const betAmountMajor = Number(b?.amountMajor ?? b?.amount) || 0
+      const payoutMajorRaw = Number(b?.payoutMajor ?? b?.payout) || 0
       const payoutMultiplier = Number(b?.payoutMultiplier) || 0
 
       let payoutMajorToUse = payoutMajorRaw
@@ -111,8 +111,12 @@ export function useSlotRealtime({
         }
       }
 
-      const betAmount = toMinor(betAmountMajor, curr)
-      const winAmount = toMinor(payoutMajorToUse, curr)
+      const betAmount = Number.isFinite(Number(b?.amountMinor))
+        ? Number(b.amountMinor)
+        : toMinor(betAmountMajor, curr)
+      const winAmount = Number.isFinite(Number(b?.payoutMinor))
+        ? Number(b.payoutMinor)
+        : toMinor(payoutMajorToUse, curr)
       const currencyCode = (b?.currency || '').toUpperCase() || null
       addToBetHistory({ betAmount, winAmount, isBonus: false, balance: undefined, currencyCode, roundId: b?.id })
     }).then((s) => {

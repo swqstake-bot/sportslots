@@ -9,12 +9,19 @@ const BONUS_LOG_KEY = 'slotbot_bonus_logs'
 const SAVE_BONUS_FLAG_KEY = 'slotbot_save_bonus_logs'
 const MAX_ENTRIES = 30
 const MAX_BONUS_ENTRIES = 100
+const LOG_FLUSH_DEBOUNCE_MS = 120
+const MAX_LOG_STRING_PREVIEW = 2000
+let logsCache = null
+let logsFlushTimer = null
 
 function getLogs() {
+  if (Array.isArray(logsCache)) return logsCache
   try {
     const raw = localStorage.getItem(LOG_KEY)
-    return raw ? JSON.parse(raw) : []
+    logsCache = raw ? JSON.parse(raw) : []
+    return logsCache
   } catch {
+    logsCache = []
     return []
   }
 }
@@ -22,13 +29,22 @@ function getLogs() {
 function saveLogs(logs) {
   try {
     const trimmed = logs.slice(-MAX_ENTRIES)
-    localStorage.setItem(LOG_KEY, JSON.stringify(trimmed))
+    logsCache = trimmed
+    if (logsFlushTimer) return
+    logsFlushTimer = setTimeout(() => {
+      logsFlushTimer = null
+      try {
+        localStorage.setItem(LOG_KEY, JSON.stringify(logsCache || []))
+      } catch (e) {
+        console.warn('slotbot: could not flush logs', e)
+      }
+    }, LOG_FLUSH_DEBOUNCE_MS)
   } catch (e) {
     console.warn('slotbot: could not save logs', e)
   }
 }
 
-export function logApiCall({ type, endpoint, request, response, error, durationMs, level = 'info' }) {
+export function logApiCall({ type, endpoint, request, response, error, durationMs, level = 'info', correlationId = null, eventSource = null }) {
   const entry = {
     ts: new Date().toISOString(),
     level: error ? 'error' : level,
@@ -38,24 +54,33 @@ export function logApiCall({ type, endpoint, request, response, error, durationM
     response: response != null ? sanitizeForLog(response) : null,
     error: error || null,
     durationMs: durationMs ?? null,
+    correlationId,
+    eventSource,
   }
   const logs = getLogs()
   logs.push(entry)
   saveLogs(logs)
 
-  // Zusätzlich in DevTools Console ausgeben
-  const logFn = error ? console.error : console.log
-  const prefix = `[${type}]`
-  if (error) {
-    logFn(prefix, error, { request: entry.request, response: entry.response, durationMs })
-  } else {
-    logFn(prefix, { request: entry.request, response: entry.response, durationMs })
+  // Console logging on hot-path is expensive; keep it opt-in.
+  if (window?.__SLOTBOT_VERBOSE_LOGS__ === true) {
+    const logFn = error ? console.error : console.log
+    const prefix = `[${type}]`
+    if (error) {
+      logFn(prefix, error, { request: entry.request, response: entry.response, durationMs })
+    } else {
+      logFn(prefix, { request: entry.request, response: entry.response, durationMs })
+    }
   }
 }
 
 function sanitizeForLog(obj) {
   if (obj == null) return null
+  if (typeof obj === 'string') {
+    return obj.length > MAX_LOG_STRING_PREVIEW ? `${obj.slice(0, MAX_LOG_STRING_PREVIEW)}...` : obj
+  }
+  if (typeof obj === 'number' || typeof obj === 'boolean') return obj
   try {
+    if (typeof structuredClone === 'function') return structuredClone(obj)
     return JSON.parse(JSON.stringify(obj))
   } catch {
     return { _logError: 'Could not serialize', _preview: String(obj).slice(0, 200) }
@@ -67,6 +92,7 @@ export function getApiLogs() {
 }
 
 export function clearLogs() {
+  logsCache = []
   localStorage.setItem(LOG_KEY, '[]')
 }
 

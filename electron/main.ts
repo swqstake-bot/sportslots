@@ -7,7 +7,17 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'crypto';
 import os from 'os';
-import { DIST, VITE_PUBLIC, SPIN_SAMPLES_DIR, FIRST_SLOT_WINS_DIR, VITE_DEV_SERVER_URL, ELECTRON_DIR } from './config.js';
+import {
+  DIST,
+  VITE_PUBLIC,
+  SPIN_SAMPLES_DIR,
+  FIRST_SLOT_WINS_DIR,
+  VITE_DEV_SERVER_URL,
+  ELECTRON_DIR,
+  REPO_ROOT,
+} from './config.js';
+import { finalizeStakebotxBridge, resolveStakebotxBridgeSync } from './stakebotxBridge.js';
+import type { StakebotxRendererBridgeInfo } from './stakebotxBridgeTypes.js';
 import { sessionData, captureSession } from './sessionCapture.js';
 import {
   ensureValidStakeSession,
@@ -64,6 +74,22 @@ let lastLoginWindowOpenAt = 0;
 const LOGIN_WINDOW_DEBOUNCE_MS = 4000;
 let lastNet403FallbackLogAt = 0;
 const NET_403_FALLBACK_LOG_DEBOUNCE_MS = 15000;
+const PROXY_HTTP_AGENT = new http.Agent({
+  keepAlive: true,
+  maxSockets: 96,
+  maxFreeSockets: 16,
+  timeout: 60000,
+})
+const PROXY_HTTPS_AGENT = new https.Agent({
+  keepAlive: true,
+  maxSockets: 96,
+  maxFreeSockets: 16,
+  timeout: 60000,
+})
+
+/** Short-lived cache so multiple React mounts do not hammer localhost probes. */
+let stakebotxBridgeCache: { at: number; payload: StakebotxRendererBridgeInfo } | null = null;
+const STAKEBOTX_BRIDGE_CACHE_MS = 2000;
 
 class StakeHttpError extends Error {
   status: number;
@@ -155,6 +181,36 @@ async function stakeBrowserPostJson(
     throw new StakeHttpError(status, body, `HTTP ${status}: ${extractStakeJsonErrorMessage(parsed)}`);
   }
   return { status, body, parsed };
+}
+
+async function stakeBrowserGetText(
+  url: string,
+  headers: Record<string, string>
+): Promise<{ status: number; body: string; finalUrl: string }> {
+  const u = new URL(url);
+  const origin = `${u.protocol}//${u.host}`;
+  const w = await ensureStakeBridgeWindow(origin);
+  const script = `
+    (async () => {
+      const res = await fetch(${JSON.stringify(url)}, {
+        method: 'GET',
+        credentials: 'include',
+        headers: ${JSON.stringify(headers)}
+      });
+      const text = await res.text();
+      return { status: res.status, body: text, finalUrl: res.url };
+    })();
+  `;
+  const result = (await w.webContents.executeJavaScript(script, true)) as {
+    status: number;
+    body: string;
+    finalUrl: string;
+  };
+  return {
+    status: Number(result?.status || 0),
+    body: String(result?.body || ''),
+    finalUrl: String(result?.finalUrl || url),
+  };
 }
 
 async function stakeNetPostJson(
@@ -386,6 +442,30 @@ autoUpdater.on('update-downloaded', (info) => {
 });
 
 ipcMain.handle('get-app-version', () => app.getVersion());
+
+/**
+ * StakeBot-X renderer bridge: resolves a safe mount URL (loopback http(s) or verified static index.html)
+ * and optionally probes http(s) targets. Legacy UI remains the default when nothing is reachable.
+ */
+ipcMain.handle(
+  'stakebotx-renderer-bridge',
+  async (_event, options?: { refresh?: boolean; probe?: boolean }) => {
+    const refresh = options?.refresh === true;
+    const shouldProbe = options?.probe !== false;
+    const now = Date.now();
+    if (!refresh && stakebotxBridgeCache && now - stakebotxBridgeCache.at < STAKEBOTX_BRIDGE_CACHE_MS) {
+      return stakebotxBridgeCache.payload;
+    }
+    const sync = resolveStakebotxBridgeSync({
+      repoRoot: REPO_ROOT,
+      isPackaged: app.isPackaged,
+      env: process.env,
+    });
+    const info = await finalizeStakebotxBridge(sync, { probe: shouldProbe, env: process.env });
+    stakebotxBridgeCache = { at: Date.now(), payload: info };
+    return info;
+  }
+);
 
 ipcMain.handle('check-for-updates', () => {
     if (!app.isPackaged) {
@@ -1114,6 +1194,25 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
 
         // Node https statt net.request – umgeht ERR_BLOCKED_BY_CLIENT (Adblocker/Session)
         const requestHeaders: Record<string, string> = { ...headers };
+        const isStakeTarget = isStakeOriginUrl(url);
+
+        if (isStakeTarget) {
+            if (sessionData.cookies && !requestHeaders['Cookie']) {
+                requestHeaders['Cookie'] = sessionData.cookies;
+            }
+            if (!requestHeaders['Origin']) {
+                requestHeaders['Origin'] = stakeOrigin;
+            }
+            if (!requestHeaders['Referer']) {
+                requestHeaders['Referer'] = `${stakeOrigin}/`;
+            }
+            if (!requestHeaders['Accept']) {
+                requestHeaders['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+            }
+            if (!requestHeaders['Accept-Language']) {
+                requestHeaders['Accept-Language'] = 'en-US,en;q=0.9,de;q=0.8';
+            }
+        }
 
         if (type === 'pragmatic') {
             try {
@@ -1145,7 +1244,7 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                 requestHeaders['Content-Type'] = 'application/json';
             }
         } else if (type === 'rgs') {
-            if (!requestHeaders['Content-Type']) {
+            if (method !== 'GET' && !requestHeaders['Content-Type']) {
                 requestHeaders['Content-Type'] = 'application/json';
             }
         }
@@ -1168,6 +1267,7 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                 port: urlParsed.port || (isHttps ? 443 : 80),
                 path: urlParsed.pathname + urlParsed.search,
                 headers: redirectCount > 0 ? { ...requestHeaders, Origin: urlParsed.origin, Referer: targetUrl } : requestHeaders,
+                agent: isHttps ? PROXY_HTTPS_AGENT : PROXY_HTTP_AGENT,
             };
 
             const req = client.request(opts, (res) => {
@@ -1190,6 +1290,29 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                     if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && loc && redirectCount < 5) {
                         const nextUrl = loc.startsWith('http') ? loc : new URL(loc, targetUrl).href;
                         return doRequest(nextUrl, redirectCount + 1);
+                    }
+                    if (res.statusCode === 403 && isStakeOriginUrl(targetUrl)) {
+                        stakeBrowserGetText(targetUrl, requestHeaders)
+                            .then((fallback) => {
+                                resolve({
+                                    status: fallback.status || 403,
+                                    statusText: fallback.status === 200 ? 'OK (browser-fallback)' : (res.statusMessage || ''),
+                                    headers: res.headers,
+                                    data: fallback.body,
+                                    finalUrl: fallback.finalUrl || targetUrl,
+                                });
+                            })
+                            .catch((fallbackErr) => {
+                                console.warn('[StakeSession] proxy-request 403 fallback failed', fallbackErr);
+                                resolve({
+                                    status: res.statusCode || 0,
+                                    statusText: res.statusMessage || '',
+                                    headers: res.headers,
+                                    data,
+                                    finalUrl: targetUrl,
+                                });
+                            });
+                        return;
                     }
                     resolve({
                         status: res.statusCode || 0,

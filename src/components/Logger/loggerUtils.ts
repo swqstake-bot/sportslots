@@ -1,3 +1,5 @@
+import { convertToUsd, normalizeCurrencyCode as normalizeCurrencyCodeCanonical } from '../../utils/monetaryContract';
+
 export type LoggerCategory = 'casino' | 'sports';
 
 export interface LoggerBetEntry {
@@ -9,7 +11,11 @@ export interface LoggerBetEntry {
   gameName?: string | null;
   gameSlug?: string | null;
   amount: number | null;
+  amountMajor?: number | null;
+  amountMinor?: number | null;
   payout: number | null;
+  payoutMajor?: number | null;
+  payoutMinor?: number | null;
   currency?: string | null;
   payoutMultiplier?: number | null;
   amountMultiplier?: number | null;
@@ -35,7 +41,7 @@ export function normalizeCurrencyCode(value: unknown): string {
   const raw = String(value || '').trim().toLowerCase();
   if (!raw) return '';
   const compact = raw.replace(/[\s_-]+/g, '');
-  return CURRENCY_ALIASES[raw] || CURRENCY_ALIASES[compact] || raw;
+  return normalizeCurrencyCodeCanonical(CURRENCY_ALIASES[raw] || CURRENCY_ALIASES[compact] || raw);
 }
 
 export function getUsdRate(currency: unknown, rates: Record<string, number> = {}): number {
@@ -62,8 +68,8 @@ export function getUsdRate(currency: unknown, rates: Record<string, number> = {}
 
 export function toUsd(amount: number | null | undefined, currency: unknown, rates: Record<string, number> = {}): number {
   if (amount == null || Number.isNaN(Number(amount))) return 0;
-  const rate = getUsdRate(currency, rates);
-  return Number(amount) * (rate || 0);
+  const converted = convertToUsd(amount, currency, 'major', rates);
+  return converted.usdAmount ?? 0;
 }
 
 export function getBetMultiplier(bet: Pick<LoggerBetEntry, 'payoutMultiplier' | 'amount' | 'payout'>): number | null {

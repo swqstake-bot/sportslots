@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CasinoLoggerTab from './tabs/CasinoLoggerTab';
 import SportsLoggerTab from './tabs/SportsLoggerTab';
+import { loggerBetsIdentity } from './loggerListIdentity';
 import type { LoggerBetEntry } from './loggerUtils';
 import './logger.css';
 
@@ -33,6 +34,8 @@ export default function LoggerView() {
   const [statusMessage, setStatusMessage] = useState('');
   const [manualReloading, setManualReloading] = useState(false);
   const currencyRefreshInFlightRef = useRef(false);
+  const lastCasinoIdentityRef = useRef<string>('');
+  const lastSportsIdentityRef = useRef<string>('');
 
   const refreshCurrencyRates = useCallback(async () => {
     if (currencyRefreshInFlightRef.current) return;
@@ -69,8 +72,18 @@ export default function LoggerView() {
             ? 'sports'
             : 'casino',
       }));
-      setCasinoBets(normalized.filter((b: LoggerBetEntry) => b.category !== 'sports'));
-      setSportsBets(normalized.filter((b: LoggerBetEntry) => b.category === 'sports'));
+      const casinoNorm = normalized.filter((b: LoggerBetEntry) => b.category !== 'sports');
+      const sportsNorm = normalized.filter((b: LoggerBetEntry) => b.category === 'sports');
+      const nextCasinoId = loggerBetsIdentity(casinoNorm);
+      const nextSportsId = loggerBetsIdentity(sportsNorm);
+      if (nextCasinoId !== lastCasinoIdentityRef.current) {
+        lastCasinoIdentityRef.current = nextCasinoId;
+        setCasinoBets(casinoNorm);
+      }
+      if (nextSportsId !== lastSportsIdentityRef.current) {
+        lastSportsIdentityRef.current = nextSportsId;
+        setSportsBets(sportsNorm);
+      }
     } catch {
       // ignore
     } finally {
@@ -112,6 +125,8 @@ export default function LoggerView() {
     }
     setCasinoBets([]);
     setSportsBets([]);
+    lastCasinoIdentityRef.current = loggerBetsIdentity([]);
+    lastSportsIdentityRef.current = loggerBetsIdentity([]);
     setStatusMessage(`Deleted all: ${r.deleted ?? 0} log file(s) removed.`);
   }, []);
 

@@ -70,8 +70,12 @@ export interface SportBet {
   customBet: boolean;
   cashoutDisabled: boolean;
   amount: number;
+  amountMajor?: number;
+  amountMinor?: number;
   currency: string;
   payout: number;
+  payoutMajor?: number;
+  payoutMinor?: number;
   potentialMultiplier: number;
   payoutMultiplier: number;
   cashoutMultiplier: number;
@@ -90,6 +94,7 @@ export interface SportBet {
   customPrices?: SportBetCustomPrice[];
   /** Stake Shield: angepasste Odds (die wir abgeschlossen haben) */
   adjustments?: { payoutMultiplier?: number };
+  eventEnvelope?: any;
 }
 
 interface User {

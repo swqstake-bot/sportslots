@@ -2,10 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useUserStore } from '../../store/userStore';
 import { useUiStore } from '../../store/uiStore';
 import { getCashoutValue, getEffectiveOdds, getOpenLegsCount, getClosedLegsCount } from '../../services/cashoutService';
-import { toUsd } from '../Logger/loggerUtils';
 import { formatStakeAmount } from '../../utils/formatStakeAmount';
 import { StakeApi } from '../../api/client';
 import { Queries } from '../../api/queries';
+import { convertToUsd } from '../../utils/monetaryContract';
+import { computeDeterministicStats, replayStats } from '../../services/stats/statsEngine';
 
 const TOP_N = 15;
 
@@ -41,22 +42,58 @@ export const ActiveBetsList: React.FC = () => {
   }, []);
 
   const formatUsdShort = (amount: number, currency: string): string => {
-    const usd = toUsd(amount, currency, usdRates);
+    const converted = convertToUsd(amount, currency, 'major', usdRates);
+    const usd = converted.usdAmount ?? 0;
     return formatStakeAmount(usd, 'usd');
   };
 
-  const topBets = useMemo(() => {
-    if (!activeBets?.length) return [];
-    return [...activeBets]
+  const topBetsModel = useMemo(() => {
+    if (!activeBets?.length) return { bets: [], fxMissingCount: 0 };
+    let missing = 0;
+    const sorted = [...activeBets]
       .sort((a, b) => {
-        const cashA = toUsd(getCashoutValue(a), a.currency, usdRates);
-        const cashB = toUsd(getCashoutValue(b), b.currency, usdRates);
+        const cashAConv = convertToUsd(getCashoutValue(a), a.currency, 'major', usdRates);
+        const cashBConv = convertToUsd(getCashoutValue(b), b.currency, 'major', usdRates);
+        const cashA = cashAConv.usdAmount ?? 0;
+        const cashB = cashBConv.usdAmount ?? 0;
+        if (cashAConv.fxStatus !== 'ok') missing += 1;
+        if (cashBConv.fxStatus !== 'ok') missing += 1;
         if (cashB !== cashA) return cashB - cashA;
         // Sekundär: mehr erledigte Legs = besser (11/12 vor 11/11)
         return getClosedLegsCount(b) - getClosedLegsCount(a);
       })
       .slice(0, TOP_N);
+    return { bets: sorted, fxMissingCount: missing };
   }, [activeBets, usdRates]);
+  const topBets = topBetsModel.bets;
+  const fxMissingCount = topBetsModel.fxMissingCount;
+  const sportsStats = useMemo(
+    () =>
+      computeDeterministicStats(
+        (activeBets || []).map((b) => ({
+          amount: Number(b?.amount || 0),
+          payout: Number(b?.payout || 0),
+          currency: String(b?.currency || ''),
+        })),
+        usdRates
+      ),
+    [activeBets, usdRates]
+  );
+  const sportsReplay = useMemo(
+    () =>
+      replayStats(
+        (activeBets || []).map((b) => ({
+          amount: Number(b?.amount || 0),
+          payout: Number(b?.payout || 0),
+          currency: String(b?.currency || ''),
+        })),
+        usdRates
+      ),
+    [activeBets, usdRates]
+  );
+  const replayNet = sportsReplay.length > 0 ? sportsReplay[sportsReplay.length - 1].netUsd : 0;
+  const netDelta = replayNet - sportsStats.netUsd;
+  const netColor = sportsStats.netUsd >= 0 ? 'var(--app-accent)' : 'var(--app-error)';
 
   if (!activeBets) return null;
 
@@ -86,6 +123,25 @@ export const ActiveBetsList: React.FC = () => {
         ) : (
           <>
             <p className="text-[10px] font-bold uppercase tracking-wider px-1 mb-1.5" style={{ color: 'var(--app-text-muted)' }}>Top 15 (Cashout → Legs)</p>
+            <div className="flex flex-wrap gap-1 px-1 mb-1.5">
+              <span className="text-[10px] px-2 py-0.5 rounded border" style={{ color: netColor, borderColor: 'var(--app-border)', background: 'var(--app-bg-deep)' }}>
+                Net ${sportsStats.netUsd.toFixed(2)}
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded border" style={{ color: 'var(--app-text-muted)', borderColor: 'var(--app-border)', background: 'var(--app-bg-deep)' }}>
+                ROI {sportsStats.roiPercent.toFixed(2)}%
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded border" style={{ color: 'var(--app-text-muted)', borderColor: 'var(--app-border)', background: 'var(--app-bg-deep)' }}>
+                FX {sportsStats.fxCoveragePercent.toFixed(1)}%
+              </span>
+            </div>
+            <div className="text-[10px] px-1 mb-1.5" style={{ color: Math.abs(netDelta) > 0.01 ? 'var(--app-warning)' : 'var(--app-text-muted)' }}>
+              Replay Net: ${replayNet.toFixed(2)} {Math.abs(netDelta) > 0.01 ? `(Δ ${netDelta >= 0 ? '+' : ''}${netDelta.toFixed(2)})` : '(sync)'}
+            </div>
+            {fxMissingCount > 0 && (
+              <p className="text-[10px] px-1 mb-1.5" style={{ color: 'var(--app-warning)' }}>
+                FX-Hinweis: {fxMissingCount} Bewertung(en) ohne Rate.
+              </p>
+            )}
             <div className="rounded-lg overflow-hidden border" style={{ borderColor: 'var(--app-border)', background: 'var(--app-bg-card)' }}>
               <table className="w-full text-left border-collapse text-xs">
                 <thead>

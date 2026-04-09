@@ -23,6 +23,8 @@ import { subscribeToHouseBets } from '../api/stakeRealtimeFacade'
 import { PROVIDERS as PROVIDERS_META } from '../constants/providers'
 import { houseBetSlugMatchesSessionSlug } from '../utils/slotSlugMatching'
 import { TipMenu } from '../../ui/TipMenu'
+import { createEventEnvelope, generateCorrelationId } from '../../../utils/eventEnvelope'
+import { publishRealtimeEvent } from '../../../services/realtimeBus'
 
 const HUNT_BET_LEVELS = [
   1100, 2200, 4400, 6600, 8800, 11000, 22000, 44000, 66000, 110000, 220000,
@@ -114,6 +116,7 @@ export default function BonusHuntControl({
   const [showTipMenu, setShowTipMenu] = useState(false)
   const [huntStartBalanceMinorSnapshot, setHuntStartBalanceMinorSnapshot] = useState(null)
   const [firstOpeningBalanceMinor, setFirstOpeningBalanceMinor] = useState(null)
+  const HUNT_SETTINGS_STORAGE_KEY = 'slotbot_bonus_hunt_settings_v2'
   const tipMenuRef = useRef(null)
   const pendingSpinsRef = useRef([])
   const recentHouseBetsRef = useRef([])
@@ -125,6 +128,50 @@ export default function BonusHuntControl({
   const latestBetHistoryRef = useRef([])
   const latestBonusOpeningResultsRef = useRef({})
   const huntStartBalanceMinorSnapshotRef = useRef(null)
+  const huntCorrelationIdRef = useRef('')
+
+  const emitHuntRuntimeEvent = useCallback((eventSource, payload = {}) => {
+    const corr = huntCorrelationIdRef.current || generateCorrelationId('hunt')
+    huntCorrelationIdRef.current = corr
+    const envelope = createEventEnvelope(eventSource, payload, corr)
+    publishRealtimeEvent(eventSource, payload, corr)
+    try {
+      window.dispatchEvent(new CustomEvent('sportslots-hunt-runtime', { detail: envelope }))
+    } catch (_) {}
+  }, [])
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(HUNT_SETTINGS_STORAGE_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (parsed?.sourceCurrency) setSourceCurrency(String(parsed.sourceCurrency).toLowerCase())
+      if (parsed?.targetCurrency) setTargetCurrency(String(parsed.targetCurrency).toLowerCase())
+      if (Number.isFinite(Number(parsed?.betAmount)) && Number(parsed.betAmount) > 0) setBetAmount(Number(parsed.betAmount))
+      if (Number.isFinite(Number(parsed?.maxSpinsPerSlot))) setMaxSpinsPerSlot(Math.max(0, Number(parsed.maxSpinsPerSlot)))
+      if (Number.isFinite(Number(parsed?.maxLossLimit))) setMaxLossLimit(Math.max(0, Number(parsed.maxLossLimit)))
+      if (typeof parsed?.parallelHuntEnabled === 'boolean') setParallelHuntEnabled(parsed.parallelHuntEnabled)
+      if (Number.isFinite(Number(parsed?.maxParallelSlots))) setMaxParallelSlots(Math.max(1, Number(parsed.maxParallelSlots)))
+      if (Number.isFinite(Number(parsed?.sessionRefreshSpins))) setSessionRefreshSpins(Math.max(0, Number(parsed.sessionRefreshSpins)))
+      if (typeof parsed?.autoOpenGame === 'boolean') setAutoOpenGame(parsed.autoOpenGame)
+    } catch (_) {}
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(HUNT_SETTINGS_STORAGE_KEY, JSON.stringify({
+        sourceCurrency,
+        targetCurrency,
+        betAmount,
+        maxSpinsPerSlot,
+        maxLossLimit,
+        parallelHuntEnabled,
+        maxParallelSlots,
+        sessionRefreshSpins,
+        autoOpenGame,
+      }))
+    } catch (_) {}
+  }, [sourceCurrency, targetCurrency, betAmount, maxSpinsPerSlot, maxLossLimit, parallelHuntEnabled, maxParallelSlots, sessionRefreshSpins, autoOpenGame])
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -609,6 +656,15 @@ export default function BonusHuntControl({
       setError(slugsToRun ? 'No slots available to retry.' : slugs.length > 0 ? 'All selected slots already have a bonus (has bonus).' : 'Select at least one slot.')
       return
     }
+    huntCorrelationIdRef.current = generateCorrelationId('hunt')
+    emitHuntRuntimeEvent('hunt.start', {
+      slots: toRun.map((s) => s.slug),
+      parallel: !!parallelHuntEnabled,
+      maxParallelSlots,
+      sourceCurrency,
+      targetCurrency,
+      betAmount,
+    })
 
     cancelRef.current = false
     setWheelOpenedSlugs(new Set())
@@ -1088,6 +1144,10 @@ export default function BonusHuntControl({
     }
 
     setIsRunning(false)
+    emitHuntRuntimeEvent('hunt.complete', {
+      cancelled: !!cancelRef.current,
+      slotsProcessed: toRun.length,
+    })
   }
 
   useEffect(() => {
@@ -1107,6 +1167,7 @@ export default function BonusHuntControl({
 
   function stopHunt() {
     cancelRef.current = true
+    emitHuntRuntimeEvent('hunt.stop', { reason: 'manual-stop' })
   }
 
   const statsCurrency = currencyCode || targetCurrency || sourceCurrency || 'usdc'

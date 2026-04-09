@@ -28,3 +28,7 @@ release-final/
 release/
 builder-cache/
 dist-electron/
+
+# Next.js (StakeBot X UI scaffold)
+apps/stakebotx-ui/.next/
+apps/stakebotx-ui/out/

@@ -6,9 +6,12 @@
 import {
   FIAT_CURRENCIES,
   ZERO_DECIMAL_CURRENCIES,
+  getDisplayFractionDigits,
+  getMinorFactor,
   isFiatCurrency,
   isStableCurrency,
   isZeroDecimalCurrency,
+  normalizeCurrencyCode,
 } from './currencyMeta'
 
 export { FIAT_CURRENCIES, ZERO_DECIMAL_CURRENCIES }
@@ -29,12 +32,13 @@ export function isStable(currencyCode) {
 export function formatAmount(value, currencyCode) {
   if (value == null || isNaN(value)) return '–'
   const n = Number(value)
-  const curr = (currencyCode || '').toLowerCase()
-  const divideBy100 = isFiat(curr) && !isZeroDecimalCurrency(curr)
-  const displayValue = divideBy100 ? n / 100 : n
+  const curr = normalizeCurrencyCode(currencyCode)
+  const factor = getMinorFactor(curr)
+  const displayValue = factor > 0 ? n / factor : n
+  const digits = getDisplayFractionDigits(curr)
   return displayValue.toLocaleString('de-DE', {
-    minimumFractionDigits: divideBy100 ? 2 : 0,
-    maximumFractionDigits: isZeroDecimalCurrency(curr) ? 0 : (divideBy100 ? 2 : 8),
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
   })
 }
 
@@ -63,11 +67,9 @@ export function formatBetLabel(value, currencyCode, opts = {}) {
  * @returns {number} Major units
  */
 export function toUnits(amount, currency) {
-  const c = (currency || '').toLowerCase()
-  if (isZeroDecimalCurrency(c)) return Number(amount)
-  if (isFiat(c)) return Number(amount) / 100
-  // Crypto: Stake uses 8 decimals (Satoshis) for internal calculation mostly
-  return Number(amount) / 1e8
+  const c = normalizeCurrencyCode(currency)
+  const factor = getMinorFactor(c)
+  return Number(amount) / factor
 }
 
 /**
@@ -77,11 +79,9 @@ export function toUnits(amount, currency) {
  * @returns {number} Minor units
  */
 export function toMinor(units, currency) {
-  const c = (currency || '').toLowerCase()
-  if (isZeroDecimalCurrency(c)) return Math.round(Number(units))
-  if (isFiat(c)) return Math.round(Number(units) * 100)
-  // Crypto: Convert to Satoshis
-  return Math.round(Number(units) * 1e8)
+  const c = normalizeCurrencyCode(currency)
+  const factor = getMinorFactor(c)
+  return Math.round(Number(units) * factor)
 }
 
 /** minBetUsd etc. – USD in Dollar (Major Units), flexible Dezimalstellen */

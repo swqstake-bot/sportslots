@@ -11,6 +11,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** Verzeichnis der Electron-Main-Dateien */
 export const ELECTRON_DIR = __dirname;
 
+/** Monorepo / App-Wurzel (ein Verzeichnis über electron/) */
+export const REPO_ROOT = path.join(__dirname, '..');
+
 /** Build-Ausgabe (dist/) */
 export const DIST = path.join(__dirname, '../dist');
 

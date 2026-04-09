@@ -13,7 +13,7 @@ import { useUiStore } from '../../store/uiStore'
 import { useCasinoSession } from './hooks/useCasinoSession'
 import { CasinoShell } from './components/shell/CasinoShell'
 import { CasinoModeContent } from './components/tabs/CasinoModeContent'
-import type { CasinoSlotInstance, SlotSet } from './types'
+import type { CasinoSlotInstance, SlotSet, CasinoChallengeSelection } from './types'
 
 // Styles
 import './casino.css'
@@ -59,6 +59,12 @@ export default function CasinoView() {
     return cb
   }, [])
   const [recentBets, setRecentBets] = useState<any[]>([])
+  const [pendingPromoAutoStarts, setPendingPromoAutoStarts] = useState<Array<{
+    instanceId: string
+    autospinCount: number
+    targetMultiplier?: number
+    attempts: number
+  }>>([])
   // const [lastBet, setLastBet] = useState<any>(null) // Unused
   const [useSharedCurrency, setUseSharedCurrency] = useState(false)
   const [sharedSourceCurrency, setSharedSourceCurrency] = useState('usdc')
@@ -304,28 +310,100 @@ export default function CasinoView() {
     })
   }, [])
 
-  const handleSelectChallenge = useCallback((challenge: {
-    gameSlug: string
-    gameName?: string
-    currency?: string
-    targetMultiplier?: number
-  }) => {
+  const handleSelectChallenge = useCallback((challenge: CasinoChallengeSelection) => {
       if (!challenge?.gameSlug) return
       setMode('play')
+      let selectedInstanceId = ''
       setSelectedSlotInstances((prev) => {
-          if (prev.some((i) => i.slug === challenge.gameSlug)) return prev
+          const existing = prev.find((i) => i.slug === challenge.gameSlug)
+          if (existing) {
+            selectedInstanceId = existing.id
+            return prev.map((item) => {
+              if (item.id !== existing.id) return item
+              return {
+                ...item,
+                targetCurrency: challenge.currency || item.targetCurrency || sharedTargetCurrency,
+                ...(challenge.targetMultiplier != null && Number.isFinite(Number(challenge.targetMultiplier))
+                  ? { challengeTargetMultiplier: Number(challenge.targetMultiplier) }
+                  : {}),
+                ...(challenge.targetMultipliers?.length
+                  ? { challengeTargetMultipliers: challenge.targetMultipliers.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0) }
+                  : {}),
+                ...(challenge.minBetUsd != null && Number.isFinite(Number(challenge.minBetUsd)) && Number(challenge.minBetUsd) > 0
+                  ? { minBetUsd: Number(challenge.minBetUsd) }
+                  : {}),
+                ...(challenge.promoSource ? { promoSource: challenge.promoSource } : {}),
+              }
+            })
+          }
+          selectedInstanceId = `inst_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
           return [...prev, {
-            id: `inst_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+            id: selectedInstanceId,
             slug: challenge.gameSlug,
             sourceCurrency: sharedSourceCurrency,
             targetCurrency: challenge.currency || sharedTargetCurrency,
             ...(challenge.targetMultiplier != null && Number.isFinite(Number(challenge.targetMultiplier))
               ? { challengeTargetMultiplier: Number(challenge.targetMultiplier) }
               : {}),
+            ...(challenge.targetMultipliers?.length
+              ? { challengeTargetMultipliers: challenge.targetMultipliers.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0) }
+              : {}),
+            ...(challenge.minBetUsd != null && Number.isFinite(Number(challenge.minBetUsd)) && Number(challenge.minBetUsd) > 0
+              ? { minBetUsd: Number(challenge.minBetUsd) }
+              : {}),
+            ...(challenge.promoSource ? { promoSource: challenge.promoSource } : {}),
           }]
       })
+      if (challenge.autoStart && selectedInstanceId) {
+        setPendingPromoAutoStarts((prev) => [
+          ...prev,
+          {
+            instanceId: selectedInstanceId,
+            autospinCount: Number.isFinite(Number(challenge.autospinCount)) ? Math.max(0, Number(challenge.autospinCount)) : 0,
+            targetMultiplier: Number.isFinite(Number(challenge.targetMultiplier)) ? Number(challenge.targetMultiplier) : undefined,
+            attempts: 0,
+          },
+        ])
+      }
       setToast(`Challenge selected: ${challenge.gameName || challenge.gameSlug}`)
   }, [setMode, sharedSourceCurrency, sharedTargetCurrency])
+
+  useEffect(() => {
+    if (!pendingPromoAutoStarts.length) return
+    const remaining: typeof pendingPromoAutoStarts = []
+    for (const item of pendingPromoAutoStarts) {
+      const ref = slotControlRefsMap.current.get(item.instanceId)
+      if (!ref?.startSession || !ref?.startAutospin) {
+        if ((item.attempts || 0) < 20) {
+          remaining.push({ ...item, attempts: (item.attempts || 0) + 1 })
+        }
+        continue
+      }
+      const settings: any = {
+        autospinCount: item.autospinCount,
+        autospinStopOnBonus: false,
+      }
+      if (item.targetMultiplier != null && Number.isFinite(item.targetMultiplier) && item.targetMultiplier > 1) {
+        settings.autospinStopOnMulti = true
+        settings.autospinStopMultiplier = Math.max(2, item.targetMultiplier)
+        settings.autospinStopMultiOnlyAt010Usd = true
+      }
+      try {
+        ref.applySettings?.(settings)
+      } catch {
+        // ignore non-fatal setting apply failures
+      }
+      Promise.resolve(ref.startSession())
+        .then(() => ref.startAutospin())
+        .catch(() => {
+          // ignore start failures, user can start manually
+        })
+    }
+    const t = setTimeout(() => {
+      setPendingPromoAutoStarts(remaining)
+    }, remaining.length ? 120 : 0)
+    return () => clearTimeout(t)
+  }, [pendingPromoAutoStarts])
 
   if (status === 'idle') {
       return <div className="p-8 text-center text-[var(--text-muted)]">Loading Casino Session...</div>

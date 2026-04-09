@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useUserStore } from '../store/userStore';
-import { isFiat, ZERO_DECIMAL_CURRENCIES } from './Casino/utils/formatAmount';
+import { getMinorFactor, normalizeCurrencyCode } from '../utils/monetaryContract';
 
 export function WalletSelector() {
   const { balances, selectedCurrency, setSelectedCurrency } = useUserStore();
@@ -28,8 +28,9 @@ export function WalletSelector() {
   }, [dropdownRef]);
 
   const formatBalance = (amount: number, currency: string) => {
-    const curr = (currency || '').toLowerCase();
-    const digits = ZERO_DECIMAL_CURRENCIES.includes(curr) ? 0 : (isFiat(curr) ? 2 : 8);
+    const curr = normalizeCurrencyCode(currency);
+    const factor = getMinorFactor(curr);
+    const digits = factor === 1 ? 0 : (factor === 100 ? 2 : 8);
     return Number(amount || 0).toLocaleString('en-US', {
       minimumFractionDigits: digits,
       maximumFractionDigits: digits,

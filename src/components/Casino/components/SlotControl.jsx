@@ -5,22 +5,23 @@ import { PROVIDERS as PROVIDERS_META } from '../constants/providers'
 import { ALL_CURRENCIES, filterCurrenciesByProvider } from '../constants/currencies'
 import { fetchSupportedCurrencies } from '../api/stakeChallenges'
 import { isFiat, isStable } from '../utils/formatAmount'
-import { isUsdLikeCurrency } from '../utils/currencyMeta'
 import { getEffectiveBetAmount } from '../constants/bet'
 import { parseBetResponse } from '../utils/parseBetResponse'
 import { formatBetLabel, formatAmount, toUnits, toMinor } from '../utils/formatAmount'
+import { convertMinorToUsdCents, netMinor } from '../utils/monetaryContract'
 import StatsDisplay from './StatsDisplay'
 import BetList from './BetList'
 import LogViewer from './LogViewer'
 import { logApiCall, saveBonusLog, isSaveBonusLogsEnabled } from '../utils/apiLogger'
 import { saveSlotSpinSample, saveBonusSpinSample, hasEnoughSamplesForSlot } from '../utils/slotSpinSamples'
 import { notifyBonusHit } from '../utils/notifications'
-import { loadBetHistory, appendBet } from '../utils/betHistoryDb'
+import { loadBetHistory, appendBet, recordBetHistoryAudit } from '../utils/betHistoryDb'
 import { getSlotCurrency, setSlotCurrency } from '../utils/slotCurrencyConfig'
 import { subscribeHunterSlotTargets, getHunterSlotTargetsSnapshot } from '../utils/hunterSlotTargetsBridge'
 import { fetchCurrencyRates } from '../api/stakeChallenges'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { useSlotRealtime } from './hooks/useSlotRealtime'
+import { getProviderSessionState } from '../api/providers/providerRuntime'
 
 const DEFAULT_BET_LEVELS = [
   1100, 2200, 4400, 6600, 8800, 11000, 13200, 15400, 17600, 19800,
@@ -70,6 +71,15 @@ const STYLES = {
     borderRadius: 'var(--radius-sm)',
     color: 'var(--error)',
     fontSize: '0.85rem',
+  },
+  warning: {
+    marginTop: '0.5rem',
+    padding: '0.6rem',
+    background: 'rgba(245, 158, 11, 0.12)',
+    border: '1px solid rgba(245, 158, 11, 0.35)',
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--warning, #f59e0b)',
+    fontSize: '0.82rem',
   },
   result: {
     marginTop: '0.75rem',
@@ -135,11 +145,17 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const [loading, setLoading] = useState(false)
   const [spinLoading, setSpinLoading] = useState(false)
   const [error, setError] = useState('')
+  const [providerWarning, setProviderWarning] = useState('')
+  const [providerRuntimeState, setProviderRuntimeState] = useState(() => getProviderSessionState(slot?.providerId)?.state || 'idle')
   const [lastResult, setLastResult] = useState(null)
   const [betHistory, setBetHistory] = useState([])
   const betHistoryLengthRef = useRef(0)
   const [logRefreshKey, setLogRefreshKey] = useState(0)
-  const triggerLogRefresh = useCallback(() => {
+  const lastLogRefreshAtRef = useRef(0)
+  const triggerLogRefresh = useCallback((force = false) => {
+    const now = Date.now()
+    if (!force && now - lastLogRefreshAtRef.current < 250) return
+    lastLogRefreshAtRef.current = now
     setLogRefreshKey((k) => k + 1)
     onLogUpdate?.()
   }, [onLogUpdate])
@@ -217,6 +233,17 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   }, [slot?.slug])
 
   useEffect(() => {
+    function onProviderRuntime(ev) {
+      const payload = ev?.detail?.payload || {}
+      if (payload?.providerId !== slot?.providerId) return
+      const next = getProviderSessionState(slot?.providerId)?.state || 'idle'
+      setProviderRuntimeState(next)
+    }
+    window.addEventListener('sportslots-provider-runtime', onProviderRuntime)
+    return () => window.removeEventListener('sportslots-provider-runtime', onProviderRuntime)
+  }, [slot?.providerId])
+
+  useEffect(() => {
     if (!accessToken) {
       setSupportedCurrencies(ALL_CURRENCIES)
       return
@@ -242,12 +269,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     if (!accessToken) return
     fetchCurrencyRates(accessToken).then(setCurrencyRates).catch(() => setCurrencyRates({}))
   }, [accessToken])
-  const toUsdCents = useCallback((amount, curr) => {
-    if (amount == null || amount === 0) return amount
-    const c = (curr || 'usd').toLowerCase()
-    const rate = isUsdLikeCurrency(c) ? 1 : currencyRates[c]
-    if (!Number.isFinite(rate) || rate <= 0) return null
-    return Math.round(toUnits(amount, c) * rate * 100)
+  const toUsdCents = useCallback((amountMinor, curr) => {
+    if (amountMinor == null || amountMinor === 0) return Number(amountMinor || 0)
+    return convertMinorToUsdCents(amountMinor, curr, currencyRates).usdCents
   }, [currencyRates])
   // BetList + Stats ausschließlich aus WebSocket (houseBets) – Single Source of Truth
   const sessionBets = useMemo(
@@ -256,6 +280,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   )
   const stats = useMemo(() => {
     let spins = 0, totalWageredUsd = 0, totalWonUsd = 0, winCount = 0, lossCount = 0, breakEvenCount = 0, fxMissingCount = 0
+    let fxValuatedCount = 0
     let biggestWinUsd = 0, biggestMultiplier = 0, multiOver100xCount = 0, multiOver100xSum = 0
     let lastBalance = null, lastCurrency = null
     for (const b of sessionBets) {
@@ -271,12 +296,13 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         totalWageredUsd += betUsd
         totalWonUsd += winUsd
         if (winUsd > biggestWinUsd) biggestWinUsd = winUsd
+        fxValuatedCount += 1
       } else if (bet > 0 || win > 0) {
         fxMissingCount += 1
       }
-      const netMinor = win - bet
-      if (netMinor > 0) winCount += 1
-      else if (netMinor < 0) lossCount += 1
+      const spinNetMinor = netMinor(win, bet)
+      if (spinNetMinor > 0) winCount += 1
+      else if (spinNetMinor < 0) lossCount += 1
       else breakEvenCount += 1
       if (bet > 0 && win > 0) {
         const m = win / bet
@@ -291,7 +317,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     const currentBalanceUsd = currentBalance != null ? toUsdCents(currentBalance, balanceCurr) : null
     const sessionStartBalanceUsd = sessionStartBalance != null ? toUsdCents(sessionStartBalance, effectiveTarget) : null
     return {
-      spins, totalWagered: totalWageredUsd, totalWon: totalWonUsd, winCount, lossCount, breakEvenCount, fxMissingCount,
+      spins, totalWagered: totalWageredUsd, totalWon: totalWonUsd, winCount, lossCount, breakEvenCount, fxMissingCount, fxValuatedCount,
       biggestWin: biggestWinUsd, biggestMultiplier, multiOver100xCount, multiOver100xSum,
       currentBalance: currentBalanceUsd, sessionStartBalance: sessionStartBalanceUsd,
     }
@@ -381,13 +407,17 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     setBetHistory((prev) => {
       const last = prev[prev.length - 1]
       if (rid && last && String(last.roundId ?? '') === rid) {
+        recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-roundId', roundId: rid })
         return prev // Duplikat vermeiden (gleicher Round)
       }
       if (!rid && last && (now - (last.addedAt ?? 0)) < 150) {
         const same = (last.betAmount ?? 0) === (parsed.betAmount ?? 0) &&
           (last.winAmount ?? 0) === (parsed.winAmount ?? 0) &&
           !!last.isBonus === !!parsed.isBonus
-        if (same) return prev
+        if (same) {
+          recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-time-window' })
+          return prev
+        }
       }
       const entry = {
         id: now + Math.random(),
@@ -400,6 +430,36 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         addedAt: now,
       }
       appendBet(slot.slug, entry, slot.name).catch(() => {})
+      try {
+        const curr = (entry.currencyCode || effectiveTarget || 'usd').toLowerCase()
+        const betUsdCents = toUsdCents(entry.betAmount, curr)
+        const winUsdCents = toUsdCents(entry.winAmount, curr)
+        const multiplier = entry.betAmount > 0 ? (entry.winAmount || 0) / entry.betAmount : 0
+        window.dispatchEvent(new CustomEvent('casino-bet-added', {
+          detail: {
+            slotSlug: slot.slug,
+            slotName: slot.name,
+            currencyCode: curr,
+            betAmount: entry.betAmount,
+            winAmount: entry.winAmount,
+            betUsd: Number.isFinite(betUsdCents) ? betUsdCents / 100 : null,
+            winUsd: Number.isFinite(winUsdCents) ? winUsdCents / 100 : null,
+            multiplier: Number.isFinite(multiplier) ? multiplier : 0,
+            roundId: entry.roundId ?? null,
+            addedAt: entry.addedAt,
+          },
+        }))
+      } catch {
+        // ignore event dispatch failures
+      }
+      recordBetHistoryAudit({
+        slotSlug: slot.slug,
+        event: 'append',
+        roundId: entry.roundId ?? null,
+        currencyCode: entry.currencyCode ?? null,
+        betAmount: entry.betAmount,
+        winAmount: entry.winAmount,
+      })
       return [...prev, entry]
     })
   }, [slot.slug])
@@ -447,6 +507,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     }
     setLoading(true)
     setError('')
+    setProviderWarning('')
     try {
       const t0 = performance.now()
       const s = await provider.startSession(accessToken, slot.slug, effectiveSource, effectiveTarget)
@@ -476,8 +537,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       triggerLogRefresh()
       return s
     } catch (err) {
-      const msg = err?.message || 'Session konnte nicht gestartet werden'
+      const msg = err?.userMessage || err?.message || 'Session konnte nicht gestartet werden'
       setError(msg)
+      if (err?.retryable) setProviderWarning('Provider ist momentan instabil (Retry-Profil aktiv).')
       logApiCall({ type: `${slot.providerId}/session`, endpoint: 'startSession', request: { slug: slot.slug, sourceCurrency: effectiveSource, targetCurrency: effectiveTarget }, response: null, error: msg, durationMs: null })
       triggerLogRefresh()
       return null
@@ -497,6 +559,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     }
     setSpinLoading(true)
     setError('')
+    setProviderWarning('')
     try {
       const beforeCount = betHistoryLengthRef.current
       let currentSession = session
@@ -529,8 +592,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       if (parsed.isBonus) saveBonusSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, slotSlug: slot.slug }, response: data })
       triggerLogRefresh()
     } catch (err) {
-      const msg = err?.message || 'Spin fehlgeschlagen'
+      const msg = err?.userMessage || err?.message || 'Spin fehlgeschlagen'
       setError(msg)
+      if (err?.retryable) setProviderWarning('Provider antwortet verzögert; Retry wurde ausgeführt.')
       if (err?.sessionClosed) setSession(null)
       logApiCall({ type: `${slot.providerId}/spin`, endpoint: 'placeBet', request: { betAmount, extraBet }, response: null, error: msg, durationMs: null })
       triggerLogRefresh()
@@ -561,6 +625,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     setIsAutospinning(true)
     setAutospinProgress(0)
     setError('')
+    setProviderWarning('')
     let spinsDone = 0
     let spinsSinceRefresh = 0
     let winStreak = 0
@@ -724,8 +789,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         }
         setAutospinProgress(spinsDone)
       } catch (err) {
-        const msg = err?.message || 'Spin failed'
+        const msg = err?.userMessage || err?.message || 'Spin failed'
         setError(`${msg} (nach ${spinsDone} Spins)`)
+        if (err?.retryable) setProviderWarning('Autospin lief in Retry-Modus wegen Provider-Latenz.')
         if (err?.sessionClosed) setSession(null)
         logApiCall({ type: `${slot.providerId}/autospin`, endpoint: 'placeBet', request: { betAmount }, response: null, error: msg, durationMs: null })
         triggerLogRefresh()
@@ -758,6 +824,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     setSessionStartBalance(null)
     setWsBalance(null)
     setError('')
+    setProviderWarning('')
   }
 
   function getSettings() {
@@ -846,6 +913,21 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const providerId = slot.providerId
   const providerMeta = PROVIDERS_META[providerId] || {}
   const providerBasic = PROVIDERS_BASIC[providerId] || {}
+  const runtimeBadgeStyle = useMemo(() => {
+    if (providerRuntimeState === 'ok') {
+      return { color: 'var(--accent)', background: 'rgba(0,231,170,0.12)', border: '1px solid rgba(0,231,170,0.35)' }
+    }
+    if (providerRuntimeState === 'retrying') {
+      return { color: 'var(--warning, #f59e0b)', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)' }
+    }
+    if (providerRuntimeState === 'failed') {
+      return { color: 'var(--error)', background: 'rgba(255,82,82,0.12)', border: '1px solid rgba(255,82,82,0.35)' }
+    }
+    if (providerRuntimeState === 'running') {
+      return { color: 'var(--text)', background: 'rgba(125,125,125,0.12)', border: '1px solid var(--border)' }
+    }
+    return { color: 'var(--text-muted)', background: 'rgba(125,125,125,0.08)', border: '1px solid var(--border)' }
+  }, [providerRuntimeState])
 
   return (
     <div style={{
@@ -1112,6 +1194,10 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       {session && !settingsCollapsed && (
         <p style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
           Session aktiv{session.seq != null ? ` (seq: ${session.seq})` : session.index != null ? ` (idx: ${session.index})` : ''}
+          <span style={{ marginLeft: '0.5rem' }}>• Runtime:</span>
+          <span style={{ marginLeft: '0.3rem', padding: '0.1rem 0.42rem', borderRadius: 999, fontSize: '0.72rem', fontWeight: 600, ...runtimeBadgeStyle }}>
+            {providerRuntimeState}
+          </span>
           {isAutospinning && autospinProgress != null && (
             <span style={{ marginLeft: '0.5rem', color: 'var(--accent)' }}>
               • Autospin: {autospinProgress}/{autospinCount}
@@ -1126,6 +1212,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       )}
 
       {error && <div style={STYLES.error}>{error}</div>}
+      {providerWarning && <div style={STYLES.warning}>{providerWarning}</div>}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: settingsCollapsed ? '0.17rem' : (compact ? '0.35rem' : '0.5rem'), minWidth: 0, color: 'var(--text)' }}>

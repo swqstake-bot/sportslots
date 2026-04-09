@@ -135,7 +135,7 @@ const STYLES = {
   },
 }
 
-export default function TelegramChallengeHunter({ accessToken, webSlots = [], onDiscoveredSlots }) {
+export default function TelegramChallengeHunter({ accessToken, webSlots = [], onDiscoveredSlots, onHubStatsChange }) {
   const [draft, setDraft] = useState(() => {
     try {
       return localStorage.getItem(DRAFT_KEY) || ''
@@ -149,6 +149,24 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
   const [rates, setRates] = useState({})
   const [totalSessionStats, setTotalSessionStats] = useState({ wagered: 0, won: 0, lost: 0 })
   const [bestMultiBySlot, setBestMultiBySlot] = useState(() => loadBestMultiMap())
+  useEffect(() => {
+    if (typeof onHubStatsChange !== 'function') return
+    const running = Object.values(activeRuns).filter((run) => run?.status === 'running').length
+    const completed = Object.values(activeRuns).filter((run) => run?.status === 'target_hit' || run?.status === 'completed').length
+    const bestMulti = Object.values(bestMultiBySlot).reduce((max, value) => {
+      const n = Number(value)
+      return Number.isFinite(n) ? Math.max(max, n) : max
+    }, 0)
+    onHubStatsChange({
+      source: 'telegram',
+      queued: queue.length,
+      running,
+      completed,
+      bestMulti,
+      ts: Date.now(),
+    })
+  }, [queue.length, activeRuns, bestMultiBySlot, onHubStatsChange])
+
   const [logs, setLogs] = useState([])
   const [autoStart, setAutoStart] = useState(true)
 
@@ -338,7 +356,11 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
         }
         return merged
       })
-      setQueue((q) => [...q, ...newChallenges.map((c) => c.id).filter((id) => !q.includes(id))])
+      setQueue((q) => {
+        const seen = new Set(q)
+        const additions = newChallenges.map((c) => c.id).filter((id) => !seen.has(id))
+        return additions.length ? [...q, ...additions] : q
+      })
       log(`${newChallenges.length} Eintrag(e) aus Telegram in die Warteschlange.`)
 
       const known = new Set(webSlotsRef.current.map((s) => s.slug))
