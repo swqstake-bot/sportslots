@@ -1,4 +1,5 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.123': ['promotion'],
   '1.0.122': ['promotion'],
   '1.0.113': ['themetest'],
   '1.0.103': ['challenge updated'],
