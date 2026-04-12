@@ -69,7 +69,13 @@ export function ChallengeHubView({
     function onExternalOpenTab(ev: Event) {
       const detail = (ev as CustomEvent<any>)?.detail || {}
       const wanted = String(detail.tab || '').toLowerCase()
-      if (wanted === 'casino' || wanted === 'telegram' || wanted === 'forum' || wanted === 'promotions') {
+      if (
+        wanted === 'casino' ||
+        wanted === 'autorun' ||
+        wanted === 'telegram' ||
+        wanted === 'forum' ||
+        wanted === 'promotions'
+      ) {
         setTab(wanted as HubTab)
       }
     }

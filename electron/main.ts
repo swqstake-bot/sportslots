@@ -59,6 +59,7 @@ import {
   telegramLogout,
   telegramStartListen,
   telegramStopListen,
+  shutdownTelegramForAppQuit,
   loadTelegramConfig,
   saveTelegramConfig,
 } from './telegramUser.js';
@@ -67,6 +68,29 @@ let win: BrowserWindow | null;
 let loginWin: BrowserWindow | null;
 let stakeBridgeWin: BrowserWindow | null = null;
 let slotPopupSeq = 0;
+
+/**
+ * Verstecktes Stake-Bridge-Fenster hat kein `parent` — bleibt sonst offen, blockiert `window-all-closed`
+ * und hält den Electron-Prozess am Leben (Windows/Linux).
+ */
+function destroyAuxiliaryBrowserWindows(): void {
+  if (stakeBridgeWin && !stakeBridgeWin.isDestroyed()) {
+    try {
+      stakeBridgeWin.destroy();
+    } catch {
+      /* ignore */
+    }
+    stakeBridgeWin = null;
+  }
+  if (loginWin && !loginWin.isDestroyed()) {
+    try {
+      loginWin.destroy();
+    } catch {
+      /* ignore */
+    }
+    loginWin = null;
+  }
+}
 const MAX_IPC_RESPONSE_BYTES = 8 * 1024 * 1024; // 8 MB safety cap for IPC responses
 const STAKE_MAX_AUTH_RETRIES = 2;
 const STAKE_COOKIE_DEBUG_NAMES = new Set(['session', 'cf_clearance', '__cf_bm']);
@@ -324,11 +348,16 @@ function createWindow() {
     },
   });
 
+  /** Gepackte App: keine DevTools (RAM/UX); nur unfertige Builds aus dem Repo. */
+  const allowDevTools = !app.isPackaged;
+
   console.log('Loading URL:', VITE_DEV_SERVER_URL);
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL);
-    win.webContents.openDevTools();
+    if (allowDevTools) {
+      win.webContents.openDevTools();
+    }
     win.webContents.session.clearCache().then(() => {
         console.log('Cache cleared!');
     });
@@ -337,12 +366,13 @@ function createWindow() {
     win.loadFile(path.join(DIST, 'index.html'));
   }
 
-  // F12: DevTools öffnen/schließen (Dev + Production)
-  const toggleDevTools = () => {
-    win?.webContents.toggleDevTools();
-  };
-  globalShortcut.register('F12', toggleDevTools);
-  globalShortcut.register('CommandOrControl+Shift+I', toggleDevTools);
+  if (allowDevTools) {
+    const toggleDevTools = () => {
+      win?.webContents.toggleDevTools();
+    };
+    globalShortcut.register('F12', toggleDevTools);
+    globalShortcut.register('CommandOrControl+Shift+I', toggleDevTools);
+  }
 
   win.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     console.error('Failed to load:', errorCode, errorDescription);
@@ -360,6 +390,13 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  win.on('close', () => {
+    destroyAuxiliaryBrowserWindows();
+  });
+  win.on('closed', () => {
+    win = null;
   });
 }
 
@@ -1399,17 +1436,34 @@ ipcMain.handle('telegram-listen-stop', async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
+    destroyAuxiliaryBrowserWindows();
     app.quit();
-    win = null;
   }
+});
+
+app.on('before-quit', () => {
+  destroyAuxiliaryBrowserWindows();
 });
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
-  if (stakeBridgeWin && !stakeBridgeWin.isDestroyed()) {
-    stakeBridgeWin.destroy();
-    stakeBridgeWin = null;
+  destroyAuxiliaryBrowserWindows();
+  for (const bw of BrowserWindow.getAllWindows()) {
+    if (!bw.isDestroyed()) {
+      try {
+        bw.destroy();
+      } catch {
+        /* ignore */
+      }
+    }
   }
+  try {
+    PROXY_HTTP_AGENT.destroy();
+    PROXY_HTTPS_AGENT.destroy();
+  } catch {
+    /* ignore */
+  }
+  void shutdownTelegramForAppQuit();
 });
 
 app.on('activate', () => {

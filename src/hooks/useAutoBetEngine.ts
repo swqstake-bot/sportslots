@@ -635,8 +635,7 @@ export function useAutoBetEngine() {
 
       // 5. Select Outcomes and Place Bets (Batch Loop)
       let consecutiveFailures = 0;
-      let betsInBatch = 0;
-      
+
       // Use a local balance tracker to prevent overspending before the store updates
       let localAvailableBalance = currentBalance;
       /** Bereits in diesem AutoBet-Durchlauf platzierte outcomeId-Kombinationen (nicht erneut wählen). */
@@ -671,14 +670,6 @@ export function useAutoBetEngine() {
         // Safety break if we've tried too many times in one scan without success
         if (consecutiveFailures >= 10) {
             addLog(`Too many consecutive failures (${consecutiveFailures}). Re-scanning to get fresh odds/fixtures.`, 'warning');
-            break;
-        }
-
-        // Optional: Break after N bets to force a re-scan for fresh odds (e.g. every 10 bets)
-        // User requested "fast one after another", so we keep this high or remove it.
-        // Let's set a safe batch limit of 100 to ensure we don't use stale data for too long.
-        if (betsInBatch >= 100) {
-            addLog(`Batch limit reached (100). Re-scanning for fresh data.`, 'info');
             break;
         }
 
@@ -904,7 +895,6 @@ export function useAutoBetEngine() {
             if (betPlaced) {
                 placedBetsCount.current += 1;
                 localAvailableBalance -= loopCryptoAmount; // Deduct locally
-                betsInBatch++;
                 consecutiveFailures = 0; // Reset failure count
                 addLog(`Bet #${placedBetsCount.current}/${maxBets} placed successfully — ID: ${betId}`, 'success');
                 placedSlipSignatures.add(slipSignature(outcomeIds));

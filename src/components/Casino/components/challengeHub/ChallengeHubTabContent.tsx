@@ -4,6 +4,7 @@ import TelegramChallengeHunter from '../TelegramChallengeHunter'
 import ForumChallengeView from '../ForumChallengeView'
 import { SectionCard } from '../ui/SectionCard'
 import { PromotionsView } from './PromotionsView'
+import { AutorunTab } from './AutorunTab'
 import type { HubStatsPayload } from './hubTypes'
 import type { HubTab } from './ChallengeHubTabStrip'
 import type { CasinoChallengeSelection } from '../../types'
@@ -45,6 +46,16 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
             accessToken={accessToken}
             webSlots={webSlots as any}
             onDiscoveredSlots={onDiscoveredSlots}
+            onHubStatsChange={onHubStatsChange}
+          />
+        </SectionCard>
+      </div>
+
+      <div style={visibleStyle(tab === 'autorun')}>
+        <SectionCard title="Autorun">
+          <AutorunTab
+            accessToken={accessToken}
+            webSlots={webSlots as { slug: string; name?: string; providerId: string }[]}
             onHubStatsChange={onHubStatsChange}
           />
         </SectionCard>

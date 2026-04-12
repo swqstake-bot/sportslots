@@ -1,9 +1,10 @@
 import { memo } from 'react'
 
-export type HubTab = 'casino' | 'telegram' | 'forum' | 'promotions'
+export type HubTab = 'casino' | 'autorun' | 'telegram' | 'forum' | 'promotions'
 
 const HUB_TABS: { id: HubTab; label: string }[] = [
   { id: 'casino', label: 'Casino' },
+  { id: 'autorun', label: 'Autorun' },
   { id: 'telegram', label: 'Telegram' },
   { id: 'forum', label: 'Forum' },
   { id: 'promotions', label: 'Promotions' },

@@ -1,10 +1,22 @@
 import { useState, useRef, useEffect } from 'react';
-import { useUserStore } from '../store/userStore';
-import { getMinorFactor, normalizeCurrencyCode } from '../utils/monetaryContract';
+import { useUserStore, type UserBalance } from '../store/userStore';
+import { getMinorFactor, normalizeCurrencyCode, convertToUsd } from '../utils/monetaryContract';
+import { StakeApi } from '../api/client';
+import { Queries } from '../api/queries';
+import { fetchCurrencyRates } from './Casino/api/stakeChallenges';
+
+/** Polling nur für die Header-Balance (GraphQL liefert kein Push für Wallet). */
+const BALANCE_POLL_MS = 1000;
 
 export function WalletSelector() {
-  const { balances, selectedCurrency, setSelectedCurrency } = useUserStore();
+  const user = useUserStore((s) => s.user);
+  const balances = useUserStore((s) => s.balances);
+  const selectedCurrency = useUserStore((s) => s.selectedCurrency);
+  const setSelectedCurrency = useUserStore((s) => s.setSelectedCurrency);
+  const setBalancesFromApi = useUserStore((s) => s.setBalancesFromApi);
+
   const [isOpen, setIsOpen] = useState(false);
+  const [usdRates, setUsdRates] = useState<Record<string, number>>({});
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const toggleDropdown = () => setIsOpen(!isOpen);
@@ -27,6 +39,49 @@ export function WalletSelector() {
     };
   }, [dropdownRef]);
 
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const loadRates = async () => {
+      try {
+        const map = await fetchCurrencyRates('');
+        if (!cancelled && map && typeof map === 'object') setUsdRates(map);
+      } catch {
+        /* Kurse optional */
+      }
+    };
+    void loadRates();
+    const ratesId = window.setInterval(() => void loadRates(), 10 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(ratesId);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    const pullBalances = async () => {
+      try {
+        const res = await StakeApi.query<{ user?: { balances?: UserBalance[] } }>(Queries.FetchBalances);
+        const list = res.data?.user?.balances;
+        if (!cancelled && Array.isArray(list)) {
+          setBalancesFromApi(list);
+        }
+      } catch {
+        /* Session / Netz — letzten Stand behalten */
+      }
+    };
+
+    void pullBalances();
+    const id = window.setInterval(() => void pullBalances(), BALANCE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [user, setBalancesFromApi]);
+
   const formatBalance = (amount: number, currency: string) => {
     const curr = normalizeCurrencyCode(currency);
     const factor = getMinorFactor(curr);
@@ -38,18 +93,29 @@ export function WalletSelector() {
   };
 
   const currentBalance = balances[selectedCurrency] || 0;
+  // Stake `UserBalances.available.amount` = Hauptbetrag je Währung (z. B. 259.13 USDC), nicht „Minor/Cents“.
+  const usdConv = convertToUsd(currentBalance, selectedCurrency, 'major', usdRates);
+  const usdLine =
+    usdConv.usdAmount != null && Number.isFinite(usdConv.usdAmount)
+      ? `≈ $${usdConv.usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`
+      : 'USD: —';
 
   return (
     <div className="relative z-50" ref={dropdownRef}>
       <button 
         onClick={toggleDropdown}
-        className="flex items-center justify-between rounded-lg py-1.5 px-3 min-w-[160px] transition-all group h-10 gap-3 hover:bg-white/5"
+        className="flex items-center justify-between rounded-lg py-1.5 px-3 min-w-[200px] transition-all group min-h-10 gap-3 hover:bg-white/5"
         style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0, 240, 255, 0.25)' }}
       >
-        <div className="flex flex-col items-start leading-none">
-          <span className="text-[10px] font-bold uppercase tracking-wider transition-colors" style={{ color: 'var(--app-text-muted)' }}>Balance</span>
-          <span className="font-mono font-bold text-sm tracking-tight transition-colors group-hover:opacity-90" style={{ color: 'var(--app-text)' }}>
-            {formatBalance(currentBalance, selectedCurrency)}
+        <div className="flex flex-col items-start leading-tight gap-0.5">
+          <span className="text-[10px] font-bold uppercase tracking-wider transition-colors" style={{ color: 'var(--app-text-muted)' }}>
+            Balance · live
+          </span>
+          <span className="font-mono font-bold text-sm tracking-tight transition-colors group-hover:opacity-90" style={{ color: 'var(--app-accent)' }}>
+            {usdLine}
+          </span>
+          <span className="font-mono text-[10px] tracking-tight transition-colors" style={{ color: 'var(--app-text-muted)' }}>
+            {formatBalance(currentBalance, selectedCurrency)} {selectedCurrency.toUpperCase()}
           </span>
         </div>
         <div className="flex items-center gap-2 pl-3 border-l h-full" style={{ borderColor: 'color-mix(in srgb, var(--app-border) 50%, transparent)' }}>

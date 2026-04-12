@@ -45,9 +45,252 @@ const HOUSEBET_RETRY_BUFFER_MAX_MS = 25000
 const HOUSEBET_RETRY_BUFFER_MAX = 40
 /** Wenn houseBets nie matcht: Best-Multi-UI trotzdem aus HTTP (sonst hängt die Anzeige). */
 const HOUSEBET_DEFERRED_UI_MULTI_MS = 5000
+/** Nach neuem Run-Rekord-Multi: Logger kurz prüfen und `bestBetId` bei ID-Mismatch korrigieren. */
+const LOGGER_BET_ID_RECONCILE_DELAY_MS = 1000
+const LOGGER_BET_ID_RECONCILE_ROW_LIMIT = 600
 const PAGE_SIZE = 20 // sichere Challenge-Page-Size (Stake number_less_equal Schutz)
 /** UI-Obergrenze für parallele Läufe & Anzahl Challenge-Listen-Seiten (Slider). */
 const CHALLENGE_SLIDER_MAX = 100
+
+/**
+ * Pending-HouseBet-Matching: pro runId eigene Liste (parallele Kopien teilen keine globale FIFO).
+ * Bei mehreren passenden Einträgen gewinnt der älteste `at` (zuerst fertiggestellter Spin).
+ */
+function prunePendingHouseBetMap(pendingMap, now) {
+  if (!pendingMap || typeof pendingMap !== 'object') return
+  for (const runId of Object.keys(pendingMap)) {
+    const q = pendingMap[runId]
+    if (!Array.isArray(q)) {
+      delete pendingMap[runId]
+      continue
+    }
+    while (q.length > 0 && now - q[0].at > PENDING_HOUSEBET_MAX_AGE_MS) {
+      q.shift()
+    }
+    if (q.length === 0) delete pendingMap[runId]
+  }
+}
+
+/**
+ * Parallele Runs gleicher Slot+Währung: nicht global „ältestes Pending“ — sonst falsche house:iid am Run.
+ * Abgleich über Einsatz (major, wie houseBets) + Multi (HTTP vs WS), mit Fallbacks.
+ */
+function houseBetStakeMajorMatchesPending(pendingMajor, bItem) {
+  const hb = Number(bItem?.amountMajor ?? bItem?.amount)
+  const p = Number(pendingMajor)
+  if (!Number.isFinite(hb) || hb <= 0) return false
+  if (!Number.isFinite(p) || p <= 0) return false
+  const rel = Math.abs(p - hb) / Math.max(hb, p, 1e-12)
+  return rel <= 0.03 || Math.abs(p - hb) <= 1e-9
+}
+
+function houseBetPayoutMultiplierMatchesPending(pendingMulti, bItem) {
+  const hm = Number(bItem?.payoutMultiplier)
+  const pm = Number(pendingMulti)
+  if (!Number.isFinite(pm) || pm < 0) return false
+  if (!Number.isFinite(hm) || hm < 0) return false
+  if (hm < 1e-8 && pm < 1e-8) return true
+  const rel = Math.abs(pm - hm) / Math.max(pm, hm, 1e-9)
+  return rel <= 0.05 || Math.abs(pm - hm) <= 0.1
+}
+
+function collectPendingHouseBetCandidates(pendingMap, payloadSlug, payloadCurr, currencyStrict) {
+  const out = []
+  for (const runId of Object.keys(pendingMap)) {
+    const q = pendingMap[runId]
+    if (!Array.isArray(q)) continue
+    for (let i = 0; i < q.length; i++) {
+      const p = q[i]
+      if (p == null || p.multi == null) continue
+      if (!houseBetSlugMatchesSessionSlug(payloadSlug, p.slug)) continue
+      if (currencyStrict) {
+        if (!payloadCurr || String(p.currency || '').toLowerCase() !== String(payloadCurr).toLowerCase()) {
+          continue
+        }
+      }
+      out.push({ runId, idx: i, p, at: Number(p.at) || 0 })
+    }
+  }
+  return out
+}
+
+function pickOldestPendingEntry(entries) {
+  if (!entries.length) return null
+  return entries.sort((a, b) => {
+    if (a.at !== b.at) return a.at - b.at
+    return String(a.runId).localeCompare(String(b.runId))
+  })[0]
+}
+
+function houseBetReceivedMs(bItem) {
+  const t = Date.parse(String(bItem?.receivedAt || ''))
+  return Number.isFinite(t) ? t : null
+}
+
+/** Bei mehreren gleich guten Matches: Pending-Zeit (HTTP) nahe WS-`receivedAt` statt nur FIFO — weniger Vertauschung bei parallelen Runs. */
+function pickPendingClosestToHouseBetTime(entries, bItem) {
+  if (!entries.length) return null
+  if (entries.length === 1) return entries[0]
+  const evtMs = houseBetReceivedMs(bItem)
+  if (evtMs == null) return pickOldestPendingEntry(entries)
+  let best = entries[0]
+  let bestDist = Math.abs((best.at || 0) - evtMs)
+  for (let i = 1; i < entries.length; i++) {
+    const e = entries[i]
+    const d = Math.abs((e.at || 0) - evtMs)
+    if (d < bestDist) {
+      best = e
+      bestDist = d
+    } else if (d === bestDist) {
+      if (e.at < best.at || (e.at === best.at && String(e.runId) < String(best.runId))) best = e
+    }
+  }
+  return best
+}
+
+function selectPendingEntryForHouseBet(candidates, bItem) {
+  if (!candidates.length) return null
+  if (candidates.length === 1) return candidates[0]
+
+  const hbMult = Number(bItem?.payoutMultiplier)
+  const hasHbMult = Number.isFinite(hbMult) && hbMult >= 0
+
+  const byAmount = candidates.filter(({ p }) => houseBetStakeMajorMatchesPending(p.betAmountMajor, bItem))
+
+  if (byAmount.length === 1) return byAmount[0]
+
+  if (byAmount.length > 1 && hasHbMult) {
+    const byAmtMult = byAmount.filter(({ p }) => houseBetPayoutMultiplierMatchesPending(p.multi, bItem))
+    if (byAmtMult.length === 1) return byAmtMult[0]
+    if (byAmtMult.length > 1) return pickPendingClosestToHouseBetTime(byAmtMult, bItem)
+    const scored = byAmount
+      .map((c) => ({ c, dist: Math.abs(Number(c.p.multi) - hbMult) }))
+      .sort((a, b) => {
+        if (a.dist !== b.dist) return a.dist - b.dist
+        if (a.c.at !== b.c.at) return a.c.at - b.c.at
+        return String(a.c.runId).localeCompare(String(b.c.runId))
+      })
+    return scored[0].c
+  }
+
+  if (byAmount.length > 1 && !hasHbMult) {
+    return pickOldestPendingEntry(byAmount)
+  }
+
+  if (byAmount.length === 0) {
+    if (hasHbMult) {
+      const byMult = candidates.filter(({ p }) => houseBetPayoutMultiplierMatchesPending(p.multi, bItem))
+      if (byMult.length === 1) return byMult[0]
+      if (byMult.length > 1) return pickPendingClosestToHouseBetTime(byMult, bItem)
+    }
+  }
+
+  return null
+}
+
+function splicePendingHouseBetMatch(pendingMap, payloadSlug, payloadCurr, bItem) {
+  if (!pendingMap || typeof pendingMap !== 'object' || bItem == null) return null
+  const trySplice = (currencyStrict) => {
+    const candidates = collectPendingHouseBetCandidates(pendingMap, payloadSlug, payloadCurr, currencyStrict)
+    const chosen = selectPendingEntryForHouseBet(candidates, bItem)
+    if (!chosen) return null
+    const q = pendingMap[chosen.runId]
+    if (!Array.isArray(q) || chosen.idx < 0 || chosen.idx >= q.length) return null
+    const [removed] = q.splice(chosen.idx, 1)
+    if (q.length === 0) delete pendingMap[chosen.runId]
+    return removed
+  }
+  if (payloadCurr) {
+    const strict = trySplice(true)
+    if (strict) return strict
+    return trySplice(false)
+  }
+  return trySplice(false)
+}
+
+function trimPendingQueues(pendingMap, maxPerRun) {
+  const cap = maxPerRun ?? 80
+  if (!pendingMap || typeof pendingMap !== 'object') return
+  for (const runId of Object.keys(pendingMap)) {
+    const q = pendingMap[runId]
+    if (!Array.isArray(q)) continue
+    while (q.length > cap) q.shift()
+    if (q.length === 0) delete pendingMap[runId]
+  }
+}
+
+function normalizedShareCoreForHunterCompare(rawOrPrefixed) {
+  const f = formatStakeShareBetId(
+    rawOrPrefixed == null || rawOrPrefixed === '' ? null : String(rawOrPrefixed).trim()
+  )
+  if (!f) return null
+  return stakeBetIdForPreviewApi(f)
+}
+
+function shareIdsEquivalentForHunter(a, b) {
+  const ca = normalizedShareCoreForHunterCompare(a)
+  const cb = normalizedShareCoreForHunterCompare(b)
+  return Boolean(ca && cb && ca === cb)
+}
+
+function pickLoggerRowHouseShareRaw(row) {
+  if (!row || typeof row !== 'object') return null
+  return pickStakeHouseBetShareRawId({
+    shareIid: row.iid,
+    houseTopId: row.houseId,
+    id: row.betId,
+  })
+}
+
+function getLoggerRowPayoutMultiplier(row) {
+  const pm = Number(row?.payoutMultiplier)
+  if (Number.isFinite(pm) && pm > 0) return pm
+  const amt = Number(row?.amount)
+  const pay = Number(row?.payout)
+  if (Number.isFinite(amt) && amt > 0 && Number.isFinite(pay) && pay > 0) return pay / amt
+  return 0
+}
+
+function loggerMultiMatchesRunMulti(rowMulti, runMulti) {
+  const t = Number(runMulti) || 0
+  const m = Number(rowMulti) || 0
+  if (t <= 0 || m <= 0) return false
+  if (Math.abs(m - t) <= 0.051) return true
+  const rel = Math.abs(m - t) / t
+  return rel <= 0.025
+}
+
+function findLoggerRowForHunterBestMulti(rows, run, targetMulti, minTs, runBetMajor = null) {
+  const runSlugNorm = normalizeBetSlugForHouseMatch(run?.slotSlug || '')
+  const runCurr = String(run?.runCurrency || '').trim().toLowerCase()
+  const stakeMajor = Number(runBetMajor)
+  const useStakeFilter = Number.isFinite(stakeMajor) && stakeMajor > 0
+  const scored = []
+  for (const row of rows || []) {
+    if (!row || typeof row !== 'object') continue
+    if (String(row?.category || 'casino').toLowerCase() === 'sports') continue
+    const rowSlug = normalizeBetSlugForHouseMatch(row?.gameSlug || '')
+    if (!houseBetSlugMatchesSessionSlug(rowSlug, runSlugNorm)) continue
+    if (runCurr) {
+      const rc = String(row?.currency || '').trim().toLowerCase()
+      if (rc && rc !== runCurr) continue
+    }
+    if (useStakeFilter) {
+      const ram = Number(row?.amount)
+      if (!Number.isFinite(ram) || ram <= 0) continue
+      const rel = Math.abs(ram - stakeMajor) / Math.max(ram, stakeMajor, 1e-12)
+      if (rel > 0.04 && Math.abs(ram - stakeMajor) > 1e-8) continue
+    }
+    const ts = Date.parse(String(row?.receivedAt || row?.createdAt || row?.timestamp || ''))
+    const tsN = Number.isFinite(ts) ? ts : 0
+    if (minTs > 0 && tsN > 0 && tsN < minTs) continue
+    const m = getLoggerRowPayoutMultiplier(row)
+    if (!loggerMultiMatchesRunMulti(m, targetMulti)) continue
+    scored.push({ row, ts: tsN })
+  }
+  scored.sort((a, b) => (b.ts || 0) - (a.ts || 0))
+  return scored[0]?.row ?? null
+}
 
 const HUNTER_TARGET_CANDIDATES = [
   ...CURRENCY_GROUPS.fiat.map((c) => c.value),
@@ -783,6 +1026,110 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const dismissedChallengeIdsRef = useRef(new Set())
   const activeRunsRef = useRef(activeRuns)
   activeRunsRef.current = activeRuns
+  const loggerBetIdReconcileTimersRef = useRef({})
+  const prevBestMultiForLoggerRef = useRef(null)
+
+  const runLoggerBetIdReconcile = useCallback((runId) => {
+    const rid = String(runId || '')
+    if (!rid) return
+    void (async () => {
+      const run = activeRunsRef.current?.[rid]
+      if (!run || run.status !== 'running') return
+      const api = typeof window !== 'undefined' ? window.electronAPI : null
+      if (!api?.loadLoggerBetLogs) return
+
+      const targetMulti = Number(run.bestMultiRun) || 0
+      if (targetMulti <= 0) return
+
+      let rows
+      try {
+        rows = await api.loadLoggerBetLogs({ limit: LOGGER_BET_ID_RECONCILE_ROW_LIMIT })
+      } catch (_) {
+        return
+      }
+      if (!Array.isArray(rows) || rows.length === 0) return
+
+      const st = run.startTime
+      const startMs =
+        typeof st === 'number' && Number.isFinite(st)
+          ? st
+          : Date.parse(String(st || run.createdAt || ''))
+      const minTs =
+        Number.isFinite(startMs) && startMs > 0 ? startMs - 15000 : Date.now() - 8 * 60 * 1000
+
+      const runBetMajor =
+        run.currentBet != null && run.runCurrency
+          ? toUnits(Number(run.currentBet), String(run.runCurrency).toLowerCase())
+          : null
+      const row = findLoggerRowForHunterBestMulti(rows, run, targetMulti, minTs, runBetMajor)
+      if (!row) return
+
+      const raw = pickLoggerRowHouseShareRaw(row)
+      const loggerShare = formatStakeShareBetId(raw)
+      if (!loggerShare || !isPersistableStakeHouseBetShareId(loggerShare)) return
+
+      if (shareIdsEquivalentForHunter(run.bestBetId, loggerShare)) return
+
+      setActiveRuns((prev) => {
+        const r = prev[rid]
+        if (!r || r.status !== 'running') return prev
+        if (shareIdsEquivalentForHunter(r.bestBetId, loggerShare)) return prev
+        return {
+          ...prev,
+          [rid]: { ...r, bestBetId: loggerShare },
+        }
+      })
+    })()
+  }, [])
+
+  useEffect(() => {
+    const runs = activeRuns || {}
+    const prevMap = prevBestMultiForLoggerRef.current
+    if (prevMap == null) {
+      const seed = {}
+      for (const [rid, run] of Object.entries(runs)) {
+        if (run?.status === 'running') seed[rid] = Number(run.bestMultiRun) || 0
+      }
+      prevBestMultiForLoggerRef.current = seed
+      return
+    }
+
+    for (const rid of Object.keys(loggerBetIdReconcileTimersRef.current)) {
+      if (!runs[rid] || runs[rid]?.status !== 'running') {
+        const t = loggerBetIdReconcileTimersRef.current[rid]
+        if (t) clearTimeout(t)
+        delete loggerBetIdReconcileTimersRef.current[rid]
+      }
+    }
+
+    for (const [rid, run] of Object.entries(runs)) {
+      if (run?.status !== 'running') {
+        delete prevMap[rid]
+        continue
+      }
+      const cur = Number(run.bestMultiRun) || 0
+      const was = prevMap[rid] ?? 0
+      if (cur > was + 1e-12) {
+        prevMap[rid] = cur
+        const existing = loggerBetIdReconcileTimersRef.current[rid]
+        if (existing) clearTimeout(existing)
+        loggerBetIdReconcileTimersRef.current[rid] = setTimeout(() => {
+          delete loggerBetIdReconcileTimersRef.current[rid]
+          runLoggerBetIdReconcile(rid)
+        }, LOGGER_BET_ID_RECONCILE_DELAY_MS)
+      }
+    }
+  }, [activeRuns, runLoggerBetIdReconcile])
+
+  useEffect(() => {
+    return () => {
+      for (const t of Object.values(loggerBetIdReconcileTimersRef.current)) {
+        if (t) clearTimeout(t)
+      }
+      loggerBetIdReconcileTimersRef.current = {}
+    }
+  }, [])
+
   const resolveChallengeSlugById = useCallback(
     (challengeId) => {
       const row = (challenges || []).find((c) => String(c?.id || '') === String(challengeId || ''))
@@ -868,8 +1215,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
   // Debug/Test: in Challenge-Mode Subscription unabhängig von SlotControl sichtbar machen
   // (SlotControl wird im "challenges"-Tab typischerweise nicht gemountet.)
-  /** Nach placeBet in Reihenfolge; nächstes houseBets mit gleichem Slug → Bet-ID (FIFO, wie FRIDA: iid ohne Betrag/Multi-Match). */
-  const pendingHouseBetMatchRef = useRef([])
+  /** Nach placeBet: Pending pro runId; houseBets-Match strikt innerhalb des Laufs, Konflikt → ältestes `at`. */
+  const pendingHouseBetMatchRef = useRef({})
   /** Pro Run monoton steigend — ordnet Pending-Spins zu, Fallback nur wenn `${runId}:${seq}` nicht gematcht. */
   const hunterSpinSeqByRunRef = useRef({})
   const houseBetMatchedSpinKeysRef = useRef(new Set())
@@ -1022,7 +1369,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     let sub = null
 
     const runWorkerTick = () => {
-      // Kein stakeHouseBetAmountToMajor / kein Betrag-Multi-Match — FRIDA-FIFO (Slug + Pending-Reihenfolge).
+      // Kein stakeHouseBetAmountToMajor / kein Betrag-Multi-Match — iid aus houseBets; Pending pro runId + ältestes `at` bei Konflikt.
       houseBetWorkerScheduledRef.current = false
 
       const rnow = Date.now()
@@ -1060,39 +1407,15 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           )
           if (!hasRunningForHouseBet) continue
 
-          const pending = pendingHouseBetMatchRef.current
+          const pendingMap = pendingHouseBetMatchRef.current
 
-          // Wie FRIDA (MainForm): houseBets.iid direkt nutzen — kein Abgleich Betrag/Multi.
-          // Pending wird nach jedem HTTP-Spin in Reihenfolge eingereiht; erstes passendes Slug = dieses Event (FIFO).
-          let bestMatchIdx = -1
-          // 1) Prefer strict match by slug + currency (important for copy runs of same slot).
-          if (payloadCurr) {
-            for (let i = 0; i < pending.length; i++) {
-              const p = pending[i]
-              if (p.multi == null) continue
-              if (!houseBetSlugMatchesSessionSlug(payloadSlug, p.slug)) continue
-              if (String(p.currency || '').toLowerCase() !== payloadCurr) continue
-              bestMatchIdx = i
-              break
-            }
-          }
-          // 2) Fallback to slug-only FIFO.
-          if (bestMatchIdx < 0) {
-            for (let i = 0; i < pending.length; i++) {
-              const p = pending[i]
-              if (p.multi == null) continue
-              if (!houseBetSlugMatchesSessionSlug(payloadSlug, p.slug)) continue
-              bestMatchIdx = i
-              break
-            }
-          }
+          // houseBets.iid direkt nutzen; Zuordnung zu Pending per Slot+Währung+Einsatz+Multi (parallele Runs gleicher Slot).
+          const p = splicePendingHouseBetMatch(pendingMap, payloadSlug, payloadCurr, bItem)
 
-          if (bestMatchIdx >= 0) {
-            const p = pending[bestMatchIdx]
+          if (p) {
             const runId = p.runId
             const rawId = pickStakeHouseBetShareRawId(bItem)
             const shareId = rawId ? formatStakeShareBetId(rawId) : null
-            pending.splice(bestMatchIdx, 1)
             if (p.spinSeq != null) {
               houseBetMatchedSpinKeysRef.current.add(`${runId}:${p.spinSeq}`)
             }
@@ -1144,18 +1467,14 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             }
           }
 
-          if (bestMatchIdx < 0) {
-            const hasPendingForSlug = pending.some((p) =>
-              houseBetSlugMatchesSessionSlug(payloadSlug, p.slug)
-            )
-            if (hasRunningForHouseBet && !hasPendingForSlug) {
-              const dedupeKey = pickStakeHouseBetShareRawId(bItem) || bItem?.id
-              if (dedupeKey) {
-                const buf = houseBetRetryBufferRef.current
-                if (!buf.some((e) => e.key === dedupeKey)) {
-                  buf.push({ key: dedupeKey, bItem, at: Date.now() })
-                  if (buf.length > HOUSEBET_RETRY_BUFFER_MAX) buf.shift()
-                }
+          if (!p && hasRunningForHouseBet) {
+            // Ohne Pending (WS vor HTTP) oder mit Pending aber kein sicherer Match (z. B. Timing) — später erneut matchen.
+            const dedupeKey = pickStakeHouseBetShareRawId(bItem) || bItem?.id
+            if (dedupeKey) {
+              const buf = houseBetRetryBufferRef.current
+              if (!buf.some((e) => e.key === dedupeKey)) {
+                buf.push({ key: dedupeKey, bItem, at: Date.now() })
+                if (buf.length > HOUSEBET_RETRY_BUFFER_MAX) buf.shift()
               }
             }
           }
@@ -1243,10 +1562,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
     subscribeToHouseBets(accessToken, (b) => {
       const now = Date.now()
-      const pendBefore = pendingHouseBetMatchRef.current
-      while (pendBefore.length > 0 && now - pendBefore[0].at > PENDING_HOUSEBET_MAX_AGE_MS) {
-        pendBefore.shift()
-      }
+      prunePendingHouseBetMap(pendingHouseBetMatchRef.current, now)
       houseBetEventQueueRef.current.push(b)
       scheduleHouseBetWorker()
     }).then((s) => {
@@ -1923,8 +2239,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         }
 
         try {
-          const pendPre = pendingHouseBetMatchRef.current
-          while (pendPre.length > 80) pendPre.shift()
+          trimPendingQueues(pendingHouseBetMatchRef.current, 80)
 
           const result = await provider.placeBet(session, betAmount, false, false, { slotSlug: gSlug })
           const { data, nextSeq, session: updatedSession } = result || {}
@@ -2005,7 +2320,12 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             spinSeq,
             feedEntryId: `${runId}:${spinSeq}`,
           }
-          pendingHouseBetMatchRef.current.push(matchEntry)
+          {
+            const pmap = pendingHouseBetMatchRef.current
+            const rid = String(matchEntry.runId || '')
+            if (!pmap[rid]) pmap[rid] = []
+            pmap[rid].push(matchEntry)
+          }
           flushHouseBetRetryBufferForSlug(
             houseBetRetryBufferRef,
             houseBetEventQueueRef,
@@ -3471,7 +3791,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     </span>
                   </div>
                   <div style={{marginTop: '0.5rem'}}>
-                    <div style={{display: 'flex', gap: '0.5rem'}}>
+                    <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap'}}>
                       <Button
                         onClick={() => stopRunByRunId(run.id)}
                         variant="secondary"
