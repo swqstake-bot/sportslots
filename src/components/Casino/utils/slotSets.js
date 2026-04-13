@@ -114,11 +114,10 @@ export function toggleFavorite(slug) {
 export function loadHasBonusSlugs() {
   try {
     const list = readStorageJson(HAS_BONUS_KEY, [])
-    const filtered = list.filter((slug) => !SIX_SIX_SIX_SLUGS.includes(slug))
-    if (filtered.length !== list.length) {
-      writeStorageJson(HAS_BONUS_KEY, filtered)
-    }
-    return filtered
+    const arr = Array.isArray(list) ? list : []
+    // Hinweis: Six-Six-Six nicht mehr hier rausfiltern — sonst ließ sich „has bonus“ für diesen Slot
+    // nicht speichern (jeder Reload/Toggle rief loadHasBonusSlugs erneut auf und entfernte den Eintrag).
+    return arr
   } catch {
     return []
   }

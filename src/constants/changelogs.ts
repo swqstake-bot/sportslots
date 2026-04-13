@@ -1,4 +1,5 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.133': ['Hacksaw: 5-Scatter-Bonus-Namen (Le-Serie & Co.); Six Six Six „has bonus“ speicherbar'],
   '1.0.132': ['Background fixes'],
   '1.0.131': ['promotion'],
   '1.0.130': ['promotion'],
