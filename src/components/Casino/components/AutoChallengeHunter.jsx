@@ -2215,8 +2215,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       while (!runnersRef.current[runId]?.stop) {
         const total = totalStatsRef.current
         const net = total.won - total.lost
-        if (stopLoss > 0 && total.lost >= stopLoss) {
-          log(`Stop Loss erreicht: $${total.lost.toFixed(2)} – alle Läufe stoppen, Auto-Start aus, Warteschlange leer.`)
+        if (stopLoss > 0 && net <= -Math.abs(stopLoss)) {
+          log(`Stop Loss erreicht: Netto $${net.toFixed(2)} (Limit: -$${Math.abs(stopLoss).toFixed(2)}) – alle Läufe stoppen, Auto-Start aus, Warteschlange leer.`)
           Object.keys(runnersRef.current).forEach((id) => {
             if (runnersRef.current[id]) runnersRef.current[id].stop = true
           })
@@ -2226,8 +2226,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           stopReason = 'stop_loss'
           break
         }
-        if (stopProfit > 0 && net >= stopProfit) {
-          log(`Stop Profit erreicht: $${net.toFixed(2)} – alle Läufe stoppen, Auto-Start aus, Warteschlange leer.`)
+        if (stopProfit > 0 && net >= Math.abs(stopProfit)) {
+          log(`Stop Profit erreicht: Netto $${net.toFixed(2)} (Limit: +$${Math.abs(stopProfit).toFixed(2)}) – alle Läufe stoppen, Auto-Start aus, Warteschlange leer.`)
           Object.keys(runnersRef.current).forEach((id) => {
             if (runnersRef.current[id]) runnersRef.current[id].stop = true
           })
