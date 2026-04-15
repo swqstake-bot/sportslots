@@ -52,6 +52,12 @@ function formatUsdCentsLine(value) {
   return `${formatAmount(Number(value), 'usd')} USD`
 }
 
+function formatBalanceLine(valueMinor, currencyCode) {
+  if (valueMinor == null || !Number.isFinite(Number(valueMinor))) return '–'
+  const curr = String(currencyCode || 'usd').toLowerCase()
+  return `${formatAmount(Number(valueMinor), curr)} ${curr.toUpperCase()}`
+}
+
 export default function StatsDisplay({ stats, currencyCode, compact = false, minimal = false }) {
   const displayStats = useMemo(() => {
     if (!stats || stats.spins === 0) return null
@@ -70,6 +76,8 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
       multiOver100xCount: stats.multiOver100xCount,
       multiOver100xSum: stats.multiOver100xSum,
       currentBalance: stats.currentBalance,
+      currentBalanceRaw: stats.currentBalanceRaw,
+      currentBalanceCurrency: stats.currentBalanceCurrency,
       sessionStartBalance: stats.sessionStartBalance,
       roiPercent: stats.totalWagered > 0 ? ((stats.totalWon - stats.totalWagered) / stats.totalWagered) * 100 : 0,
     }
@@ -157,7 +165,9 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
         )}
         <div style={STYLES.item}>
           <span style={STYLES.label}>Kontostand</span>
-          <span style={valueStyle}>{formatUsdCentsLine(displayStats.currentBalance)}</span>
+          <span style={valueStyle}>
+            {formatBalanceLine(displayStats.currentBalanceRaw, displayStats.currentBalanceCurrency || currencyCode)}
+          </span>
         </div>
         {(displayStats.multiOver100xCount > 0 || displayStats.multiOver100xSum > 0) && (
         <div style={STYLES.item}>

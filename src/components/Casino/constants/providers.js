@@ -101,6 +101,21 @@ export const PROVIDERS = {
     sessionFields: ['token', 'gameId', 'host'],
     betLevelsSource: 'sessionConfig',
   },
+  mascot: {
+    id: 'mascot',
+    name: 'Mascot',
+    sessionFields: ['base', 'endpoint'],
+    betLevelsSource: 'init.bets',
+    supportsMultiCurrencySameSlot: true,
+    unitProfile: 'minor',
+    retryProfile: { maxAttempts: 2, baseDelayMs: 250 },
+    sessionShape: 'session-id',
+  },
+  hub88: {
+    id: 'hub88',
+    name: 'Hub88 alias',
+    aliasOf: 'mascot',
+  },
   netent: {
     id: 'netent',
     name: 'NetEnt',

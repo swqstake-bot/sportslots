@@ -36,6 +36,8 @@ let lastStatus: StakeSessionStatus | null = null;
 let lastCheckedAtMs = 0;
 let inflightStatusPromise: Promise<StakeSessionStatus> | null = null;
 const STATUS_CACHE_MS = 1000;
+let lastLoggedStatusKey = '';
+const LOG_VALID_SESSION_STATUS = false;
 
 function isCookieExpired(cookie: Electron.Cookie): boolean {
   const exp = Number(cookie.expirationDate);
@@ -82,7 +84,19 @@ function buildCookieHeader(cookies: Electron.Cookie[]): string {
 }
 
 function logSessionStatus(status: StakeSessionStatus): void {
+  const statusKey = JSON.stringify({
+    valid: status.valid,
+    origin: status.origin,
+    reasons: status.reasons,
+    missingCookies: status.missingCookies,
+    expiredCookies: status.expiredCookies,
+    hasSessionCookie: Boolean(status.sessionToken),
+  });
+  if (statusKey === lastLoggedStatusKey) return;
+  lastLoggedStatusKey = statusKey;
+
   if (status.valid) {
+    if (!LOG_VALID_SESSION_STATUS) return;
     console.log('[StakeSession] Session valid', {
       origin: status.origin,
       hasSessionCookie: Boolean(status.sessionToken),

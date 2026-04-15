@@ -9,7 +9,10 @@ const NEWEST_PAGES_MAX = 10
  * Zusätzliche slugKuratorGroup-Slugs für Quick-Load: sort „newest“ nur innerhalb der Gruppe.
  * Global `slug: 'slots'` + newest deckt nicht alle Provider-Neuerscheinungen ab (z. B. Hacksaw).
  */
-const QUICK_LOAD_EXTRA_GROUPS = [{ slug: 'hacksaw-gaming', pages: 10 }]
+const QUICK_LOAD_EXTRA_GROUPS = [
+  { slug: 'hacksaw-gaming', pages: 10 },
+  { slug: 'mascot', pages: 6 },
+]
 const SESSION_CACHE_TTL_MS = 10 * 60 * 1000 // 10 min – kein Refetch beim Tab-Wechsel
 
 let sessionSlotsCache = null
@@ -58,6 +61,8 @@ const PROVIDER_MAP = {
   'endorphina': 'endorphina',
   'gamomat': 'gamomat',
   'avatarux': 'avatarux',
+  mascot: 'mascot',
+  hub88: 'mascot',
   'octoplay': 'octoplay',
   'one-touch': 'onetouch',
   'one-touch-games': 'onetouch',

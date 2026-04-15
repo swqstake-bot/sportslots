@@ -320,6 +320,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       spins, totalWagered: totalWageredUsd, totalWon: totalWonUsd, winCount, lossCount, breakEvenCount, fxMissingCount, fxValuatedCount,
       biggestWin: biggestWinUsd, biggestMultiplier, multiOver100xCount, multiOver100xSum,
       currentBalance: currentBalanceUsd, sessionStartBalance: sessionStartBalanceUsd,
+      currentBalanceRaw: currentBalance,
+      currentBalanceCurrency: balanceCurr,
     }
   }, [sessionBets, sessionStartBalance, wsBalance, balanceFromPlaceBet, effectiveTarget, toUsdCents])
 
@@ -642,7 +644,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           try {
             newSession = await provider.startSession(accessToken, slot.slug, effectiveSource, effectiveTarget)
           } catch (refreshErr) {
-            await new Promise((r) => setTimeout(r, 2500))
+            // No long artificial cooldown here; otherwise autospin feels much slower than manual spin.
+            await new Promise((r) => setTimeout(r, 150))
             newSession = await provider.startSession(accessToken, slot.slug, effectiveSource, effectiveTarget)
           }
           currentSession = newSession

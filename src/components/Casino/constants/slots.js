@@ -8,6 +8,8 @@ export const PROVIDERS = {
   hacksaw: { id: 'hacksaw', name: 'Hacksaw Gaming', impl: 'web' },
   stakeEngine: { id: 'stakeEngine', name: 'Stake Engine', impl: 'web' },
   avatarux: { id: 'avatarux', name: 'Avatarux', impl: 'web' },
+  mascot: { id: 'mascot', name: 'Mascot', impl: 'web' },
+  hub88: { id: 'hub88', name: 'Mascot (Hub88)', impl: 'web' },
   bgaming: { id: 'bgaming', name: 'BGaming', impl: 'web' },
   'b-gaming': { id: 'b-gaming', name: 'BGaming', impl: 'web' },
   gamesglobal: { id: 'gamesglobal', name: 'Games Global', impl: 'web' },

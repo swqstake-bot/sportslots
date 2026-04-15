@@ -4,6 +4,7 @@ import * as stakeEngine from './stakeEngine'
 import * as clawbuster from './clawbuster'
 import * as avatarux from './avatarux'
 import * as nolimit from './nolimit'
+import * as mascot from './mascot'
 import * as genericProviders from './genericProviders'
 import { parseConfig } from './genericProviders'
 import { getEffectiveBetAmount } from '../../constants/bet'
@@ -150,6 +151,8 @@ const WEB_PROVIDERS = {
   clawbuster,
   nolimit,
   avatarux,
+  mascot,
+  hub88: mascot,
   '1000lakes': stakeEngine, // Alias für 1000 Lakes Studios
   relax: genericProviders.relax,
   blueprint: genericProviders.blueprint,

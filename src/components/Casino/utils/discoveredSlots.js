@@ -38,6 +38,8 @@ export function inferProviderId(slug) {
     s.startsWith('nlc-')
   ) return 'nolimit'
   if (s.startsWith('avatarux-')) return 'avatarux'
+  if (s.startsWith('mascot-')) return 'mascot'
+  if (s.startsWith('hub88-')) return 'mascot'
   if (s.startsWith('relax-')) return 'relax'
   if (s.startsWith('blueprint-')) return 'blueprint'
   if (s.startsWith('endorphina-')) return 'endorphina'

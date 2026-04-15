@@ -45,6 +45,8 @@ const HOUSEBET_RETRY_BUFFER_MAX_MS = 25000
 const HOUSEBET_RETRY_BUFFER_MAX = 40
 /** Wenn houseBets nie matcht: Best-Multi-UI trotzdem aus HTTP (sonst hängt die Anzeige). */
 const HOUSEBET_DEFERRED_UI_MULTI_MS = 5000
+/** Dedup-Set pro Run: ohne Obergrenze wächst der Speicher bei 200k+ Spins linear → UI/GC-Probleme. */
+const HUNTER_SEEN_ROUND_DEDUP_MAX = 8000
 /** Nach neuem Run-Rekord-Multi: Logger kurz prüfen und `bestBetId` bei ID-Mismatch korrigieren. */
 const LOGGER_BET_ID_RECONCILE_DELAY_MS = 1000
 const LOGGER_BET_ID_RECONCILE_ROW_LIMIT = 600
@@ -919,6 +921,14 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const prefersReducedMotion = usePrefersReducedMotion()
 
   const [challenges, setChallenges] = useState([])
+  const [localChallenges, setLocalChallenges] = useState([])
+  const localChallengesRef = useRef([])
+  useEffect(() => {
+    localChallengesRef.current = localChallenges
+  }, [localChallenges])
+  const [localChallengeSlotSlug, setLocalChallengeSlotSlug] = useState('')
+  const [localChallengeTargetMulti, setLocalChallengeTargetMulti] = useState('10')
+  const [localChallengeMinBetUsd, setLocalChallengeMinBetUsd] = useState('0.10')
   const [challengeSearch, setChallengeSearch] = useState('')
   const [challengeSort, setChallengeSort] = useState('prize-desc')
   /** Pro Challenge: nächste Queue-Zielwährung — '' = Auto (Sortierung / Probes). */
@@ -1021,6 +1031,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const runnersRef = useRef({})
   /** Schutz gegen doppelte Verbuchung desselben Rounds innerhalb eines Runs (z. B. Retry/Timing-Rennen). */
   const seenRoundKeysByRunRef = useRef({})
+  /** FIFO zu `seenRoundKeysByRunRef`: älteste Keys verwerfen, sobald Obergrenze erreicht (Speicher bei Langläufern). */
+  const seenRoundOrderByRunRef = useRef({})
   const processedIdsRef = useRef(new Set())
   /** Challenge-IDs, die der Nutzer per „Aus Liste“ o. Ä. aus dem Hunt genommen hat – nicht erneut auto-einreihen. */
   const dismissedChallengeIdsRef = useRef(new Set())
@@ -1219,7 +1231,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const pendingHouseBetMatchRef = useRef({})
   /** Pro Run monoton steigend — ordnet Pending-Spins zu, Fallback nur wenn `${runId}:${seq}` nicht gematcht. */
   const hunterSpinSeqByRunRef = useRef({})
-  const houseBetMatchedSpinKeysRef = useRef(new Set())
+  /** Pro Spin: Fallback-Timer für HTTP-Best-Multi; bei houseBets-Match canceln (sonst stapeln sich 100k+ Timer). */
+  const houseBetDeferredUiTimersRef = useRef(new Map())
 
   // houseBets Updates kommen sehr häufig.
   // Damit React keine "message handler took Xms"-Violations auslöst (und wir weniger UI/Storage churn haben),
@@ -1417,7 +1430,12 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             const rawId = pickStakeHouseBetShareRawId(bItem)
             const shareId = rawId ? formatStakeShareBetId(rawId) : null
             if (p.spinSeq != null) {
-              houseBetMatchedSpinKeysRef.current.add(`${runId}:${p.spinSeq}`)
+              const mk = `${runId}:${p.spinSeq}`
+              const tid = houseBetDeferredUiTimersRef.current.get(mk)
+              if (tid != null) {
+                clearTimeout(tid)
+                houseBetDeferredUiTimersRef.current.delete(mk)
+              }
             }
 
             const spinM = Number(p.multi) || 0
@@ -1733,8 +1751,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         }
       }
 
-      log(`${unique.length} Challenges gefunden.`)
-      setChallenges(unique)
+      const localOnly = localChallengesRef.current || []
+      const merged = [...localOnly, ...unique.filter((c) => !localOnly.some((l) => String(l.id) === String(c.id)))]
+      log(`${unique.length} Stake-Challenges gefunden (${localOnly.length} lokale).`)
+      setChallenges(merged)
       setLastRefresh(Date.now())
 
       // Neue Slots/Provider automatisch hinzufügen (Session-only)
@@ -1750,7 +1770,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       const currentSlots = [...slotsSnapshot, ...addedSlots]
 
       let addedCount = 0
-      for (const c of unique) {
+      for (const c of merged) {
         if (processedIdsRef.current.has(c.id)) continue
         if (dismissedChallengeIdsRef.current.has(c.id)) continue
         if (
@@ -1797,6 +1817,53 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       log(`Fehler beim Laden: ${err.message}`)
     }
   }, [accessToken, minMinBet, maxMinBet, minPrizeUsd, pagesToLoadClamped, log, buildQueueItemForChallenge, sourceCurrency])
+
+  const createLocalChallenge = useCallback(() => {
+    const slotSlug = String(localChallengeSlotSlug || '').trim().toLowerCase()
+    if (!slotSlug) {
+      log('Local Challenge: bitte zuerst ein Spiel wählen.')
+      return
+    }
+    const slot = (webSlotsRef.current || []).find((s) => String(s?.slug || '').toLowerCase() === slotSlug)
+    if (!slot) {
+      log(`Local Challenge: Slot nicht gefunden (${slotSlug}).`)
+      return
+    }
+    const targetMultiplierRaw = Number(localChallengeTargetMulti)
+    const minBetUsdRaw = Number(localChallengeMinBetUsd)
+    const targetMultiplier = Number.isFinite(targetMultiplierRaw) && targetMultiplierRaw > 1 ? targetMultiplierRaw : 10
+    const minBetUsd = Number.isFinite(minBetUsdRaw) && minBetUsdRaw > 0 ? minBetUsdRaw : 0.1
+    const challengeId = `local:${slotSlug}:${targetMultiplier.toFixed(2)}:${Date.now()}`
+    const localChallenge = {
+      id: challengeId,
+      title: `${slot.name || slotSlug} (local)`,
+      gameSlug: slotSlug,
+      gameName: slot.name || slotSlug,
+      game: { slug: slotSlug, name: slot.name || slotSlug, providerId: slot.providerId || 'stakeEngine' },
+      targetMultiplier,
+      minBetUsd,
+      award: 0,
+      currency: 'usd',
+      active: true,
+      completedAt: null,
+      source: 'local',
+      createdAt: new Date().toISOString(),
+      _isLocalChallenge: true,
+    }
+    setLocalChallenges((prev) => [localChallenge, ...prev])
+    setChallenges((prev) => [localChallenge, ...prev.filter((c) => String(c?.id || '') !== challengeId)])
+    dismissedChallengeIdsRef.current.delete(challengeId)
+    processedIdsRef.current.add(challengeId)
+    setQueue((q) => [...q, buildQueueItemForChallenge(challengeId, q, null, sourceCurrency, slotSlug)])
+    log(`Local Challenge erstellt: ${slot.name || slotSlug} (${targetMultiplier.toFixed(2)}x, min $${minBetUsd.toFixed(2)})`)
+  }, [
+    localChallengeSlotSlug,
+    localChallengeTargetMulti,
+    localChallengeMinBetUsd,
+    buildQueueItemForChallenge,
+    sourceCurrency,
+    log,
+  ])
 
   useEffect(() => {
     if (!huntEnabled) return
@@ -2306,6 +2373,12 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             continue
           }
           runSeenRounds.add(dedupKey)
+          const seenOrder = (seenRoundOrderByRunRef.current[runId] ||= [])
+          seenOrder.push(dedupKey)
+          while (seenOrder.length > HUNTER_SEEN_ROUND_DEDUP_MAX) {
+            const oldK = seenOrder.shift()
+            if (oldK != null) runSeenRounds.delete(oldK)
+          }
 
           // houseBets-Matching: Pending mit HTTP-Multi; UI-Best-Multi erst nach houseBets (oder Fallback).
           const matchEntry = {
@@ -2333,30 +2406,35 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             () => scheduleHouseBetWorkerRef.current?.()
           )
 
-          setTimeout(() => {
-            const k = `${runId}:${spinSeq}`
-            if (houseBetMatchedSpinKeysRef.current.has(k)) return
-            setBestMultiBySlotRef.current((prev) => {
-              const cur = prev[gSlug] ?? 0
-              if (safeMulti <= cur) return prev
-              const nmap = { ...prev, [gSlug]: safeMulti }
-              persistBestMultiMap(nmap)
-              return nmap
-            })
-            setActiveRuns((prev) => {
-              const run = prev[runId]
-              if (!run || run.status !== 'running') return prev
-              return {
-                ...prev,
-                [runId]: {
-                  ...run,
-                  bestMultiRun: Math.max(run.bestMultiRun ?? 0, safeMulti),
-                },
-              }
-            })
-            const prevS = runBestMultiSyncRef.current[runId] ?? 0
-            runBestMultiSyncRef.current[runId] = Math.max(Number(prevS) || 0, safeMulti)
-          }, HOUSEBET_DEFERRED_UI_MULTI_MS)
+          {
+            const dk = `${runId}:${spinSeq}`
+            const prevTid = houseBetDeferredUiTimersRef.current.get(dk)
+            if (prevTid != null) clearTimeout(prevTid)
+            const tid = setTimeout(() => {
+              houseBetDeferredUiTimersRef.current.delete(dk)
+              setBestMultiBySlotRef.current((prev) => {
+                const cur = prev[gSlug] ?? 0
+                if (safeMulti <= cur) return prev
+                const nmap = { ...prev, [gSlug]: safeMulti }
+                persistBestMultiMap(nmap)
+                return nmap
+              })
+              setActiveRuns((prev) => {
+                const run = prev[runId]
+                if (!run || run.status !== 'running') return prev
+                return {
+                  ...prev,
+                  [runId]: {
+                    ...run,
+                    bestMultiRun: Math.max(run.bestMultiRun ?? 0, safeMulti),
+                  },
+                }
+              })
+              const prevS = runBestMultiSyncRef.current[runId] ?? 0
+              runBestMultiSyncRef.current[runId] = Math.max(Number(prevS) || 0, safeMulti)
+            }, HOUSEBET_DEFERRED_UI_MULTI_MS)
+            houseBetDeferredUiTimersRef.current.set(dk, tid)
+          }
 
           // RoundId für "Beste Multi" Kopieren (nicht nur wenn Ziel erreicht ist)
           const resolvedRoundId = roundIdForDedup
@@ -2528,14 +2606,21 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         delete seenRoundKeysByRunRef.current[runId]
       } catch (_) {}
       try {
+        delete seenRoundOrderByRunRef.current[runId]
+      } catch (_) {}
+      try {
         delete runBestMultiSyncRef.current[runId]
       } catch (_) {}
       try {
         delete hunterSpinSeqByRunRef.current[runId]
       } catch (_) {}
       try {
-        for (const k of houseBetMatchedSpinKeysRef.current) {
-          if (String(k).startsWith(`${runId}:`)) houseBetMatchedSpinKeysRef.current.delete(k)
+        const prefix = `${runId}:`
+        for (const k of houseBetDeferredUiTimersRef.current.keys()) {
+          if (String(k).startsWith(prefix)) {
+            clearTimeout(houseBetDeferredUiTimersRef.current.get(k))
+            houseBetDeferredUiTimersRef.current.delete(k)
+          }
         }
       } catch (_) {}
     }
@@ -2545,6 +2630,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     Object.keys(runnersRef.current).forEach((id) => {
       runnersRef.current[id].stop = true
     })
+    for (const tid of houseBetDeferredUiTimersRef.current.values()) {
+      clearTimeout(tid)
+    }
+    houseBetDeferredUiTimersRef.current.clear()
     setHuntEnabled(false)
     setAutoStart(false)
     setQueue([])
@@ -2558,6 +2647,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     Object.keys(runnersRef.current).forEach(id => {
       runnersRef.current[id].stop = true
     })
+    for (const tid of houseBetDeferredUiTimersRef.current.values()) {
+      clearTimeout(tid)
+    }
+    houseBetDeferredUiTimersRef.current.clear()
     runnersRef.current = {}
     processedIdsRef.current.clear()
     dismissedChallengeIdsRef.current.clear()
@@ -3222,6 +3315,62 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               >
                 Standard-Filter laden
               </button>
+            </div>
+            <div style={STYLES.inputGroup}>
+              <label style={STYLES.label}>Create Local Challenge</label>
+              <div style={{ display: 'grid', gap: '0.4rem' }}>
+                <select
+                  value={localChallengeSlotSlug}
+                  onChange={(e) => setLocalChallengeSlotSlug(e.target.value)}
+                  style={{ ...STYLES.input, width: '100%' }}
+                >
+                  <option value="">— Spiel wählen —</option>
+                  {(webSlots || [])
+                    .slice()
+                    .sort((a, b) => String(a?.name || a?.slug || '').localeCompare(String(b?.name || b?.slug || '')))
+                    .map((s) => (
+                      <option key={s.slug} value={s.slug}>
+                        {s.name || s.slug}
+                      </option>
+                    ))}
+                </select>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Target Multi (x)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="1.1"
+                      value={localChallengeTargetMulti}
+                      onChange={(e) => setLocalChallengeTargetMulti(e.target.value)}
+                      style={{ ...STYLES.input, width: '100%' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Min Einsatz ($)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={localChallengeMinBetUsd}
+                      onChange={(e) => setLocalChallengeMinBetUsd(e.target.value)}
+                      style={{ ...STYLES.input, width: '100%' }}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.4rem', alignItems: 'center' }}>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                    Gewinn wird für lokale Challenges nicht benötigt.
+                  </div>
+                  <Button
+                    size="small"
+                    onClick={createLocalChallenge}
+                    title="Lokale Challenge-Card erzeugen und direkt in die Queue legen"
+                  >
+                    Create
+                  </Button>
+                </div>
+              </div>
             </div>
             <div style={STYLES.inputGroup}>
               <label style={STYLES.label}>MinBet Bereich ($)</label>

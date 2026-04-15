@@ -1216,7 +1216,9 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                 'blueprint', 'endorphina', 'netent', 'gameart', 'push', 'btg', 'oak', 'redtiger',
                 'playngo', 'octoplay', 'peterandsons', 'shady', 'shuffle', 'titan', 'twist',
                 'popiplay', 'helio', 'samurai', '1000lakes', 'hacksawgaming.com', 'd1oa92ndvzdrfz.cloudfront.net',
-                'api.clawbuster.com', 'clawbuster-cdn.com', 'gsplauncher.de'
+                'api.clawbuster.com', 'clawbuster-cdn.com', 'gsplauncher.de',
+                // Mascot launcher/runtime hosts (e.g. open.mascot.host -> <session>.mascot.games)
+                'mascot.host', 'mascot.games'
             ];
             if (allowed.some(h => url.includes(h))) {
                 isAllowed = true;
