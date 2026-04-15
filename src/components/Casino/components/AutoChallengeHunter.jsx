@@ -54,6 +54,17 @@ const PAGE_SIZE = 20 // sichere Challenge-Page-Size (Stake number_less_equal Sch
 /** UI-Obergrenze für parallele Läufe & Anzahl Challenge-Listen-Seiten (Slider). */
 const CHALLENGE_SLIDER_MAX = 100
 
+function normalizeHunterMultiByProvider(rawMulti, providerId) {
+  const m = Number(rawMulti)
+  if (!Number.isFinite(m) || m <= 0) return 0
+  const pid = String(providerId || '').toLowerCase()
+  // Mascot/Hub88 can report scaled values (e.g. 1600 meaning 1.6x).
+  if ((pid === 'mascot' || pid === 'hub88') && m > 100 && m < 10000) {
+    return m / 1000
+  }
+  return m
+}
+
 /**
  * Pending-HouseBet-Matching: pro runId eigene Liste (parallele Kopien teilen keine globale FIFO).
  * Bei mehreren passenden Einträgen gewinnt der älteste `at` (zuerst fertiggestellter Spin).
@@ -2346,10 +2357,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           const payoutMultRaw = Number(rawRound?.payoutMultiplier ?? rawRound?.payout_multiplier ?? 0)
           const betN = Number(betAmount) || 0
           const impliedMulti = betN > 0 && (parsed.winAmount || 0) > 0 ? parsed.winAmount / betN : 0
-          const safeMulti =
+          const rawSafeMulti =
             impliedMulti > 0
               ? impliedMulti
               : effectiveSpinMultiplierFromParsed(payoutMultRaw, parsed)
+          const safeMulti = normalizeHunterMultiByProvider(rawSafeMulti, providerId)
 
           const spinSeq =
             (hunterSpinSeqByRunRef.current[runId] = (hunterSpinSeqByRunRef.current[runId] || 0) + 1)
