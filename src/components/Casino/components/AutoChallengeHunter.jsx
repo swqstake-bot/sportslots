@@ -58,8 +58,8 @@ function normalizeHunterMultiByProvider(rawMulti, providerId) {
   const m = Number(rawMulti)
   if (!Number.isFinite(m) || m <= 0) return 0
   const pid = String(providerId || '').toLowerCase()
-  // Mascot/Hub88 can report scaled values (e.g. 1600 meaning 1.6x).
-  if ((pid === 'mascot' || pid === 'hub88') && m > 100 && m < 10000) {
+  // Mascot/Hub88 reports multiplier values scaled by 1000 (e.g. 50 => 0.05x, 1600 => 1.6x).
+  if (pid === 'mascot' || pid === 'hub88') {
     return m / 1000
   }
   return m
@@ -952,6 +952,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   }, [queue])
   const [activeRuns, setActiveRuns] = useState({})
   const [rates, setRates] = useState({})
+  const ratesRef = useRef(rates)
+  useEffect(() => {
+    ratesRef.current = rates
+  }, [rates])
   const [logs, setLogs] = useState([])
   const [lastRefresh, setLastRefresh] = useState(null)
   const [totalSessionStats, setTotalSessionStats] = useState({ wagered: 0, won: 0, lost: 0 })
@@ -1415,6 +1419,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         const bestBetByRunId = {}
         const multiUiByRunId = {}
         const betIdToPersistOverall = {}
+        const runWonUsdDeltaByRunId = {}
+        let totalWageredUsdDelta = 0
+        let totalWonUsdDelta = 0
+        let totalLostUsdDelta = 0
+        let totalNetUsdDelta = 0
         /** Pro Run: max. Multi bereits in diesem Batch verarbeitet (für prevBest + korrekte Reihenfolge). */
         const batchRunBestMulti = {}
         for (const bItem of batch) {
@@ -1450,6 +1459,22 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             }
 
             const spinM = Number(p.multi) || 0
+            const houseBetCurr = String(bItem?.currency || p.currency || '').toLowerCase()
+            const houseBetRate = getRateForCurrency(ratesRef.current || {}, houseBetCurr)
+            const stakeMajor = Number(bItem?.amountMajor ?? bItem?.amount ?? p.betAmountMajor ?? 0)
+            const houseBetMulti = Number(bItem?.payoutMultiplier)
+            const effectiveMulti =
+              Number.isFinite(houseBetMulti) && houseBetMulti >= 0 ? houseBetMulti : spinM
+            if (Number.isFinite(stakeMajor) && stakeMajor > 0 && Number.isFinite(houseBetRate) && houseBetRate > 0) {
+              const wageredUsd = stakeMajor * houseBetRate
+              const payoutUsd = stakeMajor * Math.max(0, effectiveMulti) * houseBetRate
+              const netSpinUsd = payoutUsd - wageredUsd
+              totalWageredUsdDelta += wageredUsd
+              totalWonUsdDelta += Math.max(0, netSpinUsd)
+              totalLostUsdDelta += Math.max(0, -netSpinUsd)
+              totalNetUsdDelta += netSpinUsd
+              runWonUsdDeltaByRunId[runId] = (runWonUsdDeltaByRunId[runId] || 0) + Math.max(0, netSpinUsd)
+            }
             const prevBest = Math.max(
               activeRunsRef.current[runId]?.bestMultiRun ?? 0,
               batchRunBestMulti[runId] ?? 0
@@ -1533,14 +1558,32 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 ? Math.max(run.bestMultiRun ?? 0, Number(m.multi))
                 : run.bestMultiRun
             const bid = bestBetByRunId[runId]
+            const wonUsdDelta = Number(runWonUsdDeltaByRunId[runId] || 0)
             next[runId] = {
               ...run,
               bestBetId: bid != null ? bid : run.bestBetId ?? null,
               bestMultiRun: nextBest,
+              wonUsd: (run.wonUsd ?? 0) + wonUsdDelta,
             }
           }
           return next
         })
+
+        if (totalWageredUsdDelta > 0 || totalWonUsdDelta > 0 || totalLostUsdDelta > 0) {
+          setTotalSessionStats((t) => ({
+            wagered: t.wagered + totalWageredUsdDelta,
+            won: t.won + totalWonUsdDelta,
+            lost: t.lost + totalLostUsdDelta,
+          }))
+        }
+        if (ENABLE_SESSION_NET_CHART && totalNetUsdDelta !== 0) {
+          const netAfter = (totalStatsRef.current.won - totalStatsRef.current.lost) + totalNetUsdDelta
+          setSessionNetSeries((prev) => {
+            const next = [...prev, { time: Date.now(), netUsd: netAfter }]
+            if (next.length <= SESSION_NET_SERIES_MAX_POINTS) return next
+            return next.slice(-SESSION_NET_SERIES_MAX_POINTS)
+          })
+        }
 
         for (const runId of runIds) {
           const m = multiUiByRunId[runId]
@@ -2336,23 +2379,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             }
           }
           const win = parsed.winAmount || 0
-          const wageredUsd = toUnits(betAmount, tCurr) * rate
-          const payoutUsd = toUnits(win, tCurr) * rate
-          const netSpinUsd = payoutUsd - wageredUsd
-          // Chart-Point: globaler kumulierter Netto (USD)
-          const netUsdAfter = net + netSpinUsd
-          if (ENABLE_SESSION_NET_CHART) {
-            setSessionNetSeries((prev) => {
-              const next = [...prev, { time: Date.now(), netUsd: netUsdAfter }]
-              if (next.length <= SESSION_NET_SERIES_MAX_POINTS) return next
-              return next.slice(-SESSION_NET_SERIES_MAX_POINTS)
-            })
-          }
-          setTotalSessionStats(t => ({
-            wagered: t.wagered + wageredUsd,
-            won: t.won + Math.max(0, netSpinUsd),
-            lost: t.lost + Math.max(0, -netSpinUsd),
-          }))
           const rawRound = data?._stakeEngine?.raw?.round
           const payoutMultRaw = Number(rawRound?.payoutMultiplier ?? rawRound?.payout_multiplier ?? 0)
           const betN = Number(betAmount) || 0
@@ -2482,7 +2508,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               ...prev[runId],
               spins: prev[runId].spins + 1,
               wagered: prev[runId].wagered + betAmount,
-              wonUsd: (prev[runId].wonUsd ?? 0) + Math.max(0, netSpinUsd),
+              wonUsd: prev[runId].wonUsd ?? 0,
               balance: parsed.balance,
               bestMultiRun: prev[runId].bestMultiRun ?? 0,
               bestBetId: prev[runId].bestBetId ?? null,
