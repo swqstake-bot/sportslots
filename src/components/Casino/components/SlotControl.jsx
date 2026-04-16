@@ -17,6 +17,7 @@ import { saveSlotSpinSample, saveBonusSpinSample, hasEnoughSamplesForSlot } from
 import { notifyBonusHit } from '../utils/notifications'
 import { loadBetHistory, appendBet, recordBetHistoryAudit } from '../utils/betHistoryDb'
 import { getSlotCurrency, setSlotCurrency } from '../utils/slotCurrencyConfig'
+import { getSlotBetAmount, setSlotBetAmount, pickClosestBetLevel } from '../utils/slotBetAmountConfig'
 import { subscribeHunterSlotTargets, getHunterSlotTargetsSnapshot } from '../utils/hunterSlotTargetsBridge'
 import { fetchCurrencyRates } from '../api/stakeChallenges'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
@@ -127,7 +128,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const betForHint = initialBetHint != null && initialBetHint > 0
     ? betLevelsForInit.find((b) => b >= initialBetHint) ?? betLevelsForInit[0]
     : null
-  const initialBet = betForHint ?? (betLevelsForInit[defaultBetIdx] ?? 5000)
+  const storedBetResolved = pickClosestBetLevel(betLevelsForInit, getSlotBetAmount(slot.slug))
+  const initialBet = betForHint ?? storedBetResolved ?? (betLevelsForInit[defaultBetIdx] ?? 5000)
   const initialCur = (initialTargetCurrency || '').toLowerCase()
   const saved = getSlotCurrency(slot.slug)
   const [sourceCurrency, setSourceCurrency] = useState(
@@ -139,7 +141,18 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const effectiveSource = useSharedCurrency ? (sharedSourceCurrency || 'usdc') : sourceCurrency
   const effectiveTarget = useSharedCurrency ? (sharedTargetCurrency || 'eur') : targetCurrency
   const [session, setSession] = useState(null)
-  const betLevels = session?.betLevels?.length ? session.betLevels : baseBetLevels
+  const sessionSlugForLevels =
+    session?.slug != null && session.slug !== ''
+      ? session.slug
+      : session?.slotSlug != null
+        ? session.slotSlug
+        : null
+  const betLevels =
+    session?.betLevels?.length > 0 &&
+    (sessionSlugForLevels == null ||
+      String(sessionSlugForLevels).toLowerCase() === String(slot.slug).toLowerCase())
+      ? session.betLevels
+      : baseBetLevels
   const [betAmount, setBetAmount] = useState(initialBet)
   const [extraBet, setExtraBet] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -150,6 +163,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const [lastResult, setLastResult] = useState(null)
   const [betHistory, setBetHistory] = useState([])
   const betHistoryLengthRef = useRef(0)
+  const prevSlotSlugRef = useRef(slot.slug)
   const [logRefreshKey, setLogRefreshKey] = useState(0)
   const lastLogRefreshAtRef = useRef(0)
   const triggerLogRefresh = useCallback((force = false) => {
@@ -329,13 +343,39 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const cryptoOpts = allowedCurrencies.filter((c) => !isFiat(c.value) || isStable(c.value))
   const fiatOpts = allowedCurrencies.filter((c) => isFiat(c.value) && !isStable(c.value))
 
+  /** Einsatz aus localStorage (pro Slot) auf aktuelle Levels mappen; bei Slot-Wechsel ohne Speicherung Default. */
   useEffect(() => {
     if (initialBetHint != null && initialBetHint > 0) return
     if (initialMinBetUsd != null && initialMinBetUsd > 0) return
-    const levels = session?.betLevels?.length ? session.betLevels : betLevels
-    const idx = Math.min(4, Math.max(0, levels.length - 1))
-    setBetAmount(levels[idx] ?? 5000)
+    const levels = betLevels
+    if (!levels?.length) return
+    const slugChanged = prevSlotSlugRef.current !== slot.slug
+    prevSlotSlugRef.current = slot.slug
+
+    const stored = getSlotBetAmount(slot.slug)
+    if (stored != null && Number.isFinite(stored)) {
+      const picked = pickClosestBetLevel(levels, stored)
+      if (picked != null) {
+        setBetAmount(picked)
+        return
+      }
+    }
+    if (slugChanged) {
+      const idx = Math.min(4, Math.max(0, levels.length - 1))
+      setBetAmount(levels[idx] ?? 5000)
+      return
+    }
+    setBetAmount((prev) => {
+      if (levels.includes(prev)) return prev
+      return pickClosestBetLevel(levels, prev) ?? levels[Math.min(4, Math.max(0, levels.length - 1))]
+    })
   }, [slot.slug, session?.betLevels, betLevels, initialBetHint, initialMinBetUsd])
+
+  useEffect(() => {
+    if (betAmount != null && Number.isFinite(betAmount) && betAmount > 0) {
+      setSlotBetAmount(slot.slug, betAmount)
+    }
+  }, [slot.slug, betAmount])
 
   /** Mindesteinsatz aus Telegram/Challenge (USD) → kleinstes Level ≥ diesem USD-Wert */
   useEffect(() => {
@@ -513,9 +553,15 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     try {
       const t0 = performance.now()
       const s = await provider.startSession(accessToken, slot.slug, effectiveSource, effectiveTarget)
-      const levels = s.betLevels?.length ? s.betLevels : betLevels
-      if (levels.length && !levels.includes(betAmount)) {
-        setBetAmount(levels[Math.min(4, levels.length - 1)])
+      const levels = s.betLevels?.length ? s.betLevels : baseBetLevels
+      if (levels.length) {
+        const stored = getSlotBetAmount(slot.slug)
+        const candidate = stored != null && Number.isFinite(stored) ? stored : betAmount
+        const next =
+          levels.includes(candidate)
+            ? candidate
+            : pickClosestBetLevel(levels, candidate) ?? levels[Math.min(4, Math.max(0, levels.length - 1))]
+        setBetAmount(next)
       }
       setSession(s)
       setLastResult(null)
