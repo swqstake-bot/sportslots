@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net, session, shell, globalShortcut, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, net, session, shell, globalShortcut, dialog, type WebContents } from 'electron';
 import https from 'node:https';
 import http from 'node:http';
 import updater from 'electron-updater';
@@ -67,6 +67,7 @@ import {
 let win: BrowserWindow | null;
 let loginWin: BrowserWindow | null;
 let stakeBridgeWin: BrowserWindow | null = null;
+let withdrawPrefillWin: BrowserWindow | null = null;
 let slotPopupSeq = 0;
 
 /**
@@ -90,6 +91,49 @@ function destroyAuxiliaryBrowserWindows(): void {
     }
     loginWin = null;
   }
+  if (withdrawPrefillWin && !withdrawPrefillWin.isDestroyed()) {
+    try {
+      withdrawPrefillWin.destroy();
+    } catch {
+      /* ignore */
+    }
+    withdrawPrefillWin = null;
+  }
+}
+
+/**
+ * Fills Stake cashier withdrawal address field (Svelte/React) via native value setter + events.
+ * Retries because the wallet modal mounts after first paint / SPA route.
+ */
+async function fillStakeWithdrawAddressField(webContents: WebContents, address: string): Promise<boolean> {
+  const addrJson = JSON.stringify(address);
+  const script = `(function() {
+    var el = document.querySelector('textarea[data-testid="withdrawal-address"]')
+      || document.querySelector('textarea[name="address"]');
+    if (!el) return false;
+    try {
+      var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(el, ${addrJson});
+    } catch (e) {
+      el.value = ${addrJson};
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    try { el.focus(); } catch (_) {}
+    return true;
+  })()`;
+
+  for (let i = 0; i < 80; i++) {
+    try {
+      if (webContents.isDestroyed()) return false;
+      const done = (await webContents.executeJavaScript(script, true)) as boolean;
+      if (done) return true;
+    } catch {
+      return false;
+    }
+    await new Promise((r) => setTimeout(r, 350));
+  }
+  return false;
 }
 const MAX_IPC_RESPONSE_BYTES = 8 * 1024 * 1024; // 8 MB safety cap for IPC responses
 const STAKE_MAX_AUTH_RETRIES = 2;
@@ -568,6 +612,8 @@ ipcMain.handle('open-slot-popup', async (event, payload: { slug?: string; locale
             nodeIntegration: false,
             sandbox: false,
             backgroundThrottling: false,
+            /** Gleiche Cookie-Session wie Hauptfenster (Bonus-Slot-Popup / eingeloggter Stake-Tab). */
+            session: win?.webContents.session ?? session.defaultSession,
         },
     });
 
@@ -589,6 +635,94 @@ ipcMain.handle('open-slot-popup', async (event, payload: { slug?: string; locale
     await popup.loadURL(targetUrl);
     return { ok: true, url: targetUrl, popupId };
 });
+
+/**
+ * Opens Stake wallet (withdraw tab) in an app window and injects the destination address into the cashier textarea.
+ * Uses the same session as the main window (wie `open-slot-popup` / Bonus-Opening).
+ */
+ipcMain.handle(
+    'open-stake-withdraw-prefill',
+    async (
+        _event,
+        payload: { address: string; currency: string; chain?: string; locale?: string } = {} as never
+    ) => {
+        const address = String(payload?.address || '').trim();
+        if (!address || address.length > 512) {
+            return { ok: false, error: 'invalid_address' as const };
+        }
+        const currency = String(payload?.currency || 'usdc')
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, '');
+        if (!currency) {
+            return { ok: false, error: 'invalid_currency' as const };
+        }
+        const chainRaw = payload?.chain != null ? String(payload.chain).trim() : '';
+        const chain = chainRaw ? chainRaw.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+        const localeRaw = String(payload?.locale || 'de').trim().toLowerCase();
+        const locale = /^[a-z]{2}(-[a-z]{2})?$/.test(localeRaw) ? localeRaw : 'de';
+
+        const stakeSession = await getStakeSessionStatus(false);
+        if (!stakeSession.valid) {
+            return {
+                ok: false,
+                error: 'session_invalid' as const,
+                reasons: stakeSession.reasons,
+            };
+        }
+        const origin = stakeSession.origin;
+        const params = new URLSearchParams();
+        params.set('tab', 'withdraw');
+        params.set('currency', currency);
+        params.set('modal', 'wallet');
+        if (chain) params.set('chain', chain);
+        const targetUrl = `${origin}/${locale}?${params.toString()}`;
+
+        const sharedSession = win?.webContents.session ?? session.defaultSession;
+
+        if (withdrawPrefillWin && !withdrawPrefillWin.isDestroyed()) {
+            try {
+                withdrawPrefillWin.destroy();
+            } catch {
+                /* ignore */
+            }
+            withdrawPrefillWin = null;
+        }
+
+        withdrawPrefillWin = new BrowserWindow({
+            width: 520,
+            height: 860,
+            parent: win || undefined,
+            show: true,
+            autoHideMenuBar: true,
+            webPreferences: {
+                contextIsolation: true,
+                nodeIntegration: false,
+                sandbox: false,
+                backgroundThrottling: false,
+                session: sharedSession,
+            },
+        });
+
+        withdrawPrefillWin.webContents.setWindowOpenHandler(({ url }) => {
+            shell.openExternal(url);
+            return { action: 'deny' };
+        });
+
+        withdrawPrefillWin.on('closed', () => {
+            withdrawPrefillWin = null;
+        });
+
+        const wc = withdrawPrefillWin.webContents;
+        await withdrawPrefillWin.loadURL(targetUrl);
+
+        const filled = await fillStakeWithdrawAddressField(wc, address);
+        if (!filled) {
+            console.warn('[open-stake-withdraw-prefill] Address field not filled (timeout or modal). URL:', targetUrl);
+        }
+
+        return { ok: true, url: targetUrl, filled };
+    }
+);
 
 ipcMain.handle('get-session-token', async () => {
     const status = await getStakeSessionStatus(false);

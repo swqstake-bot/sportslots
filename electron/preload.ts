@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     importLoggerBetLogs: () => ipcRenderer.invoke('logger-import-bet-logs'),
     deleteAllLoggerBetLogs: () => ipcRenderer.invoke('logger-delete-all-bet-logs'),
     openSlotPopup: (payload: { slug: string; locale?: string }) => ipcRenderer.invoke('open-slot-popup', payload),
+    openStakeWithdrawPrefill: (payload: { address: string; currency: string; chain?: string; locale?: string }) =>
+        ipcRenderer.invoke('open-stake-withdraw-prefill', payload) as Promise<{ ok: boolean; url?: string; filled?: boolean; error?: string }>,
     onSlotPopupClosed: (callback: (payload: { popupId: string; slug: string; closedAt: string }) => void) => {
         const handler = (_event: any, payload: { popupId: string; slug: string; closedAt: string }) => callback(payload);
         ipcRenderer.on('slot-popup-closed', handler);

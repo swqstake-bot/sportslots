@@ -30,6 +30,7 @@ import { getHunterState, saveHunterState, clearHunterState } from '../utils/chal
 import { publishChallengeHubBet } from '../utils/challengeHubLiveFeed'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { usePrefersReducedMotion } from '../../../hooks/usePrefersReducedMotion'
+import { TipMenu } from '../../ui/TipMenu'
 
 /** Challenge-Liste: alle Einträge wie von Stake; Session/Spins über stakeEngine — nicht unterstützte Slots scheitern zur Laufzeit. */
 
@@ -3263,6 +3264,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                Auto-Start: {autoStart ? 'on' : 'off'}
              </Button>
            )}
+           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+             <TipMenu />
+           </div>
         </div>
       </div>
 
