@@ -174,7 +174,7 @@ export default function BetList({
             canCopyShare && shareId.length > 22 ? `${shareId.slice(0, 22)}…` : (shareId || '')
           // Bei Stopp auf Bonus: Platzhalter "Bonus". Sonst Win anzeigen (auch bei durchgespieltem Bonus)
           const showWin = !(isBonus && b.stoppedBonus)
-          const multiplier = bet > 0 ? (win / bet).toFixed(1) : '0'
+          const multiplier = bet > 0 ? (win / bet).toFixed(2) : '0'
           return (
             <tr
               key={b.id ?? i}

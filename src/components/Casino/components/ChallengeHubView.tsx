@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChallengeHubBetListPanel } from './challengeHub/ChallengeHubBetListPanel'
+import { ChallengeHubBetListProvider } from './challengeHub/ChallengeHubBetListContext'
 import { ChallengeHubHeroBar } from './challengeHub/ChallengeHubHeroBar'
 import { ChallengeHubTabStrip, type HubTab } from './challengeHub/ChallengeHubTabStrip'
 import { ChallengeHubTabContent } from './challengeHub/ChallengeHubTabContent'
@@ -108,23 +109,25 @@ export function ChallengeHubView({
 
       <ChallengeHubTabStrip tab={tab} onTabChange={handleTabChange} />
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-4 items-start">
-        <div className="space-y-4 min-w-0">
-          <ChallengeHubTabContent
-            tab={tab}
-            accessToken={accessToken}
-            webSlots={webSlots}
-            onDiscoveredSlots={onDiscoveredSlots}
-            onSelectChallenge={onSelectChallenge}
-            onHubStatsChange={handleHubStatsChange}
-            telegramEnabled={telegramEnabled}
-            setTelegramEnabled={setTelegramEnabled}
-            telegramUsage={telegramUsage}
-          />
-        </div>
+      <ChallengeHubBetListProvider>
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-4 items-start">
+          <div className="space-y-4 min-w-0">
+            <ChallengeHubTabContent
+              tab={tab}
+              accessToken={accessToken}
+              webSlots={webSlots}
+              onDiscoveredSlots={onDiscoveredSlots}
+              onSelectChallenge={onSelectChallenge}
+              onHubStatsChange={handleHubStatsChange}
+              telegramEnabled={telegramEnabled}
+              setTelegramEnabled={setTelegramEnabled}
+              telegramUsage={telegramUsage}
+            />
+          </div>
 
-        <ChallengeHubBetListPanel />
-      </div>
+          <ChallengeHubBetListPanel />
+        </div>
+      </ChallengeHubBetListProvider>
     </div>
   )
 }

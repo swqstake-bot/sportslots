@@ -3,13 +3,18 @@ import { SectionCard } from '../ui/SectionCard'
 import { loadRecentBets } from '../../utils/betHistoryDb'
 import { getChallengeHubRecentBets, subscribeChallengeHubBetFeed } from '../../utils/challengeHubLiveFeed'
 import { ChallengeHubBetListFeed, CHALLENGE_HUB_BET_LIST_MAX_ROWS } from './ChallengeHubBetListFeed'
+import { useChallengeHubBetListOptional } from './ChallengeHubBetListContext'
 
 /**
- * Owns Challenge Hub live bet state so parent ChallengeHubView does not re-render on every feed tick.
- * Memoized (no props): parent hub stats / tab changes do not re-run this subtree.
+ * BetList + live feed; state lives in ChallengeHubBetListProvider so AutoChallengeHunter can read the same rows.
+ * Memoized: stable callback identity from parent useState keeps this subtree from remounting.
  */
 export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel() {
-  const [recentBets, setRecentBets] = useState<any[]>([])
+  const hubList = useChallengeHubBetListOptional()
+  if (!hubList) {
+    throw new Error('ChallengeHubBetListPanel must be used inside ChallengeHubBetListProvider')
+  }
+  const { recentBets, setRecentBets } = hubList
   const [lastUpdate, setLastUpdate] = useState<number>(() => Date.now())
 
   useEffect(() => {

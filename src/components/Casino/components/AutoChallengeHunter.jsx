@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback, startTransition } from 'react'
 import { fetchChallengeList, fetchCurrencyRates, extractProviderGroupSlug } from '../api/stakeChallenges'
 import { getProvider } from '../api/providers'
-import { isFiat, formatAmount, formatBetLabel, toUnits, toMinor, ZERO_DECIMAL_CURRENCIES } from '../utils/formatAmount'
+import { isFiat, isStable, formatAmount, formatBetLabel, toUnits, toMinor, ZERO_DECIMAL_CURRENCIES } from '../utils/formatAmount'
 import { parseBetResponse } from '../utils/parseBetResponse'
 import { Button } from './ui/Button'
 import { CURRENCY_GROUPS, PROVIDER_CURRENCIES } from '../constants/currencies'
@@ -28,9 +28,11 @@ import {
 import { saveFirstSlotWinIfNeeded } from '../utils/slotFirstWin'
 import { getHunterState, saveHunterState, clearHunterState } from '../utils/challengeCompletion'
 import { publishChallengeHubBet } from '../utils/challengeHubLiveFeed'
+import { convertMinorToUsdCents } from '../utils/monetaryContract'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { usePrefersReducedMotion } from '../../../hooks/usePrefersReducedMotion'
 import { TipMenu } from '../../ui/TipMenu'
+import { useChallengeHubBetListOptional } from './challengeHub/ChallengeHubBetListContext'
 
 /** Challenge-Liste: alle Einträge wie von Stake; Session/Spins über stakeEngine — nicht unterstützte Slots scheitern zur Laufzeit. */
 
@@ -358,6 +360,75 @@ function getRateForCurrency(rates, tCurr) {
   return rates[c] || 0
 }
 
+/** Challenge-Hub BetList: Stake/Win in USD-Cent (formatAmount-Minor), damit rechts immer $-Beträge. */
+function hunterSpinToUsdCentsRow(betMinor, winMinor, currency, rates) {
+  const c = String(currency || 'usd').toLowerCase()
+  const betConv = convertMinorToUsdCents(betMinor, c, rates || {})
+  const winConv = convertMinorToUsdCents(winMinor ?? 0, c, rates || {})
+  if (betConv.usdCents == null || !Number.isFinite(betConv.usdCents)) return null
+  if (winConv.usdCents == null || !Number.isFinite(winConv.usdCents)) return null
+  return {
+    betUsdCents: Math.round(betConv.usdCents),
+    winUsdCents: Math.max(0, Math.round(winConv.usdCents)),
+  }
+}
+
+/** Win/Bet aus Challenge-Hub-BetList (gleiche Einheiten, z. B. USD-Cent). */
+function hubBetListRowMultiplier(row) {
+  const bet = Number(row?.betAmount) || 0
+  const win = Number(row?.winAmount) || 0
+  if (bet <= 0) return 0
+  return win / bet
+}
+
+/** Zeilen mit id `${runId}:…` — gleiche Zuordnung wie publishChallengeHubBet. */
+function hunterHubListMaxForRun(bets, runId) {
+  const rid = String(runId || '')
+  if (!bets?.length || !rid) return { max: 0, has: false }
+  const prefix = `${rid}:`
+  let m = 0
+  let has = false
+  for (const b of bets) {
+    const id = String(b?.id ?? '')
+    if (!id.startsWith(prefix)) continue
+    has = true
+    m = Math.max(m, hubBetListRowMultiplier(b))
+  }
+  return { max: m, has }
+}
+
+function hunterHubListMaxForSlot(bets, slotSlug) {
+  const slug = String(slotSlug || '').toLowerCase()
+  if (!bets?.length || !slug) return { max: 0, has: false }
+  let m = 0
+  let has = false
+  for (const b of bets) {
+    const s = String(b?.slotSlug ?? '').toLowerCase()
+    if (s !== slug) continue
+    has = true
+    m = Math.max(m, hubBetListRowMultiplier(b))
+  }
+  return { max: m, has }
+}
+
+/** Wie BetList: Share-Roh-ID aus der Zeile mit höchstem Multi (gleicher Run wie `${runId}:…`). */
+function hubPickShareRawFromBetList(bets, runId) {
+  const p = `${String(runId)}:`
+  let bestRaw = null
+  let bestM = -1
+  for (const b of bets || []) {
+    if (!String(b?.id ?? '').startsWith(p)) continue
+    const raw = b.shareIid || b.houseTopId || b.houseId || b.iid
+    if (raw == null || String(raw).trim() === '') continue
+    const m = hubBetListRowMultiplier(b)
+    if (m > bestM) {
+      bestM = m
+      bestRaw = raw
+    }
+  }
+  return bestRaw
+}
+
 /** Minor units → USD (wie im Spin-Loop: toUnits * Kurs) */
 function minorToUsd(amountMinor, currency, rates) {
   if (amountMinor == null || currency == null) return 0
@@ -446,7 +517,7 @@ function comparePkrVsInrInSort(a, b) {
 
 /**
  * Sortierung für Session-Probes:
- * 1) Fiat vor Crypto (PKR/RUB/… vor LTC/DOGE; USDC/USDT aus Probe-Pool)
+ * 1) Fiat vor Crypto (PKR/RUB/… vor LTC/DOGE; Stablecoins USDC/USDT sind hier kein „Fiat“-Probe-Pool — siehe allowedFiat-Filter)
  * 2) niedrigster effektiver USD-Bet (nach Rundung)
  * 3) bei ~gleichem USD: Fiat-Priorität (PKR vor ARS), dann bevorzugte Zielwährung
  * 4) Source-Währung kann optional hart priorisiert werden (SSP-like wallet safety)
@@ -490,6 +561,9 @@ const SESSION_PROBE_DELAY_MS = 400
 /** Pause zwischen erfolgreichen Spins (Challenge Hunter) — niedrig hält RGS-Stress, zu niedrig → Fehler */
 const HUNTER_SPIN_DELAY_MS = 150
 const HUNTER_SPIN_ERROR_RETRY_MS = 2000
+/** Nach Session-Timeout / abgelaufener Session: 2–3s Pause, dann `startSession` + weiter spinnen (max. Versuche). */
+const SESSION_TIMEOUT_RECOVERY_DELAY_MS = 2500
+const SESSION_TIMEOUT_RECOVERY_MAX = 5
 /** Ohne Limit: bei mehreren parallelen Läufen wächst die Recharts-Serie unbegrenzt → Renderer-Abstürze (OOM). */
 const SESSION_NET_SERIES_MAX_POINTS = 5000
 /** Probe-Candidates: kein harter Stablecoin-Ausschluss mehr (USDC/USDT-Funding häufig). */
@@ -900,6 +974,8 @@ const STYLES = {
 }
 
 export default function AutoChallengeHunter({ accessToken, webSlots = [], onDiscoveredSlots, onHubStatsChange }) {
+  const hubBetListCtx = useChallengeHubBetListOptional()
+  const hubRecentBets = hubBetListCtx?.recentBets
   const [minMinBet, setMinMinBet] = useState(hunterFiltersInitial.minMinBet)
   const [maxMinBet, setMaxMinBet] = useState(hunterFiltersInitial.maxMinBet)
   const [minPrizeUsd, setMinPrizeUsd] = useState(hunterFiltersInitial.minPrizeUsd)
@@ -1466,6 +1542,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             const houseBetMulti = Number(bItem?.payoutMultiplier)
             const effectiveMulti =
               Number.isFinite(houseBetMulti) && houseBetMulti >= 0 ? houseBetMulti : spinM
+            const trackMulti = Math.max(spinM, effectiveMulti)
             if (Number.isFinite(stakeMajor) && stakeMajor > 0 && Number.isFinite(houseBetRate) && houseBetRate > 0) {
               const wageredUsd = stakeMajor * houseBetRate
               const payoutUsd = stakeMajor * Math.max(0, effectiveMulti) * houseBetRate
@@ -1480,20 +1557,20 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               activeRunsRef.current[runId]?.bestMultiRun ?? 0,
               batchRunBestMulti[runId] ?? 0
             )
-            batchRunBestMulti[runId] = Math.max(prevBest, spinM)
+            batchRunBestMulti[runId] = Math.max(prevBest, trackMulti)
 
             // UI: höchster Multi in diesem Batch gewinnt (nicht nur das letzte Event).
             const prevUiM = multiUiByRunId[runId]?.multi ?? 0
-            if (spinM > prevUiM) {
+            if (trackMulti > prevUiM) {
               multiUiByRunId[runId] = {
-                multi: spinM,
+                multi: trackMulti,
                 storageSlug: p.storageSlug,
                 slug: p.slug,
                 spinSeq: p.spinSeq,
               }
             } else if (!multiUiByRunId[runId]) {
               multiUiByRunId[runId] = {
-                multi: spinM,
+                multi: trackMulti,
                 storageSlug: p.storageSlug,
                 slug: p.slug,
                 spinSeq: p.spinSeq,
@@ -1501,24 +1578,32 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             }
 
             // Run-Bet-ID nur wenn dieser Spin den Lauf-Best × verbessert (nicht jede neue houseBets-Zeile).
-            if (shareId && spinM > prevBest) {
+            if (shareId && trackMulti > prevBest) {
               bestBetByRunId[runId] = shareId
               const key = p.storageSlug != null ? p.storageSlug : p.slug
               if (
                 isPersistableStakeHouseBetShareId(shareId) &&
-                shouldPersistOverallBetId(p.slug, key, spinM, bestMultiBySlotRef.current)
+                shouldPersistOverallBetId(p.slug, key, trackMulti, bestMultiBySlotRef.current)
               ) {
                 betIdToPersistOverall[key] = shareId
               }
             }
-            if (shareId && p.feedEntryId) {
-              publishChallengeHubBet({
+            if (p.feedEntryId) {
+              const hubPatch = {
                 id: p.feedEntryId,
-                shareIid: shareId,
                 houseTopId: bItem?.houseTopId ?? null,
                 houseId: bItem?.houseId ?? null,
                 iid: bItem?.iid ?? null,
-              })
+              }
+              if (shareId) hubPatch.shareIid = shareId
+              if (Number.isFinite(stakeMajor) && stakeMajor > 0 && Number.isFinite(houseBetRate) && houseBetRate > 0) {
+                const wageredUsd = stakeMajor * houseBetRate
+                const payoutUsd = stakeMajor * Math.max(0, effectiveMulti) * houseBetRate
+                hubPatch.betAmount = Math.round(wageredUsd * 100)
+                hubPatch.winAmount = Math.round(payoutUsd * 100)
+                hubPatch.currencyCode = 'USD'
+              }
+              publishChallengeHubBet(hubPatch)
             }
           }
 
@@ -2069,6 +2154,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       return
     }
 
+    const targetMRaw = Number(challenge.targetMultiplier)
+    const targetOk = Number.isFinite(targetMRaw) && targetMRaw > 1
+    const targetM = targetOk ? targetMRaw : 0
+
     const gSlug = challenge.gameSlug || challenge.game?.slug
     const gName = challenge.gameName || challenge.game?.name || gSlug
     let slot = (webSlotsRef.current || []).find((s) => s.slug === gSlug)
@@ -2143,7 +2232,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           const cc = String(c).toLowerCase()
           return !AUTO_PROBE_EXCLUDED_CURRENCIES.has(cc)
         })
-        const allowedFiat = probeAllowed.filter((c) => isFiat(c))
+        /** Klassische Fiat nur (keine Stablecoins): USDC/USDT sind in currencyMeta als FIAT markiert, gehören aber nicht zur Fiat-Probe. */
+        const allowedFiat = probeAllowed.filter((c) => isFiat(c) && !isStable(c))
         const probePool = allowedFiat.length > 0 ? allowedFiat : probeAllowed
         let probeRates = rates
         let ordered =
@@ -2161,8 +2251,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           ordered = [...cachedOrder, ...unseen]
         }
 
-        // Wenn wegen fehlender FX-Rates nur USD übrig bleibt, einmal aktiv Rates neu laden.
-        if (ordered.length <= 1 && probePool.length > 1) {
+        // Fehlende FX-Rates: Kandidaten fallen in sortTargetCandidatesForProbe raus — Rates nachladen, bis alle Probe-Pool-Fiats Kurse haben (oder Refresh scheitert).
+        if (ordered.length < probePool.length && probePool.length > 1) {
           try {
             log('Probe-Rates unvollständig — lade FX-Rates neu für Zielwährungs-Probe…')
             const freshRates = await fetchCurrencyRates(accessToken, { force: true })
@@ -2219,15 +2309,31 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               )
               persistProbeRankingMap(challengeProbeRankingRef.current)
             }
-            session = bestProbe.session
             tCurr = bestProbe.tCurr
             rate = bestProbe.rate
-            betAmount = bestProbe.betAmount
             log(
               `Zielwährung auto (Bet-Levels): ${tCurr.toUpperCase()} — Einsatz effektiv ~$${bestProbe.usdAt.toFixed(2)} USD · Challenge-Min (Stake, USD): $${minBetUsd}`
             )
             if (probeLimit > 1) {
               log(`  (${probeLimit} Proben; gewählt: geringster effektiver USD-Bet)`)
+            }
+            /**
+             * Wichtig: Jede Probe ruft startSession auf — beim Anbieter (z. B. Hacksaw) ist oft nur die
+             * *letzte* Session aktiv. Die NGN-Session aus einer frühen Probe ist nach weiteren Proben ungültig
+             * → vor Spins einmal frisch für die gewählte Zielwährung öffnen.
+             */
+            if (probeLimit > 1) {
+              await new Promise((res) => setTimeout(res, SESSION_PROBE_DELAY_MS))
+              log(`Session für ${tCurr.toUpperCase()} nach Proben neu starten (gültig für Spins)…`)
+              session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
+              const recomputed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
+              betAmount = recomputed.betAmount
+              log(
+                `Einsatz nach frischer Session: ${formatAmount(betAmount, tCurr)} ${tCurr.toUpperCase()} (≈ $${recomputed.usdAt.toFixed(2)} USD)`
+              )
+            } else {
+              session = bestProbe.session
+              betAmount = bestProbe.betAmount
             }
           }
         } else if (currencySlotIndex > 0 && ordered.length > 0) {
@@ -2334,6 +2440,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       let stopReason = null
       let targetHit = false
       let pragmaticRecoveryAttempts = 0
+      let sessionTimeoutRecoveryAttempts = 0
       while (!runnersRef.current[runId]?.stop) {
         const total = totalStatsRef.current
         const net = total.won - total.lost
@@ -2360,12 +2467,37 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           break
         }
 
+        if (targetOk) {
+          const ar = activeRunsRef.current[runId]
+          const syncB = Number(runBestMultiSyncRef.current[runId]) || 0
+          const stB = Number(ar?.bestMultiRun) || 0
+          const best = Math.max(syncB, stB)
+          if (best >= targetM) {
+            targetHit = true
+            log(
+              `ZIEL ERREICHT! Best-Multi ${best.toFixed(2)}× (Ziel: ${targetM.toFixed(2)}×) — houseBets/State`
+            )
+            persistChallengeHitRecord({
+              challengeId,
+              roundId: null,
+              slotSlug: gSlug,
+              slotName: gName,
+              targetMultiplier: targetM,
+              hitMulti: best,
+              currency: tCurr,
+            })
+            log('Treffer gespeichert (Best-Multi aus houseBets/State vor nächstem Spin).')
+            break
+          }
+        }
+
         try {
           trimPendingQueues(pendingHouseBetMatchRef.current, 80)
 
           const result = await provider.placeBet(session, betAmount, false, false, { slotSlug: gSlug })
           const { data, nextSeq, session: updatedSession } = result || {}
           session = updatedSession ? updatedSession : session ? { ...session, seq: nextSeq } : session
+          sessionTimeoutRecoveryAttempts = 0
 
           let parsed = data ? parseBetResponse(data, betAmount) : { winAmount: 0, balance: null }
           const winMinorSe = data?._stakeEngine?.winMinor
@@ -2389,6 +2521,18 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               ? impliedMulti
               : effectiveSpinMultiplierFromParsed(payoutMultRaw, parsed)
           const safeMulti = normalizeHunterMultiByProvider(rawSafeMulti, providerId)
+          const multiForStop = (() => {
+            let m = Number(safeMulti) || 0
+            if (betN > 0 && win > 0) m = Math.max(m, win / betN)
+            if (Number.isFinite(payoutMultRaw) && payoutMultRaw > 0) {
+              m = Math.max(m, normalizeHunterMultiByProvider(payoutMultRaw, providerId))
+            }
+            const pm = Number(parsed?.multiplier)
+            if (Number.isFinite(pm) && pm > 0) {
+              m = Math.max(m, normalizeHunterMultiByProvider(pm, providerId))
+            }
+            return m
+          })()
 
           const spinSeq =
             (hunterSpinSeqByRunRef.current[runId] = (hunterSpinSeqByRunRef.current[runId] || 0) + 1)
@@ -2428,7 +2572,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             currency: String(tCurr).toLowerCase(),
             betAmountMajor: toUnits(betAmount, tCurr),
             at: Date.now(),
-            multi: safeMulti,
+            multi: multiForStop,
             spinSeq,
             feedEntryId: `${runId}:${spinSeq}`,
           }
@@ -2453,8 +2597,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               houseBetDeferredUiTimersRef.current.delete(dk)
               setBestMultiBySlotRef.current((prev) => {
                 const cur = prev[gSlug] ?? 0
-                if (safeMulti <= cur) return prev
-                const nmap = { ...prev, [gSlug]: safeMulti }
+                if (multiForStop <= cur) return prev
+                const nmap = { ...prev, [gSlug]: multiForStop }
                 persistBestMultiMap(nmap)
                 return nmap
               })
@@ -2465,12 +2609,12 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                   ...prev,
                   [runId]: {
                     ...run,
-                    bestMultiRun: Math.max(run.bestMultiRun ?? 0, safeMulti),
+                    bestMultiRun: Math.max(run.bestMultiRun ?? 0, multiForStop),
                   },
                 }
               })
               const prevS = runBestMultiSyncRef.current[runId] ?? 0
-              runBestMultiSyncRef.current[runId] = Math.max(Number(prevS) || 0, safeMulti)
+              runBestMultiSyncRef.current[runId] = Math.max(Number(prevS) || 0, multiForStop)
             }, HOUSEBET_DEFERRED_UI_MULTI_MS)
             houseBetDeferredUiTimersRef.current.set(dk, tid)
           }
@@ -2516,16 +2660,20 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             },
           }))
 
-          // Keep BetList live: persist each successful spin, not only target hits.
+          // Keep BetList live: USD-Zeilen für Challenge-Hub (houseBets patcht Win nach, wenn Parser 0 liefert).
           const cc = (parsed.currencyCode || tCurr || 'usd').toUpperCase()
+          const usdRow = hunterSpinToUsdCentsRow(betAmount, win, tCurr, rates)
+          const listBet = usdRow ? usdRow.betUsdCents : betAmount
+          const listWin = usdRow ? usdRow.winUsdCents : win
+          const listCc = usdRow ? 'USD' : cc
           appendBet(
             gSlug,
             {
-              betAmount,
-              winAmount: win,
+              betAmount: listBet,
+              winAmount: listWin,
               isBonus: false,
               balance: parsed.balance,
-              currencyCode: cc,
+              currencyCode: listCc,
               roundId: resolvedRoundId ?? undefined,
             },
             gName
@@ -2534,16 +2682,16 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             id: `${runId}:${spinSeq}`,
             slotSlug: gSlug,
             slotName: gName,
-            betAmount,
-            winAmount: win,
-            currencyCode: cc,
+            betAmount: listBet,
+            winAmount: listWin,
+            currencyCode: listCc,
             roundId: resolvedRoundId ?? null,
             sourceTag: `casino:${gSlug}`,
           })
 
-          const multi = safeMulti
-          if (multi >= challenge.targetMultiplier) {
-            log(`ZIEL ERREICHT! Multi: ${multi.toFixed(2)}x (Ziel: ${challenge.targetMultiplier}x)`)
+          const multi = multiForStop
+          if (targetOk && multi >= targetM) {
+            log(`ZIEL ERREICHT! Multi: ${multi.toFixed(2)}× (Ziel: ${targetM.toFixed(2)}×)`)
             targetHit = true
             const rawR = data?._stakeEngine?.raw?.round
             const roundId =
@@ -2564,7 +2712,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               roundId,
               slotSlug: gSlug,
               slotName: gName,
-              targetMultiplier: challenge.targetMultiplier,
+              targetMultiplier: targetM,
               hitMulti: multi,
               currency: tCurr,
             })
@@ -2590,6 +2738,47 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             break
           }
           const msgLower = msg.toLowerCase()
+          const isSessionTimeout =
+            e?.sessionClosed === true ||
+            msgLower.includes('session abgelaufen') ||
+            msgLower.includes('session expired') ||
+            msgLower.includes('session timeout') ||
+            msgLower.includes('err_is') ||
+            msgLower.includes('invalid session') ||
+            (msgLower.includes('timeout') && (msgLower.includes('session') || msgLower.includes('rgs')))
+          if (isSessionTimeout && sessionTimeoutRecoveryAttempts < SESSION_TIMEOUT_RECOVERY_MAX) {
+            sessionTimeoutRecoveryAttempts += 1
+            log(
+              `Session/Timeout — Neuaufbau ${sessionTimeoutRecoveryAttempts}/${SESSION_TIMEOUT_RECOVERY_MAX} (Warte ${SESSION_TIMEOUT_RECOVERY_DELAY_MS / 1000}s)…`
+            )
+            await new Promise((r) => setTimeout(r, SESSION_TIMEOUT_RECOVERY_DELAY_MS))
+            try {
+              const freshRate = getRateForCurrency(rates, tCurr) || rate
+              if (!freshRate) {
+                log(`Kein Kurs für ${String(tCurr).toUpperCase()} — Session-Recovery abgebrochen.`)
+              } else {
+                rate = freshRate
+                session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
+                const computed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
+                betAmount = computed.betAmount
+                setActiveRuns((prev) => ({
+                  ...prev,
+                  [runId]: {
+                    ...prev[runId],
+                    currentBet: betAmount,
+                    runCurrency: tCurr,
+                  },
+                }))
+                log(
+                  `Session neu gestartet · ${String(tCurr).toUpperCase()} · Einsatz ${formatAmount(betAmount, tCurr)} (≈ $${computed.usdAt.toFixed(2)} USD)`
+                )
+                await new Promise((r) => setTimeout(r, SESSION_PROBE_DELAY_MS))
+                continue
+              }
+            } catch (recoveryErr) {
+              log(`Session-Neuaufbau fehlgeschlagen: ${String(recoveryErr?.message || recoveryErr)}`)
+            }
+          }
           const providerKey = String(providerId || '').toLowerCase()
           const isPragmaticFamily =
             providerKey === 'pragmatic' ||
@@ -3497,8 +3686,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     style={{ marginTop: '0.1rem' }}
                   />
                   <span>
-                    Zielwährung automatisch (Fiat wie CLP/PKR/RUB/… — keine USDC/USDT/LTC/DOGE-Probes; bis zu 20 Sessions mit
-                    Pause; 1. Lauf = günstigster USD-Bet; 2./3./4. gleiche Challenge = 2./3./4. Kandidat der Sortierung)
+                    Zielwährung automatisch: alle vom Slot unterstützten klassischen Fiat (ohne USDC/USDT); Crypto nur wenn kein
+                    Fiat verfügbar. Fehlende Wechselkurse werden vor den Proben nachgeladen. Jede Fiat-Währung = eigene
+                    Session-Probe (mit Pause); 1. Lauf = günstigster USD-Bet; Kopien = 2./3./… Kandidat der Sortierung)
                   </span>
                 </label>
               </div>
@@ -3750,14 +3940,32 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               {activeRunList.map((run) => {
                 const ch = challenges.find((x) => x.id === run.challengeId)
                 const prizeLine = ch ? formatChallengePrize(ch) : { main: run.prizeDisplay ?? '—', hint: run.prizeHint ?? null }
-                const copyBetIdRun =
-                  run.bestBetId && isPersistableStakeHouseBetShareId(String(run.bestBetId))
-                    ? String(run.bestBetId).trim()
-                    : null
+                const shareRawForRun = run.bestBetId || hubPickShareRawFromBetList(hubRecentBets, run.id)
+                const copyBetIdRunFormatted = formatStakeShareBetId(shareRawForRun)
+                const canCopyRunShare =
+                  typeof copyBetIdRunFormatted === 'string' && String(copyBetIdRunFormatted).trim() !== ''
                 const copyBetIdRecord = loadOverallBetIdForSlug(run.slotSlug)
-                const copyBetId = copyBetIdRun || copyBetIdRecord || null
+                const copyBetId =
+                  (canCopyRunShare ? copyBetIdRunFormatted : null) ||
+                  (copyBetIdRecord ? formatStakeShareBetId(copyBetIdRecord) : null)
                 const previewBetId = copyBetId ? stakeBetIdForPreviewApi(copyBetId) : null
                 const stakeBetLink = copyBetId ? stakeBetModalShareUrl(copyBetId) : null
+                const runListMax = hubRecentBets?.length ? hunterHubListMaxForRun(hubRecentBets, run.id).max : 0
+                const displayRunMax = hubRecentBets?.length
+                  ? Math.max(Number(run.bestMultiRun) || 0, runListMax)
+                  : Number(run.bestMultiRun) || 0
+                const storedSlotNum =
+                  bestMultiBySlot[run.slotSlug] != null && Number.isFinite(Number(bestMultiBySlot[run.slotSlug]))
+                    ? Number(bestMultiBySlot[run.slotSlug])
+                    : null
+                const slotListMax =
+                  hubRecentBets?.length && run.slotSlug ? hunterHubListMaxForSlot(hubRecentBets, run.slotSlug).max : 0
+                const mergedSlotRec = Math.max(storedSlotNum ?? 0, slotListMax)
+                const displaySlotRec = hubRecentBets?.length
+                  ? mergedSlotRec > 0 || storedSlotNum != null
+                    ? mergedSlotRec
+                    : null
+                  : storedSlotNum
                 return (
                 <div key={run.id} className="hunter-run-card">
                   <div className="hunter-run-card-inner">
@@ -3846,16 +4054,16 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                   <div style={STYLES.statRow}>
                     <span style={{ color: 'var(--text-muted)' }}>Max (dieser Run)</span>
                     <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.25rem', flexWrap: 'wrap' }}>
-                      <span>{(run.bestMultiRun ?? 0).toFixed(2)}×</span>
+                      <span>{Number(displayRunMax).toFixed(2)}×</span>
                       <button
                         type="button"
-                        disabled={!copyBetIdRun}
+                        disabled={!canCopyRunShare}
                         onClick={() => {
-                          if (!copyBetIdRun) return
+                          if (!canCopyRunShare) return
                           try {
                             if (navigator?.clipboard?.writeText) {
-                              navigator.clipboard.writeText(copyBetIdRun).catch(() => {})
-                              log(`Bet-ID (dieser Run, houseBets) kopiert — ${run.slotName}`)
+                              navigator.clipboard.writeText(copyBetIdRunFormatted).catch(() => {})
+                              log(`Bet-ID (dieser Run) kopiert — ${run.slotName}`)
                             }
                           } catch (_) {}
                         }}
@@ -3866,13 +4074,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                           border: '1px solid var(--border)',
                           background: 'transparent',
                           color: 'var(--accent)',
-                          cursor: copyBetIdRun ? 'pointer' : 'not-allowed',
-                          opacity: copyBetIdRun ? 1 : 0.45,
+                          cursor: canCopyRunShare ? 'pointer' : 'not-allowed',
+                          opacity: canCopyRunShare ? 1 : 0.45,
                         }}
                         title={
-                          copyBetIdRun
-                            ? 'Share-ID nur aus houseBets zu diesem Lauf / diesem Max-Multi'
-                            : 'Noch keine Bet-ID für diesen Lauf (houseBets).'
+                          canCopyRunShare
+                            ? `Wie BetList: ${copyBetIdRunFormatted}`
+                            : 'Noch keine houseBets-Share-ID (weder Run-State noch BetList-Zeilen).'
                         }
                       >
                         Copy Run
@@ -3940,10 +4148,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     </span>
                   </div>
                   <div style={STYLES.statRow}>
-                    <span style={{ color: 'var(--text-muted)' }}>Rekord (Slot)</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Record Multi</span>
                     <span>
-                      {run.slotSlug && bestMultiBySlot[run.slotSlug] != null
-                        ? `${bestMultiBySlot[run.slotSlug].toFixed(2)}×`
+                      {run.slotSlug && displaySlotRec != null && Number.isFinite(Number(displaySlotRec))
+                        ? `${Number(displaySlotRec).toFixed(2)}×`
                         : '—'}
                     </span>
                   </div>
@@ -3975,7 +4183,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                           cursor: copyBetIdRecord ? 'pointer' : 'not-allowed',
                           opacity: copyBetIdRecord ? 1 : 0.45,
                         }}
-                        title="Share-ID zum höchsten jemals getroffenen Multi an diesem Slot (nur WebSocket)"
                       >
                         Copy
                       </button>
