@@ -164,6 +164,7 @@ export default function BetList({
           const win = b.winAmount ?? 0
           const net = win - bet
           const isBonus = b.isBonus
+          const isHubPending = b.hubSettlement === 'pending'
           const rowCurrency = String(b.currencyCode || defaultCurrency || '').toUpperCase()
           const rowSuffix = rowCurrency ? ` ${rowCurrency}` : ''
           // House copy only from real houseBets IDs (iid/top-id), never from roundId/sourceTag.
@@ -175,6 +176,7 @@ export default function BetList({
           // Bei Stopp auf Bonus: Platzhalter "Bonus". Sonst Win anzeigen (auch bei durchgespieltem Bonus)
           const showWin = !(isBonus && b.stoppedBonus)
           const multiplier = bet > 0 ? (win / bet).toFixed(2) : '0'
+          const pendingCellStyle = isHubPending ? { color: 'var(--text-muted)', fontStyle: 'italic' } : {}
           return (
             <tr
               key={b.id ?? i}
@@ -190,12 +192,18 @@ export default function BetList({
                 </td>
               )}
               <td style={STYLES.td}>{fmt(bet, rowCurrency)}{rowSuffix}</td>
-              <td style={{ ...STYLES.td, ...(win > 0 ? STYLES.win : {}) }}>
-                {!showWin ? ' Bonus' : `${fmt(win, rowCurrency)}${rowSuffix}`}
+              <td style={{ ...STYLES.td, ...(win > 0 && !isHubPending ? STYLES.win : {}), ...pendingCellStyle }}>
+                {!showWin ? ' Bonus' : isHubPending ? '…' : `${fmt(win, rowCurrency)}${rowSuffix}`}
               </td>
               {showNet && (
-                <td style={{ ...STYLES.td, ...(net > 0 ? STYLES.win : (net < 0 ? STYLES.loss : STYLES.even)) }}>
-                  {!showWin ? '–' : `${net >= 0 ? '+' : ''}${fmt(net, rowCurrency)}${rowSuffix}`}
+                <td
+                  style={{
+                    ...STYLES.td,
+                    ...(net > 0 && !isHubPending ? STYLES.win : net < 0 && !isHubPending ? STYLES.loss : STYLES.even),
+                    ...pendingCellStyle,
+                  }}
+                >
+                  {!showWin ? '–' : isHubPending ? '…' : `${net >= 0 ? '+' : ''}${fmt(net, rowCurrency)}${rowSuffix}`}
                 </td>
               )}
               {showContext && (
@@ -257,8 +265,11 @@ export default function BetList({
                   ) : <span style={{ color: 'var(--text-muted)', fontSize: '0.62rem' }}>—</span>}
                 </td>
               )}
-              <td style={{ ...STYLES.td, ...(win > 0 ? STYLES.win : {}) }} title={`${multiplier}× Stake`}>
-                {!showWin ? '–' : `${multiplier}×`}
+              <td
+                style={{ ...STYLES.td, ...(win > 0 && !isHubPending ? STYLES.win : {}), ...pendingCellStyle }}
+                title={!isHubPending && showWin ? `${multiplier}× Stake` : undefined}
+              >
+                {!showWin ? '–' : isHubPending ? '…' : `${multiplier}×`}
               </td>
             </tr>
           )

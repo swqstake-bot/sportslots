@@ -27,7 +27,7 @@ import {
 } from '../utils/usdLimitInput'
 import { saveFirstSlotWinIfNeeded } from '../utils/slotFirstWin'
 import { getHunterState, saveHunterState, clearHunterState } from '../utils/challengeCompletion'
-import { publishChallengeHubBet } from '../utils/challengeHubLiveFeed'
+import { getChallengeHubRecentBets, publishChallengeHubBet } from '../utils/challengeHubLiveFeed'
 import { convertMinorToUsdCents } from '../utils/monetaryContract'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { usePrefersReducedMotion } from '../../../hooks/usePrefersReducedMotion'
@@ -373,8 +373,14 @@ function hunterSpinToUsdCentsRow(betMinor, winMinor, currency, rates) {
   }
 }
 
+/** Ohne Flag: ältere Zeilen gelten als settled (DB / vor Migration). */
+function hubRowSettlementPending(row) {
+  return row && typeof row === 'object' && row.hubSettlement === 'pending'
+}
+
 /** Win/Bet aus Challenge-Hub-BetList (gleiche Einheiten, z. B. USD-Cent). */
 function hubBetListRowMultiplier(row) {
+  if (hubRowSettlementPending(row)) return 0
   const bet = Number(row?.betAmount) || 0
   const win = Number(row?.winAmount) || 0
   if (bet <= 0) return 0
@@ -416,17 +422,22 @@ function hubPickShareRawFromBetList(bets, runId) {
   const p = `${String(runId)}:`
   let bestRaw = null
   let bestM = -1
+  let fallbackPendingRaw = null
   for (const b of bets || []) {
     if (!String(b?.id ?? '').startsWith(p)) continue
     const raw = b.shareIid || b.houseTopId || b.houseId || b.iid
     if (raw == null || String(raw).trim() === '') continue
+    if (hubRowSettlementPending(b)) {
+      if (fallbackPendingRaw == null) fallbackPendingRaw = raw
+      continue
+    }
     const m = hubBetListRowMultiplier(b)
     if (m > bestM) {
       bestM = m
       bestRaw = raw
     }
   }
-  return bestRaw
+  return bestRaw ?? fallbackPendingRaw
 }
 
 /** Minor units → USD (wie im Spin-Loop: toUnits * Kurs) */
@@ -1526,14 +1537,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             const runId = p.runId
             const rawId = pickStakeHouseBetShareRawId(bItem)
             const shareId = rawId ? formatStakeShareBetId(rawId) : null
-            if (p.spinSeq != null) {
-              const mk = `${runId}:${p.spinSeq}`
-              const tid = houseBetDeferredUiTimersRef.current.get(mk)
-              if (tid != null) {
-                clearTimeout(tid)
-                houseBetDeferredUiTimersRef.current.delete(mk)
-              }
-            }
 
             const spinM = Number(p.multi) || 0
             const houseBetCurr = String(bItem?.currency || p.currency || '').toLowerCase()
@@ -1602,6 +1605,16 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 hubPatch.betAmount = Math.round(wageredUsd * 100)
                 hubPatch.winAmount = Math.round(payoutUsd * 100)
                 hubPatch.currencyCode = 'USD'
+                hubPatch.hubSettlement = 'settled'
+                hubPatch.settlementSource = 'houseBets'
+                if (p.spinSeq != null) {
+                  const mk = `${runId}:${p.spinSeq}`
+                  const tid = houseBetDeferredUiTimersRef.current.get(mk)
+                  if (tid != null) {
+                    clearTimeout(tid)
+                    houseBetDeferredUiTimersRef.current.delete(mk)
+                  }
+                }
               }
               publishChallengeHubBet(hubPatch)
             }
@@ -2534,6 +2547,12 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             return m
           })()
 
+          const ccForHub = (parsed.currencyCode || tCurr || 'usd').toUpperCase()
+          const hubUsdRow = hunterSpinToUsdCentsRow(betAmount, win, tCurr, rates)
+          const hubListBet = hubUsdRow ? hubUsdRow.betUsdCents : betAmount
+          const hubListWinDb = hubUsdRow ? hubUsdRow.winUsdCents : win
+          const hubListCc = hubUsdRow ? 'USD' : ccForHub
+
           const spinSeq =
             (hunterSpinSeqByRunRef.current[runId] = (hunterSpinSeqByRunRef.current[runId] || 0) + 1)
           const roundIdForDedup =
@@ -2615,6 +2634,24 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               })
               const prevS = runBestMultiSyncRef.current[runId] ?? 0
               runBestMultiSyncRef.current[runId] = Math.max(Number(prevS) || 0, multiForStop)
+              try {
+                const curFeed = getChallengeHubRecentBets()
+                const curRow = curFeed.find((x) => String(x?.id ?? '') === dk)
+                if (curRow && curRow.hubSettlement === 'pending') {
+                  const wCents = Math.max(0, Math.round(Number(hubListBet) * Number(multiForStop)))
+                  publishChallengeHubBet({
+                    id: dk,
+                    slotSlug: gSlug,
+                    slotName: gName,
+                    betAmount: hubListBet,
+                    winAmount: wCents,
+                    currencyCode: hubListCc,
+                    hubSettlement: 'settled',
+                    settlementSource: 'http_deferred',
+                    sourceTag: `casino:${gSlug}`,
+                  })
+                }
+              } catch (_) {}
             }, HOUSEBET_DEFERRED_UI_MULTI_MS)
             houseBetDeferredUiTimersRef.current.set(dk, tid)
           }
@@ -2660,20 +2697,15 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             },
           }))
 
-          // Keep BetList live: USD-Zeilen für Challenge-Hub (houseBets patcht Win nach, wenn Parser 0 liefert).
-          const cc = (parsed.currencyCode || tCurr || 'usd').toUpperCase()
-          const usdRow = hunterSpinToUsdCentsRow(betAmount, win, tCurr, rates)
-          const listBet = usdRow ? usdRow.betUsdCents : betAmount
-          const listWin = usdRow ? usdRow.winUsdCents : win
-          const listCc = usdRow ? 'USD' : cc
+          // Lokale DB: weiterhin HTTP-Gewinn; Challenge-Hub: pending bis houseBets (oder http_deferred).
           appendBet(
             gSlug,
             {
-              betAmount: listBet,
-              winAmount: listWin,
+              betAmount: hubListBet,
+              winAmount: hubListWinDb,
               isBonus: false,
               balance: parsed.balance,
-              currencyCode: listCc,
+              currencyCode: hubListCc,
               roundId: resolvedRoundId ?? undefined,
             },
             gName
@@ -2682,11 +2714,12 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             id: `${runId}:${spinSeq}`,
             slotSlug: gSlug,
             slotName: gName,
-            betAmount: listBet,
-            winAmount: listWin,
-            currencyCode: listCc,
+            betAmount: hubListBet,
+            winAmount: 0,
+            currencyCode: hubListCc,
             roundId: resolvedRoundId ?? null,
             sourceTag: `casino:${gSlug}`,
+            hubSettlement: 'pending',
           })
 
           const multi = multiForStop

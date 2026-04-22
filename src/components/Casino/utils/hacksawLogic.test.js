@@ -97,4 +97,21 @@ describe('Hacksaw skipContinue Logic', () => {
     }
     expect(shouldSkipBonus(parsed, options)).toBe(false)
   })
+
+  it('should treat Le Digger Gold Digger / GoldDigger as level 5 for minScatter', () => {
+    for (const bonusFeatureId of ['GoldDigger', 'Gold Digger']) {
+      const parsed = mockParsed({
+        isBonus: true,
+        shouldStopOnBonus: true,
+        bonusFeatureId,
+        scatterCount: null,
+      })
+      const options = {
+        slotSlug: 'hacksaw-le-digger',
+        skipContinueOnBonus: true,
+        skipContinueIfBonusMinScatter: 5,
+      }
+      expect(shouldSkipBonus(parsed, options)).toBe(true)
+    }
+  })
 })

@@ -39,6 +39,8 @@ const HACKSAW_5_SCATTER_NAMED_RAW = {
   'aiko-and-the-wind-spirit': ['MidnightMagic'],
   'reign-of-rome': ['FightforGlory', 'FightForGlory'],
   'the-count': ['CountonBlood', 'CountOnBlood'],
+  // Le Digger (Stake: hacksaw-le-digger): 5-Scatter / Epic nach Gamble
+  'le-digger': ['GoldDigger', 'Gold Digger'],
 }
 
 const HACKSAW_5_SCATTER_NAMED = Object.fromEntries(
@@ -416,6 +418,22 @@ export function getImpliedScatterLevel(parsed, slotSlug = '') {
     }
     if (M[bonusId] != null) return M[bonusId]
     if (bonusId.includes('make her day') || bonusId.includes('go ahead')) return 5
+    if (bonusId.includes('gold digger') || bonusId.replace(/\s+/g, '').includes('golddigger')) return 5
+    return null
+  }
+  if (slug.includes('le-digger')) {
+    const M = {
+      fs: 3,
+      fs_1: 3,
+      fs_2: 4,
+      fs_3: 5,
+      fs_5: 5,
+      epic: 5,
+      fs_epic: 5,
+    }
+    if (M[bonusId] != null) return M[bonusId]
+    if (bonusId.includes('make her day') || bonusId.includes('go ahead')) return 5
+    if (bonusId.includes('gold digger') || bonusId.replace(/\s+/g, '').includes('golddigger')) return 5
     return null
   }
   const named5 = getHacksawNamedFiveScatterLevel(parsed?.bonusFeatureId, slug)
@@ -503,7 +521,13 @@ export function shouldSkipBonus(parsed, options) {
     if (EPIC_BULLETS_MAPPING.hasOwnProperty(bonusId)) {
       specialLevel = EPIC_BULLETS_MAPPING[bonusId]
     }
-    if (specialLevel == null && (bonusId.includes('make her day') || bonusId.includes('go ahead'))) {
+    if (
+      specialLevel == null &&
+      (bonusId.includes('make her day') ||
+        bonusId.includes('go ahead') ||
+        bonusId.includes('gold digger') ||
+        bonusId.replace(/\s+/g, '').includes('golddigger'))
+    ) {
       specialLevel = 5
     }
   } else {
@@ -519,7 +543,13 @@ export function shouldSkipBonus(parsed, options) {
     if (GLOBAL_MAPPING.hasOwnProperty(bonusId)) {
       specialLevel = GLOBAL_MAPPING[bonusId]
     }
-    if (specialLevel == null && (bonusId.includes('make her day') || bonusId.includes('go ahead'))) {
+    if (
+      specialLevel == null &&
+      (bonusId.includes('make her day') ||
+        bonusId.includes('go ahead') ||
+        bonusId.includes('gold digger') ||
+        bonusId.replace(/\s+/g, '').includes('golddigger'))
+    ) {
       specialLevel = 5
     }
   }

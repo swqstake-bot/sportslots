@@ -67,6 +67,9 @@ function isHacksawStyleNamedBonusRound(idRaw) {
   if (id.length < 8) return false
   if (MINI_FEATURE_IDS.has(id)) return false
   if (id.includes('make her day') || id.includes('go ahead')) return true
+  // Le Digger u. a.: 5-Scatter / Epic-Gamble → bonusFeatureWon z. B. „Gold Digger“ / GoldDigger
+  if (id.includes('gold digger')) return true
+  if (id.replace(/\s+/g, '').includes('golddigger')) return true
   return false
 }
 

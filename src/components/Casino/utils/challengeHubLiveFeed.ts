@@ -1,3 +1,6 @@
+/** Hub-Zeile: erst `pending` (nur Stake), Win/Multi nach houseBets oder http_deferred `settled`. */
+export type HubBetSettlement = 'pending' | 'settled'
+
 export interface ChallengeHubBetFeedEntry {
   id?: string | number
   slotSlug?: string
@@ -8,6 +11,9 @@ export interface ChallengeHubBetFeedEntry {
   roundId?: string | null
   sourceTag?: string
   addedAt?: number
+  hubSettlement?: HubBetSettlement
+  /** `houseBets` | `http_deferred` — nur gesetzt wenn settled */
+  settlementSource?: string
   [key: string]: unknown
 }
 
