@@ -72,7 +72,10 @@ export async function resolveStakeOrigin(): Promise<string> {
   try {
     const hasCom = await hasValidSessionCookieForOrigin('https://stake.com');
     const hasBet = await hasValidSessionCookieForOrigin('https://stake.bet');
-    if (hasBet && !hasCom) return 'https://stake.bet';
+    // Prefer stake.bet whenever it has a valid session. Stake.com may keep stale/partial cookies
+    // and using the wrong origin breaks GraphQL WS during app startup.
+    if (hasBet) return 'https://stake.bet';
+    if (hasCom) return 'https://stake.com';
     return 'https://stake.com';
   } catch {
     return 'https://stake.com';

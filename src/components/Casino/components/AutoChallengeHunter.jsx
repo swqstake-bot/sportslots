@@ -29,6 +29,7 @@ import { saveFirstSlotWinIfNeeded } from '../utils/slotFirstWin'
 import { getHunterState, saveHunterState, clearHunterState } from '../utils/challengeCompletion'
 import { getChallengeHubRecentBets, publishChallengeHubBet } from '../utils/challengeHubLiveFeed'
 import { convertMinorToUsdCents } from '../utils/monetaryContract'
+import { rotateStakeSeedPair } from '../api/stakeFairness'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { usePrefersReducedMotion } from '../../../hooks/usePrefersReducedMotion'
 import { TipMenu } from '../../ui/TipMenu'
@@ -2197,8 +2198,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         currentBet: 0,
         slotName: slot.name,
         slotSlug: gSlug,
+        providerId: slot.providerId || 'stakeEngine',
         bestMultiRun: 0,
         bestBetId: null,
+        stakeRgsSeedResetEvery: 0,
         targetMultiplier: challenge.targetMultiplier,
         prizeDisplay: prizeParts.main,
         prizeHint: prizeParts.hint,
@@ -2221,11 +2224,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       const preferredTarget = (targetCurrency || 'usd').toLowerCase()
       const minBetUsd = challenge.minBetUsd
       const probeCacheKey = buildProbeCacheKey(providerId, slot.slug, sCurr, minBetUsd)
+      const isStakeRgsRun = String(providerId || '').toLowerCase() === 'stakeengine'
 
       let session = null
       let tCurr = preferredTarget
       let rate
       let betAmount
+      let stakeRgsSpinsSinceSeedReset = 0
 
       if (forced) {
         const r = getRateForCurrency(rates, forced)
@@ -2751,6 +2756,48 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             })
             log(`Treffer gespeichert (Bet-Historie + Liste): Round ${roundId ?? '—'}`)
             break
+          }
+
+          const seedEveryNow = isStakeRgsRun
+            ? Math.max(
+                0,
+                Math.min(
+                  100000,
+                  parseInt(String(activeRunsRef.current?.[runId]?.stakeRgsSeedResetEvery || 0), 10) || 0
+                )
+              )
+            : 0
+          if (seedEveryNow > 0) {
+            stakeRgsSpinsSinceSeedReset += 1
+            if (stakeRgsSpinsSinceSeedReset >= seedEveryNow) {
+              try {
+                log(`Stake-RGS Seed Reset nach ${stakeRgsSpinsSinceSeedReset} Spin(s) — ${gName || gSlug}`)
+                const rotated = await rotateStakeSeedPair()
+                if (!rotated?.ok) throw new Error('rotateSeedPair ohne Bestätigung')
+                const freshRate = getRateForCurrency(ratesRef.current || rates || {}, tCurr) || rate
+                if (!freshRate) throw new Error(`Kein Kurs für ${String(tCurr).toUpperCase()}`)
+                rate = freshRate
+                await new Promise((r) => setTimeout(r, SESSION_PROBE_DELAY_MS))
+                session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
+                const computed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
+                betAmount = computed.betAmount
+                setActiveRuns((prev) => ({
+                  ...prev,
+                  [runId]: {
+                    ...prev[runId],
+                    currentBet: betAmount,
+                    runCurrency: tCurr,
+                  },
+                }))
+                log(
+                  `Seed rotiert (${rotated.seed}) · Session neu gestartet · ${String(tCurr).toUpperCase()} · Einsatz ${formatAmount(betAmount, tCurr)}`
+                )
+              } catch (seedErr) {
+                log(`Stake-RGS Seed Reset fehlgeschlagen: ${String(seedErr?.message || seedErr)}`)
+              } finally {
+                stakeRgsSpinsSinceSeedReset = 0
+              }
+            }
           }
           
           await new Promise((r) => setTimeout(r, HUNTER_SPIN_DELAY_MS))
@@ -4065,6 +4112,40 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     <span>Bet (USD)</span>
                     <span>${minorToUsd(run.currentBet, run.runCurrency || targetCurrency, rates).toFixed(2)}</span>
                   </div>
+                  {String(run.providerId || '').toLowerCase() === 'stakeengine' ? (
+                    <div style={STYLES.statRow}>
+                      <span style={{ color: 'var(--text-muted)' }}>Seed Reset</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'flex-end' }}>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>alle</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={Number(run.stakeRgsSeedResetEvery) || 0}
+                          onChange={(e) => {
+                            const n = Math.max(0, Math.min(100000, parseInt(e.target.value || '0', 10) || 0))
+                            setActiveRuns((prev) => {
+                              const cur = prev[run.id]
+                              if (!cur) return prev
+                              return { ...prev, [run.id]: { ...cur, stakeRgsSeedResetEvery: n } }
+                            })
+                          }}
+                          style={{
+                            width: '3.6rem',
+                            padding: '0.12rem 0.25rem',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px solid var(--border)',
+                            background: 'var(--bg-deep)',
+                            color: 'var(--text)',
+                            fontSize: '0.72rem',
+                            textAlign: 'right',
+                          }}
+                          title="0 = aus. Nur für diesen laufenden Stake-RGS Slot."
+                        />
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Spins</span>
+                      </span>
+                    </div>
+                  ) : null}
                   <div style={STYLES.statRow}>
                     <span style={{ fontWeight: 600 }}>Ziel-Multi</span>
                     <span style={{ color: 'var(--accent)', fontWeight: 600 }}>
