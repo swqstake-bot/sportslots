@@ -1,8 +1,8 @@
 import { app, BrowserWindow, ipcMain, net, session, shell, globalShortcut, dialog, type WebContents } from 'electron';
+import { autoUpdater } from 'electron-updater';
+import logger from 'electron-log';
 import https from 'node:https';
 import http from 'node:http';
-import updater from 'electron-updater';
-const { autoUpdater } = updater;
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'crypto';
@@ -502,15 +502,30 @@ function createLoginWindow() {
     });
 }
 
-// --- Auto Updater Logic ---
-autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = true;
+// --- Auto Updater (electron-updater / GitHub Releases + latest.yml) ---
+/** Muss zu package.json → build.publish und zu veröffentlichten Releases passieren. */
+const UPDATER_GITHUB = { owner: 'swqstake-bot', repo: 'sportslots' } as const;
 
-import logger from 'electron-log';
+function configureGithubAutoUpdater(): void {
+  if (!app.isPackaged) return;
+  try {
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: UPDATER_GITHUB.owner,
+      repo: UPDATER_GITHUB.repo,
+      releaseType: 'release',
+    });
+    logger.info('[Updater] GitHub feed:', `${UPDATER_GITHUB.owner}/${UPDATER_GITHUB.repo}`);
+  } catch (e) {
+    logger.warn('[Updater] setFeedURL failed:', e);
+  }
+}
+
+// Production: Update im Hintergrund laden; Installation weiterhin über „Neustart“ (oder Quit).
+autoUpdater.autoDownload = app.isPackaged;
+autoUpdater.autoInstallOnAppQuit = true;
 autoUpdater.logger = logger;
 (autoUpdater.logger as any).transports.file.level = 'info';
-
-// Prevent downgrade
 autoUpdater.allowDowngrade = false;
 
 autoUpdater.on('checking-for-update', () => {
@@ -572,12 +587,19 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle('check-for-updates', () => {
-    if (!app.isPackaged) {
-        console.log('[Updater] Skipping check in dev mode');
-        return;
-    }
-    autoUpdater.checkForUpdates();
+ipcMain.handle('check-for-updates', async () => {
+  if (!app.isPackaged) {
+    console.log('[Updater] Skipping check in dev mode');
+    return { skipped: true as const };
+  }
+  configureGithubAutoUpdater();
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return { skipped: false as const, result };
+  } catch (e) {
+    logger.error('[Updater] checkForUpdates:', e);
+    throw e;
+  }
 });
 
 ipcMain.handle('start-download', () => {
@@ -1693,8 +1715,13 @@ app.whenReady().then(() => {
     createWindow();
 
     if (app.isPackaged) {
-        console.log('[Updater] App is packaged, checking for updates...');
-        autoUpdater.checkForUpdates();
+      configureGithubAutoUpdater();
+      const runUpdateCheck = () => {
+        console.log('[Updater] Checking for updates…');
+        autoUpdater.checkForUpdates().catch((e) => logger.error('[Updater] check failed:', e));
+      };
+      // Kurz verzögern: Fenster/Netzwerk nach Start (Renderer prüft zusätzlich nach 2 s).
+      setTimeout(runUpdateCheck, 8000);
     }
 });
 
