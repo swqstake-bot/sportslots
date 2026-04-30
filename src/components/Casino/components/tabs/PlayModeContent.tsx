@@ -12,6 +12,8 @@ const SlotControl = SlotControlJS as any
 
 interface PlayModeContentProps {
   webSlots: any[]
+  /** True while the catalog is loading; shows skeleton in slot grid when the list is still empty. */
+  slotsLoading: boolean
   selectedSlugs: string[]
   selectedSlotInstances: CasinoSlotInstance[]
   loadedSetId: string
@@ -48,6 +50,7 @@ interface PlayModeContentProps {
 export function PlayModeContent(props: PlayModeContentProps) {
   const {
     webSlots,
+    slotsLoading,
     selectedSlugs,
     selectedSlotInstances,
     loadedSetId,
@@ -288,9 +291,14 @@ export function PlayModeContent(props: PlayModeContentProps) {
   return (
     <div className="space-y-6">
       <div>
-        <SectionCard title="Slot Selection">
+        <SectionCard title="Slot selection">
+          <p className="text-xs text-[var(--text-muted)] mb-3">
+            1) Pick one or more games — 2) use Start below — optional: open{' '}
+            <span className="text-[var(--text)] font-medium">Provider smoke (diagnostics)</span> for adapter checks.
+          </p>
           <SlotSelectMulti
             slots={webSlots}
+            loading={slotsLoading}
             selectedSlugs={selectedSlugs}
             selectedInstances={selectedSlotInstances}
             onToggle={handleToggleSlot}
@@ -303,138 +311,91 @@ export function PlayModeContent(props: PlayModeContentProps) {
             disabled={false}
           />
 
-          <div className="mt-4 flex flex-wrap gap-2 items-center">
-            <select
-              value={loadedSetId}
-              onChange={(e) => handleLoadSet(e.target.value)}
-              className="bg-[var(--bg-deep)] border border-[var(--border)] rounded-[var(--radius-md)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--accent)] outline-none transition-all min-w-[120px]"
-            >
-              <option value="">Set...</option>
-              {slotSets.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({(s.slugs || []).length})
-                </option>
-              ))}
-            </select>
-            <div className="flex gap-1.5 rounded-[var(--radius-md)] p-0.5 bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
-              <Button variant="secondary" size="sm" className="text-xs px-3 py-1.5 rounded-md hover:bg-[var(--bg-elevated)]" onClick={() => setSaveSlotSetOpen(true)}>
-                Save
-              </Button>
-              <Button variant="secondary" size="sm" className="text-xs px-3 py-1.5 rounded-md hover:bg-[var(--bg-elevated)]" onClick={handleExportSets}>
-                Export
-              </Button>
-              <label className="cursor-pointer inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium rounded-md transition-all bg-[var(--bg-elevated)] text-[var(--text)] border border-transparent hover:bg-[var(--accent)] hover:text-[var(--bg-deep)] hover:border-transparent">
-                Import
-                <input type="file" accept=".json" onChange={handleImportSets} className="hidden" />
-              </label>
-              {loadedSetId && (
-                <Button variant="danger" size="sm" className="text-xs px-3 py-1.5 rounded-md" onClick={(e) => handleDeleteSet(loadedSetId, e)}>
-                  Delete
+          <div className="mt-4 space-y-3">
+            <div className="flex flex-wrap gap-2 items-center">
+              <select
+                value={loadedSetId}
+                onChange={(e) => handleLoadSet(e.target.value)}
+                className="bg-[var(--bg-deep)] border border-[var(--border)] rounded-[var(--radius-md)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--accent)] outline-none transition-all min-w-[120px]"
+                aria-label="Load slot set"
+              >
+                <option value="">Set…</option>
+                {slotSets.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({(s.slugs || []).length})
+                  </option>
+                ))}
+              </select>
+              <div className="flex gap-1.5 rounded-[var(--radius-md)] p-0.5 bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
+                <Button variant="secondary" size="sm" className="text-xs px-3 py-1.5 rounded-md hover:bg-[var(--bg-elevated)]" onClick={() => setSaveSlotSetOpen(true)}>
+                  Save
                 </Button>
-              )}
-            </div>
-            <span className="text-[10px] text-[var(--text-muted)] px-1">|</span>
-            <div className="flex gap-1 items-center rounded-md p-0.5 bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
-              <Button onClick={handleStartAll} disabled={selectedSlotInstances.length === 0} size="sm" className="h-6 text-[10px] font-semibold py-0 px-2 bg-[var(--accent)] hover:opacity-95 text-[var(--bg-deep)]">
-                Start
-              </Button>
-              <Button onClick={handleStopAll} disabled={selectedSlotInstances.length === 0} variant="danger" size="sm" className="h-6 text-[10px] font-semibold py-0 px-2">
-                Stop
-              </Button>
-              <select
-                value={smokeSourceCurrency}
-                onChange={(e) => setSmokeSourceCurrency(e.target.value)}
-                className="h-6 text-[10px] bg-[var(--bg-deep)] border border-[var(--border)] rounded px-1.5 py-0 outline-none"
-                title="Smoke source currency"
-              >
-                {displayedCurrencies.map((c) => (
-                  <option key={`smoke_src_${c.value}`} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-              <span className="text-[10px] text-[var(--text-muted)]">→</span>
-              <select
-                value={smokeTargetCurrency}
-                onChange={(e) => setSmokeTargetCurrency(e.target.value)}
-                className="h-6 text-[10px] bg-[var(--bg-deep)] border border-[var(--border)] rounded px-1.5 py-0 outline-none"
-                title="Smoke target currency"
-              >
-                {displayedCurrencies.map((c) => (
-                  <option key={`smoke_tgt_${c.value}`} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="number"
-                min="0.00000001"
-                step="0.00000001"
-                value={smokeStakeMajor}
-                onChange={(e) => setSmokeStakeMajor(e.target.value)}
-                className="h-6 w-[72px] text-[10px] bg-[var(--bg-deep)] border border-[var(--border)] rounded px-1.5 py-0 outline-none"
-                title="Smoke stake (major units)"
-                placeholder="Stake"
-              />
-              <input
-                type="number"
-                min={1}
-                max={20}
-                value={smokeParallelism}
-                onChange={(e) => setSmokeParallelism(Math.max(1, Math.min(20, parseInt(e.target.value || '1', 10) || 1)))}
-                className="h-6 w-[52px] text-[10px] bg-[var(--bg-deep)] border border-[var(--border)] rounded px-1.5 py-0 outline-none"
-                title="Parallel providers"
-              />
-              <Button
-                onClick={handleProviderSmokeTest}
-                disabled={smokeRunning || !token}
-                variant="secondary"
-                size="sm"
-                className="h-6 text-[10px] font-semibold py-0 px-2"
-                title="Run startSession + 1 spin for each loaded provider (uses selected currencies and stake)"
-              >
-                {smokeRunning ? 'Smoke...' : 'Provider Smoke'}
-              </Button>
-              <label className="inline-flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
-                <input
-                  type="checkbox"
-                  checked={smokeOnlyNoLimit}
-                  onChange={(e) => setSmokeOnlyNoLimit(e.target.checked)}
-                  className="w-3 h-3 rounded accent-[var(--accent)]"
-                />
-                Only NoLimit
-              </label>
-              <Button
-                onClick={() => lastSmokeReport && downloadSmokeReport(lastSmokeReport)}
-                disabled={!lastSmokeReport}
-                variant="secondary"
-                size="sm"
-                className="h-6 text-[10px] font-semibold py-0 px-2"
-                title="Export last smoke report JSON"
-              >
-                Export Smoke
-              </Button>
-              <button
-                type="button"
-                onClick={() => setGlobalControlsOpen((o) => !o)}
-                className="h-6 w-6 flex items-center justify-center rounded text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)] transition-colors"
-                title="Mehr"
-              >
-                {globalControlsOpen ? '▼' : '▸'}
-              </button>
+                <Button variant="secondary" size="sm" className="text-xs px-3 py-1.5 rounded-md hover:bg-[var(--bg-elevated)]" onClick={handleExportSets}>
+                  Export
+                </Button>
+                <label className="cursor-pointer inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium rounded-md transition-all bg-[var(--bg-elevated)] text-[var(--text)] border border-transparent hover:bg-[var(--accent)] hover:text-[var(--bg-deep)] hover:border-transparent">
+                  Import
+                  <input type="file" accept=".json" onChange={handleImportSets} className="hidden" />
+                </label>
+                {loadedSetId && (
+                  <Button variant="danger" size="sm" className="text-xs px-3 py-1.5 rounded-md" onClick={(e) => handleDeleteSet(loadedSetId, e)}>
+                    Delete
+                  </Button>
+                )}
+              </div>
+              <span className="text-xs text-[var(--text-muted)] px-1" aria-hidden>
+                |
+              </span>
+              <div className="flex gap-1.5 items-center rounded-md p-0.5 bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
+                <Button
+                  onClick={handleStartAll}
+                  disabled={selectedSlotInstances.length === 0}
+                  size="sm"
+                  className="h-8 text-xs font-semibold px-3 bg-[var(--accent)] hover:opacity-95 text-[var(--bg-deep)]"
+                >
+                  Start
+                </Button>
+                <Button
+                  onClick={handleStopAll}
+                  disabled={selectedSlotInstances.length === 0}
+                  variant="danger"
+                  size="sm"
+                  className="h-8 text-xs font-semibold px-3"
+                >
+                  Stop
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setGlobalControlsOpen((o) => !o)}
+                  className="h-8 w-8 flex items-center justify-center rounded text-xs text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)] transition-colors"
+                  aria-expanded={globalControlsOpen}
+                  aria-label="Shared currency and apply-first settings"
+                >
+                  {globalControlsOpen ? '▼' : '▸'}
+                </button>
+              </div>
             </div>
             {globalControlsOpen && (
-              <div className="flex flex-wrap gap-2 items-center pl-2 border-l border-[var(--border)] animate-in fade-in slide-in-from-left-2 duration-150">
-                <Button onClick={handleApplyFirstSlotSettings} disabled={selectedSlotInstances.length < 2} variant="secondary" size="sm" className="h-6 text-[10px] py-0 px-2">
-                  Apply First
+              <div className="flex flex-wrap gap-2 items-center p-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/40 animate-in fade-in duration-150">
+                <Button onClick={handleApplyFirstSlotSettings} disabled={selectedSlotInstances.length < 2} variant="secondary" size="sm" className="h-8 text-xs py-0 px-2">
+                  Apply first
                 </Button>
-                <label className="flex items-center gap-1.5 text-[10px] cursor-pointer">
-                  <input type="checkbox" checked={useSharedCurrency} onChange={(e) => setUseSharedCurrency(e.target.checked)} className="w-3 h-3 rounded accent-[var(--accent)]" />
+                <label className="flex items-center gap-1.5 text-xs cursor-pointer text-[var(--text)]">
+                  <input
+                    type="checkbox"
+                    checked={useSharedCurrency}
+                    onChange={(e) => setUseSharedCurrency(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded accent-[var(--accent)]"
+                  />
                   <span>Shared</span>
                 </label>
                 {useSharedCurrency && (
-                  <span className="flex gap-1 items-center text-[10px]">
-                    <select value={sharedSourceCurrency} onChange={(e) => setSharedSourceCurrency(e.target.value)} className="h-6 text-[10px] bg-[var(--bg-deep)] border border-[var(--border)] rounded px-1.5 py-0 outline-none">
+                  <span className="flex flex-wrap gap-1 items-center text-xs">
+                    <select
+                      value={sharedSourceCurrency}
+                      onChange={(e) => setSharedSourceCurrency(e.target.value)}
+                      className="h-8 text-xs bg-[var(--bg-deep)] border border-[var(--border)] rounded px-2 py-0 outline-none"
+                    >
                       {displayedCurrencies.map((c) => (
                         <option key={c.value} value={c.value}>
                           {c.label}
@@ -442,21 +403,105 @@ export function PlayModeContent(props: PlayModeContentProps) {
                       ))}
                     </select>
                     <span className="text-[var(--text-muted)]">→</span>
-                    <select value={sharedTargetCurrency} onChange={(e) => setSharedTargetCurrency(e.target.value)} className="h-6 text-[10px] bg-[var(--bg-deep)] border border-[var(--border)] rounded px-1.5 py-0 outline-none">
+                    <select
+                      value={sharedTargetCurrency}
+                      onChange={(e) => setSharedTargetCurrency(e.target.value)}
+                      className="h-8 text-xs bg-[var(--bg-deep)] border border-[var(--border)] rounded px-2 py-0 outline-none"
+                    >
                       {displayedCurrencies.map((c) => (
                         <option key={c.value} value={c.value}>
                           {c.label}
                         </option>
                       ))}
                     </select>
-                    <label className="flex items-center gap-1 cursor-pointer">
-                      <input type="checkbox" checked={sharedCryptoOnly} onChange={(e) => setSharedCryptoOnly(e.target.checked)} className="w-3 h-3 rounded accent-[var(--accent)]" />
+                    <label className="flex items-center gap-1 cursor-pointer text-[var(--text-muted)]">
+                      <input type="checkbox" checked={sharedCryptoOnly} onChange={(e) => setSharedCryptoOnly(e.target.checked)} className="w-3.5 h-3.5 rounded accent-[var(--accent)]" />
                       <span>Crypto only</span>
                     </label>
                   </span>
                 )}
               </div>
             )}
+
+            <details className="rounded-lg border border-dashed border-[var(--border)] bg-[var(--bg-deep)]/50 px-3 py-2">
+              <summary className="cursor-pointer list-none text-xs font-semibold text-[var(--text-muted)] select-none flex items-center gap-2">
+                <span>Provider smoke (diagnostics)</span>
+                <span className="text-[0.65rem] font-normal opacity-80">startSession + one spin per provider</span>
+              </summary>
+              <div className="mt-3 flex flex-wrap gap-2 items-center pt-2 border-t border-[var(--border-subtle)]">
+                <select
+                  value={smokeSourceCurrency}
+                  onChange={(e) => setSmokeSourceCurrency(e.target.value)}
+                  className="h-8 text-xs bg-[var(--bg-deep)] border border-[var(--border)] rounded px-2 py-0 outline-none"
+                  aria-label="Smoke source currency"
+                >
+                  {displayedCurrencies.map((c) => (
+                    <option key={`smoke_src_${c.value}`} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs text-[var(--text-muted)]">→</span>
+                <select
+                  value={smokeTargetCurrency}
+                  onChange={(e) => setSmokeTargetCurrency(e.target.value)}
+                  className="h-8 text-xs bg-[var(--bg-deep)] border border-[var(--border)] rounded px-2 py-0 outline-none"
+                  aria-label="Smoke target currency"
+                >
+                  {displayedCurrencies.map((c) => (
+                    <option key={`smoke_tgt_${c.value}`} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  min="0.00000001"
+                  step="0.00000001"
+                  value={smokeStakeMajor}
+                  onChange={(e) => setSmokeStakeMajor(e.target.value)}
+                  className="h-8 w-20 text-xs bg-[var(--bg-deep)] border border-[var(--border)] rounded px-2 py-0 outline-none"
+                  aria-label="Stake in major units"
+                  placeholder="Stake"
+                />
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={smokeParallelism}
+                  onChange={(e) => setSmokeParallelism(Math.max(1, Math.min(20, parseInt(e.target.value || '1', 10) || 1)))}
+                  className="h-8 w-14 text-xs bg-[var(--bg-deep)] border border-[var(--border)] rounded px-2 py-0 outline-none"
+                  aria-label="Parallel workers"
+                />
+                <Button
+                  onClick={handleProviderSmokeTest}
+                  disabled={smokeRunning || !token}
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 text-xs font-semibold px-2"
+                >
+                  {smokeRunning ? 'Running…' : 'Run smoke'}
+                </Button>
+                <label className="inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                  <input
+                    type="checkbox"
+                    checked={smokeOnlyNoLimit}
+                    onChange={(e) => setSmokeOnlyNoLimit(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded accent-[var(--accent)]"
+                  />
+                  Nolimit only
+                </label>
+                <Button
+                  onClick={() => lastSmokeReport && downloadSmokeReport(lastSmokeReport)}
+                  disabled={!lastSmokeReport}
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 text-xs font-semibold px-2"
+                >
+                  Export JSON
+                </Button>
+              </div>
+            </details>
           </div>
           {(smokeSummary || smokeResults.length > 0) && (
             <details className="mt-3 text-xs" open>

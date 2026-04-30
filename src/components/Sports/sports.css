@@ -112,6 +112,7 @@
 
 .sports-right-rail-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.35rem;
   padding: 0.38rem;
   border-bottom: 1px solid var(--app-border-subtle);
@@ -149,78 +150,10 @@
     color-mix(in srgb, var(--app-bg-card) 92%, rgba(var(--app-accent-rgb), 0.06));
 }
 
-.sports-betslip-wrap {
-  display: flex;
-  flex-direction: column;
-  flex: 0 0 auto;
-  transition: height 0.24s ease;
-  border-top: 1px solid var(--app-border-subtle);
-  box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.3);
-}
-
-.sports-betslip-wrap.is-expanded {
-  height: clamp(250px, 58%, 520px);
-}
-
-.sports-betslip-wrap.is-collapsed {
-  height: 76px;
-}
-
-.sports-betslip-toggle {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.6rem;
-  border-bottom: 1px solid var(--app-border-subtle);
-  background:
-    linear-gradient(180deg, rgba(var(--app-accent-rgb), 0.15) 0%, rgba(var(--app-accent-rgb), 0.05) 52%, rgba(8, 12, 10, 0.9) 100%),
-    var(--surface-3);
-  padding: 1rem 1.1rem;
-}
-
-.sports-betslip-title {
-  color: var(--app-text);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 0.95rem;
-  font-weight: 700;
-}
-
-.sports-betslip-count {
-  border-radius: 999px;
-  background: rgba(var(--app-accent-rgb), 0.94);
-  color: #071015;
-  font-size: 0.75rem;
-  font-weight: 700;
-  padding: 0.15rem 0.48rem;
-  box-shadow: 0 0 10px var(--app-accent-glow);
-}
-
-.sports-betslip-toggle-right {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  color: var(--app-text-muted);
-}
-
-.sports-betslip-body {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  background:
-    linear-gradient(180deg, rgba(var(--app-accent-rgb), 0.12) 0%, rgba(var(--app-accent-rgb), 0.04) 40%, rgba(8, 12, 10, 0.92) 100%),
-    var(--app-bg-card);
-}
-
 @media (max-width: 1366px) {
   .sports-right-rail {
     width: 330px;
     min-width: 330px;
-  }
-
-  .sports-betslip-wrap.is-expanded {
-    height: clamp(230px, 52%, 420px);
   }
 }
 

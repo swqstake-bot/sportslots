@@ -1,6 +1,4 @@
 import { useMemo } from 'react';
-import { useBetSlipStore } from '../../store/betSlipStore';
-import type { Outcome } from '../../store/betSlipStore';
 import { useLiveFixtures } from '../../hooks/useLiveFixtures';
 import { useUiStore } from '../../store/uiStore';
 import { FixtureCard } from './FixtureCard';
@@ -19,21 +17,6 @@ export function FixtureList({ sportSlug }: FixtureListProps) {
     type: effectiveType,
   });
 
-  const { addOutcome, outcomes } = useBetSlipStore();
-
-  const handleOutcomeClick = (outcome: any, marketName: string, fixture: any) => {
-    const outcomeData: Outcome = {
-      id: outcome.id,
-      odds: outcome.odds,
-      name: outcome.name || marketName,
-      marketName: marketName,
-      fixtureName: fixture.name,
-      fixtureId: fixture.id,
-    };
-    addOutcome(outcomeData);
-  };
-
-  const isSelected = (outcomeId: string) => outcomes.some((o) => o.id === outcomeId);
   const isLive = effectiveType === 'live';
 
   const filteredFixtures = useMemo(() => {
@@ -103,7 +86,7 @@ export function FixtureList({ sportSlug }: FixtureListProps) {
           <svg className="w-14 h-14 opacity-40 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
-          <span className="font-semibold text-base">No matches for \"{fixtureSearchQuery.trim()}\"</span>
+          <span className="font-semibold text-base">No matches for &ldquo;{fixtureSearchQuery.trim()}&rdquo;</span>
         </div>
       </div>
     );
@@ -140,8 +123,6 @@ export function FixtureList({ sportSlug }: FixtureListProps) {
                 sportSlug={sportSlug}
                 mainMarket={mainMarket}
                 extraMarkets={extraMarkets}
-                isSelected={isSelected}
-                onOutcomeClick={handleOutcomeClick}
                 index={index}
               />
             );

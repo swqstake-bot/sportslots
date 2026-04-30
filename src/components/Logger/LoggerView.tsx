@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CasinoLoggerTab from './tabs/CasinoLoggerTab';
 import SportsLoggerTab from './tabs/SportsLoggerTab';
 import { loggerBetsIdentity } from './loggerListIdentity';
+import { inferLoggerCategory } from './loggerUtils';
 import type { LoggerBetEntry } from './loggerUtils';
 import './logger.css';
 
 type LoggerTab = 'casino' | 'sports';
+type LoggerSubscriptionStatus = 'idle' | 'connecting' | 'connected' | 'error';
 
 function loadCachedCurrencyRates(): Record<string, number> {
   try {
@@ -32,6 +34,8 @@ export default function LoggerView() {
   const [sportsBets, setSportsBets] = useState<LoggerBetEntry[]>([]);
   const [currencyRates, setCurrencyRates] = useState<Record<string, number>>({});
   const [statusMessage, setStatusMessage] = useState('');
+  const [subscriptionStatus, setSubscriptionStatus] = useState<LoggerSubscriptionStatus>('idle');
+  const [subscriptionError, setSubscriptionError] = useState('');
   const [manualReloading, setManualReloading] = useState(false);
   const currencyRefreshInFlightRef = useRef(false);
   const lastCasinoIdentityRef = useRef<string>('');
@@ -60,17 +64,10 @@ export default function LoggerView() {
     const foreground = options?.foreground === true;
     if (foreground) setManualReloading(true);
     try {
-      const list = await window.electronAPI.loadLoggerBetLogs({ limit: Number.MAX_SAFE_INTEGER });
+      const list = await window.electronAPI.loadLoggerBetLogs({ limit: 5000 });
       const normalized = (Array.isArray(list) ? list : []).map((b: any) => ({
         ...b,
-        category:
-          b?.category === 'sports' ||
-          String(b?.gameSlug || '').toLowerCase().includes('sportsbook') ||
-          String(b?.gameName || '').toLowerCase().includes('sportsbook') ||
-          String(b?.betType || '').toLowerCase().includes('sport') ||
-          `${String(b?.houseId || '')} ${String(b?.iid || '')} ${String(b?.betId || '')}`.toLowerCase().includes('sport:')
-            ? 'sports'
-            : 'casino',
+        category: inferLoggerCategory(b),
       }));
       const casinoNorm = normalized.filter((b: LoggerBetEntry) => b.category !== 'sports');
       const sportsNorm = normalized.filter((b: LoggerBetEntry) => b.category === 'sports');
@@ -142,12 +139,34 @@ export default function LoggerView() {
 
   useEffect(() => {
     const t = setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
       loadLoggerLogs();
     }, 3000);
     return () => {
       clearInterval(t);
     };
   }, [loadLoggerLogs]);
+
+  useEffect(() => {
+    const applyStatus = (detail: any) => {
+      const next = detail?.status;
+      if (next === 'idle' || next === 'connecting' || next === 'connected' || next === 'error') {
+        setSubscriptionStatus(next);
+        setSubscriptionError(String(detail?.error || ''));
+      }
+    };
+    try {
+      const raw = localStorage.getItem('logger_subscription_status');
+      if (raw) applyStatus(JSON.parse(raw));
+    } catch {
+      // ignore corrupt cached status
+    }
+    const handler = (event: Event) => {
+      applyStatus((event as CustomEvent).detail);
+    };
+    window.addEventListener('logger-subscription-status', handler as EventListener);
+    return () => window.removeEventListener('logger-subscription-status', handler as EventListener);
+  }, []);
 
   const sortedCasinoBets = useMemo(
     () => [...casinoBets].sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()),
@@ -197,8 +216,8 @@ export default function LoggerView() {
         <SportsLoggerTab
           bets={sortedSportsBets}
           currencyRates={currencyRates}
-          subscriptionStatus="connected"
-          subscriptionError=""
+          subscriptionStatus={subscriptionStatus}
+          subscriptionError={subscriptionError}
         />
       )}
     </div>

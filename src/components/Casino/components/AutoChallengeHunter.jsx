@@ -236,6 +236,21 @@ function trimPendingQueues(pendingMap, maxPerRun) {
   }
 }
 
+function hasPendingHouseBetForPayloadSlug(pendingMap, payloadSlug) {
+  if (payloadSlug == null || String(payloadSlug).trim() === '') return false
+  if (!pendingMap || typeof pendingMap !== 'object') return false
+  const ps = String(payloadSlug).toLowerCase()
+  for (const rid of Object.keys(pendingMap)) {
+    const q = pendingMap[rid]
+    if (!Array.isArray(q)) continue
+    for (const p of q) {
+      const s = normalizeBetSlugForHouseMatch(p?.slug)
+      if (s && houseBetSlugMatchesSessionSlug(ps, s)) return true
+    }
+  }
+  return false
+}
+
 function normalizedShareCoreForHunterCompare(rawOrPrefixed) {
   const f = formatStakeShareBetId(
     rawOrPrefixed == null || rawOrPrefixed === '' ? null : String(rawOrPrefixed).trim()
@@ -371,6 +386,36 @@ function hunterSpinToUsdCentsRow(betMinor, winMinor, currency, rates) {
   return {
     betUsdCents: Math.round(betConv.usdCents),
     winUsdCents: Math.max(0, Math.round(winConv.usdCents)),
+  }
+}
+
+/**
+ * Netto-Statistik pro Spin in USD (gleiche Spur wie challengeHub Bet-Liste).
+ * houseBets bleibt für Share-IDs / Anreicherung, nicht doppelt in`s KPI zählen.
+ */
+function hunterSpinKpiUsdDeltas(hubUsdRow, betMinor, winMinor, tCurr, rates) {
+  if (hubUsdRow) {
+    const betU = hubUsdRow.betUsdCents / 100
+    const winU = hubUsdRow.winUsdCents / 100
+    const netU = winU - betU
+    return {
+      wagered: betU,
+      won: Math.max(0, netU),
+      lost: Math.max(0, -netU),
+      runWonNet: Math.max(0, netU),
+    }
+  }
+  const c = String(tCurr || 'usd').toLowerCase()
+  const r = getRateForCurrency(rates, c) || 0
+  if (!r) return null
+  const bu = toUnits(betMinor, c) * r
+  const wu = toUnits(winMinor ?? 0, c) * r
+  const netU = wu - bu
+  return {
+    wagered: bu,
+    won: Math.max(0, netU),
+    lost: Math.max(0, -netU),
+    runWonNet: Math.max(0, netU),
   }
 }
 
@@ -1350,11 +1395,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const logBufferRef = useRef([])
   const logFlushTimerRef = useRef(null)
 
-  const runningChallengeCount = useMemo(
-    () => Object.values(activeRuns).filter((r) => r?.status === 'running').length,
-    [activeRuns]
-  )
-
   const flushLogsNow = useCallback(() => {
     if (logBufferRef.current.length === 0) return
     const buffered = logBufferRef.current.splice(0, logBufferRef.current.length)
@@ -1473,11 +1513,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
   useEffect(() => {
     if (!accessToken) return
-    if (runningChallengeCount <= 0) return
 
     if (DEBUG_HUNTER_BETID_MATCH) {
       console.warn('[AutoChallengeHunter] houseBets subscription init', {
-        runningChallengeCount,
         hasAccessToken: !!accessToken,
       })
     }
@@ -1508,11 +1546,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         const bestBetByRunId = {}
         const multiUiByRunId = {}
         const betIdToPersistOverall = {}
-        const runWonUsdDeltaByRunId = {}
-        let totalWageredUsdDelta = 0
-        let totalWonUsdDelta = 0
-        let totalLostUsdDelta = 0
-        let totalNetUsdDelta = 0
         /** Pro Run: max. Multi bereits in diesem Batch verarbeitet (für prevBest + korrekte Reihenfolge). */
         const batchRunBestMulti = {}
         for (const bItem of batch) {
@@ -1524,12 +1557,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           const runningSlugList = Object.values(active)
             .filter((r) => r?.status === 'running' && r?.slotSlug)
             .map((r) => normalizeBetSlugForHouseMatch(r.slotSlug))
-          const hasRunningForHouseBet = runningSlugList.some((s) =>
-            houseBetSlugMatchesSessionSlug(payloadSlug, s)
-          )
-          if (!hasRunningForHouseBet) continue
-
           const pendingMap = pendingHouseBetMatchRef.current
+          const hasRunningForHouseBet =
+            runningSlugList.some((s) => houseBetSlugMatchesSessionSlug(payloadSlug, s)) ||
+            hasPendingHouseBetForPayloadSlug(pendingMap, payloadSlug)
+          if (!hasRunningForHouseBet) continue
 
           // houseBets.iid direkt nutzen; Zuordnung zu Pending per Slot+Währung+Einsatz+Multi (parallele Runs gleicher Slot).
           const p = splicePendingHouseBetMatch(pendingMap, payloadSlug, payloadCurr, bItem)
@@ -1547,16 +1579,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             const effectiveMulti =
               Number.isFinite(houseBetMulti) && houseBetMulti >= 0 ? houseBetMulti : spinM
             const trackMulti = Math.max(spinM, effectiveMulti)
-            if (Number.isFinite(stakeMajor) && stakeMajor > 0 && Number.isFinite(houseBetRate) && houseBetRate > 0) {
-              const wageredUsd = stakeMajor * houseBetRate
-              const payoutUsd = stakeMajor * Math.max(0, effectiveMulti) * houseBetRate
-              const netSpinUsd = payoutUsd - wageredUsd
-              totalWageredUsdDelta += wageredUsd
-              totalWonUsdDelta += Math.max(0, netSpinUsd)
-              totalLostUsdDelta += Math.max(0, -netSpinUsd)
-              totalNetUsdDelta += netSpinUsd
-              runWonUsdDeltaByRunId[runId] = (runWonUsdDeltaByRunId[runId] || 0) + Math.max(0, netSpinUsd)
-            }
             const prevBest = Math.max(
               activeRunsRef.current[runId]?.bestMultiRun ?? 0,
               batchRunBestMulti[runId] ?? 0
@@ -1593,13 +1615,20 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               }
             }
             if (p.feedEntryId) {
+              const rawShare =
+                bItem?.shareIid != null && String(bItem.shareIid).trim() !== ''
+                  ? String(bItem.shareIid).trim()
+                  : bItem?.iid != null && String(bItem.iid).trim() !== ''
+                    ? String(bItem.iid).trim()
+                    : null
+              const shareIidForRow = rawShare ? formatStakeShareBetId(rawShare) : shareId
               const hubPatch = {
                 id: p.feedEntryId,
-                houseTopId: bItem?.houseTopId ?? null,
-                houseId: bItem?.houseId ?? null,
-                iid: bItem?.iid ?? null,
+                houseTopId: bItem?.houseTopId != null && String(bItem.houseTopId).trim() !== '' ? String(bItem.houseTopId).trim() : null,
+                houseId: bItem?.houseId != null ? String(bItem.houseId) : null,
+                iid: bItem?.iid != null && String(bItem.iid).trim() !== '' ? String(bItem.iid).trim() : rawShare,
               }
-              if (shareId) hubPatch.shareIid = shareId
+              if (shareIidForRow) hubPatch.shareIid = shareIidForRow
               if (Number.isFinite(stakeMajor) && stakeMajor > 0 && Number.isFinite(houseBetRate) && houseBetRate > 0) {
                 const wageredUsd = stakeMajor * houseBetRate
                 const payoutUsd = stakeMajor * Math.max(0, effectiveMulti) * houseBetRate
@@ -1658,32 +1687,14 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 ? Math.max(run.bestMultiRun ?? 0, Number(m.multi))
                 : run.bestMultiRun
             const bid = bestBetByRunId[runId]
-            const wonUsdDelta = Number(runWonUsdDeltaByRunId[runId] || 0)
             next[runId] = {
               ...run,
               bestBetId: bid != null ? bid : run.bestBetId ?? null,
               bestMultiRun: nextBest,
-              wonUsd: (run.wonUsd ?? 0) + wonUsdDelta,
             }
           }
           return next
         })
-
-        if (totalWageredUsdDelta > 0 || totalWonUsdDelta > 0 || totalLostUsdDelta > 0) {
-          setTotalSessionStats((t) => ({
-            wagered: t.wagered + totalWageredUsdDelta,
-            won: t.won + totalWonUsdDelta,
-            lost: t.lost + totalLostUsdDelta,
-          }))
-        }
-        if (ENABLE_SESSION_NET_CHART && totalNetUsdDelta !== 0) {
-          const netAfter = (totalStatsRef.current.won - totalStatsRef.current.lost) + totalNetUsdDelta
-          setSessionNetSeries((prev) => {
-            const next = [...prev, { time: Date.now(), netUsd: netAfter }]
-            if (next.length <= SESSION_NET_SERIES_MAX_POINTS) return next
-            return next.slice(-SESSION_NET_SERIES_MAX_POINTS)
-          })
-        }
 
         for (const runId of runIds) {
           const m = multiUiByRunId[runId]
@@ -1732,7 +1743,20 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     }
     scheduleHouseBetWorkerRef.current = scheduleHouseBetWorker
 
+    const shouldEnqueueHouseBet = () => {
+      const ar = activeRunsRef.current || {}
+      if (Object.values(ar).some((r) => r?.status === 'running')) return true
+      if (houseBetRetryBufferRef.current.length > 0) return true
+      const pm = pendingHouseBetMatchRef.current
+      for (const rid of Object.keys(pm || {})) {
+        const v = pm[rid]
+        if (Array.isArray(v) && v.length) return true
+      }
+      return false
+    }
+
     subscribeToHouseBets(accessToken, (b) => {
+      if (!shouldEnqueueHouseBet()) return
       const now = Date.now()
       prunePendingHouseBetMap(pendingHouseBetMatchRef.current, now)
       houseBetEventQueueRef.current.push(b)
@@ -1755,7 +1779,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         sub?.disconnect?.()
       } catch (_) {}
     }
-  }, [accessToken, runningChallengeCount, log])
+  }, [accessToken, log])
 
   const applyFilters = useCallback((partial) => {
     const n = pickHunterFilters(partial)
@@ -2587,6 +2611,24 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             if (oldK != null) runSeenRounds.delete(oldK)
           }
 
+          const kpi = hunterSpinKpiUsdDeltas(hubUsdRow, betAmount, win, tCurr, rates)
+          if (kpi) {
+            setTotalSessionStats((s) => ({
+              wagered: s.wagered + kpi.wagered,
+              won: s.won + kpi.won,
+              lost: s.lost + kpi.lost,
+            }))
+            if (ENABLE_SESSION_NET_CHART) {
+              const t0 = totalStatsRef.current
+              const nextNet = t0.won - t0.lost + kpi.won - kpi.lost
+              setSessionNetSeries((prev) => {
+                const n = [...prev, { time: Date.now(), netUsd: nextNet }]
+                if (n.length <= SESSION_NET_SERIES_MAX_POINTS) return n
+                return n.slice(-SESSION_NET_SERIES_MAX_POINTS)
+              })
+            }
+          }
+
           // houseBets-Matching: Pending mit HTTP-Multi; UI-Best-Multi erst nach houseBets (oder Fallback).
           const matchEntry = {
             runId,
@@ -2695,7 +2737,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               ...prev[runId],
               spins: prev[runId].spins + 1,
               wagered: prev[runId].wagered + betAmount,
-              wonUsd: prev[runId].wonUsd ?? 0,
+              wonUsd: (prev[runId].wonUsd ?? 0) + (kpi?.runWonNet ?? 0),
               balance: parsed.balance,
               bestMultiRun: prev[runId].bestMultiRun ?? 0,
               bestBetId: prev[runId].bestBetId ?? null,

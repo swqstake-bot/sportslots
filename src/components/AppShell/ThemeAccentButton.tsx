@@ -55,7 +55,7 @@ export function ThemeAccentButton() {
         type="button"
         className="theme-accent-trigger"
         onClick={() => setOpen((o) => !o)}
-        title="Accent color"
+        aria-label="Akzentfarbe anpassen"
         aria-expanded={open}
         aria-haspopup="dialog"
       >
@@ -120,7 +120,7 @@ export function ThemeAccentButton() {
                 type="button"
                 className="theme-accent-preset"
                 onClick={() => setAccentCustomHex(p.hex)}
-                title={p.label}
+                aria-label={p.label}
               >
                 <span className="theme-accent-preset-swatch" style={{ background: p.hex }} />
                 {p.label}

@@ -172,6 +172,19 @@ function buildRgsUrl(rgsBase, path) {
   return `${base}${path.startsWith('/') ? path : '/' + path}`
 }
 
+/** Bonus-/FS-Fortsetzung: kein end-round nach diesem play (sonst bricht Pick/Bonus ab). */
+function skipStakeEngineEndRoundAfterSuccessfulPlay(round) {
+  const fsLeft = Number(
+    round?.freespinsLeft ?? round?.freeSpinsLeft ?? round?.freespins_left ?? round?.fs ?? round?.bonusRounds ?? 0
+  )
+  if (Number.isFinite(fsLeft) && fsLeft > 0) return true
+  const evs = Array.isArray(round?.events) ? round.events : []
+  return evs.some((ev) => {
+    const etn = String(ev?.etn || '').toLowerCase()
+    return etn === 'feature_enter' || etn === 'fs_enter' || etn === 'freespins_enter' || etn === 'fs_start'
+  })
+}
+
 async function rgsPost(rgsUrl, body) {
   const bodyStr = typeof body === 'string' ? body : JSON.stringify(body)
   
@@ -351,9 +364,11 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
 
   const endUrl = buildRgsUrl(session.rgsUrl, '/wallet/end-round')
   const playUrl = buildRgsUrl(session.rgsUrl, '/wallet/play')
-  const mode = useAnte
+  let mode = useAnte
     ? 'ANTE'
-    : (options?.mode || session?.playMode || getStakeEnginePlayModeForSlot(slotSlug) || 'base')
+    : (options?.mode || session?.playMode || getStakeEnginePlayModeForSlot(slotSlug) || 'BASE')
+  // waylanders.har / offizieller Client: "BASE" nicht "base"; Sondermodi (z. B. 688_base) unverändert.
+  if (!useAnte && String(mode).toLowerCase() === 'base') mode = 'BASE'
   const playBody = { sessionID: session.sessionID, amount, mode, currency }
   const t0 = Date.now()
   let playRes = await rgsPost(playUrl, playBody)
@@ -369,7 +384,6 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
 
   if (!playRes.ok) {
     const err = playData?.error || playRes.status
-    const msg = playData?.message || ''
     if (err === 'ERR_IPB' || String(err).includes('ERR_IPB')) {
       const ex = stakeEngineError(`Stake Engine: ${err}`)
       ex.insufficientBalance = true
@@ -380,9 +394,24 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
       ex.sessionClosed = true
       throw ex
     }
-    if ((err === 'ERR_VAL' || String(err).includes('ERR_VAL')) && String(msg).includes('active bet')) {
+    // Runde oft noch „offen“ bis end-round; früher nur bei „active bet“ in message → Retry ausgelassen (Waylanders).
+    if (err === 'ERR_VAL' || String(err).includes('ERR_VAL')) {
+      const endT = Date.now()
       const endRes = await rgsPost(endUrl, { sessionID: session.sessionID })
-      await endRes.json().catch(() => ({}))
+      let endPayload = null
+      try {
+        endPayload = await endRes.json()
+      } catch {
+        await endRes.text().catch(() => '')
+      }
+      logApiCall({
+        type: 'stakeEngine/end-round',
+        endpoint: endUrl,
+        request: { sessionID: session.sessionID },
+        response: endPayload,
+        error: endRes.ok ? null : endRes.status,
+        durationMs: Date.now() - endT,
+      })
       playRes = await rgsPost(playUrl, playBody)
       try {
         playData = await playRes.json()
@@ -486,6 +515,28 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
     if (diffRel > 0.02) {
       winDisplay = awaMinor
     }
+  }
+
+  // waylanders.har: Gewinn → round.active:true bis /wallet/end-round; ohne finalize ERR_VAL beim nächsten play.
+  const needsEndRoundFinalize =
+    round.active === true || (winDisplay > 0 && round.active !== false)
+  if (needsEndRoundFinalize && !skipStakeEngineEndRoundAfterSuccessfulPlay(round)) {
+    const endT = Date.now()
+    const endRes = await rgsPost(endUrl, { sessionID: session.sessionID })
+    let endPayload = null
+    try {
+      endPayload = await endRes.json()
+    } catch {
+      await endRes.text().catch(() => '')
+    }
+    logApiCall({
+      type: 'stakeEngine/end-round',
+      endpoint: endUrl,
+      request: { sessionID: session.sessionID },
+      response: endPayload,
+      error: endRes.ok ? null : endRes.status,
+      durationMs: Date.now() - endT,
+    })
   }
 
   // parseBetResponse liest awa vom letzten Event – stellen wir sicher, dass der Gewinn drin steht

@@ -138,6 +138,7 @@ function slotMatchesSearch(slot, q) {
  * @param {Function} [props.onToggleFavorite]
  * @param {string} [props.sharedSourceCurrency]
  * @param {string} [props.sharedTargetCurrency]
+ * @param {boolean} [props.loading] - show skeleton grid when catalog is loading and list is still empty
  */
 export function SlotSelectMulti({
   slots,
@@ -152,6 +153,7 @@ export function SlotSelectMulti({
   sharedSourceCurrency,
   sharedTargetCurrency,
   hasBonusSlugs = [],
+  loading = false,
 }) {
   const isInstanceMode = !!onAddInstance
   const groups = getSlotsGroupedByProvider(slots)
@@ -220,6 +222,8 @@ export function SlotSelectMulti({
     if (Array.isArray(hasBonusSlugs)) return new Set(hasBonusSlugs)
     return new Set()
   }, [hasBonusSlugs])
+
+  const showSlotSkeleton = Boolean(loading && (!slots || slots.length === 0))
 
   return (
     <div className="slot-select-cyber" style={{ marginBottom: '1rem' }}>
@@ -348,7 +352,22 @@ export function SlotSelectMulti({
 
       {/* Kompaktes Slot-Grid 3-5 Spalten */}
       <div style={{ maxHeight: '55vh', overflowY: 'auto', paddingRight: '0.35rem' }}>
-        {displaySlots.length === 0 ? (
+        {showSlotSkeleton ? (
+          <div
+            className="slot-grid-skeleton"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+              gap: '0.5rem',
+            }}
+            aria-busy="true"
+            aria-label="Loading games"
+          >
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div key={i} className="slot-skeleton-tile" />
+            ))}
+          </div>
+        ) : displaySlots.length === 0 ? (
           <div style={{ padding: '2.5rem', color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
             {debouncedSearch?.trim() ? 'No slots found.' : 'No slots available.'}
           </div>
@@ -389,7 +408,7 @@ export function SlotSelectMulti({
                   tabIndex={0}
                   onClick={handleClick}
                   onKeyDown={(e) => e.key === 'Enter' && handleClick()}
-                  className="slot-pill slot-card-compact"
+                  className="slot-pill"
                   data-selected={selected}
                   style={{
                     display: 'flex',

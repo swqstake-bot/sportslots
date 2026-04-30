@@ -61,7 +61,12 @@ export function AppHeader({
             <button type="button" onClick={onRefresh} className={`app-header-refresh-btn ${isLoading ? 'is-loading' : ''}`.trim()}>
               Refresh
             </button>
-            <button type="button" onClick={onSessionRevalidate} className="app-header-refresh-btn" title="Stake Session neu validieren">
+            <button
+              type="button"
+              onClick={onSessionRevalidate}
+              className="app-header-refresh-btn"
+              aria-label="Stake-Session neu validieren"
+            >
               Session
             </button>
           </>

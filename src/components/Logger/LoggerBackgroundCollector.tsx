@@ -2,17 +2,19 @@ import { useEffect } from 'react';
 import { subscribeToHouseBets } from '../Casino/api/stakeRealtimeFacade';
 import { Queries } from '../../api/queries';
 import { createEventEnvelope } from '../../utils/eventEnvelope';
+import { inferLoggerCategory } from './loggerUtils';
+
+function publishLoggerStatus(status: 'connecting' | 'connected' | 'error' | 'idle', error = '') {
+  try {
+    const detail = { status, error, updatedAt: new Date().toISOString() };
+    localStorage.setItem('logger_subscription_status', JSON.stringify(detail));
+    window.dispatchEvent(new CustomEvent('logger-subscription-status', { detail }));
+  } catch {
+    // Status updates are best-effort UI hints.
+  }
+}
 
 function mapLoggerEntry(b: any) {
-  const slug = String(b?.gameSlug || '').toLowerCase();
-  const gameName = String(b?.gameName || '').toLowerCase();
-  const betType = String(b?.betType || '').toLowerCase();
-  const ids = `${String(b?.houseId || '')} ${String(b?.iid || '')} ${String(b?.betId || '')}`.toLowerCase();
-  const isSports =
-    slug.includes('sportsbook') ||
-    gameName.includes('sportsbook') ||
-    betType.includes('sport') ||
-    ids.includes('sport:');
   return {
     receivedAt: b?.receivedAt || new Date().toISOString(),
     houseId: b?.houseId ?? null,
@@ -30,7 +32,8 @@ function mapLoggerEntry(b: any) {
     currency: b?.currency ? String(b.currency).toLowerCase() : null,
     payoutMultiplier: b?.payoutMultiplier != null ? Number(b.payoutMultiplier) : null,
     amountMultiplier: b?.amountMultiplier != null ? Number(b.amountMultiplier) : null,
-    category: isSports ? 'sports' : 'casino',
+    status: b?.status ?? null,
+    category: inferLoggerCategory(b),
     eventSource: 'realtime.houseBets',
   };
 }
@@ -69,6 +72,7 @@ export default function LoggerBackgroundCollector() {
 
     const scheduleRetry = () => {
       if (cancelled) return;
+      publishLoggerStatus('connecting');
       if (retryTimer) clearTimeout(retryTimer);
       retryTimer = setTimeout(() => {
         start().catch(() => {
@@ -79,6 +83,7 @@ export default function LoggerBackgroundCollector() {
 
     async function start() {
       if (cancelled || disconnectObj) return;
+      publishLoggerStatus('connecting');
       const token = await window.electronAPI.getSessionToken();
       if (!token) {
         scheduleRetry();
@@ -101,12 +106,17 @@ export default function LoggerBackgroundCollector() {
         return;
       }
       disconnectObj = sub;
+      publishLoggerStatus('connected');
     }
 
-    start().catch(() => scheduleRetry());
+    start().catch((err) => {
+      publishLoggerStatus('error', String(err?.message || err || 'Subscription failed'));
+      scheduleRetry();
+    });
 
     return () => {
       cancelled = true;
+      publishLoggerStatus('idle');
       if (retryTimer) clearTimeout(retryTimer);
       try {
         disconnectObj?.disconnect?.();

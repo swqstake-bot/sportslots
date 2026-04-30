@@ -4,7 +4,7 @@ import { Toast } from './components/Toast'
 import { useSlots } from './hooks/useSlots'
 import { loadSlotSets, saveSlotSet, deleteSlotSet, exportSlotSets, importSlotSets, loadFavorites, toggleFavorite } from './utils/slotSets'
 import { loadDiscoveredSlots, saveDiscoveredSlots } from './utils/discoveredSlots'
-import { loadRecentBets, clearAllBetHistory, clearSlotHistory } from './utils/betHistoryDb'
+import { loadRecentBets, clearSlotHistory } from './utils/betHistoryDb'
 import { ALL_CURRENCIES } from './constants/currencies'
 import { isFiat, isStable } from './utils/formatAmount'
 import { CASINO_STORAGE_KEYS } from './utils/storageRegistry'
@@ -15,14 +15,14 @@ import { CasinoShell } from './components/shell/CasinoShell'
 import { CasinoModeContent } from './components/tabs/CasinoModeContent'
 import type { CasinoSlotInstance, SlotSet, CasinoChallengeSelection } from './types'
 
-// Styles
-import './casino.css'
+// Styles — `casino.css` after tokens so game chrome wins over generic token defaults
 import './styles/design-tokens.css'
+import './casino.css'
 
 const THEME_KEY = CASINO_STORAGE_KEYS.theme
 
 export default function CasinoView() {
-  const { token, status, error } = useCasinoSession()
+  const { token, status, error, refreshSession } = useCasinoSession()
   const [discoveredSlots, setDiscoveredSlots] = useState<{ slug: string; name: string; providerId: string; thumbnailUrl?: string }[]>(() => loadDiscoveredSlots())
   const { slots: webSlots, loading: slotsLoading, error: slotsError } = useSlots(token, discoveredSlots)
   const [selectedSlotInstances, setSelectedSlotInstances] = useState<CasinoSlotInstance[]>([])
@@ -91,16 +91,6 @@ export default function CasinoView() {
       }
     }
   }, [sharedCryptoOnly, sharedSourceCurrency, sharedTargetCurrency, displayedCurrencies])
-
-  // Beim App-Start: alte Slot-Statistiken löschen
-  useEffect(() => {
-    const key = CASINO_STORAGE_KEYS.sessionHistoryCleared
-    if (!sessionStorage.getItem(key)) {
-      clearAllBetHistory().catch(() => {}).finally(() => {
-        try { sessionStorage.setItem(key, '1') } catch { /* ignore */ }
-      })
-    }
-  }, [])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -405,7 +395,7 @@ export default function CasinoView() {
     return () => clearTimeout(t)
   }, [pendingPromoAutoStarts])
 
-  if (status === 'idle') {
+  if (status === 'checking') {
       return <div className="p-8 text-center text-[var(--text-muted)]">Loading Casino Session...</div>
   }
 
@@ -425,10 +415,12 @@ export default function CasinoView() {
       token={token}
       mode={mode}
       onChangeMode={setMode}
+      onRefreshSession={refreshSession}
     >
       <CasinoModeContent
         mode={mode}
         token={token}
+        slotsLoading={slotsLoading}
         webSlots={webSlots as any}
         selectedSlugs={selectedSlugs}
         selectedSlotInstances={selectedSlotInstances}

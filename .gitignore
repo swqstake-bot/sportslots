@@ -29,6 +29,10 @@ release/
 builder-cache/
 dist-electron/
 
+# Captured casino debug payloads
+src/components/Casino/**/slotbot-logs-*.json
+src/components/Casino/**/slotbot-bonus-logs-*.json
+
 # Next.js (StakeBot X UI scaffold)
 apps/stakebotx-ui/.next/
 apps/stakebotx-ui/out/

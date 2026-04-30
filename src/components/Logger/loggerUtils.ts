@@ -20,6 +20,7 @@ export interface LoggerBetEntry {
   payoutMultiplier?: number | null;
   amountMultiplier?: number | null;
   category?: LoggerCategory;
+  status?: string | null;
 }
 
 const CURRENCY_ALIASES: Record<string, string> = {
@@ -97,4 +98,34 @@ export function formatBetIdForCopy(value: unknown): string {
   if (!raw) return '';
   if (raw.toLowerCase().startsWith('house:')) return `casino:${raw.slice(6)}`;
   return raw;
+}
+
+export function inferLoggerCategory(entry: any): LoggerCategory {
+  const slug = String(entry?.gameSlug || '').toLowerCase();
+  const gameName = String(entry?.gameName || '').toLowerCase();
+  const betType = String(entry?.betType || '').toLowerCase();
+  const ids = `${String(entry?.houseId || '')} ${String(entry?.iid || '')} ${String(entry?.betId || '')}`.toLowerCase();
+  if (
+    entry?.category === 'sports' ||
+    slug.includes('sportsbook') ||
+    gameName.includes('sportsbook') ||
+    betType.includes('sport') ||
+    ids.includes('sport:')
+  ) {
+    return 'sports';
+  }
+  return 'casino';
+}
+
+export type SportsSettlement = 'positive' | 'negative' | 'push' | 'pending';
+
+export function getSportsSettlement(entry: LoggerBetEntry): SportsSettlement {
+  const status = String(entry.status || '').toLowerCase();
+  if (status.includes('open') || status.includes('active') || status.includes('pending')) return 'pending';
+  const amount = Number(entry.amount);
+  const payout = Number(entry.payout);
+  if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(payout)) return 'pending';
+  const net = payout - amount;
+  if (Math.abs(net) < 1e-9) return 'push';
+  return net > 0 ? 'positive' : 'negative';
 }

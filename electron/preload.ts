@@ -2,12 +2,36 @@ import { contextBridge, ipcRenderer } from 'electron';
 import pkg from '../package.json' with { type: 'json' };
 import type { StakebotxRendererBridgeInfo } from './stakebotxBridgeTypes.js';
 
+const INVOKE_ALLOWLIST = new Set([
+    'api-request',
+    'check-for-updates',
+    'get-stake-ws-url',
+    'open-external',
+    'quit-and-install',
+    'stake-casino-rest-post',
+    'start-download',
+    'telegram-config-get',
+    'telegram-config-set',
+    'telegram-fetch-messages',
+    'telegram-listen-start',
+    'telegram-listen-stop',
+    'telegram-login',
+    'telegram-logout',
+    'telegram-status',
+    'telegram-submit-auth-code',
+    'telegram-submit-auth-password',
+]);
+
 contextBridge.exposeInMainWorld('electronAPI', {
     getAppVersion: () => ipcRenderer.invoke('get-app-version') as Promise<string>,
     version: pkg?.version ?? '',
     login: () => ipcRenderer.invoke('login'),
-    // Expose invoke to allow calling 'api-request'
-    invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
+    invoke: (channel: string, ...args: any[]) => {
+        if (!INVOKE_ALLOWLIST.has(channel)) {
+            return Promise.reject(new Error(`IPC channel not allowed: ${channel}`));
+        }
+        return ipcRenderer.invoke(channel, ...args);
+    },
     on: (channel: string, callback: (...args: any[]) => void) => {
         const subscription = (_event: any, ...args: any[]) => callback(...args);
         ipcRenderer.on(channel, subscription);

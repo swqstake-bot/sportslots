@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import { StakeApi } from '../api/client';
 import { Queries } from '../api/queries';
-import type { SportBet } from '../store/userStore';
+import { useUserStore, type SportBet } from '../store/userStore';
 import { setShieldOdds } from '../store/shieldOddsCache';
 
 const BATCH_LIMIT = 50;
@@ -44,7 +45,8 @@ export function useBetHistory({
   refreshIntervalMs = 120_000,
   onActiveFetched,
 }: UseBetHistoryOptions) {
-  const [activeBets, setActiveBets] = useState<SportBet[]>([]);
+  const setStoreActiveBets = useUserStore((s) => s.setActiveBets);
+  const [activeBets, setActiveBetsState] = useState<SportBet[]>(() => useUserStore.getState().activeBets);
   const [finishedBets, setFinishedBets] = useState<SportBet[]>([]);
   const [isLoadingActive, setIsLoadingActive] = useState(false);
   const [isLoadingFinished, setIsLoadingFinished] = useState(false);
@@ -53,6 +55,19 @@ export function useBetHistory({
   onActiveFetchedRef.current = onActiveFetched;
   const loadingActiveRef = useRef(false);
   const loadingFinishedRef = useRef(false);
+
+  const setActiveBets = useCallback<Dispatch<SetStateAction<SportBet[]>>>(
+    (next) => {
+      setActiveBetsState((prev) => {
+        const resolved = typeof next === 'function'
+          ? (next as (value: SportBet[]) => SportBet[])(prev)
+          : next;
+        setStoreActiveBets(resolved);
+        return resolved;
+      });
+    },
+    [setStoreActiveBets]
+  );
 
   const fetchUsdRates = useCallback(async () => {
     try {
@@ -104,7 +119,7 @@ export function useBetHistory({
       setIsLoadingActive(false);
       loadingActiveRef.current = false;
     }
-  }, [userName]);
+  }, [userName, setActiveBets]);
 
   const fetchFinishedBets = useCallback(async () => {
     if (!userName) return;

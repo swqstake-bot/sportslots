@@ -5,7 +5,7 @@ import { ACCENT_BRIGHTNESS } from '../utils/accentTheme';
 export type ToastType = 'success' | 'error' | 'info';
 
 function normalizeCurrentView(v: unknown): 'sports' | 'casino' | 'logger' {
-  return v === 'casino' || v === 'sports' || v === 'logger' ? v : 'sports';
+  return v === 'casino' || v === 'sports' || v === 'logger' ? v : 'casino';
 }
 
 const DEV_VISIBILITY_DEFAULTS = {
@@ -51,8 +51,7 @@ interface UiState {
   sportFilterType: 'live' | 'upcoming';
   /** Suchbegriff für Fixture-Namen (Sports) */
   fixtureSearchQuery: string;
-  rightSidebarTab: 'autobet' | 'activebets' | 'betslip';
-  isBetSlipExpanded: boolean;
+  rightSidebarTab: 'autobet' | 'activebets';
   isActiveBetsModalOpen: boolean;
   activeBetsPreviewBetId: string | null;
   /** User accent override (null = use CSS defaults per `data-app-mode`). */
@@ -70,8 +69,7 @@ interface UiState {
   setCasinoMode: (mode: 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs') => void;
   setSelectedSportSlug: (sportSlug: string | null) => void;
   setSportFilterType: (type: 'live' | 'upcoming') => void;
-  setRightSidebarTab: (tab: 'autobet' | 'activebets' | 'betslip') => void;
-  toggleBetSlip: () => void;
+  setRightSidebarTab: (tab: 'autobet' | 'activebets') => void;
   toggleActiveBetsModal: () => void;
   openActiveBetsModal: (previewBetId?: string | null) => void;
   closeActiveBetsModal: () => void;
@@ -91,13 +89,12 @@ interface UiState {
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
-      currentView: 'sports',
+      currentView: 'casino',
       casinoMode: 'play',
       selectedSportSlug: 'soccer',
       sportFilterType: 'upcoming',
       fixtureSearchQuery: '',
-      rightSidebarTab: 'activebets',
-      isBetSlipExpanded: true,
+      rightSidebarTab: 'autobet',
       isActiveBetsModalOpen: false,
       activeBetsPreviewBetId: null,
       accentCustomHex: null,
@@ -112,7 +109,6 @@ export const useUiStore = create<UiState>()(
       setSelectedSportSlug: (sportSlug) => set({ selectedSportSlug: sportSlug }),
       setSportFilterType: (type) => set({ sportFilterType: type }),
       setRightSidebarTab: (tab) => set({ rightSidebarTab: tab }),
-      toggleBetSlip: () => set((state) => ({ isBetSlipExpanded: !state.isBetSlipExpanded })),
       toggleActiveBetsModal: () => set((state) => ({ isActiveBetsModalOpen: !state.isActiveBetsModalOpen })),
       openActiveBetsModal: (previewBetId = null) => set({ isActiveBetsModalOpen: true, activeBetsPreviewBetId: previewBetId }),
       closeActiveBetsModal: () => set({ isActiveBetsModalOpen: false, activeBetsPreviewBetId: null }),
@@ -164,7 +160,6 @@ export const useUiStore = create<UiState>()(
         selectedSportSlug: state.selectedSportSlug,
         sportFilterType: state.sportFilterType,
         rightSidebarTab: state.rightSidebarTab,
-        isBetSlipExpanded: state.isBetSlipExpanded,
         accentCustomHex: state.accentCustomHex,
         accentStrength: state.accentStrength,
         accentBrightness: state.accentBrightness,
@@ -182,6 +177,9 @@ export const useUiStore = create<UiState>()(
           next = { ...next, accentBrightness: 1 }
         } else if (persistedState.accentBrightness > ACCENT_BRIGHTNESS.max) {
           next = { ...next, accentBrightness: ACCENT_BRIGHTNESS.max }
+        }
+        if (persistedState.rightSidebarTab === 'betslip') {
+          next = { ...next, rightSidebarTab: 'activebets' }
         }
         if (
           persistedState.casinoMode === 'challenges' ||

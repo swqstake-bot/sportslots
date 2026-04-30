@@ -17,17 +17,24 @@ interface ChallengeHubTabStripProps {
 
 export const ChallengeHubTabStrip = memo(function ChallengeHubTabStrip({ tab, onTabChange }: ChallengeHubTabStripProps) {
   return (
-    <div className="challenge-hub-tabs">
-      {HUB_TABS.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          onClick={() => onTabChange(item.id)}
-          className={`challenge-hub-tab ${tab === item.id ? 'is-active' : ''}`}
-        >
-          {item.label}
-        </button>
-      ))}
+    <div className="challenge-hub-tabs" role="tablist" aria-label="Challenge hub sections">
+      {HUB_TABS.map((item) => {
+        const selected = tab === item.id
+        return (
+          <button
+            key={item.id}
+            id={`hub-tab-${item.id}`}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            tabIndex={selected ? 0 : -1}
+            onClick={() => onTabChange(item.id)}
+            className={`challenge-hub-tab ${selected ? 'is-active' : ''}`.trim()}
+          >
+            {item.label}
+          </button>
+        )
+      })}
     </div>
   )
 })

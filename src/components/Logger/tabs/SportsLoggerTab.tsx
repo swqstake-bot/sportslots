@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { formatBetIdForCopy, formatDate, formatNum, getBetMultiplier, toUsd } from '../loggerUtils';
+import { formatBetIdForCopy, formatDate, formatNum, getBetMultiplier, getSportsSettlement, toUsd } from '../loggerUtils';
 import type { LoggerBetEntry } from '../loggerUtils';
 
 const MAX_VISIBLE_BETS = 500;
@@ -105,18 +105,24 @@ export default function SportsLoggerTab({ bets, currencyRates, subscriptionStatu
   );
 
   const stats = useMemo(() => {
-    let won = 0;
-    let lost = 0;
+    let positive = 0;
+    let negative = 0;
+    let pending = 0;
     let profit = 0;
     latestBets.forEach((b) => {
       const stake = toUsd(b.amount, b.currency, currencyRates);
       const payout = toUsd(b.payout, b.currency, currencyRates);
       const net = payout - stake;
+      const settlement = getSportsSettlement(b);
+      if (settlement === 'pending') {
+        pending++;
+        return;
+      }
       profit += net;
-      if (payout > 0) won++;
-      else lost++;
+      if (settlement === 'positive') positive++;
+      if (settlement === 'negative') negative++;
     });
-    return { won, lost, profit, total: latestBets.length };
+    return { positive, negative, pending, profit, total: latestBets.length };
   }, [latestBets, currencyRates]);
 
   const handleCopyBetId = useCallback(async (value: string) => {
@@ -149,8 +155,9 @@ export default function SportsLoggerTab({ bets, currencyRates, subscriptionStatu
       <div className="logger-panel">
         <div className="logger-kpis">
           <div className="logger-kpi"><span>Sports Bets</span><strong>{stats.total}</strong></div>
-          <div className="logger-kpi"><span>Won</span><strong>{stats.won}</strong></div>
-          <div className="logger-kpi"><span>Lost</span><strong>{stats.lost}</strong></div>
+          <div className="logger-kpi"><span>Positive</span><strong>{stats.positive}</strong></div>
+          <div className="logger-kpi"><span>Negative</span><strong>{stats.negative}</strong></div>
+          <div className="logger-kpi"><span>Pending</span><strong>{stats.pending}</strong></div>
           <div className={`logger-kpi ${stats.profit >= 0 ? 'positive' : 'negative'}`}><span>Profit / Loss ($)</span><strong>{stats.profit >= 0 ? '+' : ''}{formatNum(stats.profit)}</strong></div>
         </div>
         <p className="logger-muted">

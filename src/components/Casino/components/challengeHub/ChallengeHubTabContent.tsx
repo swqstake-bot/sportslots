@@ -22,8 +22,7 @@ export interface ChallengeHubTabContentProps {
 }
 
 /**
- * All hub tab bodies live here so parent ChallengeHubView can skip re-rendering this tree when only
- * aggregated KPI stats change (setHubStatsBySource) — e.g. avoids redundant work in AutoChallengeHunter.
+ * Renders only the active hub tab to avoid hidden-but-mounted heavy trees (faster tab switches, cleaner focus).
  */
 export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
   tab,
@@ -37,11 +36,16 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
   telegramUsage,
 }: ChallengeHubTabContentProps) {
   const TelegramChallengeHunterAny = TelegramChallengeHunter as any
-  const visibleStyle = (visible: boolean) => ({ display: visible ? 'block' : 'none' })
+
   return (
-    <>
-      <div style={visibleStyle(tab === 'casino')}>
-        <SectionCard title="Casino Challenges">
+    <div
+      id={`hub-panel-${tab}`}
+      role="tabpanel"
+      aria-labelledby={`hub-tab-${tab}`}
+      className="min-w-0"
+    >
+      {tab === 'casino' && (
+        <SectionCard title="Casino challenges">
           <AutoChallengeHunter
             accessToken={accessToken}
             webSlots={webSlots as any}
@@ -49,9 +53,9 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
             onHubStatsChange={onHubStatsChange}
           />
         </SectionCard>
-      </div>
+      )}
 
-      <div style={visibleStyle(tab === 'autorun')}>
+      {tab === 'autorun' && (
         <SectionCard title="Autorun">
           <AutorunTab
             accessToken={accessToken}
@@ -59,17 +63,21 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
             onHubStatsChange={onHubStatsChange}
           />
         </SectionCard>
-      </div>
+      )}
 
-      <div style={visibleStyle(tab === 'telegram')}>
-        <SectionCard title="Telegram Challenges">
+      {tab === 'telegram' && (
+        <SectionCard title="Telegram challenges">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs text-[var(--text-muted)]">
-              Status: {telegramEnabled ? 'enabled' : 'disabled'} · Tab opens: {telegramUsage} · Decision gate:{' '}
-              {telegramUsage >= 5 ? 'keep as core tab candidate' : 'observe usage, maybe move to Advanced'}
-            </div>
+            <p className="text-xs text-[var(--text-muted)]">
+              {telegramEnabled
+                ? 'Telegram features are on. Add credentials in the hunter below when ready.'
+                : 'Telegram is off — enable when your channel and API settings are ready.'}
+              {telegramUsage > 0 && (
+                <span className="ml-1.5 text-[0.7rem] opacity-80">(tab opens: {telegramUsage})</span>
+              )}
+            </p>
             <button type="button" className="challenge-hub-action" onClick={() => setTelegramEnabled((prev) => !prev)}>
-              {telegramEnabled ? 'Disable Telegram Tab' : 'Enable Telegram Tab'}
+              {telegramEnabled ? 'Disable' : 'Enable'}
             </button>
           </div>
           {telegramEnabled ? (
@@ -81,23 +89,24 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
             />
           ) : (
             <div className="rounded border border-[var(--border)] bg-[var(--bg-deep)] p-3 text-xs text-[var(--text-muted)]">
-              Telegram is gracefully disabled. Enable it when API/channel credentials are ready.
+              Turn on Telegram when you want to run challenges from the linked channel. Nothing is sent until the hunter
+              is configured.
             </div>
           )}
         </SectionCard>
-      </div>
+      )}
 
-      <div style={visibleStyle(tab === 'forum')}>
-        <SectionCard title="Forum Challenges">
+      {tab === 'forum' && (
+        <SectionCard title="Forum challenges">
           <ForumChallengeView accessToken={accessToken} webSlots={webSlots as any} onSelectChallenge={onSelectChallenge} />
         </SectionCard>
-      </div>
+      )}
 
-      <div style={visibleStyle(tab === 'promotions')}>
+      {tab === 'promotions' && (
         <SectionCard title="Promotions">
           <PromotionsView accessToken={accessToken} webSlots={webSlots as any} />
         </SectionCard>
-      </div>
-    </>
+      )}
+    </div>
   )
 })

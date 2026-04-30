@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import clsx from 'clsx'
 import {
   getApiLogs,
   clearLogs,
@@ -13,77 +14,6 @@ import { getSlotSpinSamples, clearSlotSpinSamples, exportSlotSpinSamplesAsFile }
 import { getRealtimeReconcileSnapshot, resetRealtimeAudit } from '../api/stakeRealtimeFacade'
 import { clearBetHistoryAudit, getBetHistoryAudit } from '../utils/betHistoryDb'
 import { getRealtimeBusRecentEvents } from '../../../services/realtimeBus'
-
-const STYLES = {
-  card: {
-    marginTop: '1rem',
-    padding: '1rem',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-lg)',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '0.75rem',
-    flexWrap: 'wrap',
-    gap: '0.5rem',
-  },
-  title: {
-    fontSize: '0.85rem',
-    fontWeight: 600,
-    color: 'var(--text-muted)',
-  },
-  btnRow: {
-    display: 'flex',
-    gap: '0.5rem',
-  },
-  btn: {
-    padding: '0.4rem 0.75rem',
-    background: 'transparent',
-    color: 'var(--text-muted)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-sm)',
-    fontSize: '0.8rem',
-    cursor: 'pointer',
-  },
-  btnPrimary: {
-    background: 'var(--accent)',
-    color: 'var(--bg-deep)',
-    border: 'none',
-    fontWeight: 600,
-  },
-  logList: {
-    maxHeight: 280,
-    overflow: 'auto',
-    fontSize: '0.75rem',
-    fontFamily: '"JetBrains Mono", monospace',
-  },
-  logEntry: {
-    padding: '0.5rem',
-    borderBottom: '1px solid var(--border)',
-  },
-  logEntryError: {
-    background: 'rgba(255, 82, 82, 0.05)',
-  },
-  logTs: { color: 'var(--text-muted)', marginRight: '0.5rem' },
-  logType: { color: 'var(--accent)', marginRight: '0.5rem' },
-  logError: { color: 'var(--error)', fontSize: '0.7rem', marginTop: '0.25rem' },
-  logDetails: {
-    marginTop: '0.35rem',
-    fontSize: '0.7rem',
-    color: 'var(--text-muted)',
-    maxHeight: 80,
-    overflow: 'auto',
-  },
-  metaLine: {
-    marginTop: '0.3rem',
-    fontSize: '0.68rem',
-    color: 'var(--text-muted)',
-    wordBreak: 'break-all',
-  },
-}
 
 export default function LogViewer({ refreshKey }) {
   const [logs, setLogs] = useState([])
@@ -116,7 +46,7 @@ export default function LogViewer({ refreshKey }) {
   }
 
   function handleClear() {
-    if (confirm('Alle Logs löschen?')) {
+    if (confirm('Delete all API logs?')) {
       clearLogs()
       setLogs([])
       clearBetHistoryAudit()
@@ -151,7 +81,7 @@ export default function LogViewer({ refreshKey }) {
   }
 
   function handleBonusClear() {
-    if (confirm('Alle Bonus-Logs löschen?')) {
+    if (confirm('Delete all bonus response logs?')) {
       clearBonusLogs()
       setBonusLogs([])
     }
@@ -163,7 +93,7 @@ export default function LogViewer({ refreshKey }) {
   }
 
   async function handleSpinSamplesClear() {
-    if (confirm('Alle Slot Spin Samples löschen?')) {
+    if (confirm('Delete all slot spin samples?')) {
       await clearSlotSpinSamples()
       setSpinSamples({})
     }
@@ -210,41 +140,41 @@ export default function LogViewer({ refreshKey }) {
   })()
 
   return (
-    <div style={STYLES.card}>
-      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', cursor: 'pointer', fontSize: '0.85rem' }}>
+    <div className="terminal-panel" style={{ marginTop: 0 }}>
+      <label className="terminal-hero-label">
         <input
           type="checkbox"
           checked={saveBonus}
           onChange={(e) => handleSaveBonusChange(e.target.checked)}
           style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
         />
-        Speichere jede Response mit Bonus (zum Nachhinein prüfen welche unterschiedlich waren)
+        Save every bonus response (for later comparison)
       </label>
-      <div style={STYLES.header}>
-        <span style={STYLES.title}>API-Logs ({logs.length} Einträge)</span>
-        <div style={STYLES.btnRow}>
-          <button onClick={handleRefresh} style={STYLES.btn}>
-            Aktualisieren
+      <div className="terminal-panel__head terminal-panel__head--logs">
+        <span className="terminal-panel__title" style={{ fontSize: '0.85rem' }}>
+          API logs ({logs.length} entries)
+        </span>
+        <div className="terminal-toolbar">
+          <button type="button" onClick={handleRefresh} className="terminal-btn">
+            Refresh
           </button>
-          <button onClick={handleExport} style={{ ...STYLES.btn, ...STYLES.btnPrimary }}>
-            Als JSON exportieren
+          <button type="button" onClick={handleExport} className="terminal-btn terminal-btn--primary">
+            Export JSON
           </button>
-          <button onClick={handleExportForensicBundle} style={STYLES.btn} title="API + Realtime + Audit in einem Bundle">
-            Forensic Bundle
+          <button type="button" onClick={handleExportForensicBundle} className="terminal-btn" title="API + realtime + audit in one file">
+            Forensic bundle
           </button>
-          <button onClick={() => exportBonusLogsAsFile()} style={STYLES.btn} title="Bonus-Responses als JSON exportieren">
-            Bonus-Logs exportieren
+          <button type="button" onClick={() => exportBonusLogsAsFile()} className="terminal-btn" title="Export bonus responses as JSON">
+            Export bonus logs
           </button>
-          <button onClick={handleClear} style={STYLES.btn}>
-            Löschen
+          <button type="button" onClick={handleClear} className="terminal-btn">
+            Clear
           </button>
         </div>
       </div>
 
       <details style={{ marginTop: '0.75rem' }}>
-        <summary style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer' }}>
-          Realtime Audit
-        </summary>
+        <summary className="terminal-summary">Realtime audit</summary>
         <div style={{ marginTop: '0.5rem', fontSize: '0.78rem' }}>
           <div>houseBets received: {realtimeAudit.houseBetsReceived}</div>
           <div>houseBets duplicates: {realtimeAudit.houseBetsDuplicate}</div>
@@ -256,26 +186,27 @@ export default function LogViewer({ refreshKey }) {
           <div>bus out-of-order: {realtimeAudit.busDroppedOutOfOrder ?? 0}</div>
           <div style={{ marginTop: '0.4rem', display: 'flex', gap: '0.45rem' }}>
             <button
+              type="button"
               onClick={() => {
                 resetRealtimeAudit()
                 setRealtimeAudit(getRealtimeReconcileSnapshot())
               }}
-              style={STYLES.btn}
+              className="terminal-btn"
             >
-              Realtime Audit reset
+              Reset realtime audit
             </button>
           </div>
           <div style={{ marginTop: '0.55rem', color: 'var(--text-muted)' }}>
-            BetHistory audit entries: {historyAudit.length}
+            Bet history audit entries: {historyAudit.length}
           </div>
-          <div style={{ ...STYLES.logList, maxHeight: 130, marginTop: '0.35rem' }}>
+          <div className={clsx('terminal-log', 'terminal-log--h130')} style={{ marginTop: '0.35rem' }}>
             {historyAudit.length === 0 ? (
-              <div style={{ padding: '0.5rem', color: 'var(--text-muted)' }}>Keine BetHistory-Audit-Einträge.</div>
+              <div className="terminal-muted-block">No bet history audit rows.</div>
             ) : (
               [...historyAudit].reverse().slice(0, 30).map((entry, i) => (
-                <div key={i} style={STYLES.logEntry}>
-                  <span style={STYLES.logTs}>{String(entry.ts || '').slice(11, 19)}</span>
-                  <span style={STYLES.logType}>{entry.event}</span>
+                <div key={i} className="terminal-log__line">
+                  <span className="terminal-log__ts">{String(entry.ts || '').slice(11, 19)}</span>
+                  <span className="terminal-log__type">{entry.event}</span>
                   <span style={{ color: 'var(--text-muted)' }}>{entry.slotSlug || '-'}</span>
                 </div>
               ))
@@ -284,14 +215,14 @@ export default function LogViewer({ refreshKey }) {
           <div style={{ marginTop: '0.55rem', color: 'var(--text-muted)' }}>
             Realtime timeline events: {realtimeTimeline.length}
           </div>
-          <div style={{ ...STYLES.logList, maxHeight: 130, marginTop: '0.35rem' }}>
+          <div className={clsx('terminal-log', 'terminal-log--h130')} style={{ marginTop: '0.35rem' }}>
             {realtimeTimeline.length === 0 ? (
-              <div style={{ padding: '0.5rem', color: 'var(--text-muted)' }}>Keine Realtime-Timeline-Einträge.</div>
+              <div className="terminal-muted-block">No realtime timeline rows.</div>
             ) : (
               [...realtimeTimeline].reverse().slice(0, 40).map((entry, i) => (
-                <div key={i} style={STYLES.logEntry}>
-                  <span style={STYLES.logTs}>{String(entry?.emittedAt || '').slice(11, 19)}</span>
-                  <span style={STYLES.logType}>{entry?.eventSource || 'event'}</span>
+                <div key={i} className="terminal-log__line">
+                  <span className="terminal-log__ts">{String(entry?.emittedAt || '').slice(11, 19)}</span>
+                  <span className="terminal-log__type">{entry?.eventSource || 'event'}</span>
                   <span style={{ color: 'var(--text-muted)' }}>corr={String(entry?.correlationId || '').slice(0, 18)}</span>
                 </div>
               ))
@@ -299,38 +230,32 @@ export default function LogViewer({ refreshKey }) {
           </div>
         </div>
       </details>
-      <div style={STYLES.logList}>
+
+      <div className="terminal-log">
         {logs.length === 0 ? (
-          <div style={{ padding: '1rem', color: 'var(--text-muted)' }}>
-            Keine Logs. Spins/Session starten erzeugt Einträge.
+          <div className="terminal-muted-block" style={{ padding: '1rem' }}>
+            No API logs yet. Start a session or spin to generate entries.
           </div>
         ) : (
           [...logs].reverse().map((entry, i) => (
             <div
               key={i}
-              style={{
-                ...STYLES.logEntry,
-                ...(entry.error ? STYLES.logEntryError : {}),
-              }}
+              className={clsx('terminal-log__line', entry.error && 'terminal-log__line--error')}
             >
-              <span style={STYLES.logTs}>{entry.ts?.slice(11, 19)}</span>
-              <span style={STYLES.logType}>{entry.type}</span>
-              {entry.durationMs != null && (
-                <span style={{ color: 'var(--text-muted)' }}>{entry.durationMs}ms</span>
-              )}
-              {entry.error && (
-                <div style={STYLES.logError}>{entry.error}</div>
-              )}
+              <span className="terminal-log__ts">{entry.ts?.slice(11, 19)}</span>
+              <span className="terminal-log__type">{entry.type}</span>
+              {entry.durationMs != null && <span style={{ color: 'var(--text-muted)' }}>{entry.durationMs}ms</span>}
+              {entry.error && <div className="terminal-log__err">{entry.error}</div>}
               {(entry.correlationId || entry.eventSource) && (
-                <div style={STYLES.metaLine}>
-                  {entry.eventSource ? `src=${entry.eventSource}` : ''}{entry.eventSource && entry.correlationId ? ' · ' : ''}{entry.correlationId ? `corr=${entry.correlationId}` : ''}
+                <div className="terminal-log__meta">
+                  {entry.eventSource ? `src=${entry.eventSource}` : ''}
+                  {entry.eventSource && entry.correlationId ? ' · ' : ''}
+                  {entry.correlationId ? `corr=${entry.correlationId}` : ''}
                 </div>
               )}
-              <details style={STYLES.logDetails}>
-                <summary>Request/Response</summary>
-                <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: '0.25rem 0' }}>
-                  {JSON.stringify({ request: entry.request, response: entry.response }, null, 2)}
-                </pre>
+              <details className="terminal-log__details">
+                <summary>Request / response</summary>
+                <pre className="terminal-pre">{JSON.stringify({ request: entry.request, response: entry.response }, null, 2)}</pre>
               </details>
             </div>
           ))
@@ -338,72 +263,72 @@ export default function LogViewer({ refreshKey }) {
       </div>
 
       <details style={{ marginTop: '1rem' }} open>
-        <summary style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer' }}>
-          Bonus-Responses ({bonusLogs.length})
-        </summary>
+        <summary className="terminal-summary">Bonus responses ({bonusLogs.length})</summary>
         <div style={{ marginTop: '0.5rem' }}>
-          <div style={{ ...STYLES.btnRow, marginBottom: '0.5rem' }}>
-            <button onClick={handleBonusRefresh} style={STYLES.btn}>
-              Aktualisieren
+          <div className="terminal-toolbar" style={{ marginBottom: '0.5rem' }}>
+            <button type="button" onClick={handleBonusRefresh} className="terminal-btn">
+              Refresh
             </button>
-            <button onClick={() => exportBonusLogsAsFile()} style={{ ...STYLES.btn, ...STYLES.btnPrimary }}>
-              Bonus-Logs exportieren
+            <button type="button" onClick={() => exportBonusLogsAsFile()} className="terminal-btn terminal-btn--primary">
+              Export bonus logs
             </button>
-            <button onClick={handleBonusClear} style={STYLES.btn}>
-              Löschen
+            <button type="button" onClick={handleBonusClear} className="terminal-btn">
+              Clear
             </button>
           </div>
           {bonusLogs.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.5rem', fontSize: '0.8rem' }}>
-              <div style={{ padding: '0.5rem', background: 'var(--bg-muted)', borderRadius: 'var(--radius-sm)' }}>
-                <div style={{ color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Zähler</div>
-                <div>Free-Spin-Eintritt: {bonusSummary.fsEnter}</div>
-                <div>Multiplier erkannt: {bonusSummary.mult}</div>
+            <div className="terminal-stat-grid">
+              <div className="terminal-stat-box">
+                <div style={{ color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Counts</div>
+                <div>Free-spin entry: {bonusSummary.fsEnter}</div>
+                <div>Multiplier seen: {bonusSummary.mult}</div>
                 <div>Activator-only: {bonusSummary.activatorOnly}</div>
               </div>
-              <div style={{ padding: '0.5rem', background: 'var(--bg-muted)', borderRadius: 'var(--radius-sm)' }}>
-                <div style={{ color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Top Features</div>
+              <div className="terminal-stat-box">
+                <div style={{ color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Top features</div>
                 {bonusSummary.topFeatures.length === 0 ? (
                   <div style={{ color: 'var(--text-muted)' }}>—</div>
                 ) : (
                   bonusSummary.topFeatures.map(([k, v]) => (
-                    <div key={k}>{k}: {v}</div>
+                    <div key={k}>
+                      {k}: {v}
+                    </div>
                   ))
                 )}
               </div>
-              <div style={{ gridColumn: '1 / -1', padding: '0.5rem', background: 'var(--bg-muted)', borderRadius: 'var(--radius-sm)' }}>
-                <div style={{ color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Top Actions</div>
+              <div className="terminal-stat-box" style={{ gridColumn: '1 / -1' }}>
+                <div style={{ color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Top actions</div>
                 {bonusSummary.topActions.length === 0 ? (
                   <div style={{ color: 'var(--text-muted)' }}>—</div>
                 ) : (
                   bonusSummary.topActions.map(([k, v]) => (
-                    <span key={k} style={{ display: 'inline-block', marginRight: '0.5rem' }}>{k}: {v}</span>
+                    <span key={k} style={{ display: 'inline-block', marginRight: '0.5rem' }}>
+                      {k}: {v}
+                    </span>
                   ))
                 )}
               </div>
             </div>
           )}
-          <div style={{ ...STYLES.logList, maxHeight: 200 }}>
+          <div className="terminal-log terminal-log--h200">
             {bonusLogs.length === 0 ? (
-              <div style={{ padding: '0.75rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                Keine Bonus-Responses. Checkbox aktivieren und spielen.
+              <div className="terminal-muted-block" style={{ padding: '0.75rem' }}>
+                No bonus responses. Enable the checkbox above and play.
               </div>
             ) : (
               [...bonusLogs].reverse().map((entry, i) => (
-                <div key={i} style={STYLES.logEntry}>
-                  <span style={STYLES.logTs}>{entry.ts?.slice(11, 19)}</span>
-                  <span style={STYLES.logType}>{entry.slotName || entry.slotSlug || '?'}</span>
+                <div key={i} className="terminal-log__line">
+                  <span className="terminal-log__ts">{entry.ts?.slice(11, 19)}</span>
+                  <span className="terminal-log__type">{entry.slotName || entry.slotSlug || '?'}</span>
                   {entry.parsed?.scatterCount != null && (
-                    <span style={{ color: 'var(--accent)', marginLeft: '0.5rem' }}>{entry.parsed.scatterCount} Scatter</span>
+                    <span style={{ color: 'var(--accent)', marginLeft: '0.5rem' }}>{entry.parsed.scatterCount} scatter</span>
                   )}
                   {entry.parsed?.bonusFeatureId && (
                     <span style={{ color: 'var(--text-muted)', marginLeft: '0.25rem' }}>({entry.parsed.bonusFeatureId})</span>
                   )}
-                  <details style={STYLES.logDetails}>
-                    <summary>Request/Response</summary>
-                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: '0.25rem 0' }}>
-                      {JSON.stringify({ request: entry.request, response: entry.response }, null, 2)}
-                    </pre>
+                  <details className="terminal-log__details">
+                    <summary>Request / response</summary>
+                    <pre className="terminal-pre">{JSON.stringify({ request: entry.request, response: entry.response }, null, 2)}</pre>
                   </details>
                 </div>
               ))
@@ -413,45 +338,63 @@ export default function LogViewer({ refreshKey }) {
       </details>
 
       <details style={{ marginTop: '1rem' }}>
-        <summary style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer' }}>
-          Slot Spin Samples ({Object.keys(spinSamples).length} Slots) – Auto-Lernen
-        </summary>
+        <summary className="terminal-summary">Slot spin samples ({Object.keys(spinSamples).length} slots)</summary>
         <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-          Pro Slot 1–2 Spins automatisch. Bei Bonus zusätzlich bis zu 5 Bonus-Samples (×-bonus) für Vergleiche Hacksaw/Pragmatic/StakeEngine.
+          One to two auto samples per slot; on bonus, up to 5 extra bonus samples (×) for Hacksaw / Pragmatic / Stake engine comparisons.
         </div>
-        <div style={{ ...STYLES.btnRow, marginBottom: '0.5rem' }}>
-          <button onClick={handleSpinSamplesRefresh} style={STYLES.btn}>Aktualisieren</button>
-          <button onClick={() => exportSlotSpinSamplesAsFile()} style={{ ...STYLES.btn, ...STYLES.btnPrimary }}>
-            Als JSON exportieren
+        <div className="terminal-toolbar" style={{ marginBottom: '0.5rem' }}>
+          <button type="button" onClick={handleSpinSamplesRefresh} className="terminal-btn">
+            Refresh
           </button>
-          <button onClick={handleSpinSamplesClear} style={STYLES.btn}>Löschen</button>
+          <button type="button" onClick={() => exportSlotSpinSamplesAsFile()} className="terminal-btn terminal-btn--primary">
+            Export JSON
+          </button>
+          <button type="button" onClick={handleSpinSamplesClear} className="terminal-btn">
+            Clear
+          </button>
         </div>
-        <div style={{ ...STYLES.logList, maxHeight: 240 }}>
+        <div className="terminal-log terminal-log--h240">
           {Object.keys(spinSamples).length === 0 ? (
-            <div style={{ padding: '0.75rem', color: 'var(--text-muted)' }}>
-              Keine Samples. Spiel einen Slot – es werden automatisch 1–2 Spins pro Slot gespeichert.
+            <div className="terminal-muted-block" style={{ padding: '0.75rem' }}>
+              No samples. Play a slot — 1–2 spins per game are stored automatically.
             </div>
           ) : (
             Object.entries(spinSamples).map(([slug, entries]) => {
               const isBonus = slug.endsWith('-bonus')
               const baseName = entries?.[0]?.slotName || slug.replace(/-bonus$/, '')
               return (
-              <div key={slug} style={STYLES.logEntry}>
-                <span style={{ ...STYLES.logType, fontWeight: 600 }}>{baseName}</span>
-                {isBonus && <span style={{ background: 'var(--accent)', color: 'var(--bg-deep)', padding: '0.1rem 0.35rem', borderRadius: 4, fontSize: '0.65rem', marginLeft: '0.35rem' }}>Bonus</span>}
-                <span style={{ color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
-                  · {entries?.length || 0} Sample(s)
-                </span>
-                {(entries || []).map((entry, i) => (
-                  <details key={i} style={{ ...STYLES.logDetails, marginTop: '0.35rem' }}>
-                    <summary>{entry.ts?.slice(11, 19)} – Sample {i + 1}</summary>
-                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: '0.25rem 0', fontSize: '0.68rem' }}>
-                      {JSON.stringify({ request: entry.request, response: entry.response }, null, 2)}
-                    </pre>
-                  </details>
-                ))}
-              </div>
-            )})
+                <div key={slug} className="terminal-log__line">
+                  <span className="terminal-log__type" style={{ fontWeight: 600 }}>
+                    {baseName}
+                  </span>
+                  {isBonus && (
+                    <span
+                      style={{
+                        background: 'var(--accent)',
+                        color: 'var(--bg-deep)',
+                        padding: '0.1rem 0.35rem',
+                        borderRadius: 4,
+                        fontSize: '0.65rem',
+                        marginLeft: '0.35rem',
+                      }}
+                    >
+                      Bonus
+                    </span>
+                  )}
+                  <span style={{ color: 'var(--text-muted)', marginLeft: '0.5rem' }}>· {entries?.length || 0} sample(s)</span>
+                  {(entries || []).map((entry, j) => (
+                    <details key={j} className="terminal-log__details" style={{ marginTop: '0.35rem' }}>
+                      <summary>
+                        {entry.ts?.slice(11, 19)} — sample {j + 1}
+                      </summary>
+                      <pre className="terminal-pre">
+                        {JSON.stringify({ request: entry.request, response: entry.response }, null, 2)}
+                      </pre>
+                    </details>
+                  ))}
+                </div>
+              )
+            })
           )}
         </div>
       </details>

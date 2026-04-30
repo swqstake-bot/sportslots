@@ -16,9 +16,9 @@ export const ChallengeHubHeroBar = memo(function ChallengeHubHeroBar({ aggregate
     <div className="challenge-hub-hero">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-[var(--text)]">Challenge Hub</h2>
+          <h2 className="text-sm font-semibold text-[var(--text)]">Challenge hub</h2>
           <p className="text-xs text-[var(--text-muted)] mt-1">
-            Casino, Telegram, Forum, Sports, and Promotions in one workflow.
+            Casino, Autorun, Telegram, forum, and promotions in one place.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">

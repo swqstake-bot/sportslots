@@ -1323,6 +1323,78 @@ export default function BonusHuntControl({
 
   return (
     <div className="bonushunt-root" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div
+        className="casino-card"
+        style={{
+          padding: '1rem 1.25rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.5rem',
+          border: '1px solid var(--border-subtle)',
+          background:
+            'linear-gradient(120deg, rgba(var(--accent-rgb), 0.1) 0%, rgba(var(--accent-rgb), 0.03) 40%, transparent 100%), var(--bg-card)',
+        }}
+      >
+        <h2
+          className="text-sm font-semibold"
+          style={{ color: 'var(--text)', fontFamily: 'var(--font-heading)', letterSpacing: '0.04em' }}
+        >
+          Bonus hunt
+        </h2>
+        <p className="text-xs text-[var(--text-muted)]" style={{ maxWidth: '42rem' }}>
+          Pick games and stake, run the hunt, then open found bonuses (wheel, auto-open, or manual). Use the right column for
+          live progress.
+        </p>
+        <ol
+          className="bonushunt-stepper"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+            gap: '0.5rem',
+            listStyle: 'none',
+            margin: 0,
+            padding: 0,
+            marginTop: '0.25rem',
+          }}
+        >
+          {['Pick slots', 'Currency & bet', 'Run', 'Open bonuses'].map((label, i) => (
+            <li
+              key={label}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                fontSize: '0.7rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                color: 'var(--text-muted)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-md, 8px)',
+                padding: '0.35rem 0.5rem',
+                background: 'rgba(0,0,0,0.15)',
+              }}
+            >
+              <span
+                style={{
+                  minWidth: '1.1rem',
+                  height: '1.1rem',
+                  borderRadius: 999,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'rgba(var(--accent-rgb), 0.2)',
+                  color: 'var(--accent)',
+                  fontWeight: 800,
+                  fontSize: '0.65rem',
+                }}
+              >
+                {i + 1}
+              </span>
+              {label}
+            </li>
+          ))}
+        </ol>
+      </div>
       {(selectedSlots.length >= 2 || (huntComplete && wheelSlots.length >= 2)) && (
         <div className="casino-card" style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '1.25rem' }}>
           {huntComplete && <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.02em' }}>Bonus opening - choose the next bonus</div>}
@@ -1509,19 +1581,23 @@ export default function BonusHuntControl({
               Stop
             </button>
           )}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', cursor: 'pointer' }} title="Console logs for balance, wins and house-bet matching">
-              <input
-                type="checkbox"
-                checked={BONUS_HUNT_DEBUG}
-                onChange={(e) => {
-                  try { window.localStorage.setItem('bonus_hunt_debug', e.target.checked ? '1' : '0') } catch (_) {}
-                  window.location.reload()
-                }}
-                style={{ marginRight: '0.25rem' }}
-              />
-              Debug
-            </label>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <details style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              <summary style={{ cursor: 'pointer', listStyle: 'none', userSelect: 'none' }}>Advanced</summary>
+              <div style={{ marginTop: '0.5rem', padding: '0.5rem', border: '1px solid var(--border-subtle)', borderRadius: 8, background: 'var(--bg-deep)' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }} title="Verbose console-style logs; toggling reloads the app">
+                  <input
+                    type="checkbox"
+                    checked={BONUS_HUNT_DEBUG}
+                    onChange={(e) => {
+                      try { window.localStorage.setItem('bonus_hunt_debug', e.target.checked ? '1' : '0') } catch (_) {}
+                      window.location.reload()
+                    }}
+                  />
+                  Debug logging (page reloads)
+                </label>
+              </div>
+            </details>
             <TipMenu />
           </div>
         </div>

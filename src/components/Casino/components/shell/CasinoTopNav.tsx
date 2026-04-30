@@ -15,18 +15,19 @@ const MODES: { id: CasinoMode; label: string }[] = [
 
 export function CasinoTopNav({ mode, onChangeMode }: CasinoTopNavProps) {
   return (
-    <div className="casino-topnav">
+    <nav className="casino-topnav" aria-label="Casino Bereiche">
       {MODES.map((m) => (
         <button
           key={m.id}
           type="button"
           className={`casino-topnav-btn ${mode === m.id ? 'is-active' : ''}`}
           onClick={() => onChangeMode(m.id)}
+          aria-current={mode === m.id ? 'page' : undefined}
         >
           {m.label}
         </button>
       ))}
-    </div>
+    </nav>
   )
 }
 

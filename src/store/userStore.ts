@@ -178,8 +178,12 @@ export const useUserStore = create<UserState>((set, get) => ({
   },
 
   setSelectedCurrency: (currency) => set({ selectedCurrency: currency }),
-  setActiveBets: (bets) => set({ activeBets: bets }),
-  addActiveBet: (bet) => set((state) => ({ activeBets: [bet, ...state.activeBets] })),
+  setActiveBets: (bets) => set({
+    activeBets: Array.from(new Map((bets || []).filter((b) => b?.id).map((b) => [b.id, b])).values()),
+  }),
+  addActiveBet: (bet) => set((state) => ({
+    activeBets: [bet, ...state.activeBets.filter((b) => b.id !== bet.id)],
+  })),
   
   logout: () => set({ user: null, balances: {}, availableCurrencies: ['btc'], selectedCurrency: 'btc', activeBets: [] })
 }));

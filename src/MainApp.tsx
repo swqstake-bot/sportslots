@@ -157,6 +157,7 @@ function App() {
         }
       }
       if (resolved) {
+        window.dispatchEvent(new CustomEvent('stake-session-revalidated'));
         fetchData();
       } else {
         setError('Session noch nicht validiert. Bitte Login-Fenster abschließen.');
@@ -171,6 +172,7 @@ function App() {
     try {
       const status = await window.electronAPI.revalidateStakeSession();
       if (status?.valid) {
+        window.dispatchEvent(new CustomEvent('stake-session-revalidated'));
         setError('Session valid');
         setTimeout(() => setError(null), 2200);
       } else {

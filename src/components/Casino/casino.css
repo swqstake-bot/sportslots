@@ -1,4 +1,6 @@
 /* Casino – Futuristisches 2026 Cyberpunk-Theme */
+@import './styles/casinoTerminal.css';
+
 .casino-root {
   /* Base */
   --bg-deep: var(--app-bg-deep);
@@ -186,10 +188,13 @@ html[data-theme='light'] .casino-root {
 .casino-root .casino-shell-header {
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  background: radial-gradient(circle at 12% 12%, rgba(var(--accent-rgb), 0.09), transparent 48%), var(--surface-1);
-  backdrop-filter: blur(8px);
-  padding: 1rem 1rem 0.9rem;
-  box-shadow: var(--shadow-card), 0 0 12px rgba(var(--accent-rgb), 0.05);
+  background:
+    radial-gradient(ellipse 120% 80% at 10% 0%, rgba(var(--accent-rgb), 0.14), transparent 55%),
+    radial-gradient(circle at 92% 18%, rgba(157, 0, 255, 0.06), transparent 42%),
+    var(--surface-1);
+  backdrop-filter: blur(10px);
+  padding: 1.1rem 1.15rem 0.95rem;
+  box-shadow: var(--shadow-card), 0 0 20px rgba(var(--accent-rgb), 0.06);
 }
 
 .casino-root .casino-shell-title-row {
@@ -212,34 +217,79 @@ html[data-theme='light'] .casino-root {
   margin: 0.1rem 0 0;
   font-family: var(--font-heading);
   letter-spacing: 0.06em;
-  font-size: 1.05rem;
+  font-size: 1.15rem;
   color: var(--text);
+}
+
+.casino-root .casino-shell-sub {
+  margin: 0.45rem 0 0;
+  max-width: 28rem;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--text-muted);
 }
 
 .casino-root .casino-shell-status {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.32rem 0.58rem;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  row-gap: 0.35rem;
+  padding: 0.38rem 0.65rem;
   border: 1px solid var(--border-subtle);
   border-radius: 999px;
   font-size: 0.72rem;
   color: var(--text-muted);
-  background: rgba(0, 0, 0, 0.22);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.casino-root .casino-shell-status.is-connected {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border-subtle));
+}
+
+.casino-root .casino-shell-status.is-disconnected {
+  border-color: color-mix(in srgb, var(--error) 40%, var(--border-subtle));
+  background: color-mix(in srgb, var(--error) 6%, rgba(0, 0, 0, 0.28));
 }
 
 .casino-root .casino-shell-status-dot {
   width: 0.45rem;
   height: 0.45rem;
   border-radius: 999px;
+  flex-shrink: 0;
   background: var(--success);
   box-shadow: 0 0 10px rgba(0, 255, 136, 0.35);
+}
+
+.casino-root .casino-shell-status.is-disconnected .casino-shell-status-dot {
+  background: var(--error);
+  box-shadow: 0 0 10px rgba(255, 51, 102, 0.45);
+}
+
+.casino-root .casino-shell-session-action {
+  margin-left: 0.15rem;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.casino-root .casino-shell-session-action:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.2);
 }
 
 .casino-root .casino-topnav {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  gap: 0.5rem;
+  padding-top: 0.15rem;
 }
 
 .casino-root .casino-topnav-btn {
@@ -274,16 +324,17 @@ html[data-theme='light'] .casino-root {
 .casino-root .casino-content-frame {
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  padding: 1rem;
+  padding: 1.1rem 1.15rem;
+  min-height: 12rem;
   background:
     linear-gradient(
       180deg,
-      rgba(var(--accent-rgb), 0.09) 0%,
-      rgba(var(--accent-rgb), 0.03) 36%,
-      rgba(8, 8, 12, 0.9) 100%
+      rgba(var(--accent-rgb), 0.1) 0%,
+      rgba(var(--accent-rgb), 0.03) 38%,
+      rgba(8, 8, 12, 0.92) 100%
     ),
     var(--surface-1);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .casino-root .challenge-hub-root {
@@ -358,14 +409,40 @@ html[data-theme='light'] .casino-root {
   transform: translateY(-1px);
 }
 
-/* Slot pills – Neon-Glow Hover */
+/* Slot grid loading skeleton (Play mode fresh catalog) */
+@keyframes slot-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+.casino-root .slot-skeleton-tile {
+  min-height: 4.5rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.08) 0%, rgba(8, 8, 12, 0.7) 100%);
+  animation: slot-skeleton-pulse 1.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .casino-root .slot-skeleton-tile {
+    animation: none;
+    opacity: 0.55;
+  }
+}
+
+/* Slot tiles – single motion recipe (no stacked scale) */
 .casino-root .slot-pill {
-  transition: all var(--transition-fast);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
 }
 
 .casino-root .slot-pill:hover {
-  border-color: var(--accent) !important;
-  transform: translateY(-2px) scale(1.02);
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border-subtle));
+  transform: translateY(-2px);
   box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.2);
 }
 
@@ -377,19 +454,10 @@ html[data-theme='light'] .casino-root {
   box-shadow: 0 0 14px rgba(var(--accent-rgb), 0.24), inset 0 0 20px rgba(var(--accent-rgb), 0.08);
 }
 
-/* Compact Slot Cards – Scale + Neon-Glow */
-.casino-root .slot-card-compact {
-  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
-}
-
-.casino-root .slot-card-compact:hover {
-  transform: scale(1.05);
-  border-color: var(--accent) !important;
-  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.22);
-}
-
-.casino-root .slot-card-compact[data-selected='true']:hover {
-  box-shadow: 0 0 14px rgba(var(--accent-rgb), 0.28);
+@media (prefers-reduced-motion: reduce) {
+  .casino-root .slot-pill:hover {
+    transform: none;
+  }
 }
 
 /* Slots Loading Bar – Indeterminate Shimmer */

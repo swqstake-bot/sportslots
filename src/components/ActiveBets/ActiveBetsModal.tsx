@@ -93,6 +93,7 @@ export function ActiveBetsModal({ onClose, initialPreviewBetId = null }: ActiveB
   const [selectedBetIds, setSelectedBetIds] = useState<Set<string>>(new Set());
   const [previewBet, setPreviewBet] = useState<SportBet | null>(null);
   const didOpenInitialPreviewRef = useRef(false);
+  const autoCashoutFxWarningRef = useRef<Set<string>>(new Set());
   const showToast = useUiStore((s) => s.showToast);
 
   const { checkSingleBetAutoCashout, evaluateAutoCashout } = useAutoCashout({
@@ -102,6 +103,12 @@ export function ActiveBetsModal({ onClose, initialPreviewBetId = null }: ActiveB
     setActiveBets,
     usdRates,
     onAutoCashoutSuccess: () => showToast('Auto cashout executed', 'success'),
+    onAutoCashoutFxMissing: (currency) => {
+      const key = String(currency || 'unknown').toUpperCase();
+      if (autoCashoutFxWarningRef.current.has(key)) return;
+      autoCashoutFxWarningRef.current.add(key);
+      showToast(`Auto cashout paused for ${key}: FX rate missing`, 'info');
+    },
   });
 
   const { refreshCashoutOffers } = useCashoutOffers({

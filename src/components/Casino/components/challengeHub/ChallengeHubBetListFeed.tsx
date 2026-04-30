@@ -10,8 +10,8 @@ const BET_LIST_STATIC = {
   showContext: false,
   showCopyHouse: true,
   maxRows: MAX_ROWS,
-  title: 'BetList',
-  emptyMessage: 'No live challenge bets yet.',
+  title: 'Hub feed',
+  emptyMessage: 'No challenge hub bets yet.',
 } as const
 
 interface ChallengeHubBetListFeedProps {

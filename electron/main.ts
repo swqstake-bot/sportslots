@@ -70,6 +70,30 @@ let stakeBridgeWin: BrowserWindow | null = null;
 let withdrawPrefillWin: BrowserWindow | null = null;
 let slotPopupSeq = 0;
 
+function isSafeExternalUrl(url: string): boolean {
+  try {
+    const parsed = new URL(String(url));
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+async function openExternalSafe(url: string): Promise<void> {
+  if (!isSafeExternalUrl(url)) {
+    throw new Error('External URL scheme is not allowed');
+  }
+  await shell.openExternal(url);
+}
+
+function hostnameMatches(hostname: string, allowed: string): boolean {
+  const host = hostname.toLowerCase();
+  const needle = allowed.toLowerCase();
+  if (!needle) return false;
+  if (needle.includes('.')) return host === needle || host.endsWith(`.${needle}`);
+  return host.split('.').some((part) => part.includes(needle));
+}
+
 /**
  * Verstecktes Stake-Bridge-Fenster hat kein `parent` — bleibt sonst offen, blockiert `window-all-closed`
  * und hält den Electron-Prozess am Leben (Windows/Linux).
@@ -385,7 +409,7 @@ function createWindow() {
       preload: path.join(ELECTRON_DIR, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false,
+      webSecurity: true,
       sandbox: false,
       /** Sports/Casino AutoBet nutzt setTimeout-Loops — Standard wäre Throttling bei minimiertem Fenster. */
       backgroundThrottling: false,
@@ -432,7 +456,7 @@ function createWindow() {
 
   // Handle external links
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalSafe(url).catch((err) => console.warn('Blocked external URL:', err?.message || err));
     return { action: 'deny' };
   });
 
@@ -587,7 +611,7 @@ ipcMain.handle('get-keyauth-hwid', async () => {
 });
 
 ipcMain.handle('open-external', async (_event, url) => {
-    await shell.openExternal(url);
+    await openExternalSafe(String(url || ''));
 });
 
 ipcMain.handle('open-slot-popup', async (event, payload: { slug?: string; locale?: string } = {}) => {
@@ -618,7 +642,7 @@ ipcMain.handle('open-slot-popup', async (event, payload: { slug?: string; locale
     });
 
     popup.webContents.setWindowOpenHandler(({ url }) => {
-        shell.openExternal(url);
+        openExternalSafe(url).catch((err) => console.warn('Blocked external URL:', err?.message || err));
         return { action: 'deny' };
     });
 
@@ -704,7 +728,7 @@ ipcMain.handle(
         });
 
         withdrawPrefillWin.webContents.setWindowOpenHandler(({ url }) => {
-            shell.openExternal(url);
+            openExternalSafe(url).catch((err) => console.warn('Blocked external URL:', err?.message || err));
             return { action: 'deny' };
         });
 
@@ -1333,12 +1357,21 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
         }
 
         // 1. Pragmatic Logic
-        if (url.includes('gcmlgxrmkp.net')) {
+        let parsedProxyUrl: URL | null = null;
+        try {
+            parsedProxyUrl = new URL(url);
+        } catch {
+            parsedProxyUrl = null;
+        }
+        const proxyHostname = parsedProxyUrl?.hostname || '';
+        const proxyPathname = parsedProxyUrl?.pathname || '';
+
+        if (proxyHostname && hostnameMatches(proxyHostname, 'gcmlgxrmkp.net')) {
             isAllowed = true;
             type = 'pragmatic';
         } 
         // 2. Forum Logic
-        else if (url.includes('stakecommunity.com/topic/')) {
+        else if (proxyHostname && hostnameMatches(proxyHostname, 'stakecommunity.com') && proxyPathname.startsWith('/topic/')) {
             isAllowed = true;
             type = 'forum';
         }
@@ -1354,7 +1387,7 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                 // Mascot launcher/runtime hosts (e.g. open.mascot.host -> <session>.mascot.games)
                 'mascot.host', 'mascot.games'
             ];
-            if (allowed.some(h => url.includes(h))) {
+            if (proxyHostname && allowed.some(h => hostnameMatches(proxyHostname, h))) {
                 isAllowed = true;
                 type = 'rgs';
             }

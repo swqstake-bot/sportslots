@@ -162,7 +162,7 @@ function ensureBridge() {
         }
       }
       if (!base) {
-        return { winAmount: 0, balance: null, roundId: null, raw: null }
+        return { verified: false, winAmount: 0, balance: null, roundId: null, raw: null }
       }
       const gameId = s.gameId || s.gameid || null
       const gamesessionid = s.gamesessionid || s.token || null
@@ -228,9 +228,9 @@ function ensureBridge() {
         })
         text = await res.text()
       } catch {
-        return { winAmount: 0, balance: null, roundId: null, raw: text }
+        return { verified: false, winAmount: 0, balance: null, roundId: null, raw: text }
       }
-      return { winAmount: 0, balance: null, roundId: null, raw: text }
+      return { verified: false, winAmount: 0, balance: null, roundId: null, raw: text }
     },
   }
   window.slotbotBridge = bridge

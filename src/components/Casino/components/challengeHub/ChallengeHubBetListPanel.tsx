@@ -21,6 +21,9 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
     let cancelled = false
     const max = CHALLENGE_HUB_BET_LIST_MAX_ROWS
 
+    const hasCasinoSourceTag = (rows: any[]) =>
+      (rows || []).some((x) => String(x?.sourceTag || '').startsWith('casino:'))
+
     const hydrate = async () => {
       const fast = getChallengeHubRecentBets()
       if (fast.length > 0) {
@@ -31,8 +34,18 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
         const db = await loadRecentBets(max)
         if (cancelled) return
         if (db?.length) {
-          setRecentBets(db)
-          setLastUpdate(Date.now())
+          // IndexedDB rows have no houseBets share ids — do not clobber the in-memory live feed
+          // (or module buffer) that was just merged from houseBets.
+          setRecentBets((prev) => {
+            if (hasCasinoSourceTag(prev) || hasCasinoSourceTag(getChallengeHubRecentBets())) {
+              if (getChallengeHubRecentBets().length) {
+                return getChallengeHubRecentBets().slice(0, max)
+              }
+              return prev
+            }
+            return db
+          })
+          if (!cancelled) setLastUpdate(Date.now())
         }
       } catch {
         // keep hub stable when local history read fails
@@ -80,10 +93,10 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
       window.clearInterval(dbIntervalId)
       unsubscribe()
     }
-  }, [])
+  }, [setRecentBets])
 
   return (
-    <SectionCard title="BetList">
+    <SectionCard title="Hub activity">
       <ChallengeHubBetListFeed lastUpdate={lastUpdate} recentBets={recentBets} />
     </SectionCard>
   )

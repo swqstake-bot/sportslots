@@ -94,6 +94,9 @@ const THUNDERKICK_WEBVIEW_PROVIDER = {
       currencyCode: session?.currencyCode || null,
     }
     const res = await bridge.requestWebviewSpin(payload)
+    if (res?.verified !== true) {
+      throw new Error('Thunderkick webview spin results are not verified yet. Automation is disabled for this provider.')
+    }
     const currencyCode = (session?.currencyCode || 'EUR').toUpperCase()
     const winAmount = typeof res?.winAmount === 'number' ? res.winAmount : 0
     const balance = typeof res?.balance === 'number' ? res.balance : null

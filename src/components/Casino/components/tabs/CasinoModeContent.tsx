@@ -10,6 +10,7 @@ import type { CasinoSlotInstance, SlotSet, CasinoChallengeSelection } from '../.
 interface CasinoModeContentProps {
   mode: string
   token: string
+  slotsLoading: boolean
   webSlots: any[]
   selectedSlugs: string[]
   selectedSlotInstances: CasinoSlotInstance[]
@@ -53,6 +54,7 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
   const {
     mode,
     token,
+    slotsLoading,
     webSlots,
     selectedSlugs,
     selectedSlotInstances,
@@ -97,6 +99,7 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
     return (
       <PlayModeContent
         webSlots={webSlots}
+        slotsLoading={slotsLoading}
         selectedSlugs={selectedSlugs}
         selectedSlotInstances={selectedSlotInstances}
         loadedSetId={loadedSetId}
@@ -178,7 +181,7 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
   if (mode === 'logs') {
     return (
       <div className="space-y-6">
-        <SectionCard title="Recent Bets">
+        <SectionCard title="Recent bets">
           <BetList bets={recentBets} totalCount={recentBets?.length ?? 0} currencyCode="usd" emptyMessage="No bets found" />
         </SectionCard>
         <LogViewer refreshKey={playLogRefreshKey} />

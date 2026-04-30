@@ -8,6 +8,7 @@ interface CasinoShellProps {
   token: string
   mode: string
   onChangeMode: (mode: 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs') => void
+  onRefreshSession: () => void | Promise<void>
   children: ReactNode
 }
 
@@ -18,20 +19,31 @@ export function CasinoShell({
   token,
   mode,
   onChangeMode,
+  onRefreshSession,
   children,
 }: CasinoShellProps) {
+  const sessionOk = Boolean(token);
+
   return (
     <div className="casino-root min-h-screen font-sans" style={{ background: 'var(--bg-deep)', color: 'var(--text)' }}>
-      <div className="p-6 lg:p-8 w-full">
+      <div className="p-5 sm:p-6 lg:p-8 w-full max-w-[1920px] mx-auto">
         <header className="casino-shell-header">
           <div className="casino-shell-title-row">
             <div>
-              <p className="casino-shell-kicker">StakeSports Casino</p>
-              <h1 className="casino-shell-title">Control Center</h1>
+              <p className="casino-shell-kicker">Stakesports · Casino</p>
+              <h1 className="casino-shell-title">Control center</h1>
+              <p className="casino-shell-sub">Slots, automation &amp; tools — same Stake session as Sports.</p>
             </div>
-            <div className="casino-shell-status">
-              <span className="casino-shell-status-dot"></span>
-              <span>{token ? 'Session connected' : 'Session missing'}</span>
+            <div className={`casino-shell-status ${sessionOk ? 'is-connected' : 'is-disconnected'}`}>
+              <span className="casino-shell-status-dot" aria-hidden />
+              <span>{sessionOk ? 'Session verbunden' : 'Keine Casino-Session'}</span>
+              <button
+                type="button"
+                onClick={() => void onRefreshSession()}
+                className="casino-shell-session-action"
+              >
+                Session aktualisieren
+              </button>
             </div>
           </div>
           <CasinoTopNav mode={mode} onChangeMode={onChangeMode} />
