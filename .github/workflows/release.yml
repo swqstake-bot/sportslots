@@ -1,3 +1,4 @@
+# Tag v1.2.3 pushen → Release-Build. Oder manuell: Actions → „Release“ → Run workflow.
 name: Release
 
 on:
