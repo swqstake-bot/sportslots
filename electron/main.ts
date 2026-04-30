@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain, net, session, shell, globalShortcut, dialog, type WebContents } from 'electron';
-import { autoUpdater } from 'electron-updater';
+// electron-updater ist CommonJS: Named Import `import { autoUpdater }` bricht unter ESM (Main-Prozess).
+import updaterModule from 'electron-updater';
+const { autoUpdater } = updaterModule;
 import logger from 'electron-log';
 import https from 'node:https';
 import http from 'node:http';
