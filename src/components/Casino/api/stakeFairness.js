@@ -93,11 +93,30 @@ const ROTATE_SEED_PAIR_MUTATION = `mutation RotateSeedPair($seed: String!) {
   }
 }`
 
+/** Originals `rotateSeedPair`: längerer Freitext-Seed ok. */
 function randomClientSeed() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
   let s = ''
   for (let i = 0; i < 10; i++) s += chars[Math.floor(Math.random() * chars.length)]
   return s
+}
+
+/** RGS/Casino-Slot `rotateSeed` (HAR Seedchange3): genau 8 Zeichen, nur [A-Za-z0-9]. */
+const RGS_CLIENT_SEED_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+const RGS_CLIENT_SEED_LEN = 8
+
+function randomRgsFairnessClientSeed() {
+  let s = ''
+  for (let i = 0; i < RGS_CLIENT_SEED_LEN; i++) {
+    s += RGS_CLIENT_SEED_CHARS[Math.floor(Math.random() * RGS_CLIENT_SEED_CHARS.length)]
+  }
+  return s
+}
+
+function pickStakeRgsClientSeed(clientSeed) {
+  const raw = String(clientSeed || '').trim()
+  if (raw && /^[A-Za-z0-9]{8}$/.test(raw)) return raw
+  return randomRgsFairnessClientSeed()
 }
 
 export async function rotateStakeSeedPair(seed) {
@@ -114,7 +133,7 @@ export async function rotateStakeSeedPair(seed) {
  * Provably-fair Seed für einen Stake-Casino-Slot (RGS / Third-Party mit gameId).
  * `nextHashedServerSeed` = aktueller `userGameFair.serverSeedNext` (nächster Server-Seed-Hash in der Kette).
  * @param {string} gameId Stake-Spiel-UUID (Kurator `game.id`, nicht Slug)
- * @param {string} [clientSeed] optional, sonst zufällig
+ * @param {string} [clientSeed] optional — nur gültig wenn exakt 8 Zeichen [A-Za-z0-9], sonst neuer Zufalls-Seed
  * @param {{ referer?: string, language?: string }} [options] Referer + x-language wie Seedchange2.har (`tab=seeds`, `x-language: de`).
  * @returns {Promise<{ ok: boolean, seed?: string, result?: unknown, error?: string, gameId?: string }>}
  */
@@ -171,7 +190,7 @@ export async function rotateStakeRgsGameSeed(gameId, clientSeed, options = {}) {
       }
     }
 
-    const seed = clientSeed || randomClientSeed()
+    const seed = pickStakeRgsClientSeed(clientSeed)
     try {
       const mutRes = await StakeApi.mutate(
         ROTATE_SEED_RGS_MUTATION,

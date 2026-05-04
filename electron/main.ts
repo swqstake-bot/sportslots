@@ -1001,7 +1001,7 @@ async function stakeGraphqlInvoke(
                 : ['without_token'];
             for (const tokenMode of tokenModes) {
                 try {
-                    /** Seedchange2.har: Queries mit Accept-Wildcard + x-operation-name/type; RotateSeed (Mutation) mit application/graphql+json. */
+                    /** Seedchange2/3 HAR: Queries wildcard-Accept + x-operation-name; RotateSeed: graphql+json-Accept + operationName im Body. */
                     const gqlOpType = stakeGraphqlOperationType(String(query || ''));
                     const headers: Record<string, string> = {
                         'Content-Type': 'application/json',
@@ -1021,12 +1021,17 @@ async function stakeGraphqlInvoke(
                     if (tokenMode === 'with_token' && sessionStatus.sessionToken) {
                         headers['x-access-token'] = sessionStatus.sessionToken;
                     }
+                    /** Seedchange3.har: Mutations (RotateSeed) senden `operationName` im Body; Queries nutzen x-operation-name. */
+                    const graphqlBody: Record<string, unknown> = {
+                        query,
+                        variables: variables ?? {},
+                    };
+                    if (gqlOpType === 'mutation' && operationName) {
+                        graphqlBody.operationName = operationName;
+                    }
                     let response;
                     try {
-                        response = await stakeNetPostJson(`${origin}/_api/graphql`, headers, {
-                            query,
-                            variables,
-                        });
+                        response = await stakeNetPostJson(`${origin}/_api/graphql`, headers, graphqlBody);
                     } catch (netError) {
                         if (netError instanceof StakeHttpError && netError.status === 403) {
                             const preview = String(netError.body || '').slice(0, 180);
@@ -1038,10 +1043,7 @@ async function stakeGraphqlInvoke(
                                 });
                                 lastNet403FallbackLogAt = now;
                             }
-                            response = await stakeBrowserPostJson(`${origin}/_api/graphql`, headers, {
-                                query,
-                                variables,
-                            });
+                            response = await stakeBrowserPostJson(`${origin}/_api/graphql`, headers, graphqlBody);
                         } else {
                             throw netError;
                         }
@@ -1108,11 +1110,22 @@ const RGS_ROTATE_SEED_MUTATION = `mutation RotateSeed($clientSeed: String!, $gam
   }
 }`;
 
+/** Wie Seedchange3 / Stake-Web: RGS-rotateSeed clientSeed = genau 8 alphanumerische Zeichen. */
+const RGS_CLIENT_SEED_CHARS_MAIN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+const RGS_CLIENT_SEED_LEN_MAIN = 8;
+
 function randomRgsClientSeedForMain(): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let s = '';
-    for (let i = 0; i < 10; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    for (let i = 0; i < RGS_CLIENT_SEED_LEN_MAIN; i++) {
+        s += RGS_CLIENT_SEED_CHARS_MAIN[Math.floor(Math.random() * RGS_CLIENT_SEED_CHARS_MAIN.length)];
+    }
     return s;
+}
+
+function pickRgsClientSeedForMain(clientSeed?: string): string {
+    const raw = String(clientSeed || '').trim();
+    if (raw && /^[A-Za-z0-9]{8}$/.test(raw)) return raw;
+    return randomRgsClientSeedForMain();
 }
 
 ipcMain.handle(
@@ -1209,8 +1222,7 @@ ipcMain.handle(
                 };
             }
 
-            const seed =
-                String(payload?.clientSeed || '').trim() || randomRgsClientSeedForMain();
+            const seed = pickRgsClientSeedForMain(payload?.clientSeed);
             try {
                 const mutParsed = await stakeGraphqlInvoke(
                     {

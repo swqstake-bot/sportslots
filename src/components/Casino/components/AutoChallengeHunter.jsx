@@ -412,7 +412,6 @@ function hunterSpinKpiUsdDeltas(hubUsdRow, betMinor, winMinor, tCurr, rates) {
       wagered: betU,
       won: Math.max(0, netU),
       lost: Math.max(0, -netU),
-      runWonNet: Math.max(0, netU),
     }
   }
   const c = String(tCurr || 'usd').toLowerCase()
@@ -425,7 +424,6 @@ function hunterSpinKpiUsdDeltas(hubUsdRow, betMinor, winMinor, tCurr, rates) {
     wagered: bu,
     won: Math.max(0, netU),
     lost: Math.max(0, -netU),
-    runWonNet: Math.max(0, netU),
   }
 }
 
@@ -634,6 +632,8 @@ const SESSION_PROBE_DELAY_MS = 400
 const HUNTER_SPIN_DELAY_MS = 0
 /** Nach RGS play/end-round vor GraphQL `rotateSeed`: Monolith-Sync; zu niedrig → Fehler, zu hoch → unnötig langsam. */
 const STAKE_RGS_FAIRNESS_AFTER_SPIN_MS = 500
+/** Voller Wechsel (rotate + neue Session): so viele Versuche bei Fehler, bevor abgebrochen wird. */
+const STAKE_RGS_SEED_RESET_SWITCH_ATTEMPTS = 4
 const HUNTER_SPIN_ERROR_RETRY_MS = 2000
 /** Nach Session-Timeout / abgelaufener Session: 2–3s Pause, dann `startSession` + weiter spinnen (max. Versuche). */
 const SESSION_TIMEOUT_RECOVERY_DELAY_MS = 2500
@@ -2252,7 +2252,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         status: 'running',
         spins: 0,
         wagered: 0,
-        /** Kumulierter Nettogewinn in USD (wie totalSessionStats / netSpinUsd), nicht Summe Brutto-„win“ in Minor */
+        /** Gleiche USD-Einsatz-Spur wie Session-KPI (kpi.wagered), nicht nachträglich minorToUsd(Summe Minor). */
+        wageredUsd: 0,
+        /** Kumuliertes Spin-Netto in USD: Σ(win − bet) = Σ(kpi.won − kpi.lost). */
         wonUsd: 0,
         balance: 0,
         currentBet: 0,
@@ -2804,7 +2806,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               ...prev[runId],
               spins: prev[runId].spins + 1,
               wagered: prev[runId].wagered + betAmount,
-              wonUsd: (prev[runId].wonUsd ?? 0) + (kpi?.runWonNet ?? 0),
+              wageredUsd: (prev[runId].wageredUsd ?? 0) + (kpi?.wagered ?? 0),
+              wonUsd: (prev[runId].wonUsd ?? 0) + (kpi ? kpi.won - kpi.lost : 0),
               balance: parsed.balance,
               bestMultiRun: prev[runId].bestMultiRun ?? 0,
               bestBetId: prev[runId].bestBetId ?? null,
@@ -2894,63 +2897,98 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                   `Stake-RGS Seed Reset verschoben: Runde noch offen (Bonus/FS) — erst wenn Basis-Runde mit end-round fertig ist (${gName || gSlug})`
                 )
               } else {
-                try {
-                  log(`Stake-RGS Seed Reset nach ${stakeRgsSpinsSinceSeedReset} Spin(s) — ${gName || gSlug}`)
-                  if (!stakeGameIdForFairness) {
-                    throw new Error(
-                      'Keine Stake-Spiel-UUID (gameId) — Slots bitte mit „Refresh“ laden, oder Challenge liefert game.id.'
-                    )
-                  }
-                  await new Promise((r) => setTimeout(r, STAKE_RGS_FAIRNESS_AFTER_SPIN_MS))
-                  let fairnessReferer
-                  let fairnessLanguage
+                const seedSwitchErrText = (err) => {
+                  if (err == null) return 'unbekannt'
+                  if (typeof err === 'string') return err
+                  if (typeof err === 'number' || typeof err === 'boolean') return String(err)
+                  if (err instanceof Error) return err.message || String(err)
+                  const m = err?.message
+                  if (m != null) return String(m)
                   try {
-                    const st = await window.electronAPI?.getStakeSessionStatus?.()
-                    const origin = st?.origin
-                    const locale =
-                      typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en'
-                    const langPart = String(locale).trim().toLowerCase().split('-')[0]
-                    fairnessLanguage = /^[a-z]{2}$/.test(langPart) ? langPart : 'en'
-                    if (origin && String(gSlug || '').trim()) {
-                      fairnessReferer = buildStakeCasinoFairnessReferer(
-                        origin,
-                        locale,
-                        gSlug,
-                        stakeGameIdForFairness
+                    return JSON.stringify(err)
+                  } catch {
+                    return String(err)
+                  }
+                }
+                let seedSwitchOk = false
+                let lastSeedSwitchErr = ''
+                for (let seedAttempt = 0; seedAttempt < STAKE_RGS_SEED_RESET_SWITCH_ATTEMPTS; seedAttempt++) {
+                  try {
+                    if (seedAttempt === 0) {
+                      log(`Stake-RGS Seed Reset nach ${stakeRgsSpinsSinceSeedReset} Spin(s) — ${gName || gSlug}`)
+                      await new Promise((r) => setTimeout(r, STAKE_RGS_FAIRNESS_AFTER_SPIN_MS))
+                    } else {
+                      const backoffMs = SESSION_PROBE_DELAY_MS * seedAttempt + STAKE_RGS_FAIRNESS_AFTER_SPIN_MS
+                      log(
+                        `Stake-RGS Seed Reset Wiederholung ${seedAttempt + 1}/${STAKE_RGS_SEED_RESET_SWITCH_ATTEMPTS} (nach ${backoffMs} ms) — ${gName || gSlug}`
+                      )
+                      await new Promise((r) => setTimeout(r, backoffMs))
+                    }
+                    if (!stakeGameIdForFairness) {
+                      throw new Error(
+                        'Keine Stake-Spiel-UUID (gameId) — Slots bitte mit „Refresh“ laden, oder Challenge liefert game.id.'
                       )
                     }
-                  } catch (_) {}
-                  const rotated = await rotateStakeRgsGameSeed(stakeGameIdForFairness, undefined, {
-                    referer: fairnessReferer,
-                    language: fairnessLanguage,
-                  })
-                  if (!rotated?.ok) {
-                    throw new Error(rotated?.error || 'rotateSeed ohne activeSeed')
+                    let fairnessReferer
+                    let fairnessLanguage
+                    try {
+                      const st = await window.electronAPI?.getStakeSessionStatus?.()
+                      const origin = st?.origin
+                      const locale =
+                        typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en'
+                      const langPart = String(locale).trim().toLowerCase().split('-')[0]
+                      fairnessLanguage = /^[a-z]{2}$/.test(langPart) ? langPart : 'en'
+                      if (origin && String(gSlug || '').trim()) {
+                        fairnessReferer = buildStakeCasinoFairnessReferer(
+                          origin,
+                          locale,
+                          gSlug,
+                          stakeGameIdForFairness
+                        )
+                      }
+                    } catch (_) {}
+                    const rotated = await rotateStakeRgsGameSeed(stakeGameIdForFairness, undefined, {
+                      referer: fairnessReferer,
+                      language: fairnessLanguage,
+                    })
+                    if (!rotated?.ok) {
+                      const rotMsg = seedSwitchErrText(rotated?.error)
+                      throw new Error(rotMsg || 'rotateSeed ohne activeSeed')
+                    }
+                    const freshRate = getRateForCurrency(ratesRef.current || rates || {}, tCurr) || rate
+                    if (!freshRate) throw new Error(`Kein Kurs für ${String(tCurr).toUpperCase()}`)
+                    rate = freshRate
+                    await new Promise((r) => setTimeout(r, SESSION_PROBE_DELAY_MS))
+                    session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
+                    noteSessionFairnessId(session)
+                    const computed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
+                    betAmount = computed.betAmount
+                    setActiveRuns((prev) => ({
+                      ...prev,
+                      [runId]: {
+                        ...prev[runId],
+                        currentBet: betAmount,
+                        runCurrency: tCurr,
+                      },
+                    }))
+                    log(
+                      `Seed rotiert (RGS game ${stakeGameIdForFairness} · Client ${rotated.seed ?? '—'}) · Session neu · ${String(tCurr).toUpperCase()} · Einsatz ${formatAmount(betAmount, tCurr)}`
+                    )
+                    seedSwitchOk = true
+                    break
+                  } catch (seedErr) {
+                    lastSeedSwitchErr = seedSwitchErrText(seedErr)
+                    log(
+                      `Stake-RGS Seed Reset Versuch ${seedAttempt + 1}/${STAKE_RGS_SEED_RESET_SWITCH_ATTEMPTS} fehlgeschlagen: ${lastSeedSwitchErr}`
+                    )
                   }
-                  const freshRate = getRateForCurrency(ratesRef.current || rates || {}, tCurr) || rate
-                  if (!freshRate) throw new Error(`Kein Kurs für ${String(tCurr).toUpperCase()}`)
-                  rate = freshRate
-                  await new Promise((r) => setTimeout(r, SESSION_PROBE_DELAY_MS))
-                  session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
-                  noteSessionFairnessId(session)
-                  const computed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
-                  betAmount = computed.betAmount
-                  setActiveRuns((prev) => ({
-                    ...prev,
-                    [runId]: {
-                      ...prev[runId],
-                      currentBet: betAmount,
-                      runCurrency: tCurr,
-                    },
-                  }))
-                  log(
-                    `Seed rotiert (RGS game ${stakeGameIdForFairness} · Client ${rotated.seed ?? '—'}) · Session neu · ${String(tCurr).toUpperCase()} · Einsatz ${formatAmount(betAmount, tCurr)}`
-                  )
-                } catch (seedErr) {
-                  log(`Stake-RGS Seed Reset fehlgeschlagen: ${String(seedErr?.message || seedErr)}`)
-                } finally {
-                  stakeRgsSpinsSinceSeedReset = 0
                 }
+                if (!seedSwitchOk) {
+                  log(
+                    `Stake-RGS Seed Reset nach ${STAKE_RGS_SEED_RESET_SWITCH_ATTEMPTS} Versuchen abgebrochen: ${lastSeedSwitchErr || 'unbekannt'}`
+                  )
+                }
+                stakeRgsSpinsSinceSeedReset = 0
               }
             }
           }
@@ -4287,7 +4325,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 return (
                 <div key={run.id} className="hunter-run-card">
                   <div className="hunter-run-card-inner">
-                  <div style={{fontWeight: 600, marginBottom: '0.4rem' }}>
+                  <div style={{ fontWeight: 600, marginBottom: '0.4rem' }}>
                     {run.slotName}
                     {run.currencySlotIndex > 0 ? (
                       <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.75rem' }}>
@@ -4334,10 +4372,19 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                   <div style={STYLES.statRow}><span>Spins</span><span>{run.spins}</span></div>
                   <div style={STYLES.statRow}>
                     <span>Wagered (USD)</span>
-                    <span>${minorToUsd(run.wagered, run.runCurrency || targetCurrency, rates).toFixed(2)}</span>
+                    <span>
+                      $
+                      {(
+                        run.wageredUsd != null
+                          ? run.wageredUsd
+                          : minorToUsd(run.wagered, run.runCurrency || targetCurrency, rates)
+                      ).toFixed(2)}
+                    </span>
                   </div>
                   <div style={STYLES.statRow}>
-                    <span>Won (USD)</span>
+                    <span title="Kumuliertes Netto pro Spin in USD (Gewinn − Einsatz), wie die Session-Netto-Zeile">
+                      Netto (USD)
+                    </span>
                     <span>
                       $
                       {(run.wonUsd != null
