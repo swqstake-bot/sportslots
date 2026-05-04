@@ -205,6 +205,33 @@ function wrapResponse(winAmount, currencyCode, roundId) {
   }
 }
 
+function buildBetValueCandidates(effectiveBet, currencyCode) {
+  const currency = (currencyCode || 'eur').toLowerCase()
+  const isZeroDec = ['idr', 'jpy', 'krw', 'vnd'].includes(currency)
+  const isFiat = ['eur', 'usd', 'brl', 'cad', 'cny', 'inr', 'mxn', 'php', 'pln', 'rub', 'try', 'ngn', 'ars', 'cop', 'pen', 'clp'].includes(currency)
+
+  const betMinor = Number(effectiveBet)
+  let betMajor
+  if (isZeroDec) betMajor = betMinor
+  else if (isFiat) betMajor = betMinor / 100
+  else betMajor = betMinor / 1e8
+
+  const uniq = []
+  const push = (v) => {
+    const n = Number(v)
+    if (!Number.isFinite(n) || n <= 0) return
+    if (!uniq.some((x) => Math.abs(x - n) < 1e-12)) uniq.push(n)
+  }
+
+  // Prefer major units first; many providers expect this.
+  push(betMajor)
+  // Fallback: some providers expect minor units.
+  push(Math.round(betMinor))
+  // Some providers accept decimal strings but reject integer-only variants.
+  if (!Number.isInteger(betMajor)) push(Number(betMajor.toFixed(8)))
+  return uniq
+}
+
 function makeAdapter(path) {
   return {
     async startSession(accessToken, slotSlug, sourceCurrency, targetCurrency) {
@@ -218,43 +245,118 @@ function makeAdapter(path) {
       const body = {}
       if (session.token != null) body.token = session.token
       if (session.gameId != null) body.gameId = session.gameId
-      
-      // BetAmount ist in Minor (Cents/Satoshis), Provider erwartet meist Major (EUR/BTC)
-      const currency = (session.currencyCode || 'eur').toLowerCase()
-      const isZeroDec = ['idr', 'jpy', 'krw', 'vnd'].includes(currency)
-      const isFiat = ['eur', 'usd', 'brl', 'cad', 'cny', 'inr', 'mxn', 'php', 'pln', 'rub', 'try', 'ngn', 'ars', 'cop', 'pen', 'clp'].includes(currency)
-
-      let betMajor
-      if (isZeroDec) {
-        betMajor = Number(effectiveBet)
-      } else if (isFiat) {
-        betMajor = Number(effectiveBet) / 100
-      } else {
-        // Crypto: Satoshis -> Major
-        betMajor = Number(effectiveBet) / 1e8
+      const betValues = buildBetValueCandidates(effectiveBet, session.currencyCode)
+      let lastStatus = null
+      let lastResponsePreview = null
+      for (const betValue of betValues) {
+        const req = { ...body, bet: betValue }
+        const t0 = Date.now()
+        const res = await postViaProxy(upstreamUrl, req)
+        const json = await res.json().catch(() => null)
+        const text = await res.text().catch(() => null)
+        const error = !res.ok ? `HTTP ${res.status}` : null
+        logApiCall({
+          type: `provider/${path}/bet`,
+          endpoint: upstreamUrl,
+          request: req,
+          response: json ? { ok: res.ok, preview: JSON.stringify(json).slice(0, 120) } : text?.slice(0, 120),
+          error,
+          durationMs: Date.now() - t0,
+        })
+        if (res.ok) {
+          const data = wrapResponse(json?.win ?? 0, session.currencyCode, json?.roundId)
+          const nextSeq = (session.seq || 0) + 1
+          return { data, nextSeq, session: { ...session, seq: nextSeq } }
+        }
+        lastStatus = res.status
+        lastResponsePreview = json ? JSON.stringify(json).slice(0, 200) : text?.slice(0, 200)
       }
-      
-      body.bet = betMajor
-      const t0 = Date.now()
-      const res = await postViaProxy(upstreamUrl, body)
-      const json = await res.json().catch(() => null)
-      const text = await res.text().catch(() => null)
-      
-      logApiCall({
-        type: `provider/${path}/bet`,
-        endpoint: upstreamUrl,
-        request: body,
-        response: json ? { ok: res.ok, preview: JSON.stringify(json).slice(0, 120) } : text?.slice(0, 120),
-        error: !res.ok ? `HTTP ${res.status}` : null,
-        durationMs: Date.now() - t0,
-      })
-      const data = wrapResponse(json?.win ?? 0, session.currencyCode, json?.roundId)
-      const nextSeq = (session.seq || 0) + 1
-      return { data, nextSeq, session: { ...session, seq: nextSeq } }
+      throw new Error(`Generic provider spin failed: HTTP ${lastStatus || 400}${lastResponsePreview ? ` (${lastResponsePreview})` : ''}`)
     },
     async sendKeepAlive() { return { ok: true } },
     async sendContinue() { return { ok: true } },
   }
+}
+
+export const genericUniversal = {
+  async startSession(accessToken, slotSlug, sourceCurrency, targetCurrency) {
+    const s = await commonStart(accessToken, slotSlug, sourceCurrency, targetCurrency)
+    logApiCall({
+      type: 'provider/generic-universal/init',
+      endpoint: s.configUrl || s.base,
+      request: { slotSlug, sourceCurrency, targetCurrency },
+      response: { host: s.host, token: !!s.token, gameId: s.gameId },
+      error: null,
+      durationMs: null,
+    })
+    return s
+  },
+  async placeBet(session, betAmount, extraBet = false) {
+    const effectiveBet = getEffectiveBetAmount(betAmount, extraBet)
+    const betValues = buildBetValueCandidates(effectiveBet, session.currencyCode)
+
+    const endpointCandidates = ['spin', 'play', 'bet', 'wager']
+    const payloadKeyCandidates = ['bet', 'amount', 'stake', 'wager', 'betAmount']
+
+    let lastError = 'No successful generic endpoint'
+    for (const endpoint of endpointCandidates) {
+      const upstreamUrl = session.base ? `${session.base}/${endpoint}` : session.configUrl || ''
+      for (const key of payloadKeyCandidates) {
+        for (const betValue of betValues) {
+          const body = { [key]: betValue }
+          if (session.token != null) body.token = session.token
+          if (session.gameId != null) body.gameId = session.gameId
+          const t0 = Date.now()
+          try {
+            const res = await postViaProxy(upstreamUrl, body)
+            const json = await res.json().catch(() => null)
+            const text = await res.text().catch(() => null)
+            if (!res.ok) {
+              lastError = `HTTP ${res.status}`
+              logApiCall({
+                type: 'provider/generic-universal/bet',
+                endpoint: upstreamUrl,
+                request: body,
+                response: json ? { ok: false, preview: JSON.stringify(json).slice(0, 120) } : text?.slice(0, 120),
+                error: lastError,
+                durationMs: Date.now() - t0,
+              })
+              continue
+            }
+            const winFromJson =
+              Number(json?.win ?? json?.winAmount ?? json?.payout ?? json?.amountWon ?? 0) ||
+              Number(json?.data?.win ?? json?.data?.winAmount ?? json?.data?.payout ?? 0)
+            const roundId = json?.roundId || json?.data?.roundId || null
+            logApiCall({
+              type: 'provider/generic-universal/bet',
+              endpoint: upstreamUrl,
+              request: body,
+              response: { ok: true, winAmount: Number.isFinite(winFromJson) ? winFromJson : 0, roundId },
+              error: null,
+              durationMs: Date.now() - t0,
+            })
+            const data = wrapResponse(Number.isFinite(winFromJson) ? winFromJson : 0, session.currencyCode, roundId)
+            const nextSeq = (session.seq || 0) + 1
+            return { data, nextSeq, session: { ...session, seq: nextSeq } }
+          } catch (e) {
+            lastError = e?.message || String(e)
+            logApiCall({
+              type: 'provider/generic-universal/bet',
+              endpoint: upstreamUrl,
+              request: body,
+              response: null,
+              error: lastError,
+              durationMs: Date.now() - t0,
+            })
+          }
+        }
+      }
+    }
+
+    throw new Error(`Generic provider spin failed: ${lastError}`)
+  },
+  async sendKeepAlive() { return { ok: true } },
+  async sendContinue() { return { ok: true } },
 }
 
 export const relax = makeAdapter('play')
@@ -277,3 +379,13 @@ export const twist = makeAdapter('spin')
 export const popiplay = makeAdapter('spin')
 export const helio = makeAdapter('spin')
 export const samurai = makeAdapter('spin')
+export const bgaming = makeAdapter('spin')
+export const gamomat = makeAdapter('spin')
+export const justslots = makeAdapter('spin')
+export const massive = makeAdapter('spin')
+export const onetouch = makeAdapter('spin')
+export const truelab = makeAdapter('spin')
+export const slotmill = makeAdapter('spin')
+export const petersons = makeAdapter('spin')
+export const gamesglobal = makeAdapter('spin')
+export const jaderabbit = makeAdapter('spin')

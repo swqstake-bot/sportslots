@@ -1,7 +1,7 @@
 @echo off
 title StakeSportsElectron
 echo ==========================================
-echo Starting StakeSportsElectron...
+echo Starting latest development version...
 echo ==========================================
 cd /d "%~dp0"
 

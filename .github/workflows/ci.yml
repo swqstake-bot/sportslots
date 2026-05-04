@@ -1,0 +1,51 @@
+# Läuft bei jedem Push / PR → in GitHub unter „Actions“ sichtbar („aktiv“).
+# Release / Update (electron-builder --publish) bleiben in release.yml / update.yml.
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-and-check:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm install
+
+      - name: Lint
+        run: npm run lint
+
+      - name: QA Gate (contracts + replay + tests)
+        run: npm run qa:gate
+
+      - name: Compile (Vite + Electron TS)
+        run: npm run build:compile

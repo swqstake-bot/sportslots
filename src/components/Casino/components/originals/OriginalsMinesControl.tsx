@@ -55,7 +55,7 @@ export default function OriginalsMinesControl({ settings: propSettings, onSettin
     const amt = Number(amount) || Number(settings?.baseBet) || 0.01
     const targetGems = Math.max(1, Math.min(24, gemsToReveal))
     if (!(amt > 0)) {
-      setError('Einsatz muss größer 0 sein.')
+      setError('Stake must be greater than 0.')
       return
     }
     setError('')
@@ -98,7 +98,7 @@ export default function OriginalsMinesControl({ settings: propSettings, onSettin
         await delay(delayMs)
       }
     } catch (e: any) {
-      setError(e?.message || 'Wette fehlgeschlagen')
+      setError(e?.message || 'Bet failed')
       onBetPlaced?.({ error: e?.message })
     } finally {
       setRunning(false)
@@ -118,7 +118,7 @@ export default function OriginalsMinesControl({ settings: propSettings, onSettin
         <div>
           <div className="flex flex-wrap gap-3 items-end mb-3">
             <div className="w-24">
-              <label className="block text-xs text-[var(--text-muted)] mb-1">Einsatz</label>
+              <label className="block text-xs text-[var(--text-muted)] mb-1">Stake</label>
               <input
                 type="number"
                 min="0.00000001"
@@ -129,7 +129,7 @@ export default function OriginalsMinesControl({ settings: propSettings, onSettin
               />
             </div>
             <div className="w-24">
-              <label className="block text-xs text-[var(--text-muted)] mb-1">Währung</label>
+              <label className="block text-xs text-[var(--text-muted)] mb-1">Currency</label>
               <select
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value)}
@@ -141,7 +141,7 @@ export default function OriginalsMinesControl({ settings: propSettings, onSettin
               </select>
             </div>
             <div className="w-24">
-              <label className="block text-xs text-[var(--text-muted)] mb-1">Minen (1–24)</label>
+              <label className="block text-xs text-[var(--text-muted)] mb-1">Mines (1-24)</label>
               <input
                 type="number"
                 min={1}
@@ -169,7 +169,7 @@ export default function OriginalsMinesControl({ settings: propSettings, onSettin
           </div>
 
           <div className="rounded-xl border border-[var(--border-subtle)] p-3 bg-[var(--bg-deep)]">
-            <div className="text-xs text-[var(--text-muted)] mb-2">Spielfeld (5×5)</div>
+            <div className="text-xs text-[var(--text-muted)] mb-2">Board (5x5)</div>
             <div className="grid grid-cols-5 gap-1.5">
               {tiles.map((state, i) => (
                 <div
@@ -192,13 +192,13 @@ export default function OriginalsMinesControl({ settings: propSettings, onSettin
         <div>
           <div className="rounded-xl border border-[var(--border-subtle)] p-3 bg-[var(--bg-deep)]">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-[var(--text-muted)]">Cashout-Ladder (nach X Gems)</span>
+              <span className="text-xs font-medium text-[var(--text-muted)]">Cashout ladder (after X gems)</span>
               <button
                 type="button"
                 onClick={addLadderRow}
                 className="text-xs text-[var(--accent)] hover:underline"
               >
-                + Zeile
+                + Row
               </button>
             </div>
             <div className="space-y-1.5">

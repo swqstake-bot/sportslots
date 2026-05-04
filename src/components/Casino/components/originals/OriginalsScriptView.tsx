@@ -51,16 +51,16 @@ export default function OriginalsScriptView() {
     const profileJson = profileContent.trim()
     const scriptCode = scriptContent.trim()
     if (!profileJson && !scriptCode) {
-      addLog('Bitte Profil-JSON oder Script-Code einfügen.')
+      addLog('Please paste profile JSON or script code.')
       return
     }
-    addLog('Lade Wechselkurse (Einsatz = USD)…')
+    addLog('Loading exchange rates (stake = USD)...')
     let usdRates: Record<string, number> = {}
     try {
       usdRates = (await fetchCurrencyRates('')) ?? {}
-      if (Object.keys(usdRates).length > 0) addLog('Wechselkurse geladen.')
+      if (Object.keys(usdRates).length > 0) addLog('Exchange rates loaded.')
     } catch {
-      addLog('Wechselkurse nicht geladen – Einsatz wird 1:1 als Währungseinheit verwendet.')
+      addLog('Exchange rates not loaded - stake is used 1:1 as currency unit.')
     }
     const callbacks = {
       onLog: addLog,
@@ -128,7 +128,7 @@ export default function OriginalsScriptView() {
     setChartData([])
     setLastStats(null)
     setBetList([])
-    addLog('Statistik zurückgesetzt.')
+    addLog('Statistics reset.')
   }, [addLog])
 
   return (
@@ -164,7 +164,7 @@ export default function OriginalsScriptView() {
 
       <div className={`space-y-4 ${subTab !== 'run' ? 'hidden' : ''}`}>
           <p className="text-sm text-[var(--text-muted)]">
-            <strong>Profil (.json)</strong> einfügen und Start – oder <strong>Script (.js)</strong> einfügen, dann wird die Konfig (game, Einsatz, …) extrahiert und als Session ausgeführt. <strong>Einsatz immer in USD</strong> (z.B. 0.01 = $0.01); bei anderer Währung wird zum Start umgerechnet.
+            Paste a <strong>profile (.json)</strong> and press Start - or paste a <strong>script (.js)</strong>, then the config (game, stake, ...) is extracted and executed as a session. <strong>Stake is always in USD</strong> (e.g. 0.01 = $0.01); with another currency it is converted on start.
           </p>
           <div className="flex gap-2 items-center">
             <label className="text-xs text-[var(--text-muted)]">Währung</label>
@@ -191,7 +191,7 @@ export default function OriginalsScriptView() {
               <textarea
                 value={scriptContent}
                 onChange={(e) => setScriptContent(e.target.value)}
-                placeholder="Script-Code einfügen (game=, initialBetSize=, … werden ausgelesen)"
+                placeholder="Paste script code (game=, initialBetSize=, ... are extracted)"
                 rows={8}
                 className="w-full bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm font-mono text-[var(--text)] placeholder-[var(--text-muted)] focus:ring-2 focus:ring-[var(--accent)] outline-none resize-y"
               />
@@ -208,7 +208,7 @@ export default function OriginalsScriptView() {
               <textarea
                 value={profileContent}
                 onChange={(e) => setProfileContent(e.target.value)}
-                placeholder='Profil-JSON einfügen (z. B. { "name": "...", "options": { "game": "keno", ... } })'
+                placeholder='Paste profile JSON (e.g. { "name": "...", "options": { "game": "keno", ... } })'
                 rows={8}
                 className="w-full bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm font-mono text-[var(--text)] placeholder-[var(--text-muted)] focus:ring-2 focus:ring-[var(--accent)] outline-none resize-y"
               />

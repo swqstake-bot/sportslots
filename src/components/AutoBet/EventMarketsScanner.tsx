@@ -95,7 +95,7 @@ export function EventMarketsScanner({
     } catch (e) {
       console.error(e);
       setFixtures([]);
-      setError(e instanceof Error ? e.message : 'Fixtures konnten nicht geladen werden.');
+      setError(e instanceof Error ? e.message : 'Fixtures could not be loaded.');
     } finally {
       setLoadingFixtures(false);
     }
@@ -114,7 +114,7 @@ export function EventMarketsScanner({
 
   const scanMarkets = async () => {
     if (!effectiveSlug) {
-      setError('Bitte ein Spiel aus der Liste wählen oder einen Fixture-Slug eintragen.');
+      setError('Please select a game from the list or enter a fixture slug.');
       return;
     }
     setLoadingMarkets(true);
@@ -125,7 +125,7 @@ export function EventMarketsScanner({
     } catch (e) {
       console.error(e);
       setSnapshot(null);
-      setError(e instanceof Error ? e.message : 'Märkte konnten nicht geladen werden.');
+      setError(e instanceof Error ? e.message : 'Markets could not be loaded.');
     } finally {
       setLoadingMarkets(false);
     }
@@ -160,11 +160,11 @@ export function EventMarketsScanner({
       <div className="flex items-start justify-between gap-2">
         <div>
           <h4 className="text-xs font-bold uppercase tracking-wider" style={variant === 'app' ? { color: 'var(--app-text)' } : { color: '#e5e7eb' }}>
-            Wettmärkte (Vorschau)
+            Betting markets (preview)
           </h4>
           <p className="text-[10px] mt-0.5" style={mutedStyle}>
-            Es wird nur die Main-Spalte geladen – dort liegen die relevanten Märkte (Über/Unter, Runden, etc.) für
-            dieses Match.
+            Only the main column is loaded - this is where the relevant markets (over/under, rounds, etc.) are for
+            this match.
           </p>
         </div>
       </div>
@@ -172,7 +172,7 @@ export function EventMarketsScanner({
       {tournamentParsed && (
         <div>
           <label className={labelClass} style={labelStyle}>
-            Spiel im Turnier
+            Tournament game
           </label>
           <div className="relative">
             <select
@@ -186,7 +186,7 @@ export function EventMarketsScanner({
               }}
             >
               <option value="">
-                {loadingFixtures ? 'Lade Spiele…' : fixtures.length === 0 ? 'Keine Spiele gefunden' : '— Spiel wählen —'}
+                {loadingFixtures ? 'Loading games...' : fixtures.length === 0 ? 'No games found' : '- Select game -'}
               </option>
               {fixtures.map((f) => (
                 <option key={f.id} value={f.id}>
@@ -214,10 +214,10 @@ export function EventMarketsScanner({
           onChange={(e) => setManualSlug(e.target.value)}
           className={inputClass}
           style={inputSelectStyle}
-          placeholder="Überschreibt die Auswahl oben, z. B. aus der Stake-URL"
+          placeholder="Overrides the selection above, e.g. from the Stake URL"
         />
         <p className="text-[10px] mt-1" style={mutedStyle}>
-          Wenn leer, wird das ausgewählte Spiel verwendet. Slug hat Vorrang vor der Dropdown-Auswahl.
+          If empty, the selected game is used. Slug takes priority over the dropdown selection.
         </p>
       </div>
 
@@ -232,7 +232,7 @@ export function EventMarketsScanner({
             : { background: '#16a34a', color: '#fff' }
         }
       >
-        {loadingMarkets ? 'Lade Märkte…' : 'Märkte scannen'}
+        {loadingMarkets ? 'Loading markets...' : 'Scan markets'}
       </button>
 
       {error && (
@@ -248,7 +248,7 @@ export function EventMarketsScanner({
               {snapshot.fixtureName}
             </span>
             <span>
-              {stats.groups} Gruppen · {stats.markets} Märkte · {stats.outcomes} Auswahlen
+              {stats.groups} groups · {stats.markets} markets · {stats.outcomes} outcomes
             </span>
           </div>
           <input
@@ -257,7 +257,7 @@ export function EventMarketsScanner({
             onChange={(e) => setFilterText(e.target.value)}
             className={inputClass}
             style={inputSelectStyle}
-            placeholder="Filtern (z. B. Runde, Über, Methode)…"
+            placeholder="Filter (e.g. round, over, method)..."
           />
 
           <div className="max-h-[min(420px,50vh)] overflow-y-auto space-y-1.5 pr-0.5 scrollbar-thin" style={{ scrollbarColor: `${borderCol} transparent` }}>

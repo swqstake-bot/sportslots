@@ -1,0 +1,18 @@
+{
+  "rates": {
+    "usd": 1,
+    "eur": 1.08,
+    "btc": 65000
+  },
+  "entries": [
+    { "amount": 10, "payout": 12, "currency": "usd" },
+    { "amount": 5, "payout": 0, "currency": "eur" },
+    { "amount": 0.0001, "payout": 0.00015, "currency": "btc" }
+  ],
+  "expected": {
+    "count": 3,
+    "winCount": 2,
+    "lossCount": 1
+  }
+}
+

@@ -2,12 +2,13 @@
  * Horizontaler "Slot-Slider" statt Rad.
  * Wählt zufälligen Slot aus der Liste.
  */
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 
 const ITEM_WIDTH = 120
 const ITEM_GAP = 10
 const VISIBLE_ITEMS = 5 // Ungerade Zahl bevorzugt, damit einer in der Mitte steht
 const TOTAL_ITEM_WIDTH = ITEM_WIDTH + ITEM_GAP
+const TARGET_STRIP_ITEMS = 320
 
 const STYLES = {
   container: {
@@ -25,7 +26,7 @@ const STYLES = {
   },
   viewport: {
     position: 'relative',
-    width: TOTAL_ITEM_WIDTH * VISIBLE_ITEMS - ITEM_GAP,
+    width: `min(100%, ${TOTAL_ITEM_WIDTH * VISIBLE_ITEMS - ITEM_GAP}px)`,
     height: 100,
     overflow: 'hidden',
     borderRadius: 'var(--radius-md)',
@@ -38,7 +39,7 @@ const STYLES = {
     gap: ITEM_GAP,
     height: '100%',
     alignItems: 'center',
-    paddingLeft: (TOTAL_ITEM_WIDTH * VISIBLE_ITEMS - ITEM_GAP) / 2 - ITEM_WIDTH / 2, // Center alignment offset
+    paddingLeft: `calc(50% - ${ITEM_WIDTH / 2}px)`,
     transition: 'transform 4s cubic-bezier(0.15, 0.9, 0.3, 1)',
     willChange: 'transform',
   },
@@ -64,14 +65,14 @@ const STYLES = {
   itemOpened: {
     opacity: 0.5,
     filter: 'grayscale(1)',
-    background: '#2a2a2a',
+    background: 'var(--bg-elevated)',
   },
   openedBadge: {
     position: 'absolute',
     top: 0,
     right: 0,
-    background: '#555',
-    color: '#fff',
+    background: 'var(--surface-3)',
+    color: 'var(--text-muted)',
     fontSize: '0.6rem',
     padding: '2px 4px',
     borderBottomLeftRadius: 4,
@@ -139,17 +140,21 @@ export default function SlotSlider({ slots = [], disabled, openedSlugs = [], onW
   const [stripItems, setStripItems] = useState([])
   
   useEffect(() => {
-    // Erstelle einen sehr langen Strip für smooth scrolling
-    const longStrip = []
-    const repeatCount = 100 // Sehr hohe Wiederholung für unendliches Gefühl
-    for (let i = 0; i < repeatCount; i++) {
-      longStrip.push(...slots)
+    const source = bonusOnlySlots.length > 0 ? bonusOnlySlots : slots
+    if (source.length === 0) {
+      setStripItems([])
+      return
     }
+    // Dynamische Länge: genug für smooth scrolling, aber deutlich weniger DOM als vorher.
+    const repeatCount = Math.max(20, Math.ceil(TARGET_STRIP_ITEMS / source.length))
+    const longStrip = []
+    for (let i = 0; i < repeatCount; i++) longStrip.push(...source)
     setStripItems(longStrip)
-  }, [bonusOnlySlots])
+  }, [slots, bonusOnlySlots])
 
   const spin = useCallback(() => {
     if (spinning || availableSlots.length === 0 || disabled) return
+    if (!stripItems.length) return
     
     setSpinning(true)
     setWinnerName('')
@@ -207,7 +212,7 @@ export default function SlotSlider({ slots = [], disabled, openedSlugs = [], onW
   return (
     <div style={STYLES.container}>
       <div style={STYLES.winnerDisplay}>
-        {winnerName || (spinning ? 'Viel Glück!' : 'Bereit zum Öffnen')}
+        {winnerName || (spinning ? 'Good luck!' : 'Ready to open')}
       </div>
       
       <div style={STYLES.viewport}>
@@ -246,7 +251,7 @@ export default function SlotSlider({ slots = [], disabled, openedSlugs = [], onW
           transform: spinning ? 'scale(0.95)' : 'scale(1)'
         }}
       >
-        {spinning ? 'Läuft...' : availableSlots.length === 0 ? 'Alle geöffnet!' : 'SLIDE STARTEN'}
+        {spinning ? 'Running...' : availableSlots.length === 0 ? 'All opened!' : 'START SLIDE'}
       </button>
     </div>
   )

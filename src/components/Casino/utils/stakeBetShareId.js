@@ -28,6 +28,7 @@ export function pickStakeHouseBetShareRawId(payload) {
   const top = payload.id != null && String(payload.id).trim() !== '' ? String(payload.id).trim() : null
   if (top && /^house:/i.test(top)) return top
   if (top && /^casino:[0-9a-f-]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(top)) return top
+  if (top && /^\d+$/.test(top)) return top
   return null
 }
 

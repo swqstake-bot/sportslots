@@ -1,12 +1,25 @@
 // src/api/client.ts
 
+export type StakeGraphqlRequestOptions = {
+  /** Wie im Browser: Fairness-Modal sendet z. B. `…/casino/games/<slug>?tab=seeds&game=<uuid>&modal=fairnessStakeEngine`. */
+  referer?: string
+  /** Stake `x-language` (HAR: de) — sonst aus Referer-Pfad /de/… abgeleitet. */
+  language?: string
+}
+
 export class StakeApi {
-  static async query<T = any>(query: string, variables: any = {}): Promise<{ data: T; errors?: any[] }> {
+  static async query<T = any>(
+    query: string,
+    variables: any = {},
+    options?: StakeGraphqlRequestOptions
+  ): Promise<{ data: T; errors?: any[] }> {
     // Use the exposed Electron API from preload script
     const result = await window.electronAPI.invoke('api-request', {
       operationName: this.extractOperationName(query),
       query,
-      variables
+      variables,
+      ...(options?.referer ? { referer: options.referer } : {}),
+      ...(options?.language ? { language: options.language } : {}),
     });
 
     if (result.errors && result.errors.length > 0) {
@@ -17,8 +30,12 @@ export class StakeApi {
     return result;
   }
 
-  static async mutate<T = any>(mutation: string, variables: any = {}): Promise<{ data: T; errors?: any[] }> {
-    return this.query<T>(mutation, variables);
+  static async mutate<T = any>(
+    mutation: string,
+    variables: any = {},
+    options?: StakeGraphqlRequestOptions
+  ): Promise<{ data: T; errors?: any[] }> {
+    return this.query<T>(mutation, variables, options);
   }
 
   private static extractOperationName(query: string): string {

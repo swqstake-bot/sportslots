@@ -1,3 +1,5 @@
+import { convertToUsd, normalizeCurrencyCode as normalizeCurrencyCodeCanonical } from '../../utils/monetaryContract';
+
 export type LoggerCategory = 'casino' | 'sports';
 
 export interface LoggerBetEntry {
@@ -9,11 +11,16 @@ export interface LoggerBetEntry {
   gameName?: string | null;
   gameSlug?: string | null;
   amount: number | null;
+  amountMajor?: number | null;
+  amountMinor?: number | null;
   payout: number | null;
+  payoutMajor?: number | null;
+  payoutMinor?: number | null;
   currency?: string | null;
   payoutMultiplier?: number | null;
   amountMultiplier?: number | null;
   category?: LoggerCategory;
+  status?: string | null;
 }
 
 const CURRENCY_ALIASES: Record<string, string> = {
@@ -35,7 +42,7 @@ export function normalizeCurrencyCode(value: unknown): string {
   const raw = String(value || '').trim().toLowerCase();
   if (!raw) return '';
   const compact = raw.replace(/[\s_-]+/g, '');
-  return CURRENCY_ALIASES[raw] || CURRENCY_ALIASES[compact] || raw;
+  return normalizeCurrencyCodeCanonical(CURRENCY_ALIASES[raw] || CURRENCY_ALIASES[compact] || raw);
 }
 
 export function getUsdRate(currency: unknown, rates: Record<string, number> = {}): number {
@@ -62,8 +69,8 @@ export function getUsdRate(currency: unknown, rates: Record<string, number> = {}
 
 export function toUsd(amount: number | null | undefined, currency: unknown, rates: Record<string, number> = {}): number {
   if (amount == null || Number.isNaN(Number(amount))) return 0;
-  const rate = getUsdRate(currency, rates);
-  return Number(amount) * (rate || 0);
+  const converted = convertToUsd(amount, currency, 'major', rates);
+  return converted.usdAmount ?? 0;
 }
 
 export function getBetMultiplier(bet: Pick<LoggerBetEntry, 'payoutMultiplier' | 'amount' | 'payout'>): number | null {
@@ -91,4 +98,34 @@ export function formatBetIdForCopy(value: unknown): string {
   if (!raw) return '';
   if (raw.toLowerCase().startsWith('house:')) return `casino:${raw.slice(6)}`;
   return raw;
+}
+
+export function inferLoggerCategory(entry: any): LoggerCategory {
+  const slug = String(entry?.gameSlug || '').toLowerCase();
+  const gameName = String(entry?.gameName || '').toLowerCase();
+  const betType = String(entry?.betType || '').toLowerCase();
+  const ids = `${String(entry?.houseId || '')} ${String(entry?.iid || '')} ${String(entry?.betId || '')}`.toLowerCase();
+  if (
+    entry?.category === 'sports' ||
+    slug.includes('sportsbook') ||
+    gameName.includes('sportsbook') ||
+    betType.includes('sport') ||
+    ids.includes('sport:')
+  ) {
+    return 'sports';
+  }
+  return 'casino';
+}
+
+export type SportsSettlement = 'positive' | 'negative' | 'push' | 'pending';
+
+export function getSportsSettlement(entry: LoggerBetEntry): SportsSettlement {
+  const status = String(entry.status || '').toLowerCase();
+  if (status.includes('open') || status.includes('active') || status.includes('pending')) return 'pending';
+  const amount = Number(entry.amount);
+  const payout = Number(entry.payout);
+  if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(payout)) return 'pending';
+  const net = payout - amount;
+  if (Math.abs(net) < 1e-9) return 'push';
+  return net > 0 ? 'positive' : 'negative';
 }

@@ -4,10 +4,22 @@ import { useUiStore } from '../../store/uiStore';
 const TOAST_DURATION_MS = 2800;
 
 const typeStyles = {
-  success: 'bg-[#00e701]/15 border-[#00e701] text-[#00e701]',
-  error: 'bg-[#ff4d4d]/15 border-[#ff4d4d] text-[#ff4d4d]',
-  info: 'bg-[#1475e1]/15 border-[#1475e1] text-[#b1bad3]',
-};
+  success: {
+    background: 'rgba(0, 255, 136, 0.14)',
+    borderColor: 'rgba(0, 255, 136, 0.45)',
+    color: 'var(--app-success)',
+  },
+  error: {
+    background: 'rgba(255, 51, 102, 0.14)',
+    borderColor: 'rgba(255, 51, 102, 0.45)',
+    color: 'var(--app-error)',
+  },
+  info: {
+    background: 'rgba(var(--app-accent-rgb), 0.14)',
+    borderColor: 'rgba(var(--app-accent-rgb), 0.45)',
+    color: 'var(--app-text)',
+  },
+} as const;
 
 export function GlobalToast() {
   const { toast, clearToast } = useUiStore();
@@ -24,7 +36,8 @@ export function GlobalToast() {
     <div
       role="status"
       aria-live="polite"
-      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[10000] px-5 py-2.5 rounded-lg border shadow-lg text-sm font-medium ${typeStyles[toast.type]}`}
+      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10000] px-5 py-2.5 rounded-lg border shadow-lg text-sm font-medium"
+      style={typeStyles[toast.type]}
     >
       {toast.message}
     </div>

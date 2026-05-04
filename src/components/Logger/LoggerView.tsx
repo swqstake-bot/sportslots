@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CasinoLoggerTab from './tabs/CasinoLoggerTab';
 import SportsLoggerTab from './tabs/SportsLoggerTab';
+import { loggerBetsIdentity } from './loggerListIdentity';
+import { inferLoggerCategory } from './loggerUtils';
 import type { LoggerBetEntry } from './loggerUtils';
 import './logger.css';
 
 type LoggerTab = 'casino' | 'sports';
+type LoggerSubscriptionStatus = 'idle' | 'connecting' | 'connected' | 'error';
 
 function loadCachedCurrencyRates(): Record<string, number> {
   try {
@@ -31,8 +34,12 @@ export default function LoggerView() {
   const [sportsBets, setSportsBets] = useState<LoggerBetEntry[]>([]);
   const [currencyRates, setCurrencyRates] = useState<Record<string, number>>({});
   const [statusMessage, setStatusMessage] = useState('');
+  const [subscriptionStatus, setSubscriptionStatus] = useState<LoggerSubscriptionStatus>('idle');
+  const [subscriptionError, setSubscriptionError] = useState('');
   const [manualReloading, setManualReloading] = useState(false);
   const currencyRefreshInFlightRef = useRef(false);
+  const lastCasinoIdentityRef = useRef<string>('');
+  const lastSportsIdentityRef = useRef<string>('');
 
   const refreshCurrencyRates = useCallback(async () => {
     if (currencyRefreshInFlightRef.current) return;
@@ -57,20 +64,23 @@ export default function LoggerView() {
     const foreground = options?.foreground === true;
     if (foreground) setManualReloading(true);
     try {
-      const list = await window.electronAPI.loadLoggerBetLogs({ limit: Number.MAX_SAFE_INTEGER });
+      const list = await window.electronAPI.loadLoggerBetLogs({ limit: 5000 });
       const normalized = (Array.isArray(list) ? list : []).map((b: any) => ({
         ...b,
-        category:
-          b?.category === 'sports' ||
-          String(b?.gameSlug || '').toLowerCase().includes('sportsbook') ||
-          String(b?.gameName || '').toLowerCase().includes('sportsbook') ||
-          String(b?.betType || '').toLowerCase().includes('sport') ||
-          `${String(b?.houseId || '')} ${String(b?.iid || '')} ${String(b?.betId || '')}`.toLowerCase().includes('sport:')
-            ? 'sports'
-            : 'casino',
+        category: inferLoggerCategory(b),
       }));
-      setCasinoBets(normalized.filter((b: LoggerBetEntry) => b.category !== 'sports'));
-      setSportsBets(normalized.filter((b: LoggerBetEntry) => b.category === 'sports'));
+      const casinoNorm = normalized.filter((b: LoggerBetEntry) => b.category !== 'sports');
+      const sportsNorm = normalized.filter((b: LoggerBetEntry) => b.category === 'sports');
+      const nextCasinoId = loggerBetsIdentity(casinoNorm);
+      const nextSportsId = loggerBetsIdentity(sportsNorm);
+      if (nextCasinoId !== lastCasinoIdentityRef.current) {
+        lastCasinoIdentityRef.current = nextCasinoId;
+        setCasinoBets(casinoNorm);
+      }
+      if (nextSportsId !== lastSportsIdentityRef.current) {
+        lastSportsIdentityRef.current = nextSportsId;
+        setSportsBets(sportsNorm);
+      }
     } catch {
       // ignore
     } finally {
@@ -87,32 +97,34 @@ export default function LoggerView() {
       return;
     }
     await loadLoggerLogs();
-    setStatusMessage(`${r.bets?.length ?? 0} Wetten importiert.`);
+    setStatusMessage(`${r.bets?.length ?? 0} bets imported.`);
   }, [loadLoggerLogs]);
 
   const handleExport = useCallback(async (bets: LoggerBetEntry[]) => {
     setStatusMessage('');
     if (!bets.length) {
-      setStatusMessage('Keine Wetten zum Exportieren.');
+      setStatusMessage('No bets available to export.');
       return;
     }
     const r = await window.electronAPI.exportLoggerBetLogs(bets);
     if (r?.cancelled) return;
-    if (r?.ok) setStatusMessage(`Exportiert: ${bets.length} Wetten -> ${r.path || 'Gespeichert'}`);
-    else setStatusMessage(r?.error || 'Export fehlgeschlagen');
+    if (r?.ok) setStatusMessage(`Exported: ${bets.length} bets -> ${r.path || 'Saved'}`);
+    else setStatusMessage(r?.error || 'Export failed');
   }, []);
 
   const handleDeleteAll = useCallback(async () => {
-    const confirmed = window.confirm('Wirklich alles löschen? Das entfernt Casino-Logs und leert Sports-Stats.');
+    const confirmed = window.confirm('Delete everything? This removes casino logs and clears sports stats.');
     if (!confirmed) return;
     const r = await window.electronAPI.deleteAllLoggerBetLogs();
     if (!r?.ok) {
-      setStatusMessage(r?.error || 'Löschen fehlgeschlagen');
+      setStatusMessage(r?.error || 'Delete failed');
       return;
     }
     setCasinoBets([]);
     setSportsBets([]);
-    setStatusMessage(`Alles gelöscht: ${r.deleted ?? 0} Log-Datei(en) entfernt.`);
+    lastCasinoIdentityRef.current = loggerBetsIdentity([]);
+    lastSportsIdentityRef.current = loggerBetsIdentity([]);
+    setStatusMessage(`Deleted all: ${r.deleted ?? 0} log file(s) removed.`);
   }, []);
 
   useEffect(() => {
@@ -127,12 +139,34 @@ export default function LoggerView() {
 
   useEffect(() => {
     const t = setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
       loadLoggerLogs();
     }, 3000);
     return () => {
       clearInterval(t);
     };
   }, [loadLoggerLogs]);
+
+  useEffect(() => {
+    const applyStatus = (detail: any) => {
+      const next = detail?.status;
+      if (next === 'idle' || next === 'connecting' || next === 'connected' || next === 'error') {
+        setSubscriptionStatus(next);
+        setSubscriptionError(String(detail?.error || ''));
+      }
+    };
+    try {
+      const raw = localStorage.getItem('logger_subscription_status');
+      if (raw) applyStatus(JSON.parse(raw));
+    } catch {
+      // ignore corrupt cached status
+    }
+    const handler = (event: Event) => {
+      applyStatus((event as CustomEvent).detail);
+    };
+    window.addEventListener('logger-subscription-status', handler as EventListener);
+    return () => window.removeEventListener('logger-subscription-status', handler as EventListener);
+  }, []);
 
   const sortedCasinoBets = useMemo(
     () => [...casinoBets].sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()),
@@ -145,7 +179,7 @@ export default function LoggerView() {
   );
 
   return (
-    <div className="logger-root p-6 lg:p-8 max-w-[1800px] mx-auto">
+    <div className="logger-root p-6 lg:p-8 w-full">
       <div className="logger-topbar mb-5">
         <div className="logger-tabs-wrap">
           <button
@@ -168,6 +202,13 @@ export default function LoggerView() {
         </button>
       </div>
 
+      <p className="logger-muted logger-archive-hint">
+        Lokales Bet-Archiv: Einträge aus HouseBets-Realtime + JSONL-Dateien (bis 5000 beim Laden). Filter wirken auf
+        Auswertung, CSV- und JSONL-Export — vergleichbar zur Idee von SSP{' '}
+        <span className="mono">bet-archive-list</span> / <span className="mono">analyze</span>, ohne separates
+        Download-Backend.
+      </p>
+
       {tab === 'casino' ? (
         <CasinoLoggerTab
           bets={sortedCasinoBets}
@@ -182,8 +223,8 @@ export default function LoggerView() {
         <SportsLoggerTab
           bets={sortedSportsBets}
           currencyRates={currencyRates}
-          subscriptionStatus="connected"
-          subscriptionError=""
+          subscriptionStatus={subscriptionStatus}
+          subscriptionError={subscriptionError}
         />
       )}
     </div>

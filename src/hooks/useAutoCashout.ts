@@ -11,6 +11,7 @@ export interface UseAutoCashoutOptions {
   setActiveBets: React.Dispatch<React.SetStateAction<SportBet[]>>;
   usdRates: Record<string, number>;
   onAutoCashoutSuccess?: (betId: string) => void;
+  onAutoCashoutFxMissing?: (currency: string) => void;
 }
 
 /**
@@ -24,11 +25,22 @@ export function useAutoCashout({
   setActiveBets,
   usdRates,
   onAutoCashoutSuccess,
+  onAutoCashoutFxMissing,
 }: UseAutoCashoutOptions) {
   const stateRef = useRef({ enabled, targetUsd });
   useEffect(() => {
     stateRef.current = { enabled, targetUsd };
   }, [enabled, targetUsd]);
+
+  const resolveUsdRate = useCallback(
+    (currency: string | undefined) => {
+      const key = String(currency || '').toLowerCase();
+      if (key === 'usd') return 1;
+      const rate = usdRates[key];
+      return Number.isFinite(rate) && rate > 0 ? rate : null;
+    },
+    [usdRates]
+  );
 
   const checkSingleBetAutoCashout = useCallback(
     async (bet: SportBet) => {
@@ -38,7 +50,11 @@ export function useAutoCashout({
       const cashoutValue = getCashoutValue(bet);
       if (!cashoutValue || cashoutValue <= 0) return;
 
-      const rate = usdRates[(bet.currency || 'usd').toLowerCase()] ?? 1;
+      const rate = resolveUsdRate(bet.currency);
+      if (rate == null) {
+        onAutoCashoutFxMissing?.(bet.currency || 'unknown');
+        return;
+      }
       const valueUsd = cashoutValue * rate;
       if (valueUsd < target) return;
 
@@ -58,7 +74,7 @@ export function useAutoCashout({
         console.error(`Auto cashout failed for ${bet.id}`, err);
       }
     },
-    [usdRates, setActiveBets, onAutoCashoutSuccess]
+    [resolveUsdRate, setActiveBets, onAutoCashoutSuccess, onAutoCashoutFxMissing]
   );
 
   const evaluateAutoCashout = useCallback(async () => {
@@ -71,7 +87,11 @@ export function useAutoCashout({
       const cashoutValue = getCashoutValue(b);
       if (!cashoutValue || cashoutValue <= 0) continue;
 
-      const rate = usdRates[(b.currency || 'usd').toLowerCase()] ?? 1;
+      const rate = resolveUsdRate(b.currency);
+      if (rate == null) {
+        onAutoCashoutFxMissing?.(b.currency || 'unknown');
+        continue;
+      }
       const valueUsd = cashoutValue * rate;
       if (valueUsd < target) continue;
 
@@ -91,7 +111,7 @@ export function useAutoCashout({
         console.error(`Auto cashout failed for ${b.id}`, err);
       }
     }
-  }, [activeBets, usdRates, setActiveBets, onAutoCashoutSuccess]);
+  }, [activeBets, resolveUsdRate, setActiveBets, onAutoCashoutSuccess, onAutoCashoutFxMissing]);
 
   return { checkSingleBetAutoCashout, evaluateAutoCashout };
 }

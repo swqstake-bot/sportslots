@@ -308,3 +308,18 @@ export async function telegramLogout(): Promise<void> {
   await disconnectClient();
   deleteSessionFile();
 }
+
+/** App-Exit: Live-Listener stoppen und MTProto trennen — Session-Datei bleibt erhalten (nicht wie Logout). */
+export async function shutdownTelegramForAppQuit(): Promise<void> {
+  codeResolver = null;
+  passwordResolver = null;
+  await telegramStopListen();
+  if (!client) return;
+  try {
+    await client.disconnect();
+  } catch {
+    /* ignore */
+  }
+  client = null;
+  lastCredentials = null;
+}

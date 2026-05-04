@@ -43,7 +43,7 @@ export default function OriginalsPlinkoControl({ settings: propSettings, onSetti
   const runSession = async () => {
     const amt = Number(amount) || Number(settings?.baseBet) || 0.01
     if (!(amt > 0)) {
-      setError('Einsatz muss > 0 sein.')
+      setError('Stake must be > 0.')
       return
     }
     setError('')
@@ -62,13 +62,13 @@ export default function OriginalsPlinkoControl({ settings: propSettings, onSetti
         const win = payout > 0
         const entry: OriginalsBetEntry = { amount: amt, payout, win }
         addEntry(entry)
-        onBetPlaced?.(result ? { iid: result.iid, payout } : { error: 'Keine Antwort' })
+        onBetPlaced?.(result ? { iid: result.iid, payout } : { error: 'No response' })
         if (!result) break
         if (shouldStopSession(sessionEntries, settings ?? {})) break
         await delay(delayMs)
       }
     } catch (e: any) {
-      setError(e?.message || 'Wette fehlgeschlagen')
+      setError(e?.message || 'Bet failed')
       onBetPlaced?.({ error: e?.message })
     } finally {
       setRunning(false)
@@ -85,7 +85,7 @@ export default function OriginalsPlinkoControl({ settings: propSettings, onSetti
       </h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div>
-          <label className="block text-xs text-[var(--text-muted)] mb-1">Einsatz</label>
+          <label className="block text-xs text-[var(--text-muted)] mb-1">Stake</label>
           <input
             type="number"
             min="0.00000001"
@@ -96,7 +96,7 @@ export default function OriginalsPlinkoControl({ settings: propSettings, onSetti
           />
         </div>
         <div>
-          <label className="block text-xs text-[var(--text-muted)] mb-1">Währung</label>
+          <label className="block text-xs text-[var(--text-muted)] mb-1">Currency</label>
           <select
             value={currency}
             onChange={(e) => setCurrency(e.target.value)}
@@ -108,7 +108,7 @@ export default function OriginalsPlinkoControl({ settings: propSettings, onSetti
           </select>
         </div>
         <div>
-          <label className="block text-xs text-[var(--text-muted)] mb-1">Reihen</label>
+          <label className="block text-xs text-[var(--text-muted)] mb-1">Rows</label>
           <select
             value={rows}
             onChange={(e) => setRows(Number(e.target.value))}

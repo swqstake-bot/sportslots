@@ -135,7 +135,7 @@ const STYLES = {
   },
 }
 
-export default function TelegramChallengeHunter({ accessToken, webSlots = [], onDiscoveredSlots }) {
+export default function TelegramChallengeHunter({ accessToken, webSlots = [], onDiscoveredSlots, onHubStatsChange }) {
   const [draft, setDraft] = useState(() => {
     try {
       return localStorage.getItem(DRAFT_KEY) || ''
@@ -149,6 +149,24 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
   const [rates, setRates] = useState({})
   const [totalSessionStats, setTotalSessionStats] = useState({ wagered: 0, won: 0, lost: 0 })
   const [bestMultiBySlot, setBestMultiBySlot] = useState(() => loadBestMultiMap())
+  useEffect(() => {
+    if (typeof onHubStatsChange !== 'function') return
+    const running = Object.values(activeRuns).filter((run) => run?.status === 'running').length
+    const completed = Object.values(activeRuns).filter((run) => run?.status === 'target_hit' || run?.status === 'completed').length
+    const bestMulti = Object.values(bestMultiBySlot).reduce((max, value) => {
+      const n = Number(value)
+      return Number.isFinite(n) ? Math.max(max, n) : max
+    }, 0)
+    onHubStatsChange({
+      source: 'telegram',
+      queued: queue.length,
+      running,
+      completed,
+      bestMulti,
+      ts: Date.now(),
+    })
+  }, [queue.length, activeRuns, bestMultiBySlot, onHubStatsChange])
+
   const [logs, setLogs] = useState([])
   const [autoStart, setAutoStart] = useState(true)
 
@@ -338,7 +356,11 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
         }
         return merged
       })
-      setQueue((q) => [...q, ...newChallenges.map((c) => c.id).filter((id) => !q.includes(id))])
+      setQueue((q) => {
+        const seen = new Set(q)
+        const additions = newChallenges.map((c) => c.id).filter((id) => !seen.has(id))
+        return additions.length ? [...q, ...additions] : q
+      })
       log(`${newChallenges.length} Eintrag(e) aus Telegram in die Warteschlange.`)
 
       const known = new Set(webSlotsRef.current.map((s) => s.slug))
@@ -467,7 +489,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
     })
     setAutoStart(false)
     setQueue([])
-    log('Alle Telegram-Läufe gestoppt, Warteschlange geleert.')
+    log('All Telegram runs stopped, queue cleared.')
   }, [log])
 
   const stopSingleRunner = (runId) => {
@@ -499,7 +521,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
     clearTelegramSlotTargets()
     setTotalSessionStats({ wagered: 0, won: 0, lost: 0 })
     setAutoStart(false)
-    log('Telegram-Hunter zurückgesetzt.')
+    log('Telegram hunter reset.')
   }, [log])
 
   const electron = getElectronApi()
@@ -555,7 +577,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
                   apiId: parseInt(apiIdStr, 10),
                   apiHash: apiHashStr.trim(),
                 })
-                if (!r?.ok) setLoginError(r?.error || 'Fehler')
+                if (!r?.ok) setLoginError(r?.error || 'Error')
                 else setLoginError('')
               }}
             >
@@ -636,7 +658,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
           )}
           {lastLivePreview && (
             <p className="hunter-meta" style={{ fontSize: '0.72rem', marginTop: '0.35rem' }}>
-              Letzte Nachricht: {lastLivePreview}
+              Latest message: {lastLivePreview}
             </p>
           )}
         </div>
@@ -830,7 +852,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               rows={6}
-              placeholder="Nachricht mit stake.com/casino/games/… einfügen"
+              placeholder="Paste message with stake.com/casino/games/... here"
               style={{
                 width: '100%',
                 padding: '0.5rem',
@@ -891,7 +913,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
                       <div style={{ fontWeight: 600, marginBottom: '0.4rem' }}>{run.slotName}</div>
                       <div style={STYLES.statRow}>
                         <span>Status</span>
-                        <span>{run.status === 'running' ? '● läuft' : run.status}</span>
+                        <span>{run.status === 'running' ? '● running' : run.status}</span>
                       </div>
                       <div style={STYLES.statRow}>
                         <span>Spins</span>

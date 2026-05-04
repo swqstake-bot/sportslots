@@ -21,9 +21,15 @@
 import { startThirdPartySession } from '../stake'
 import { getEffectiveBetAmount } from '../../constants/bet'
 import { logApiCall } from '../../utils/apiLogger'
+import { isFiatCurrency, isZeroDecimalCurrency } from '../../utils/currencyMeta'
+import { normalizeProviderError } from './providerErrors'
 
 /** RGS: ganzzahliger Betrag; 1.000.000 = 1,0 Währungseinheit (vgl. stake-engine API_MULTIPLIER). */
 export const STAKE_ENGINE_API_MULTIPLIER = 1_000_000
+
+function stakeEngineError(message, cause) {
+  return normalizeProviderError('stakeEngine', cause || new Error(message), message)
+}
 
 /**
  * RGS `payoutMultiplier`: oft Hundertstel (3900 = 39x, 1150 = 11.5x), teils Ganzzahl (39 = 39x).
@@ -110,10 +116,19 @@ function winRawFromPayoutMultiplierDisambiguated(
   return win
 }
 
-const ZERO_DECIMAL_CURRENCIES = ['idr', 'jpy', 'krw', 'vnd']
-// Fiat-Währungen haben meist 2 Dezimalstellen, Crypto meist 8
-const FIAT_CURRENCIES = ['eur', 'usd', 'brl', 'cad', 'cny', 'inr', 'mxn', 'php', 'pln', 'pkr', 'rub', 'try', 'ngn', 'ars', 'cop', 'pen', 'clp']
 const STAKEENGINE_MIN_DELAY_MS = 50
+const STAKE_ENGINE_PLAY_MODE_BY_SLOT_PREFIX = {
+  'coreffectinteractive-cut-n-crash': '688_base',
+}
+
+function getStakeEnginePlayModeForSlot(slotSlug) {
+  const slug = String(slotSlug || '').toLowerCase()
+  if (!slug) return null
+  for (const [prefix, mode] of Object.entries(STAKE_ENGINE_PLAY_MODE_BY_SLOT_PREFIX)) {
+    if (slug.startsWith(prefix)) return mode
+  }
+  return null
+}
 
 function parseConfigFromUrl(config) {
   try {
@@ -124,7 +139,12 @@ function parseConfigFromUrl(config) {
     const sessionID = u.searchParams.get('sessionID')
     const rgsUrl = u.searchParams.get('rgs_url')
     if (!sessionID || !rgsUrl) return null
-    return { sessionID, rgsUrl: rgsUrl.replace(/\/$/, '') }
+    const gameId =
+      u.searchParams.get('gameId') ||
+      u.searchParams.get('game_id') ||
+      u.searchParams.get('gameid') ||
+      null
+    return { sessionID, rgsUrl: rgsUrl.replace(/\/$/, ''), gameId: gameId ? String(gameId) : null }
   } catch {
     return null
   }
@@ -133,13 +153,13 @@ function parseConfigFromUrl(config) {
 /** Betrag in Stake Engine Format: STAKE_ENGINE_API_MULTIPLIER = 1 Einheit */
 function toStakeEngineAmount(betAmount, targetCurrency) {
   const curr = (targetCurrency || 'eur').toLowerCase()
-  const isZeroDec = ZERO_DECIMAL_CURRENCIES.includes(curr)
-  const isFiat = FIAT_CURRENCIES.includes(curr)
+  const isZeroDec = isZeroDecimalCurrency(curr)
+  const fiatCurrency = isFiatCurrency(curr)
   
   let units
   if (isZeroDec) {
     units = Number(betAmount)
-  } else if (isFiat) {
+  } else if (fiatCurrency) {
     units = Number(betAmount) / 100
   } else {
     // Crypto: Input ist in Satoshis (1e8), wir brauchen Major Units
@@ -155,6 +175,19 @@ function buildRgsUrl(rgsBase, path) {
     base = `https://${base}`
   }
   return `${base}${path.startsWith('/') ? path : '/' + path}`
+}
+
+/** Bonus-/FS-Fortsetzung: kein end-round nach diesem play (sonst bricht Pick/Bonus ab). */
+export function skipStakeEngineEndRoundAfterSuccessfulPlay(round) {
+  const fsLeft = Number(
+    round?.freespinsLeft ?? round?.freeSpinsLeft ?? round?.freespins_left ?? round?.fs ?? round?.bonusRounds ?? 0
+  )
+  if (Number.isFinite(fsLeft) && fsLeft > 0) return true
+  const evs = Array.isArray(round?.events) ? round.events : []
+  return evs.some((ev) => {
+    const etn = String(ev?.etn || '').toLowerCase()
+    return etn === 'feature_enter' || etn === 'fs_enter' || etn === 'freespins_enter' || etn === 'fs_start'
+  })
 }
 
 async function rgsPost(rgsUrl, body) {
@@ -177,7 +210,7 @@ async function rgsPost(rgsUrl, body) {
       }
     } catch (e) {
       console.error('Stake Engine Proxy Error:', e)
-      throw e
+      throw stakeEngineError('Stake Engine Proxy Error', e)
     }
   }
 
@@ -205,7 +238,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const config = typeof session?.config === 'string' ? session.config : session?.config?.url
   const parsed = parseConfigFromUrl(config)
   if (!parsed?.sessionID || !parsed?.rgsUrl) {
-    throw new Error('Keine gültige Stake-Engine-Session. Ist das ein Stake-Engine-Slot?')
+    throw stakeEngineError('Keine gültige Stake-Engine-Session. Ist das ein Stake-Engine-Slot?')
   }
 
   const authUrl = buildRgsUrl(parsed.rgsUrl, '/wallet/authenticate')
@@ -215,25 +248,27 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     authData = await authRes.json()
   } catch (e) {
     const text = await authRes.text()
-    throw new Error(`Stake Engine Auth fehlgeschlagen: ${text || authRes.status}`)
+    throw stakeEngineError(`Stake Engine Auth fehlgeschlagen: ${text || authRes.status}`)
   }
 
   if (!authRes.ok) {
     const err = authData?.error || authData?.message || authRes.status
-    throw new Error(`Stake Engine: ${err}`)
+    throw stakeEngineError(`Stake Engine: ${err}`)
   }
 
   logApiCall({ type: 'stakeEngine/authenticate', endpoint: authUrl, request: { sessionID: parsed.sessionID }, response: { config: authData?.config, balance: authData?.balance }, error: null, durationMs: null })
 
   const configData = authData?.config || {}
+  const configMode = configData?.mode || configData?.baseMode || configData?.defaultMode || null
+  const playMode = configMode || getStakeEnginePlayModeForSlot(slotSlug) || null
   const betLevelsRaw = configData?.betLevels?.map((v) => Number(v)).filter((b) => b > 0) ?? []
   const betLevels = betLevelsRaw.map((v) => {
     const units = v / STAKE_ENGINE_API_MULTIPLIER
     const curr = (targetCurrency || 'eur').toLowerCase()
     
-    if (ZERO_DECIMAL_CURRENCIES.includes(curr)) {
+    if (isZeroDecimalCurrency(curr)) {
       return Math.round(units)
-    } else if (FIAT_CURRENCIES.includes(curr)) {
+    } else if (isFiatCurrency(curr)) {
       return Math.round(units * 100)
     } else {
       // Crypto: Major -> Satoshis (1e8)
@@ -250,7 +285,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const authCurrency = (authBalance?.currency || targetCurrency || 'eur').toLowerCase()
   const authBalanceUnits = authBalanceRaw != null ? authBalanceRaw / STAKE_ENGINE_API_MULTIPLIER : null
   const initialBalance = authBalanceUnits != null
-    ? ZERO_DECIMAL_CURRENCIES.includes(authCurrency)
+    ? isZeroDecimalCurrency(authCurrency)
       ? Math.round(authBalanceUnits)
       : Math.round(authBalanceUnits * 100)
     : null
@@ -266,6 +301,9 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     maxBet,
     initialBalance,
     slotSlug: slotSlug || '',
+    playMode,
+    /** Wenn die Session-Config-URL eine Stake-Spiel-UUID enthält — sonst über Slot `stakeGameId` aus Kurator. */
+    stakeGameId: parsed.gameId || null,
   }
 }
 
@@ -333,7 +371,11 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
 
   const endUrl = buildRgsUrl(session.rgsUrl, '/wallet/end-round')
   const playUrl = buildRgsUrl(session.rgsUrl, '/wallet/play')
-  const mode = useAnte ? 'ANTE' : 'base'
+  let mode = useAnte
+    ? 'ANTE'
+    : (options?.mode || session?.playMode || getStakeEnginePlayModeForSlot(slotSlug) || 'BASE')
+  // waylanders.har / offizieller Client: "BASE" nicht "base"; Sondermodi (z. B. 688_base) unverändert.
+  if (!useAnte && String(mode).toLowerCase() === 'base') mode = 'BASE'
   const playBody = { sessionID: session.sessionID, amount, mode, currency }
   const t0 = Date.now()
   let playRes = await rgsPost(playUrl, playBody)
@@ -344,32 +386,46 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
   } catch (e) {
     const text = await playRes.text()
     logApiCall({ type: 'stakeEngine/play', endpoint: playUrl, request: playBody, response: null, error: text || String(e), durationMs: Date.now() - t0 })
-    throw new Error(`Stake Engine Play fehlgeschlagen: ${text || playRes.status}`)
+    throw stakeEngineError(`Stake Engine Play fehlgeschlagen: ${text || playRes.status}`)
   }
 
   if (!playRes.ok) {
     const err = playData?.error || playRes.status
-    const msg = playData?.message || ''
     if (err === 'ERR_IPB' || String(err).includes('ERR_IPB')) {
-      const ex = new Error(`Stake Engine: ${err}`)
+      const ex = stakeEngineError(`Stake Engine: ${err}`)
       ex.insufficientBalance = true
       throw ex
     }
     if (err === 'ERR_IS' || String(err).includes('ERR_IS')) {
-      const ex = new Error('Session abgelaufen. Bitte Session neu starten.')
+      const ex = stakeEngineError('Session abgelaufen. Bitte Session neu starten.')
       ex.sessionClosed = true
       throw ex
     }
-    if ((err === 'ERR_VAL' || String(err).includes('ERR_VAL')) && String(msg).includes('active bet')) {
+    // Runde oft noch „offen“ bis end-round; früher nur bei „active bet“ in message → Retry ausgelassen (Waylanders).
+    if (err === 'ERR_VAL' || String(err).includes('ERR_VAL')) {
+      const endT = Date.now()
       const endRes = await rgsPost(endUrl, { sessionID: session.sessionID })
-      await endRes.json().catch(() => ({}))
+      let endPayload = null
+      try {
+        endPayload = await endRes.json()
+      } catch {
+        await endRes.text().catch(() => '')
+      }
+      logApiCall({
+        type: 'stakeEngine/end-round',
+        endpoint: endUrl,
+        request: { sessionID: session.sessionID },
+        response: endPayload,
+        error: endRes.ok ? null : endRes.status,
+        durationMs: Date.now() - endT,
+      })
       playRes = await rgsPost(playUrl, playBody)
       try {
         playData = await playRes.json()
       } catch (e) {
         const text = await playRes.text()
         logApiCall({ type: 'stakeEngine/play', endpoint: playUrl, request: playBody, response: null, error: text || String(e), durationMs: Date.now() - t0 })
-        throw new Error(`Stake Engine Play fehlgeschlagen: ${text || playRes.status}`)
+        throw stakeEngineError(`Stake Engine Play fehlgeschlagen: ${text || playRes.status}`)
       }
     }
   }
@@ -378,19 +434,19 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
     logApiCall({ type: 'stakeEngine/play', endpoint: playUrl, request: playBody, response: playData, error: playData?.error || playRes.status, durationMs: Date.now() - t0 })
     const err = playData?.error || playRes.status
     if (err === 'ERR_IS' || String(err).includes('ERR_IS')) {
-      const ex = new Error('Session abgelaufen. Bitte Session neu starten.')
+      const ex = stakeEngineError('Session abgelaufen. Bitte Session neu starten.')
       ex.sessionClosed = true
       throw ex
     }
     if (err === 'ERR_IPB' || String(err).includes('ERR_IPB')) {
-      const ex = new Error(`Stake Engine: ${err}`)
+      const ex = stakeEngineError(`Stake Engine: ${err}`)
       ex.insufficientBalance = true
       throw ex
     }
     if (err === 'ERR_VAL' || String(err).includes('ERR_VAL')) {
-      throw new Error(`Ungültiger Einsatz (ERR_VAL). Bitte Einsatz prüfen.`)
+      throw stakeEngineError('Ungültiger Einsatz (ERR_VAL). Bitte Einsatz prüfen.')
     }
-    throw new Error(`Stake Engine: ${err}`)
+    throw stakeEngineError(`Stake Engine: ${err}`)
   }
 
   const round = playData?.round || {}
@@ -425,8 +481,8 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
     // da einige Slots (z.B. Maze Quest) winAmount in anderem Format liefern können.
     const winInUnitsFromRaw = winAmount / STAKE_ENGINE_API_MULTIPLIER
     const curr = (playData?.balance?.currency || session?.currencyCode || 'eur').toLowerCase()
-    const isFiat = FIAT_CURRENCIES.includes(curr)
-    const wouldBeZero = isFiat && winInUnitsFromRaw < 0.001
+    const fiatCurrency = isFiatCurrency(curr)
+    const wouldBeZero = fiatCurrency && winInUnitsFromRaw < 0.001
     if (wouldBeZero) winAmount = fromPayoutMult
   }
   const balanceObj = playData?.balance || {}
@@ -434,14 +490,14 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
   const respCurrency = (balanceObj?.currency || session?.currencyCode || 'EUR').toLowerCase()
   const balanceUnits = balanceRaw != null ? balanceRaw / STAKE_ENGINE_API_MULTIPLIER : null
   const balanceMinor = balanceUnits != null
-    ? ZERO_DECIMAL_CURRENCIES.includes(respCurrency)
+    ? isZeroDecimalCurrency(respCurrency)
       ? Math.round(balanceUnits)
       : Math.round(balanceUnits * 100)
     : null
 
   const winInUnits = winAmount / STAKE_ENGINE_API_MULTIPLIER
   let winDisplay
-  if (ZERO_DECIMAL_CURRENCIES.includes(respCurrency)) {
+  if (isZeroDecimalCurrency(respCurrency)) {
     winDisplay = Math.round(winInUnits)
     // VND: RGS liefert teils 1 Einheit = 100 VND (14→1400), teils bereits in VND (z.B. payoutMult-Pfad)
     // Heuristik: winInUnits >= 1000 = bereits VND; sonst RGS-Format (×100)
@@ -466,6 +522,28 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
     if (diffRel > 0.02) {
       winDisplay = awaMinor
     }
+  }
+
+  // waylanders.har: Gewinn → round.active:true bis /wallet/end-round; ohne finalize ERR_VAL beim nächsten play.
+  const needsEndRoundFinalize =
+    round.active === true || (winDisplay > 0 && round.active !== false)
+  if (needsEndRoundFinalize && !skipStakeEngineEndRoundAfterSuccessfulPlay(round)) {
+    const endT = Date.now()
+    const endRes = await rgsPost(endUrl, { sessionID: session.sessionID })
+    let endPayload = null
+    try {
+      endPayload = await endRes.json()
+    } catch {
+      await endRes.text().catch(() => '')
+    }
+    logApiCall({
+      type: 'stakeEngine/end-round',
+      endpoint: endUrl,
+      request: { sessionID: session.sessionID },
+      response: endPayload,
+      error: endRes.ok ? null : endRes.status,
+      durationMs: Date.now() - endT,
+    })
   }
 
   // parseBetResponse liest awa vom letzten Event – stellen wir sicher, dass der Gewinn drin steht

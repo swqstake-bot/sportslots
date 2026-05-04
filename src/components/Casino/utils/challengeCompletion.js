@@ -3,6 +3,7 @@
  * localStorage-basiert (analog SSP challengesHistory.json).
  */
 const STORAGE_KEY = 'slotbot_challenges_completed'
+const HUNTER_STATE_KEY = 'slotbot_hunter_state'
 
 /**
  * @param {string} challengeId
@@ -83,6 +84,37 @@ export function syncFromApiChallenges(challenges) {
 export function clearCompletedChallenges() {
   try {
     localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+export function getHunterState() {
+  try {
+    const raw = localStorage.getItem(HUNTER_STATE_KEY)
+    if (!raw) return { processedIds: [], dismissedIds: [] }
+    const parsed = JSON.parse(raw)
+    const processedIds = Array.isArray(parsed?.processedIds) ? parsed.processedIds.filter(Boolean) : []
+    const dismissedIds = Array.isArray(parsed?.dismissedIds) ? parsed.dismissedIds.filter(Boolean) : []
+    return { processedIds, dismissedIds }
+  } catch {
+    return { processedIds: [], dismissedIds: [] }
+  }
+}
+
+export function saveHunterState(processedIds, dismissedIds) {
+  try {
+    const processed = [...new Set(Array.isArray(processedIds) ? processedIds.filter(Boolean) : [])]
+    const dismissed = [...new Set(Array.isArray(dismissedIds) ? dismissedIds.filter(Boolean) : [])]
+    localStorage.setItem(HUNTER_STATE_KEY, JSON.stringify({ processedIds: processed, dismissedIds: dismissed }))
+  } catch {
+    // ignore
+  }
+}
+
+export function clearHunterState() {
+  try {
+    localStorage.removeItem(HUNTER_STATE_KEY)
   } catch {
     // ignore
   }

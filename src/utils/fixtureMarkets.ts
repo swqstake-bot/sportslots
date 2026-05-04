@@ -137,7 +137,7 @@ export async function fetchFixtureMarketsSnapshot(
 
   const sf = res.data?.slugFixture;
   if (!sf) {
-    throw new Error('Fixture nicht gefunden (Slug prüfen oder Login).');
+    throw new Error('Fixture not found (check slug or login).');
   }
   return {
     fixtureName: sf.name || fixtureSlug,

@@ -3,6 +3,7 @@
  * Dependency Injection statt React-Closures.
  */
 import { getProvider } from '../api/providers'
+import { fetchCurrencyRates } from '../api/stakeChallenges'
 import {
   placeDiceBet,
   placeKenoBet,
@@ -11,7 +12,7 @@ import {
   placePacksBet,
   placePlinkoBet,
 } from '../api/stakeOriginalsBets'
-import { isFiat, formatAmount, toUnits, toMinor, ZERO_DECIMAL_CURRENCIES } from '../utils/formatAmount'
+import { isFiat, isStable, formatAmount, toUnits, toMinor, ZERO_DECIMAL_CURRENCIES } from '../utils/formatAmount'
 import { parseBetResponse } from '../utils/parseBetResponse'
 import { CURRENCY_GROUPS, PROVIDER_CURRENCIES } from '../constants/currencies'
 import { notifyChallengeStart } from '../utils/notifications'
@@ -74,7 +75,7 @@ function sortTargetCandidatesForProbe(allowedList, rates, minBetUsd, preferred) 
   return candidates.map((c) => c.tCurr)
 }
 
-const MAX_TARGET_SESSION_PROBES = 6
+/** Telegram-Hunter: alle klassischen Fiat-Proben wie AutoChallengeHunter (kein künstliches Limit). */
 const SESSION_PROBE_DELAY_MS = 400
 export const HUNTER_SPIN_DELAY_MS = 150
 export const HUNTER_SPIN_ERROR_RETRY_MS = 2000
@@ -349,20 +350,34 @@ export async function runTelegramChallengeSession(ctx) {
     if (autoOptimalTargetCurrency && !isDirectOriginals) {
       const allowed = getAllowedTargetCurrenciesForSlot(providerId)
       const probeAllowed = allowed.filter((c) => !AUTO_PROBE_EXCLUDED_CURRENCIES.has(String(c).toLowerCase()))
-      const allowedFiat = probeAllowed.filter((c) => isFiat(c))
+      const allowedFiat = probeAllowed.filter((c) => isFiat(c) && !isStable(c))
       const probePool = allowedFiat.length > 0 ? allowedFiat : probeAllowed
-      const ordered =
+      let ordered =
         probePool.length && minBetUsd != null
           ? sortTargetCandidatesForProbe(probePool, rates, minBetUsd, preferredTarget)
           : []
-      const probeLimit = Math.min(ordered.length, MAX_TARGET_SESSION_PROBES)
+      let probeRates = rates
+      if (ordered.length < probePool.length && probePool.length > 1) {
+        try {
+          const freshRates = await fetchCurrencyRates(accessToken, { force: true })
+          if (freshRates && typeof freshRates === 'object') {
+            probeRates = { ...(probeRates || {}), ...freshRates }
+            ordered =
+              probePool.length && minBetUsd != null
+                ? sortTargetCandidatesForProbe(probePool, probeRates, minBetUsd, preferredTarget)
+                : ordered
+          }
+        } catch (_) {
+          /* Probe mit vorhandenen Kursen fortsetzen */
+        }
+      }
+      const probeLimit = ordered.length
       let bestProbe = null
-      const tightUsd = minBetUsd != null ? minBetUsd + Math.max(0.02, minBetUsd * 0.05) : Infinity
 
       for (let i = 0; i < probeLimit; i++) {
         if (i > 0) await new Promise((res) => setTimeout(res, SESSION_PROBE_DELAY_MS))
         const cand = ordered[i]
-        const r = getRateForCurrency(rates, cand)
+        const r = getRateForCurrency(probeRates, cand)
         if (!r) continue
         try {
           log(`Session-Probe: ${sCurr.toUpperCase()} -> ${cand.toUpperCase()}…`)
@@ -371,20 +386,28 @@ export async function runTelegramChallengeSession(ctx) {
           if (!bestProbe || usdAt < bestProbe.usdAt - 1e-9) {
             bestProbe = { session: sess, tCurr: cand, rate: r, betAmount: ba, usdAt }
           }
-          if (usdAt <= tightUsd) break
         } catch (e) {
           log(`Probe ${cand.toUpperCase()}: ${e?.message || e}`)
         }
       }
 
       if (bestProbe) {
-        session = bestProbe.session
         tCurr = bestProbe.tCurr
         rate = bestProbe.rate
-        betAmount = bestProbe.betAmount
         log(
           `Zielwährung auto: ${tCurr.toUpperCase()} — effektiv ~$${bestProbe.usdAt.toFixed(2)} (Min $${minBetUsd})`
         )
+        if (probeLimit > 1) {
+          await new Promise((res) => setTimeout(res, SESSION_PROBE_DELAY_MS))
+          log(`Session für ${tCurr.toUpperCase()} nach Proben neu starten (gültig für Spins)…`)
+          session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
+          const recomputed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
+          betAmount = recomputed.betAmount
+          log(`Einsatz nach frischer Session: ~$${recomputed.usdAt.toFixed(2)} USD`)
+        } else {
+          session = bestProbe.session
+          betAmount = bestProbe.betAmount
+        }
       }
     }
 

@@ -41,15 +41,16 @@ export function Button({
       boxShadow: '0 2px 12px rgba(var(--accent-rgb), 0.4), 0 0 20px rgba(var(--accent-rgb), 0.15)',
     },
     secondary: {
-      background: 'var(--bg-elevated)',
+      background: 'var(--surface-3)',
       color: 'var(--text)',
       border: '1px solid var(--border)',
       fontSize: 'var(--text-sm)',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.02)',
     },
     ghost: {
-      background: 'transparent',
+      background: 'var(--surface-3)',
       color: 'var(--text-muted)',
-      border: 'none',
+      border: '1px solid var(--border-subtle)',
     },
     danger: {
       background: 'var(--error)',

@@ -67,4 +67,51 @@ describe('Hacksaw skipContinue Logic', () => {
     const options = { skipContinueOnBonus: true }
     expect(shouldSkipBonus(parsed, options)).toBe(false)
   })
+
+  it('should treat named 5-Scatter bonusFeatureWon (Le Pharaoh) as level 5 for minScatter', () => {
+    const parsed = mockParsed({
+      isBonus: true,
+      shouldStopOnBonus: true,
+      bonusFeatureId: 'RainbowoverthePyramids',
+      scatterCount: null,
+    })
+    const options = {
+      slotSlug: 'hacksaw-le-pharaoh',
+      skipContinueOnBonus: true,
+      skipContinueIfBonusMinScatter: 5,
+    }
+    expect(shouldSkipBonus(parsed, options)).toBe(true)
+  })
+
+  it('should not treat named 5-Scatter as level 5 on wrong slot', () => {
+    const parsed = mockParsed({
+      isBonus: true,
+      shouldStopOnBonus: true,
+      bonusFeatureId: 'RainbowoverthePyramids',
+      scatterCount: 3,
+    })
+    const options = {
+      slotSlug: 'hacksaw-le-bandit',
+      skipContinueOnBonus: true,
+      skipContinueIfBonusMinScatter: 5,
+    }
+    expect(shouldSkipBonus(parsed, options)).toBe(false)
+  })
+
+  it('should treat Le Digger Gold Digger / GoldDigger as level 5 for minScatter', () => {
+    for (const bonusFeatureId of ['GoldDigger', 'Gold Digger']) {
+      const parsed = mockParsed({
+        isBonus: true,
+        shouldStopOnBonus: true,
+        bonusFeatureId,
+        scatterCount: null,
+      })
+      const options = {
+        slotSlug: 'hacksaw-le-digger',
+        skipContinueOnBonus: true,
+        skipContinueIfBonusMinScatter: 5,
+      }
+      expect(shouldSkipBonus(parsed, options)).toBe(true)
+    }
+  })
 })

@@ -10,6 +10,12 @@
 import type { SportBet } from '../store/userStore';
 import { getShieldOdds } from '../store/shieldOddsCache';
 
+/** True when this bet used Stake Shield (API `customPrices` includes `stake_shield`). */
+export function isStakeShieldBet(bet: SportBet): boolean {
+  const cp = bet.customPrices;
+  return Array.isArray(cp) && cp.some((p) => p?.type === 'stake_shield');
+}
+
 const LIABILITY_SENSITIVITY = 0.001;
 const TYPE_FACTOR_SINGLE = 0.93;
 const TYPE_FACTOR_MULTI = 0.61;
@@ -37,12 +43,25 @@ export function estimateCashoutValue(bet: SportBet): number {
  * Fallback: shieldOddsCache (falls API adjustments nicht liefert).
  */
 export function getEffectiveOdds(bet: SportBet): number {
-  if (bet.adjustments?.payoutMultiplier != null && bet.adjustments.payoutMultiplier > 0) {
-    return bet.adjustments.payoutMultiplier;
-  }
+  const adj = bet.adjustments?.payoutMultiplier;
+  if (adj != null && adj > 0) return adj;
+
   const cached = getShieldOdds(bet.id);
   if (cached != null && cached > 0) return cached;
-  return bet.potentialMultiplier ?? bet.payoutMultiplier ?? 0;
+
+  const pm = Number(bet.payoutMultiplier) || 0;
+  const pot = Number(bet.potentialMultiplier) || 0;
+
+  // Stake Shield: reduced locked odds are often on `payoutMultiplier`; `potentialMultiplier` can still reflect the raw combined price.
+  if (isStakeShieldBet(bet)) {
+    if (pm > 0 && pot > 0) return Math.min(pm, pot);
+    if (pm > 0) return pm;
+    if (pot > 0) return pot;
+    return 0;
+  }
+
+  if (pm > 0) return pm;
+  return pot;
 }
 
 /**
@@ -52,6 +71,7 @@ export function getEffectiveOdds(bet: SportBet): number {
  * (Stake aktualisiert das laufend), (3) nur in seltenen Fällen der interne Fallback `estimateCashoutValue`.
  */
 export function getCashoutValue(bet: SportBet): number {
+  if (isCashoutDisabledByCustomPrices(bet)) return 0;
   if (bet.cashoutValue != null && bet.cashoutValue > 0) return bet.cashoutValue;
   if (bet.amount && bet.cashoutMultiplier != null && bet.cashoutMultiplier > 0) {
     return bet.amount * bet.cashoutMultiplier;
@@ -84,6 +104,7 @@ export function computeCashoutFromPreview(
 
 /** Für Cashout-Mutation: API-Multiplikator, sonst Verhältnis Cashout-Wert / Einsatz (wenn Preview nur payout liefert). */
 export function resolveCashoutMultiplierForBet(bet: SportBet): number {
+  if (isCashoutDisabledByCustomPrices(bet) || bet.cashoutDisabled) return 0;
   const m = bet.cashoutMultiplier ?? 0;
   if (m > 0) return m;
   const v = getCashoutValue(bet);

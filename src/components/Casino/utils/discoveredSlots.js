@@ -4,14 +4,13 @@
  */
 import { getStakeEngineGameSlugPrefixes, mapProviderSlugToProviderId } from '../api/stakeSlotsApi'
 import { PROVIDERS } from '../constants/slots'
+import { CASINO_STORAGE_KEYS, readStorageJson, writeStorageJson } from './storageRegistry'
 
-const DISCOVERED_SLOTS_KEY = 'slotbot_discovered_slots'
+const DISCOVERED_SLOTS_KEY = CASINO_STORAGE_KEYS.discoveredSlots
 
 export function loadDiscoveredSlots() {
   try {
-    const raw = localStorage.getItem(DISCOVERED_SLOTS_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
+    const parsed = readStorageJson(DISCOVERED_SLOTS_KEY, [])
     return Array.isArray(parsed) ? parsed : []
   } catch {
     return []
@@ -19,9 +18,7 @@ export function loadDiscoveredSlots() {
 }
 
 export function saveDiscoveredSlots(list) {
-  try {
-    localStorage.setItem(DISCOVERED_SLOTS_KEY, JSON.stringify(list))
-  } catch (_) {}
+  writeStorageJson(DISCOVERED_SLOTS_KEY, list)
 }
 
 export function inferProviderId(slug) {
@@ -29,9 +26,20 @@ export function inferProviderId(slug) {
   const s = slug.toLowerCase()
 
   if (s.startsWith('hacksaw-')) return 'hacksaw'
+  if (s.startsWith('hacksaw-openrgs-')) return 'hacksaw'
+  if (s.startsWith('backseat-gaming-') || s.startsWith('backseatgaming-')) return 'hacksaw'
+  if (s.startsWith('bullshark-games-') || s.startsWith('bullsharkgames-')) return 'hacksaw'
   if (s.startsWith('pragmatic-play-') || s.startsWith('pragmatic-')) return 'pragmatic'
-  if (s.startsWith('nolimit-')) return 'nolimit'
+  if (s.startsWith('fat-panda-')) return 'pragmatic'
+  if (
+    s.startsWith('nolimit-') ||
+    s.startsWith('no-limit-') ||
+    s.startsWith('no-limit-city-') ||
+    s.startsWith('nlc-')
+  ) return 'nolimit'
   if (s.startsWith('avatarux-')) return 'avatarux'
+  if (s.startsWith('mascot-')) return 'mascot'
+  if (s.startsWith('hub88-')) return 'mascot'
   if (s.startsWith('relax-')) return 'relax'
   if (s.startsWith('blueprint-')) return 'blueprint'
   if (s.startsWith('endorphina-')) return 'endorphina'
@@ -43,8 +51,16 @@ export function inferProviderId(slug) {
   if (s.startsWith('oak-')) return 'oak'
   if (s.startsWith('red-tiger-') || s.startsWith('redtiger-')) return 'redtiger'
   if (s.startsWith('playngo-') || s.startsWith('play-n-go-')) return 'playngo'
+  if (s.startsWith('one-touch-') || s.startsWith('onetouch-')) return 'onetouch'
+  if (s.startsWith('gamomat-')) return 'gamomat'
+  if (s.startsWith('games-global-') || s.startsWith('gamesglobal-')) return 'gamesglobal'
+  if (s.startsWith('jade-rabbit-') || s.startsWith('jaderabbit-')) return 'jaderabbit'
+  if (s.startsWith('penguin-king-')) return 'octoplay'
+  if (s.startsWith('massive-')) return 'massive'
+  if (s.startsWith('truelab-') || s.startsWith('true-lab-')) return 'truelab'
+  if (s.startsWith('slotmill-')) return 'slotmill'
   if (s.startsWith('octoplay-')) return 'octoplay'
-  if (s.startsWith('peter-sons-') || s.startsWith('peterandsons-')) return 'peterandsons'
+  if (s.startsWith('peter-sons-') || s.startsWith('peterandsons-') || s.startsWith('petersons-')) return 'peterandsons'
   if (s.startsWith('shady-')) return 'shady'
   if (s.startsWith('shuffle-')) return 'shuffle'
   /**

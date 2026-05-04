@@ -1,9 +1,98 @@
-import { useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { formatBetIdForCopy, formatDate, formatNum, getBetMultiplier, toUsd } from '../loggerUtils';
 import type { LoggerBetEntry } from '../loggerUtils';
+import {
+  buildLoggerBetsCsv,
+  computeLoggerArchiveSummary,
+  downloadLoggerCsv,
+} from '../loggerArchiveSummary';
 import { loadDiscoveredSlots } from '../../Casino/utils/discoveredSlots';
 
 const MAX_VISIBLE_BETS = 500;
+const CASINO_BETS_ROW_ESTIMATE_PX = 40;
+
+type CasinoVirtualRowLayout = {
+  index: number;
+  start: number;
+  size: number;
+  key: string | number | bigint;
+};
+
+type CasinoBetVirtualRowProps = {
+  layout: CasinoVirtualRowLayout;
+  dateLabel: string;
+  houseIdDisplay: string;
+  gameName: string;
+  betTypeLabel: string;
+  stakeUsd: number;
+  payoutUsd: number;
+  multiLabel: string;
+  onCopyHouseId: (id: string) => void;
+};
+
+function casinoBetVirtualRowEqual(prev: CasinoBetVirtualRowProps, next: CasinoBetVirtualRowProps): boolean {
+  if (prev.layout.index !== next.layout.index) return false;
+  if (prev.layout.start !== next.layout.start) return false;
+  if (prev.layout.size !== next.layout.size) return false;
+  if (prev.layout.key !== next.layout.key) return false;
+  if (prev.dateLabel !== next.dateLabel) return false;
+  if (prev.houseIdDisplay !== next.houseIdDisplay) return false;
+  if (prev.gameName !== next.gameName) return false;
+  if (prev.betTypeLabel !== next.betTypeLabel) return false;
+  if (prev.stakeUsd !== next.stakeUsd) return false;
+  if (prev.payoutUsd !== next.payoutUsd) return false;
+  if (prev.multiLabel !== next.multiLabel) return false;
+  if (prev.onCopyHouseId !== next.onCopyHouseId) return false;
+  return true;
+}
+
+const CasinoBetVirtualRow = memo(function CasinoBetVirtualRow({
+  layout,
+  dateLabel,
+  houseIdDisplay,
+  gameName,
+  betTypeLabel,
+  stakeUsd,
+  payoutUsd,
+  multiLabel,
+  onCopyHouseId,
+}: CasinoBetVirtualRowProps) {
+  return (
+    <div
+      role="row"
+      className="logger-bets-virtual-row"
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: `${layout.size}px`,
+        transform: `translateY(${layout.start}px)`,
+      }}
+    >
+      <span>{dateLabel}</span>
+      <span className="mono">
+        <button
+          type="button"
+          className="logger-link-btn mono logger-house-id-btn"
+          onClick={() => onCopyHouseId(houseIdDisplay)}
+          title="Copy house ID"
+          aria-label={`Copy house ID ${houseIdDisplay}`}
+        >
+          {houseIdDisplay}
+        </button>
+      </span>
+      <span className="logger-bets-virtual-ellipsis">{gameName}</span>
+      <span>
+        <span className="logger-badge">{betTypeLabel}</span>
+      </span>
+      <span className="num">${formatNum(stakeUsd)}</span>
+      <span className="num positive">${formatNum(payoutUsd)}</span>
+      <span className="num">{multiLabel}</span>
+    </div>
+  );
+}, casinoBetVirtualRowEqual);
 
 interface CasinoLoggerTabProps {
   bets: LoggerBetEntry[];
@@ -99,10 +188,15 @@ export default function CasinoLoggerTab({
     return list;
   }, [latestFilteredBets, currencyRates, sortBy, sortDesc]);
 
+  const archiveSummary = useMemo(
+    () => computeLoggerArchiveSummary(filteredBets, currencyRates),
+    [filteredBets, currencyRates]
+  );
+
   const gameStats = useMemo(() => {
     const byGame: Record<string, { count: number; amount: number; payout: number }> = {};
     filteredBets.forEach((b) => {
-      const name = b.gameName || '(Unbekannt)';
+      const name = b.gameName || '(Unknown)';
       if (!byGame[name]) byGame[name] = { count: 0, amount: 0, payout: 0 };
       byGame[name].count++;
       byGame[name].amount += toUsd(b.amount, b.currency, currencyRates);
@@ -166,7 +260,7 @@ export default function CasinoLoggerTab({
   }, []);
 
   const openGameDetails = (gameName: string) => {
-    const gameBets = filteredBets.filter((b) => (b.gameName || '(Unbekannt)') === gameName);
+    const gameBets = filteredBets.filter((b) => (b.gameName || '(Unknown)') === gameName);
     if (!gameBets.length) return;
     let bestBet: LoggerBetEntry | null = null;
     let bestMulti = -1;
@@ -201,7 +295,15 @@ export default function CasinoLoggerTab({
     }
   };
 
-  const handleCopyHouseId = async (value: string) => {
+  const handleExportCsv = useCallback(() => {
+    const list = filteredBets.length > 0 ? filteredBets : bets;
+    if (!list.length) return;
+    const body = buildLoggerBetsCsv(list, currencyRates);
+    const day = new Date().toISOString().slice(0, 10);
+    downloadLoggerCsv(`stakesports-casino-bets-${day}.csv`, body);
+  }, [filteredBets, bets, currencyRates]);
+
+  const handleCopyHouseId = useCallback(async (value: string) => {
     const copied = formatBetIdForCopy(value);
     try {
       await navigator.clipboard.writeText(copied);
@@ -211,63 +313,106 @@ export default function CasinoLoggerTab({
       setHouseIdCopyState('Copy failed');
       setTimeout(() => setHouseIdCopyState(''), 1800);
     }
-  };
+  }, []);
 
   const currencies = useMemo(() => [...new Set(bets.map((b) => b.currency).filter((v): v is string => typeof v === 'string' && v.length > 0))].sort(), [bets]);
   const betTypes = useMemo(() => [...new Set(bets.map((b) => b.betType).filter((v): v is string => typeof v === 'string' && v.length > 0))].sort(), [bets]);
+
+  const betsScrollParentRef = useRef<HTMLDivElement>(null);
+  // TanStack Virtual manages scroll-window state; React Compiler skips memoization for this hook by design.
+  // eslint-disable-next-line react-hooks/incompatible-library -- windowed list; see @tanstack/react-virtual
+  const rowVirtualizer = useVirtualizer({
+    count: visibleBets.length,
+    getScrollElement: () => betsScrollParentRef.current,
+    estimateSize: () => CASINO_BETS_ROW_ESTIMATE_PX,
+    overscan: 14,
+    getItemKey: (index) => {
+      const b = visibleBets[index];
+      if (!b) return String(index);
+      return `${String(b.iid ?? b.houseId ?? b.betId ?? '')}-${b.receivedAt}`;
+    },
+  });
 
   return (
     <div className="logger-stack">
       <div className="logger-panel">
         <h2 className="logger-title">Casino Bets ({filteredBets.length})</h2>
+        <div className="logger-kpis logger-kpis-archive" style={{ marginBottom: '0.75rem' }}>
+          <div className="logger-kpi">
+            <span>Einsatz ($)</span>
+            <strong>${formatNum(archiveSummary.stakeUsd)}</strong>
+          </div>
+          <div className="logger-kpi">
+            <span>Gewinn ($)</span>
+            <strong>${formatNum(archiveSummary.payoutUsd)}</strong>
+          </div>
+          <div className={`logger-kpi ${archiveSummary.netUsd >= 0 ? 'positive' : 'negative'}`}>
+            <span>Netto ($)</span>
+            <strong>
+              {archiveSummary.netUsd >= 0 ? '+' : ''}
+              {formatNum(archiveSummary.netUsd)}
+            </strong>
+          </div>
+          <div className="logger-kpi">
+            <span>Ø Multi</span>
+            <strong>{archiveSummary.avgMulti != null ? `${formatNum(archiveSummary.avgMulti, 2)}x` : '—'}</strong>
+          </div>
+          <div className="logger-kpi">
+            <span>Best Multi</span>
+            <strong>{archiveSummary.bestMulti != null ? `${formatNum(archiveSummary.bestMulti, 2)}x` : '—'}</strong>
+          </div>
+        </div>
         <div className="logger-grid">
-          <label>Datum von:<input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} /></label>
-          <label>Datum bis:<input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} /></label>
-          <label>Spiel:<input type="text" value={filterGame} onChange={(e) => setFilterGame(e.target.value)} placeholder="Suchen..." /></label>
-          <label>Min Einsatz ($):<input type="number" value={filterMinAmount} onChange={(e) => setFilterMinAmount(e.target.value)} /></label>
-          <label>Max Einsatz ($):<input type="number" value={filterMaxAmount} onChange={(e) => setFilterMaxAmount(e.target.value)} /></label>
+          <label>Date from:<input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} /></label>
+          <label>Date to:<input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} /></label>
+          <label>Game:<input type="text" value={filterGame} onChange={(e) => setFilterGame(e.target.value)} placeholder="Search..." /></label>
+          <label>Min stake ($):<input type="number" value={filterMinAmount} onChange={(e) => setFilterMinAmount(e.target.value)} /></label>
+          <label>Max stake ($):<input type="number" value={filterMaxAmount} onChange={(e) => setFilterMaxAmount(e.target.value)} /></label>
           <label>Min Multi:<input type="number" value={filterMinMulti} onChange={(e) => setFilterMinMulti(e.target.value)} /></label>
           <label>Max Multi:<input type="number" value={filterMaxMulti} onChange={(e) => setFilterMaxMulti(e.target.value)} /></label>
-          <label>Min Gewinn ($):<input type="number" value={filterMinPayout} onChange={(e) => setFilterMinPayout(e.target.value)} /></label>
-          <label>Max Gewinn ($):<input type="number" value={filterMaxPayout} onChange={(e) => setFilterMaxPayout(e.target.value)} /></label>
+          <label>Min win ($):<input type="number" value={filterMinPayout} onChange={(e) => setFilterMinPayout(e.target.value)} /></label>
+          <label>Max win ($):<input type="number" value={filterMaxPayout} onChange={(e) => setFilterMaxPayout(e.target.value)} /></label>
           <label>
-            Währung:
+            Currency:
             <select value={filterCurrency} onChange={(e) => setFilterCurrency(e.target.value)}>
-              <option value="">Alle</option>
+              <option value="">All</option>
               {currencies.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </label>
           <label>
-            Bet-Typ:
+            Bet type:
             <select value={filterBetType} onChange={(e) => setFilterBetType(e.target.value)}>
-              <option value="">Alle</option>
+              <option value="">All</option>
               {betTypes.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </label>
           <label>
-            Sortieren nach:
+            Sort by:
             <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
-              <option value="date">Datum</option>
-              <option value="game">Spiel</option>
-              <option value="amount">Einsatz</option>
+              <option value="date">Date</option>
+              <option value="game">Game</option>
+              <option value="amount">Stake</option>
               <option value="multi">Multi</option>
-              <option value="payout">Gewinn</option>
+              <option value="payout">Win</option>
             </select>
           </label>
-          <label className="logger-check"><input type="checkbox" checked={sortDesc} onChange={(e) => setSortDesc(e.target.checked)} />Absteigend</label>
-          <button type="button" className="logger-action-btn" onClick={() => onReload()} disabled={loading}>{loading ? 'Lade...' : 'Logs neu laden'}</button>
+          <label className="logger-check"><input type="checkbox" checked={sortDesc} onChange={(e) => setSortDesc(e.target.checked)} />Descending</label>
+          <button type="button" className="logger-action-btn" onClick={() => onReload()} disabled={loading}>{loading ? 'Loading...' : 'Reload logs'}</button>
           <button type="button" className="logger-action-btn" onClick={() => onExport(filteredBets.length > 0 ? filteredBets : bets)} disabled={bets.length === 0}>Export (JSONL)</button>
+          <button type="button" className="logger-action-btn" onClick={handleExportCsv} disabled={bets.length === 0}>
+            Export (CSV)
+          </button>
           <button type="button" className="logger-action-btn" onClick={() => onImport()}>Import (JSONL)</button>
         </div>
         {statusMessage ? <p className="logger-status">{statusMessage}</p> : null}
       </div>
 
       <div className="logger-panel">
-        <h3 className="logger-title">Spiele nach RTP (aus gefilterten Wetten)</h3>
-        <div className="logger-table-wrap logger-table-compact">
+        <h3 className="logger-title">Games by RTP (from filtered bets)</h3>
+        <div className="logger-table-wrap logger-table-compact logger-table-data">
           <table>
             <thead>
-              <tr><th>Spiel</th><th className="num">Wetten</th><th className="num">Einsatz gesamt ($)</th><th className="num">Gewinn gesamt ($)</th><th className="num">RTP %</th></tr>
+              <tr><th>Game</th><th className="num">Bets</th><th className="num">Total stake ($)</th><th className="num">Total win ($)</th><th className="num">RTP %</th></tr>
             </thead>
             <tbody>
               {gameStats.slice(0, 50).map((g) => (
@@ -289,37 +434,54 @@ export default function CasinoLoggerTab({
       </div>
 
       <div className="logger-panel">
-        <h3 className="logger-title">Wetten ({filteredBets.length})</h3>
-        <div className="logger-table-wrap">
-          <table>
-            <thead>
-              <tr><th>Zeit</th><th>House-ID</th><th>Spiel</th><th>Typ</th><th className="num">Einsatz ($)</th><th className="num">Gewinn ($)</th><th className="num">Multi</th></tr>
-            </thead>
-            <tbody>
-              {visibleBets.map((b, idx) => (
-                <tr key={`${b.iid ?? b.houseId ?? b.betId}-${b.receivedAt}-${idx}`}>
-                  <td>{formatDate(b.receivedAt)}</td>
-                  <td className="mono">
-                    <button
-                      type="button"
-                      className="logger-link-btn mono"
-                      onClick={() => handleCopyHouseId(String(b.houseId ?? b.iid ?? b.betId ?? '-'))}
-                    >
-                      {String(b.houseId ?? b.iid ?? b.betId ?? '-')}
-                    </button>
-                  </td>
-                  <td>{b.gameName || '-'}</td>
-                  <td><span className="logger-badge">{b.betType || '-'}</span></td>
-                  <td className="num">${formatNum(toUsd(b.amount, b.currency, currencyRates))}</td>
-                  <td className="num positive">${formatNum(toUsd(b.payout, b.currency, currencyRates))}</td>
-                  <td className="num">{getBetMultiplier(b) != null ? formatNum(getBetMultiplier(b), 2) : '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <h3 className="logger-title">Bets ({filteredBets.length})</h3>
+        <div className="logger-table-wrap logger-table-bets-virtual logger-table-virtual">
+          <div className="logger-bets-virtual-head" role="row">
+            <span>Time</span>
+            <span>House ID</span>
+            <span>Game</span>
+            <span>Type</span>
+            <span className="num">Stake ($)</span>
+            <span className="num">Win ($)</span>
+            <span className="num">Multi</span>
+          </div>
+          <div ref={betsScrollParentRef} className="logger-bets-virtual-scroll">
+            <div
+              className="logger-bets-virtual-spacer"
+              style={{ height: rowVirtualizer.getTotalSize(), position: 'relative', width: '100%' }}
+            >
+              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                const b = visibleBets[virtualRow.index];
+                if (!b) return null;
+                const houseIdDisplay = String(b.houseId ?? b.iid ?? b.betId ?? '-');
+                const stakeUsd = toUsd(b.amount, b.currency, currencyRates);
+                const payoutUsd = toUsd(b.payout, b.currency, currencyRates);
+                const multi = getBetMultiplier(b);
+                return (
+                  <CasinoBetVirtualRow
+                    key={virtualRow.key}
+                    layout={{
+                      index: virtualRow.index,
+                      start: virtualRow.start,
+                      size: virtualRow.size,
+                      key: virtualRow.key,
+                    }}
+                    dateLabel={formatDate(b.receivedAt)}
+                    houseIdDisplay={houseIdDisplay}
+                    gameName={b.gameName || '-'}
+                    betTypeLabel={b.betType || '-'}
+                    stakeUsd={stakeUsd}
+                    payoutUsd={payoutUsd}
+                    multiLabel={multi != null ? formatNum(multi, 2) : '-'}
+                    onCopyHouseId={handleCopyHouseId}
+                  />
+                );
+              })}
+            </div>
+          </div>
         </div>
         {houseIdCopyState ? <p className="logger-status">{houseIdCopyState}</p> : null}
-        {filteredBets.length > MAX_VISIBLE_BETS ? <p className="logger-muted">Nur die neuesten 500 Einträge angezeigt.</p> : null}
+        {filteredBets.length > MAX_VISIBLE_BETS ? <p className="logger-muted">Only the newest 500 entries are shown.</p> : null}
       </div>
 
       {gameDetails ? (

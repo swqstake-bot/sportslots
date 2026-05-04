@@ -1,14 +1,18 @@
 import { StakeApi } from '../../../api/client'
 import { logApiCall } from '../utils/apiLogger'
+import { CASINO_STORAGE_KEYS } from '../utils/storageRegistry'
 
 const PAGE_SIZE = 31
-const SLOTS_CACHE_KEY = 'slotbot_stake_slots_cache'
+const SLOTS_CACHE_KEY = CASINO_STORAGE_KEYS.stakeSlotsCache
 const NEWEST_PAGES_MAX = 10
 /**
  * Zusätzliche slugKuratorGroup-Slugs für Quick-Load: sort „newest“ nur innerhalb der Gruppe.
  * Global `slug: 'slots'` + newest deckt nicht alle Provider-Neuerscheinungen ab (z. B. Hacksaw).
  */
-const QUICK_LOAD_EXTRA_GROUPS = [{ slug: 'hacksaw-gaming', pages: 10 }]
+const QUICK_LOAD_EXTRA_GROUPS = [
+  { slug: 'hacksaw-gaming', pages: 10 },
+  { slug: 'mascot', pages: 6 },
+]
 const SESSION_CACHE_TTL_MS = 10 * 60 * 1000 // 10 min – kein Refetch beim Tab-Wechsel
 
 let sessionSlotsCache = null
@@ -16,10 +20,37 @@ let sessionCacheTime = 0
 
 const PROVIDER_MAP = {
   'hacksaw-gaming': 'hacksaw',
+  'hacksaw-openrgs': 'hacksaw',
+  'backseat-gaming': 'hacksaw',
+  backseatgaming: 'hacksaw',
+  'bullshark-games': 'hacksaw',
+  bullsharkgames: 'hacksaw',
   'pragmatic-play': 'pragmatic',
+  'fat-panda': 'pragmatic',
   'blueprint-gaming': 'blueprint',
   'play-n-go': 'playngo',
+  playngo: 'playngo',
   'no-limit-city': 'nolimit',
+  'no-limit': 'nolimit',
+  'nolimit-city': 'nolimit',
+  'nolimit': 'nolimit',
+  nlc: 'nolimit',
+  'one-touch': 'onetouch',
+  'one-touch-games': 'onetouch',
+  onetouch: 'onetouch',
+  gamomat: 'gamomat',
+  'massive-studios': 'massive',
+  massive: 'massive',
+  truelab: 'truelab',
+  'true-lab': 'truelab',
+  'games-global': 'gamesglobal',
+  gamesglobal: 'gamesglobal',
+  'jade-rabbit': 'jaderabbit',
+  jaderabbit: 'jaderabbit',
+  'penguin-king': 'octoplay',
+  slotmill: 'slotmill',
+  'peter-sons': 'peterandsons',
+  petersons: 'peterandsons',
   'push-gaming': 'push',
   'relax-gaming': 'relax',
   'red-tiger': 'redtiger',
@@ -30,6 +61,8 @@ const PROVIDER_MAP = {
   'endorphina': 'endorphina',
   'gamomat': 'gamomat',
   'avatarux': 'avatarux',
+  mascot: 'mascot',
+  hub88: 'mascot',
   'octoplay': 'octoplay',
   'one-touch': 'onetouch',
   'one-touch-games': 'onetouch',
@@ -39,6 +72,8 @@ const PROVIDER_MAP = {
   'justslots': 'justslots',
   'stake-originals': 'stakeEngine',
   'twist-gaming': 'stakeEngine',
+  'titan-gaming': 'twist',
+  valkyrie: 'twist',
   'paperclip-gaming': 'stakeEngine',
   'uppercut-gaming': 'stakeEngine',
   'sidequest-studios': 'stakeEngine',
@@ -120,7 +155,14 @@ function mapGameToSlot(game) {
   const providerSlug = providerGroup?.group?.slug
   if (!providerSlug) return null
   const providerId = mapProviderSlugToProviderId(providerSlug)
-  return { slug: game.slug, name: game.name, providerId, thumbnailUrl: game.thumbnailUrl }
+  return {
+    slug: game.slug,
+    name: game.name,
+    providerId,
+    thumbnailUrl: game.thumbnailUrl,
+    /** Stake Kurator `game.id` — für RGS-Fairness (`RotateSeed` / `userGameFair`), nicht Slug. */
+    stakeGameId: game.id != null ? String(game.id) : undefined,
+  }
 }
 
 function isRetryableSlotError(error) {

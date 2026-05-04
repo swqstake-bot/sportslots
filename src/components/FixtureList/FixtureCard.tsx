@@ -59,8 +59,6 @@ interface FixtureCardProps {
   sportSlug: string;
   mainMarket: Market;
   extraMarkets?: Market[];
-  isSelected: (outcomeId: string) => boolean;
-  onOutcomeClick: (outcome: any, marketName: string, fixture: Fixture) => void;
   index?: number;
 }
 
@@ -77,8 +75,6 @@ export function FixtureCard({
   sportSlug,
   mainMarket,
   extraMarkets = [],
-  isSelected,
-  onOutcomeClick,
   index = 0,
 }: FixtureCardProps) {
   const [showMore, setShowMore] = useState(false);
@@ -130,7 +126,7 @@ export function FixtureCard({
             <div className="text-xs font-mono font-bold" style={{ color: 'var(--app-text)' }}>
               {new Date(fixture.data.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </div>
-            <div className="text-[9px] uppercase tracking-wider" style={{ color: 'var(--app-text-muted)' }}>
+            <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--app-text-muted)' }}>
               {new Date(fixture.data.startTime).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
             </div>
           </div>
@@ -140,7 +136,6 @@ export function FixtureCard({
       <h3
         className="px-1.5 pb-1 text-[11px] font-bold leading-tight line-clamp-2 text-center"
         style={{ color: 'var(--app-text)' }}
-        title={fixture.name}
       >
         {fixture.name}
       </h3>
@@ -148,21 +143,19 @@ export function FixtureCard({
       <div className="px-1.5 pb-1.5 flex gap-1">
         {outcomes.map((outcome: any) => {
           const label = outcomeLabel(outcome);
-          const selected = isSelected(outcome.id);
           return (
-            <button
+            <div
               key={outcome.id}
-              type="button"
-              onClick={() => onOutcomeClick(outcome, mainMarket.name ?? '', fixture)}
-              className={`odds-btn flex-1 min-w-0 py-1 rounded flex flex-col items-center justify-center ${selected ? 'selected' : ''}`}
+              className="odds-btn flex-1 min-w-0 py-1 rounded flex flex-col items-center justify-center"
+              style={{ cursor: 'default' }}
             >
-              <span className="text-[7px] font-bold uppercase tracking-wider opacity-90">
+              <span className="text-[9px] font-bold uppercase tracking-wider opacity-90">
                 {label}
               </span>
-              <span className="font-mono font-bold text-[10px] leading-none">
+              <span className="font-mono font-bold text-[11px] leading-none">
                 {outcome.odds.toFixed(2)}
               </span>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -172,10 +165,10 @@ export function FixtureCard({
           <button
             type="button"
             onClick={() => setShowMore((m) => !m)}
-            className="w-full py-0.5 text-[7px] font-bold uppercase tracking-wider transition-colors flex items-center justify-center"
+            className="w-full py-1 text-[9px] font-bold uppercase tracking-wider transition-colors flex items-center justify-center"
             style={{ borderTop: '1px solid var(--app-border)', color: 'var(--app-text-muted)' }}
           >
-            {showMore ? '−' : `+ ${extraMarkets.length} Märkte`}
+            {showMore ? '−' : `+ ${extraMarkets.length} markets`}
           </button>
           {showMore && (
             <motion.div
@@ -188,23 +181,21 @@ export function FixtureCard({
               <div className="px-1.5 py-1.5 space-y-1 max-h-28 overflow-y-auto">
                 {extraMarkets.map((market, mIdx) => (
                     <div key={market.id || `${market.name ?? 'm'}-${mIdx}`} className="space-y-1">
-                      <div className="text-[8px] font-bold uppercase tracking-wider" style={{ color: 'var(--app-text-muted)' }}>
+                      <div className="text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--app-text-muted)' }}>
                         {market.name || 'Market'}
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {(market.outcomes || []).slice(0, 6).map((outcome: any) => (
-                          <button
+                          <div
                             key={outcome.id}
-                            type="button"
-                            onClick={() => onOutcomeClick(outcome, market.name || '', fixture)}
-                            className={`px-2 py-1 rounded text-[9px] font-mono font-bold transition-all odds-btn ${isSelected(outcome.id) ? 'selected' : ''}`}
-                          style={!isSelected(outcome.id) ? { background: 'rgba(0,0,0,0.35)', border: '1px solid var(--app-border)', color: 'var(--app-text)' } : undefined}
-                        >
-                          {outcomeLabel(outcome)} {outcome.odds?.toFixed(2)}
-                        </button>
-                      ))}
+                            className="px-2 py-1 rounded text-[9px] font-mono font-bold odds-btn"
+                            style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--app-border)', color: 'var(--app-text)', cursor: 'default' }}
+                          >
+                            {outcomeLabel(outcome)} {outcome.odds?.toFixed(2)}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
                 ))}
               </div>
             </motion.div>

@@ -7,6 +7,61 @@ import { logApiCall } from '../../utils/apiLogger'
 import { parseBetResponse } from '../../utils/parseBetResponse'
 import { HACKSAW_API_BASE, HACKSAW_USER_AGENT, sendHacksawKeepAlive, sendHacksawContinue, safeFetch } from './hacksawShared'
 
+/** Vergleich von bonusFeatureWon (CamelCase, snake_case, Leerzeichen). */
+function normalizeHacksawBonusFeatureKey(raw) {
+  return String(raw || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+}
+
+/**
+ * Bekannte interne/Marketing-Namen für den 5-Scatter-Bonus (Le-Serie & Co.).
+ * Keys = Fragment im Stake-Slug (nach "hacksaw-"), Werte = typische bonusFeatureWon-Strings.
+ */
+const HACKSAW_5_SCATTER_NAMED_RAW = {
+  'le-pharaoh': ['RainbowoverthePyramids'],
+  'le-bandit': ['TreasureattheEndoftheRainbow'],
+  'le-zeus': ['ZeZeusMightSuperstar', 'ZeusMightSuperstar'],
+  'le-viking': ['JourneytoValhallaFreeSpins'],
+  'le-king': ['VivaLeBandit'],
+  'six-six-six': ['WhattheHell'],
+  sixsixsix: ['WhattheHell'],
+  'get-the-cheese': ['LifesSoGouda', 'LifeSoGouda'],
+  'dorks-of-the-deep': ['HiddenTreasures'],
+  invictus: ['DominusMaximus'],
+  dropem: ['WildDropSpinsBonus'],
+  'drop-em': ['WildDropSpinsBonus'],
+  'booze-bash': ['HellsHappyHour'],
+  spinman: ['ReelHeroes'],
+  'the-luxe': ['VelvetNights'],
+  'keep-em': ['KeepYourCannyCloser'],
+  keepem: ['KeepYourCannyCloser'],
+  'aiko-and-the-wind-spirit': ['MidnightMagic'],
+  'reign-of-rome': ['FightforGlory', 'FightForGlory'],
+  'the-count': ['CountonBlood', 'CountOnBlood'],
+  // Le Digger (Stake: hacksaw-le-digger): 5-Scatter / Epic nach Gamble
+  'le-digger': ['GoldDigger', 'Gold Digger'],
+}
+
+const HACKSAW_5_SCATTER_NAMED = Object.fromEntries(
+  Object.entries(HACKSAW_5_SCATTER_NAMED_RAW).map(([frag, names]) => [
+    frag,
+    new Set(names.map((n) => normalizeHacksawBonusFeatureKey(n))),
+  ])
+)
+
+/** @returns {5|null} */
+function getHacksawNamedFiveScatterLevel(bonusFeatureIdRaw, slotSlugRaw) {
+  const key = normalizeHacksawBonusFeatureKey(bonusFeatureIdRaw)
+  if (!key) return null
+  const slug = String(slotSlugRaw || '').toLowerCase()
+  for (const [frag, idSet] of Object.entries(HACKSAW_5_SCATTER_NAMED)) {
+    if (!slug.includes(frag)) continue
+    if (idSet.has(key)) return 5
+  }
+  return null
+}
+
 function parseConfigFromUrl(configUrl) {
   try {
     const url = new URL(configUrl)
@@ -363,8 +418,26 @@ export function getImpliedScatterLevel(parsed, slotSlug = '') {
     }
     if (M[bonusId] != null) return M[bonusId]
     if (bonusId.includes('make her day') || bonusId.includes('go ahead')) return 5
+    if (bonusId.includes('gold digger') || bonusId.replace(/\s+/g, '').includes('golddigger')) return 5
     return null
   }
+  if (slug.includes('le-digger')) {
+    const M = {
+      fs: 3,
+      fs_1: 3,
+      fs_2: 4,
+      fs_3: 5,
+      fs_5: 5,
+      epic: 5,
+      fs_epic: 5,
+    }
+    if (M[bonusId] != null) return M[bonusId]
+    if (bonusId.includes('make her day') || bonusId.includes('go ahead')) return 5
+    if (bonusId.includes('gold digger') || bonusId.replace(/\s+/g, '').includes('golddigger')) return 5
+    return null
+  }
+  const named5 = getHacksawNamedFiveScatterLevel(parsed?.bonusFeatureId, slug)
+  if (named5 != null) return named5
   const M = {
     fs: 3,
     fs_1: 3,
@@ -388,8 +461,10 @@ export function shouldSkipBonus(parsed, options) {
   
   let specialLevel = null
 
-  // Octo Attack Specifics
-  if (slotSlug.includes('octo-attack')) {
+  const namedFive = getHacksawNamedFiveScatterLevel(parsed?.bonusFeatureId, slotSlug)
+  if (namedFive != null) {
+    specialLevel = namedFive
+  } else if (slotSlug.includes('octo-attack')) {
     const OCTO_MAPPING = {
       'fs': 3,   // Normal Bonus (auch bei 6 Scattern lt. User)
       'fs_1': 3, // Fallback
@@ -446,7 +521,13 @@ export function shouldSkipBonus(parsed, options) {
     if (EPIC_BULLETS_MAPPING.hasOwnProperty(bonusId)) {
       specialLevel = EPIC_BULLETS_MAPPING[bonusId]
     }
-    if (specialLevel == null && (bonusId.includes('make her day') || bonusId.includes('go ahead'))) {
+    if (
+      specialLevel == null &&
+      (bonusId.includes('make her day') ||
+        bonusId.includes('go ahead') ||
+        bonusId.includes('gold digger') ||
+        bonusId.replace(/\s+/g, '').includes('golddigger'))
+    ) {
       specialLevel = 5
     }
   } else {
@@ -462,7 +543,13 @@ export function shouldSkipBonus(parsed, options) {
     if (GLOBAL_MAPPING.hasOwnProperty(bonusId)) {
       specialLevel = GLOBAL_MAPPING[bonusId]
     }
-    if (specialLevel == null && (bonusId.includes('make her day') || bonusId.includes('go ahead'))) {
+    if (
+      specialLevel == null &&
+      (bonusId.includes('make her day') ||
+        bonusId.includes('go ahead') ||
+        bonusId.includes('gold digger') ||
+        bonusId.replace(/\s+/g, '').includes('golddigger'))
+    ) {
       specialLevel = 5
     }
   }

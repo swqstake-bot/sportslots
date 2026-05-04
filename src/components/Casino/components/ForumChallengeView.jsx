@@ -3,6 +3,7 @@
  */
 import { useState, useCallback, useMemo } from 'react'
 import { scrapeForumBets } from '../api/forumScraper'
+const FORUM_URL_STORAGE_KEY = 'slotbot_forum_last_url'
 
 const STYLES = {
   container: { display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', minHeight: 0 },
@@ -79,7 +80,13 @@ const STYLES = {
 }
 
 export default function ForumChallengeView({ accessToken = '', webSlots = [], onSelectChallenge }) {
-  const [forumUrl, setForumUrl] = useState('')
+  const [forumUrl, setForumUrl] = useState(() => {
+    try {
+      return localStorage.getItem(FORUM_URL_STORAGE_KEY) || ''
+    } catch {
+      return ''
+    }
+  })
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState({ done: 0, total: 0, label: '' })
   const [error, setError] = useState('')
@@ -107,6 +114,9 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
       return
     }
     setError('')
+    try {
+      localStorage.setItem(FORUM_URL_STORAGE_KEY, url)
+    } catch {}
     setLoading(true)
     setProgress({ done: 0, total: 0, label: '' })
     try {

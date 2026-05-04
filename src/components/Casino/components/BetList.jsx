@@ -1,146 +1,220 @@
+import { useMemo } from 'react'
+import clsx from 'clsx'
 import { formatAmount } from '../utils/formatAmount'
-
-const STYLES = {
-  card: {
-    marginTop: '1rem',
-    padding: '1rem',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-lg)',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '0.5rem',
-  },
-  title: {
-    fontSize: '0.8rem',
-    fontWeight: 600,
-    color: 'var(--text-muted)',
-  },
-  count: {
-    fontSize: '0.75rem',
-    color: 'var(--text-muted)',
-  },
-  list: {
-    maxHeight: 360,
-    overflow: 'auto',
-    fontSize: '0.7rem',
-    fontFamily: '"JetBrains Mono", monospace',
-  },
-  headerRow: {
-    display: 'grid',
-    gridTemplateColumns: '2rem 1fr 1fr 1fr 2rem',
-    gap: '0.35rem',
-    padding: '0.2rem 0',
-    borderBottom: '1px solid var(--border)',
-    fontSize: '0.65rem',
-    color: 'var(--text-muted)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.03em',
-  },
-  row: {
-    display: 'grid',
-    gridTemplateColumns: '2rem 1fr 1fr 1fr 2rem',
-    gap: '0.35rem',
-    padding: '0.2rem 0',
-    borderBottom: '1px solid var(--border)',
-    alignItems: 'center',
-  },
-  rowBonus: {
-    background: 'rgba(255, 193, 7, 0.06)',
-  },
-  num: { color: 'var(--text-muted)', fontSize: '0.68rem' },
-  win: { color: 'var(--success)', fontWeight: 500 },
-  loss: { color: 'var(--error)', fontWeight: 500 },
-  bonus: { color: 'var(--warning, #f59e0b)', fontSize: '0.7rem' },
-  empty: {
-    padding: '1.5rem',
-    textAlign: 'center',
-    color: 'var(--text-muted)',
-    fontSize: '0.85rem',
-  },
-}
+import { formatStakeShareBetId } from '../utils/stakeBetShareId'
 
 function fmt(val, cc) {
   return formatAmount(val, cc)
 }
 
-export default function BetList({ bets, totalCount, currencyCode, compact = false, minimal = false, showSlot = false, emptyMessage }) {
-  const cardStyle = minimal ? { ...STYLES.card, marginTop: '0.14rem', padding: '0.18rem' } : (compact ? { ...STYLES.card, marginTop: '0.28rem', padding: '0.3rem' } : STYLES.card)
-  const listStyle = minimal ? { ...STYLES.list, maxHeight: 52, fontSize: '0.5rem', lineHeight: 1.15 } : (compact ? { ...STYLES.list, maxHeight: 85, fontSize: '0.58rem', lineHeight: 1.2 } : STYLES.list)
-  const gridCols = showSlot ? '2rem 1.2fr 1fr 1fr 1fr 2rem' : '2rem 1fr 1fr 1fr 2rem'
-  const headerRowStyle = { ...STYLES.headerRow, gridTemplateColumns: gridCols }
-  const rowStyle = { ...STYLES.row, gridTemplateColumns: gridCols }
+export default function BetList({
+  bets,
+  totalCount,
+  currencyCode,
+  compact = false,
+  minimal = false,
+  showSlot = false,
+  showNet = true,
+  showContext = false,
+  showCopyHouse = false,
+  maxRows = 0,
+  title = 'Spins',
+  emptyMessage,
+}) {
+  const displayBets = useMemo(() => {
+    const nonZero = (bets || []).filter((b) => (b.betAmount ?? 0) !== 0 || (b.winAmount ?? 0) !== 0)
+    const sorted = [...nonZero].sort((a, b) => {
+      const ta = Number(a?.addedAt ?? 0)
+      const tb = Number(b?.addedAt ?? 0)
+      if (Number.isFinite(ta) && Number.isFinite(tb) && (ta > 0 || tb > 0)) return tb - ta
+      return 0
+    })
+    return Number.isFinite(Number(maxRows)) && Number(maxRows) > 0 ? sorted.slice(0, Number(maxRows)) : sorted
+  }, [bets, maxRows])
 
-  if (!bets?.length) {
-    const msg = emptyMessage ?? 'Noch keine Spins in dieser Session.'
+  const panelClass = clsx('terminal-panel', minimal && 'terminal-panel--minimal', compact && 'terminal-panel--compact')
+  const scrollClass = clsx(
+    'terminal-scroll',
+    'terminal-scroll--bet',
+    minimal && 'terminal-scroll--minimal',
+    compact && 'terminal-scroll--compact'
+  )
+
+  if (!displayBets.length) {
+    const msg = emptyMessage ?? 'No spins in this session yet.'
     return (
-      <div style={cardStyle}>
-        <div style={{ ...STYLES.title, fontSize: compact ? '0.7rem' : '0.8rem' }}>Spins</div>
-        <div style={{ ...STYLES.empty, padding: minimal ? '0.18rem' : (compact ? '0.3rem' : '1.5rem'), fontSize: minimal ? '0.5rem' : (compact ? '0.62rem' : '0.85rem') }}>{msg}</div>
+      <div className={panelClass}>
+        <div className="terminal-panel__head">
+          <span className="terminal-panel__title">{title}</span>
+        </div>
+        <div className="terminal-empty">{msg}</div>
       </div>
     )
   }
 
-  const cc = (currencyCode || '').toUpperCase()
-  const suffix = cc ? ` ${cc}` : ''
+  const defaultCurrency = (currencyCode || '').toUpperCase()
 
   return (
-    <div style={cardStyle}>
-      <div style={STYLES.header}>
-        <span style={{ ...STYLES.title, fontSize: minimal ? '0.5rem' : (compact ? '0.58rem' : '0.8rem') }}>Spins</span>
-        <span style={{ ...STYLES.count, fontSize: minimal ? '0.48rem' : (compact ? '0.55rem' : '0.75rem') }}>{totalCount != null ? totalCount : bets.length} Einträge</span>
+    <div className={panelClass}>
+      <div className="terminal-panel__head">
+        <span className="terminal-panel__title">{title}</span>
+        <span className="terminal-panel__count">
+          {totalCount != null ? totalCount : bets.length} entries
+        </span>
       </div>
-      <div style={listStyle}>
-        <div style={headerRowStyle}>
-          <span>#</span>
-          {showSlot && <span>Slot</span>}
-          <span>Einsatz</span>
-          <span>Gewinn</span>
-          <span>Netto</span>
-          <span>X</span>
-        </div>
-        {(() => {
-          const displayBets = bets.filter((b) => (b.betAmount ?? 0) !== 0 || (b.winAmount ?? 0) !== 0)
-          const count = totalCount != null ? totalCount : displayBets.length
-          return [...displayBets].reverse().map((b, i) => {
-          const bet = b.betAmount ?? 0
-          const win = b.winAmount ?? 0
-          const net = win - bet
-          const isBonus = b.isBonus
-          // Bei Stopp auf Bonus: Platzhalter "Bonus". Sonst Win anzeigen (auch bei durchgespieltem Bonus)
-          const showWin = !(isBonus && b.stoppedBonus)
-          const multiplier = bet > 0 ? (win / bet).toFixed(1) : '0'
-          return (
-            <div
-              key={b.id ?? i}
-              style={{
-                ...rowStyle,
-                ...(isBonus ? STYLES.rowBonus : {}),
-              }}
-            >
-              <span style={STYLES.num}>{count - i}</span>
+      <div className={scrollClass}>
+        <table className="terminal-table">
+          <thead>
+            <tr>
+              <th className="terminal-th" style={{ width: '2.2rem' }}>
+                #
+              </th>
               {showSlot && (
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={b.slotName || b.slotSlug}>
-                  {b.slotName || b.slotSlug || '–'}
-                </span>
+                <th className="terminal-th" style={{ minWidth: '14rem' }}>
+                  Slot
+                </th>
               )}
-              <span>{fmt(bet, cc)}{suffix}</span>
-              <span style={win > 0 ? STYLES.win : {}}>
-                {!showWin ? ' Bonus' : `${fmt(win, cc)}${suffix}`}
-              </span>
-              <span style={net >= 0 ? STYLES.win : STYLES.loss}>
-                {!showWin ? '–' : `${net >= 0 ? '+' : ''}${fmt(net, cc)}${suffix}`}
-              </span>
-              <span style={win > 0 ? STYLES.win : {}} title={`${multiplier}× Einsatz`}>
-                {!showWin ? '–' : `${multiplier}×`}
-              </span>
-            </div>
-          )
-        })
-        })()}
+              <th className="terminal-th" style={{ minWidth: '8.5rem' }}>
+                Stake
+              </th>
+              <th className="terminal-th" style={{ minWidth: '8.5rem' }}>
+                Win
+              </th>
+              {showNet && <th className="terminal-th">Net</th>}
+              {showContext && (
+                <th className="terminal-th" style={{ minWidth: '11rem' }}>
+                  Context
+                </th>
+              )}
+              {showCopyHouse && (
+                <th className="terminal-th" style={{ minWidth: '4.3rem' }}>
+                  ID
+                </th>
+              )}
+              <th className="terminal-th" style={{ width: '3.1rem' }}>
+                X
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {displayBets.map((b, i) => {
+              const bet = b.betAmount ?? 0
+              const win = b.winAmount ?? 0
+              const net = win - bet
+              const isBonus = b.isBonus
+              const isHubPending = b.hubSettlement === 'pending'
+              const rowCurrency = String(b.currencyCode || defaultCurrency || '').toUpperCase()
+              const rowSuffix = rowCurrency ? ` ${rowCurrency}` : ''
+              const shareRaw = b.shareIid || b.houseTopId || b.houseId || b.iid || null
+              const shareId = formatStakeShareBetId(shareRaw)
+              const canCopyShare = typeof shareId === 'string' && shareId.trim() !== ''
+              const sharePreview =
+                canCopyShare && shareId.length > 22 ? `${shareId.slice(0, 22)}…` : shareId || ''
+              const showWin = !(isBonus && b.stoppedBonus)
+              const multiplier = bet > 0 ? (win / bet).toFixed(2) : '0'
+
+              return (
+                <tr
+                  key={b.id ?? i}
+                  className={clsx(isBonus && 'terminal-row--bonus', compact && 'terminal-tr--compact')}
+                >
+                  <td className="terminal-td terminal-td--num">{i + 1}</td>
+                  {showSlot && (
+                    <td className="terminal-td" title={b.slotName || b.slotSlug}>
+                      {b.slotName || b.slotSlug || '–'}
+                    </td>
+                  )}
+                  <td className="terminal-td">
+                    {fmt(bet, rowCurrency)}
+                    {rowSuffix}
+                  </td>
+                  <td
+                    className={clsx(
+                      'terminal-td',
+                      !isHubPending && win > 0 && 'terminal-td--win',
+                      isHubPending && 'terminal-td--pending'
+                    )}
+                  >
+                    {!showWin ? ' Bonus' : isHubPending ? '…' : `${fmt(win, rowCurrency)}${rowSuffix}`}
+                  </td>
+                  {showNet && (
+                    <td
+                      className={clsx(
+                        'terminal-td',
+                        !isHubPending && net > 0 && 'terminal-td--win',
+                        !isHubPending && net < 0 && 'terminal-td--loss',
+                        !isHubPending && net === 0 && 'terminal-td--even',
+                        isHubPending && 'terminal-td--pending'
+                      )}
+                    >
+                      {!showWin ? '–' : isHubPending ? '…' : `${net >= 0 ? '+' : ''}${fmt(net, rowCurrency)}${rowSuffix}`}
+                    </td>
+                  )}
+                  {showContext && (
+                    <td className="terminal-td">
+                      <span className="terminal-context">
+                        {(() => {
+                          const contextRaw = String(b.sourceTag || b.roundId || b.slotSlug || '—')
+                          const contextMasked = /^house:/i.test(contextRaw) ? 'bet id' : contextRaw
+                          return (
+                            <span className="terminal-context-clip" title={contextMasked}>
+                              {contextMasked}
+                            </span>
+                          )
+                        })()}
+                        {canCopyShare ? (
+                          <button
+                            type="button"
+                            className="terminal-copy-btn"
+                            title={shareId}
+                            onClick={() => {
+                              try {
+                                navigator?.clipboard?.writeText(shareId).catch(() => {})
+                              } catch (_) {}
+                            }}
+                          >
+                            Copy
+                          </button>
+                        ) : null}
+                      </span>
+                    </td>
+                  )}
+                  {showCopyHouse && (
+                    <td className="terminal-td">
+                      {canCopyShare ? (
+                        <span className="terminal-inline">
+                          <span className="terminal-id-preview" title={shareId}>
+                            {sharePreview}
+                          </span>
+                          <button
+                            type="button"
+                            className="terminal-copy-btn"
+                            title={`Copy bet id (${shareId})`}
+                            onClick={() => {
+                              try {
+                                navigator?.clipboard?.writeText(shareId).catch(() => {})
+                              } catch (_) {}
+                            }}
+                          >
+                            Copy
+                          </button>
+                        </span>
+                      ) : (
+                        <span className="terminal-id-preview">—</span>
+                      )}
+                    </td>
+                  )}
+                  <td
+                    className={clsx('terminal-td', !isHubPending && win > 0 && 'terminal-td--win', isHubPending && 'terminal-td--pending')}
+                    title={!isHubPending && showWin ? `${multiplier}× stake` : undefined}
+                  >
+                    {!showWin ? '–' : isHubPending ? '…' : `${multiplier}×`}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   )

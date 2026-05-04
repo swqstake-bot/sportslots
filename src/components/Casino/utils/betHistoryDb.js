@@ -3,9 +3,11 @@
  * Pro Slot gespeichert, lädt beim Start.
  */
 
-const DB_NAME = 'SlotbotBetHistory'
-const DB_VERSION = 2
-const STORE_NAME = 'bets'
+import { CASINO_DB_REGISTRY } from './storageRegistry'
+
+const DB_NAME = CASINO_DB_REGISTRY.betHistory.name
+const DB_VERSION = CASINO_DB_REGISTRY.betHistory.version
+const STORE_NAME = CASINO_DB_REGISTRY.betHistory.store
 
 /** @type {IDBDatabase | null} */
 let db = null
@@ -166,4 +168,30 @@ export async function clearAllBetHistory() {
     req.onsuccess = () => resolve()
     req.onerror = () => reject(req.error)
   })
+}
+
+const BET_HISTORY_AUDIT_KEY = 'slotbot_bet_history_audit'
+
+export function recordBetHistoryAudit(event) {
+  try {
+    const raw = localStorage.getItem(BET_HISTORY_AUDIT_KEY)
+    const list = raw ? JSON.parse(raw) : []
+    const next = [...list.slice(-199), { ts: new Date().toISOString(), ...event }]
+    localStorage.setItem(BET_HISTORY_AUDIT_KEY, JSON.stringify(next))
+  } catch (_) {}
+}
+
+export function getBetHistoryAudit() {
+  try {
+    const raw = localStorage.getItem(BET_HISTORY_AUDIT_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch (_) {
+    return []
+  }
+}
+
+export function clearBetHistoryAudit() {
+  try {
+    localStorage.removeItem(BET_HISTORY_AUDIT_KEY)
+  } catch (_) {}
 }

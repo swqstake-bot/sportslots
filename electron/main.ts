@@ -1,29 +1,34 @@
-import { app, BrowserWindow, ipcMain, net, session, shell, globalShortcut, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, net, session, shell, globalShortcut, dialog, type WebContents } from 'electron';
+// electron-updater ist CommonJS: Named Import `import { autoUpdater }` bricht unter ESM (Main-Prozess).
+import updaterModule from 'electron-updater';
+const { autoUpdater } = updaterModule;
+import logger from 'electron-log';
 import https from 'node:https';
 import http from 'node:http';
-import updater from 'electron-updater';
-const { autoUpdater } = updater;
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'crypto';
 import os from 'os';
-import { DIST, VITE_PUBLIC, SPIN_SAMPLES_DIR, FIRST_SLOT_WINS_DIR, VITE_DEV_SERVER_URL, ELECTRON_DIR } from './config.js';
+import {
+  DIST,
+  VITE_PUBLIC,
+  SPIN_SAMPLES_DIR,
+  FIRST_SLOT_WINS_DIR,
+  VITE_DEV_SERVER_URL,
+  ELECTRON_DIR,
+  REPO_ROOT,
+} from './config.js';
+import { finalizeStakebotxBridge, resolveStakebotxBridgeSync } from './stakebotxBridge.js';
+import type { StakebotxRendererBridgeInfo } from './stakebotxBridgeTypes.js';
 import { sessionData, captureSession } from './sessionCapture.js';
-
-/** Stake-Session: bevorzugt stake.com, sonst stake.bet (Cookie vorhanden). */
-async function resolveStakeOrigin(): Promise<string> {
-    await captureSession();
-    try {
-        const forCom = await session.defaultSession.cookies.get({ url: 'https://stake.com' });
-        const forBet = await session.defaultSession.cookies.get({ url: 'https://stake.bet' });
-        const hasCom = forCom.some((c) => c.name === 'session' && String(c.value || '').length > 0);
-        const hasBet = forBet.some((c) => c.name === 'session' && String(c.value || '').length > 0);
-        if (hasBet && !hasCom) return 'https://stake.bet';
-    } catch {
-        /* ignore */
-    }
-    return 'https://stake.com';
-}
+import {
+  ensureValidStakeSession,
+  getStakeSessionStatus,
+  invalidateStakeSessionStatusCache,
+  isStakeOriginUrl,
+  resolveStakeOrigin,
+  type StakeSessionStatus,
+} from './stakeSessionManager.js';
 
 function extractStakeJsonErrorMessage(parsed: unknown): string {
     if (parsed == null) return 'Leere Antwort';
@@ -56,13 +61,317 @@ import {
   telegramLogout,
   telegramStartListen,
   telegramStopListen,
+  shutdownTelegramForAppQuit,
   loadTelegramConfig,
   saveTelegramConfig,
 } from './telegramUser.js';
 
 let win: BrowserWindow | null;
 let loginWin: BrowserWindow | null;
+let stakeBridgeWin: BrowserWindow | null = null;
+let withdrawPrefillWin: BrowserWindow | null = null;
+let slotPopupSeq = 0;
+
+function isSafeExternalUrl(url: string): boolean {
+  try {
+    const parsed = new URL(String(url));
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+async function openExternalSafe(url: string): Promise<void> {
+  if (!isSafeExternalUrl(url)) {
+    throw new Error('External URL scheme is not allowed');
+  }
+  await shell.openExternal(url);
+}
+
+function hostnameMatches(hostname: string, allowed: string): boolean {
+  const host = hostname.toLowerCase();
+  const needle = allowed.toLowerCase();
+  if (!needle) return false;
+  if (needle.includes('.')) return host === needle || host.endsWith(`.${needle}`);
+  return host.split('.').some((part) => part.includes(needle));
+}
+
+/**
+ * Verstecktes Stake-Bridge-Fenster hat kein `parent` — bleibt sonst offen, blockiert `window-all-closed`
+ * und hält den Electron-Prozess am Leben (Windows/Linux).
+ */
+function destroyAuxiliaryBrowserWindows(): void {
+  if (stakeBridgeWin && !stakeBridgeWin.isDestroyed()) {
+    try {
+      stakeBridgeWin.destroy();
+    } catch {
+      /* ignore */
+    }
+    stakeBridgeWin = null;
+  }
+  if (loginWin && !loginWin.isDestroyed()) {
+    try {
+      loginWin.destroy();
+    } catch {
+      /* ignore */
+    }
+    loginWin = null;
+  }
+  if (withdrawPrefillWin && !withdrawPrefillWin.isDestroyed()) {
+    try {
+      withdrawPrefillWin.destroy();
+    } catch {
+      /* ignore */
+    }
+    withdrawPrefillWin = null;
+  }
+}
+
+/**
+ * Fills Stake cashier withdrawal address field (Svelte/React) via native value setter + events.
+ * Retries because the wallet modal mounts after first paint / SPA route.
+ */
+async function fillStakeWithdrawAddressField(webContents: WebContents, address: string): Promise<boolean> {
+  const addrJson = JSON.stringify(address);
+  const script = `(function() {
+    var el = document.querySelector('textarea[data-testid="withdrawal-address"]')
+      || document.querySelector('textarea[name="address"]');
+    if (!el) return false;
+    try {
+      var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(el, ${addrJson});
+    } catch (e) {
+      el.value = ${addrJson};
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    try { el.focus(); } catch (_) {}
+    return true;
+  })()`;
+
+  for (let i = 0; i < 80; i++) {
+    try {
+      if (webContents.isDestroyed()) return false;
+      const done = (await webContents.executeJavaScript(script, true)) as boolean;
+      if (done) return true;
+    } catch {
+      return false;
+    }
+    await new Promise((r) => setTimeout(r, 350));
+  }
+  return false;
+}
 const MAX_IPC_RESPONSE_BYTES = 8 * 1024 * 1024; // 8 MB safety cap for IPC responses
+const STAKE_MAX_AUTH_RETRIES = 2;
+const STAKE_COOKIE_DEBUG_NAMES = new Set(['session', 'cf_clearance', '__cf_bm']);
+let lastLoginWindowOpenAt = 0;
+const LOGIN_WINDOW_DEBOUNCE_MS = 4000;
+let lastNet403FallbackLogAt = 0;
+const NET_403_FALLBACK_LOG_DEBOUNCE_MS = 15000;
+const PROXY_HTTP_AGENT = new http.Agent({
+  keepAlive: true,
+  maxSockets: 96,
+  maxFreeSockets: 16,
+  timeout: 60000,
+})
+const PROXY_HTTPS_AGENT = new https.Agent({
+  keepAlive: true,
+  maxSockets: 96,
+  maxFreeSockets: 16,
+  timeout: 60000,
+})
+
+/** Short-lived cache so multiple React mounts do not hammer localhost probes. */
+let stakebotxBridgeCache: { at: number; payload: StakebotxRendererBridgeInfo } | null = null;
+const STAKEBOTX_BRIDGE_CACHE_MS = 2000;
+
+class StakeHttpError extends Error {
+  status: number;
+  body: string;
+  constructor(status: number, body: string, message: string) {
+    super(message);
+    this.status = status;
+    this.body = body;
+  }
+}
+
+function throwIfSessionInvalid(sessionStatus: StakeSessionStatus): void {
+  if (sessionStatus.valid && sessionStatus.sessionToken) return;
+  const missingText = sessionStatus.missingCookies.length
+    ? ` missing=${sessionStatus.missingCookies.join(',')}`
+    : '';
+  const expiredText = sessionStatus.expiredCookies.length
+    ? ` expired=${sessionStatus.expiredCookies.join(',')}`
+    : '';
+  throw new Error(`Session rejected.${missingText}${expiredText}`.trim());
+}
+
+function openLoginWindowForRejectedSession(reason: string): void {
+  const now = Date.now();
+  if (now - lastLoginWindowOpenAt < LOGIN_WINDOW_DEBOUNCE_MS) {
+    return;
+  }
+  lastLoginWindowOpenAt = now;
+  console.warn('[StakeSession] Opening login window due to rejected session:', reason);
+  createLoginWindow();
+}
+
+async function ensureStakeBridgeWindow(origin: string): Promise<BrowserWindow> {
+  if (stakeBridgeWin && !stakeBridgeWin.isDestroyed()) {
+    return stakeBridgeWin;
+  }
+  stakeBridgeWin = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+      backgroundThrottling: false,
+    },
+  });
+  await stakeBridgeWin.loadURL(`${origin}/`);
+  return stakeBridgeWin;
+}
+
+async function stakeBrowserPostJson(
+  url: string,
+  headers: Record<string, string>,
+  payload: unknown
+): Promise<{ status: number; body: string; parsed: unknown }> {
+  const u = new URL(url);
+  const origin = `${u.protocol}//${u.host}`;
+  const w = await ensureStakeBridgeWindow(origin);
+  const script = `
+    (async () => {
+      const res = await fetch(${JSON.stringify(url)}, {
+        method: 'POST',
+        credentials: 'include',
+        headers: ${JSON.stringify(headers)},
+        body: ${JSON.stringify(JSON.stringify(payload))}
+      });
+      const text = await res.text();
+      return { status: res.status, body: text };
+    })();
+  `;
+  const result = (await w.webContents.executeJavaScript(script, true)) as {
+    status: number;
+    body: string;
+  };
+  const status = Number(result?.status || 0);
+  const body = String(result?.body || '');
+  if (status === 401 || status === 403) {
+    throw new StakeHttpError(status, body, `Session rejected (${status})`);
+  }
+  if (status === 429) {
+    throw new StakeHttpError(status, body, 'API rate limited (429). Bitte kurz warten und erneut versuchen.');
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    throw new StakeHttpError(status, body, `API antwortete nicht mit JSON (HTTP ${status}).`);
+  }
+  if (status >= 400) {
+    throw new StakeHttpError(status, body, `HTTP ${status}: ${extractStakeJsonErrorMessage(parsed)}`);
+  }
+  return { status, body, parsed };
+}
+
+async function stakeBrowserGetText(
+  url: string,
+  headers: Record<string, string>
+): Promise<{ status: number; body: string; finalUrl: string }> {
+  const u = new URL(url);
+  const origin = `${u.protocol}//${u.host}`;
+  const w = await ensureStakeBridgeWindow(origin);
+  const script = `
+    (async () => {
+      const res = await fetch(${JSON.stringify(url)}, {
+        method: 'GET',
+        credentials: 'include',
+        headers: ${JSON.stringify(headers)}
+      });
+      const text = await res.text();
+      return { status: res.status, body: text, finalUrl: res.url };
+    })();
+  `;
+  const result = (await w.webContents.executeJavaScript(script, true)) as {
+    status: number;
+    body: string;
+    finalUrl: string;
+  };
+  return {
+    status: Number(result?.status || 0),
+    body: String(result?.body || ''),
+    finalUrl: String(result?.finalUrl || url),
+  };
+}
+
+async function stakeNetPostJson(
+  url: string,
+  headers: Record<string, string>,
+  payload: unknown
+): Promise<{ status: number; body: string; parsed: unknown }> {
+  return new Promise((resolve, reject) => {
+    const request = net.request({ method: 'POST', url, useSessionCookies: true });
+    for (const [name, value] of Object.entries(headers)) {
+      request.setHeader(name, value);
+    }
+
+    request.on('response', (response) => {
+      const chunks: Buffer[] = [];
+      let total = 0;
+      let abortedForSize = false;
+      response.on('data', (chunk) => {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        total += buf.length;
+        if (total > MAX_IPC_RESPONSE_BYTES) {
+          abortedForSize = true;
+          request.abort();
+          return;
+        }
+        chunks.push(buf);
+      });
+      response.on('end', () => {
+        if (abortedForSize) {
+          reject(new Error(`API response too large (> ${MAX_IPC_RESPONSE_BYTES} bytes).`));
+          return;
+        }
+        const body = Buffer.concat(chunks).toString();
+        const status = response.statusCode ?? 0;
+        if (status === 401 || status === 403) {
+          reject(new StakeHttpError(status, body, `Session rejected (${status})`));
+          return;
+        }
+        if (status === 429) {
+          reject(new StakeHttpError(status, body, 'API rate limited (429). Bitte kurz warten und erneut versuchen.'));
+          return;
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(body);
+        } catch {
+          reject(new StakeHttpError(status, body, `API antwortete nicht mit JSON (HTTP ${status}).`));
+          return;
+        }
+        if (status >= 400) {
+          reject(
+            new StakeHttpError(status, body, `HTTP ${status}: ${extractStakeJsonErrorMessage(parsed)}`)
+          );
+          return;
+        }
+        resolve({ status, body, parsed });
+      });
+    });
+
+    request.on('error', (error) => {
+      reject(error);
+    });
+
+    request.write(JSON.stringify(payload));
+    request.end();
+  });
+}
 
 function getBetLogsDir(): string {
   const dir = path.join(app.getPath('userData'), 'bet-logs');
@@ -88,26 +397,37 @@ const LOGGER_CURRENCY_CONFIG_QUERY = `query CurrencyConfiguration($isAcp: Boolea
 }`;
 
 function createWindow() {
+  const iconPngPath = path.join(VITE_PUBLIC, 'icon.png');
+  const iconSvgPath = path.join(VITE_PUBLIC, 'favicon.svg');
+  const resolvedIconPath = fs.existsSync(iconPngPath) ? iconPngPath : iconSvgPath;
+
   win = new BrowserWindow({
     width: 1200,
     height: 800,
-    icon: path.join(VITE_PUBLIC, 'icon.png'),
+    title: 'StakeSports',
+    autoHideMenuBar: true,
+    icon: resolvedIconPath,
     webPreferences: {
       preload: path.join(ELECTRON_DIR, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false,
+      webSecurity: true,
       sandbox: false,
       /** Sports/Casino AutoBet nutzt setTimeout-Loops — Standard wäre Throttling bei minimiertem Fenster. */
       backgroundThrottling: false,
     },
   });
 
+  /** Gepackte App: keine DevTools (RAM/UX); nur unfertige Builds aus dem Repo. */
+  const allowDevTools = !app.isPackaged;
+
   console.log('Loading URL:', VITE_DEV_SERVER_URL);
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL);
-    win.webContents.openDevTools();
+    if (allowDevTools) {
+      win.webContents.openDevTools();
+    }
     win.webContents.session.clearCache().then(() => {
         console.log('Cache cleared!');
     });
@@ -116,12 +436,13 @@ function createWindow() {
     win.loadFile(path.join(DIST, 'index.html'));
   }
 
-  // F12: DevTools öffnen/schließen (Dev + Production)
-  const toggleDevTools = () => {
-    win?.webContents.toggleDevTools();
-  };
-  globalShortcut.register('F12', toggleDevTools);
-  globalShortcut.register('CommandOrControl+Shift+I', toggleDevTools);
+  if (allowDevTools) {
+    const toggleDevTools = () => {
+      win?.webContents.toggleDevTools();
+    };
+    globalShortcut.register('F12', toggleDevTools);
+    globalShortcut.register('CommandOrControl+Shift+I', toggleDevTools);
+  }
 
   win.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     console.error('Failed to load:', errorCode, errorDescription);
@@ -137,8 +458,15 @@ function createWindow() {
 
   // Handle external links
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalSafe(url).catch((err) => console.warn('Blocked external URL:', err?.message || err));
     return { action: 'deny' };
+  });
+
+  win.on('close', () => {
+    destroyAuxiliaryBrowserWindows();
+  });
+  win.on('closed', () => {
+    win = null;
   });
 }
 
@@ -167,19 +495,39 @@ function createLoginWindow() {
 
     // Capture session data when navigating
     loginWin.webContents.on('did-navigate', async () => {
+        invalidateStakeSessionStatusCache();
+        await captureSession();
+    });
+    loginWin.webContents.on('did-finish-load', async () => {
+        invalidateStakeSessionStatusCache();
         await captureSession();
     });
 }
 
-// --- Auto Updater Logic ---
-autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = true;
+// --- Auto Updater (electron-updater / GitHub Releases + latest.yml) ---
+/** Muss zu package.json → build.publish und zu veröffentlichten Releases passieren. */
+const UPDATER_GITHUB = { owner: 'swqstake-bot', repo: 'sportslots' } as const;
 
-import logger from 'electron-log';
+function configureGithubAutoUpdater(): void {
+  if (!app.isPackaged) return;
+  try {
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: UPDATER_GITHUB.owner,
+      repo: UPDATER_GITHUB.repo,
+      releaseType: 'release',
+    });
+    logger.info('[Updater] GitHub feed:', `${UPDATER_GITHUB.owner}/${UPDATER_GITHUB.repo}`);
+  } catch (e) {
+    logger.warn('[Updater] setFeedURL failed:', e);
+  }
+}
+
+// Production: Update im Hintergrund laden; Installation weiterhin über „Neustart“ (oder Quit).
+autoUpdater.autoDownload = app.isPackaged;
+autoUpdater.autoInstallOnAppQuit = true;
 autoUpdater.logger = logger;
 (autoUpdater.logger as any).transports.file.level = 'info';
-
-// Prevent downgrade
 autoUpdater.allowDowngrade = false;
 
 autoUpdater.on('checking-for-update', () => {
@@ -217,12 +565,43 @@ autoUpdater.on('update-downloaded', (info) => {
 
 ipcMain.handle('get-app-version', () => app.getVersion());
 
-ipcMain.handle('check-for-updates', () => {
-    if (!app.isPackaged) {
-        console.log('[Updater] Skipping check in dev mode');
-        return;
+/**
+ * StakeBot-X renderer bridge: resolves a safe mount URL (loopback http(s) or verified static index.html)
+ * and optionally probes http(s) targets. Legacy UI remains the default when nothing is reachable.
+ */
+ipcMain.handle(
+  'stakebotx-renderer-bridge',
+  async (_event, options?: { refresh?: boolean; probe?: boolean }) => {
+    const refresh = options?.refresh === true;
+    const shouldProbe = options?.probe !== false;
+    const now = Date.now();
+    if (!refresh && stakebotxBridgeCache && now - stakebotxBridgeCache.at < STAKEBOTX_BRIDGE_CACHE_MS) {
+      return stakebotxBridgeCache.payload;
     }
-    autoUpdater.checkForUpdates();
+    const sync = resolveStakebotxBridgeSync({
+      repoRoot: REPO_ROOT,
+      isPackaged: app.isPackaged,
+      env: process.env,
+    });
+    const info = await finalizeStakebotxBridge(sync, { probe: shouldProbe, env: process.env });
+    stakebotxBridgeCache = { at: Date.now(), payload: info };
+    return info;
+  }
+);
+
+ipcMain.handle('check-for-updates', async () => {
+  if (!app.isPackaged) {
+    console.log('[Updater] Skipping check in dev mode');
+    return { skipped: true as const };
+  }
+  configureGithubAutoUpdater();
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return { skipped: false as const, result };
+  } catch (e) {
+    logger.error('[Updater] checkForUpdates:', e);
+    throw e;
+  }
 });
 
 ipcMain.handle('start-download', () => {
@@ -256,10 +635,10 @@ ipcMain.handle('get-keyauth-hwid', async () => {
 });
 
 ipcMain.handle('open-external', async (_event, url) => {
-    await shell.openExternal(url);
+    await openExternalSafe(String(url || ''));
 });
 
-ipcMain.handle('open-slot-popup', async (_event, payload: { slug?: string; locale?: string } = {}) => {
+ipcMain.handle('open-slot-popup', async (event, payload: { slug?: string; locale?: string } = {}) => {
     const rawSlug = String(payload?.slug || '').trim().toLowerCase();
     const slug = rawSlug.replace(/[^a-z0-9-]/g, '');
     if (!slug) return { ok: false, error: 'invalid_slug' };
@@ -268,6 +647,7 @@ ipcMain.handle('open-slot-popup', async (_event, payload: { slug?: string; local
     const locale = /^[a-z]{2}(-[a-z]{2})?$/.test(localeRaw) ? localeRaw : 'de';
     const origin = await resolveStakeOrigin();
     const targetUrl = `${origin}/${locale}/casino/games/${slug}`;
+    const popupId = `slot-popup-${Date.now()}-${++slotPopupSeq}`;
 
     const popup = new BrowserWindow({
         width: 1360,
@@ -280,24 +660,131 @@ ipcMain.handle('open-slot-popup', async (_event, payload: { slug?: string; local
             nodeIntegration: false,
             sandbox: false,
             backgroundThrottling: false,
+            /** Gleiche Cookie-Session wie Hauptfenster (Bonus-Slot-Popup / eingeloggter Stake-Tab). */
+            session: win?.webContents.session ?? session.defaultSession,
         },
     });
 
     popup.webContents.setWindowOpenHandler(({ url }) => {
-        shell.openExternal(url);
+        openExternalSafe(url).catch((err) => console.warn('Blocked external URL:', err?.message || err));
         return { action: 'deny' };
     });
 
+    popup.on('closed', () => {
+        if (!event.sender.isDestroyed()) {
+            event.sender.send('slot-popup-closed', {
+                popupId,
+                slug,
+                closedAt: new Date().toISOString(),
+            });
+        }
+    });
+
     await popup.loadURL(targetUrl);
-    return { ok: true, url: targetUrl };
+    return { ok: true, url: targetUrl, popupId };
 });
 
-ipcMain.handle('get-session-token', async () => {
-    if (!sessionData.cookies) {
-        await captureSession();
+/**
+ * Opens Stake wallet (withdraw tab) in an app window and injects the destination address into the cashier textarea.
+ * Uses the same session as the main window (wie `open-slot-popup` / Bonus-Opening).
+ */
+ipcMain.handle(
+    'open-stake-withdraw-prefill',
+    async (
+        _event,
+        payload: { address: string; currency: string; chain?: string; locale?: string } = {} as never
+    ) => {
+        const address = String(payload?.address || '').trim();
+        if (!address || address.length > 512) {
+            return { ok: false, error: 'invalid_address' as const };
+        }
+        const currency = String(payload?.currency || 'usdc')
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, '');
+        if (!currency) {
+            return { ok: false, error: 'invalid_currency' as const };
+        }
+        const chainRaw = payload?.chain != null ? String(payload.chain).trim() : '';
+        const chain = chainRaw ? chainRaw.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+        const localeRaw = String(payload?.locale || 'de').trim().toLowerCase();
+        const locale = /^[a-z]{2}(-[a-z]{2})?$/.test(localeRaw) ? localeRaw : 'de';
+
+        const stakeSession = await getStakeSessionStatus(false);
+        if (!stakeSession.valid) {
+            return {
+                ok: false,
+                error: 'session_invalid' as const,
+                reasons: stakeSession.reasons,
+            };
+        }
+        const origin = stakeSession.origin;
+        const params = new URLSearchParams();
+        params.set('tab', 'withdraw');
+        params.set('currency', currency);
+        params.set('modal', 'wallet');
+        if (chain) params.set('chain', chain);
+        const targetUrl = `${origin}/${locale}?${params.toString()}`;
+
+        const sharedSession = win?.webContents.session ?? session.defaultSession;
+
+        if (withdrawPrefillWin && !withdrawPrefillWin.isDestroyed()) {
+            try {
+                withdrawPrefillWin.destroy();
+            } catch {
+                /* ignore */
+            }
+            withdrawPrefillWin = null;
+        }
+
+        withdrawPrefillWin = new BrowserWindow({
+            width: 520,
+            height: 860,
+            parent: win || undefined,
+            show: true,
+            autoHideMenuBar: true,
+            webPreferences: {
+                contextIsolation: true,
+                nodeIntegration: false,
+                sandbox: false,
+                backgroundThrottling: false,
+                session: sharedSession,
+            },
+        });
+
+        withdrawPrefillWin.webContents.setWindowOpenHandler(({ url }) => {
+            openExternalSafe(url).catch((err) => console.warn('Blocked external URL:', err?.message || err));
+            return { action: 'deny' };
+        });
+
+        withdrawPrefillWin.on('closed', () => {
+            withdrawPrefillWin = null;
+        });
+
+        const wc = withdrawPrefillWin.webContents;
+        await withdrawPrefillWin.loadURL(targetUrl);
+
+        const filled = await fillStakeWithdrawAddressField(wc, address);
+        if (!filled) {
+            console.warn('[open-stake-withdraw-prefill] Address field not filled (timeout or modal). URL:', targetUrl);
+        }
+
+        return { ok: true, url: targetUrl, filled };
     }
-    const sessionTokenMatch = sessionData.cookies.match(/session=([^;]+)/);
-    return sessionTokenMatch ? sessionTokenMatch[1] : null;
+);
+
+ipcMain.handle('get-session-token', async () => {
+    const status = await getStakeSessionStatus(false);
+    return status.sessionToken;
+});
+
+ipcMain.handle('stake-session-status', async () => {
+    return getStakeSessionStatus(false);
+});
+
+ipcMain.handle('stake-session-revalidate', async () => {
+    invalidateStakeSessionStatusCache();
+    const status = await getStakeSessionStatus(true);
+    return status;
 });
 
 /** WebSocket muss dieselbe Stake-Origin wie die Session nutzen (stake.bet vs stake.com). */
@@ -308,14 +795,16 @@ ipcMain.handle('get-stake-ws-url', async () => {
 
 ipcMain.handle('logger-fetch-currency-rates', async () => {
     try {
-        await captureSession();
-        const origin = await resolveStakeOrigin();
+        const sessionStatus = await ensureValidStakeSession(false);
+        throwIfSessionInvalid(sessionStatus);
+        const origin = sessionStatus.origin;
         const res = await fetch(`${origin}/_api/graphql`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                Cookie: sessionData.cookies || '',
-                'User-Agent': sessionData.userAgent || 'Mozilla/5.0',
+                Cookie: sessionStatus.cookieHeader || '',
+                'User-Agent': sessionStatus.userAgent || 'Mozilla/5.0',
+                'x-access-token': sessionStatus.sessionToken || '',
                 Origin: origin,
                 Referer: origin + '/',
             },
@@ -433,106 +922,336 @@ ipcMain.handle('logger-delete-all-bet-logs', async () => {
     }
 });
 
-ipcMain.handle('api-request', async (_event, payload) => {
-    const { query, variables, operationName } = payload;
-    
-    // Ensure we have the latest session data
-    if (!sessionData.cookies) {
-        await captureSession();
+function stakeGraphqlOperationType(queryStr: string): 'query' | 'mutation' {
+    const t = String(queryStr || '').trim().toLowerCase();
+    return t.startsWith('mutation') ? 'mutation' : 'query';
+}
+
+/** Wie Browser-HAR (Seedchange2): x-language aus Referer-Pfad /de/casino/… oder Payload. */
+function stakeGraphqlLanguageHeader(
+    refererHeader: string,
+    explicit?: string
+): { xLanguage: string; acceptLanguage: string } {
+    const fromExplicit = String(explicit || '')
+        .trim()
+        .toLowerCase()
+        .split('-')[0];
+    let code = /^[a-z]{2}$/.test(fromExplicit) ? fromExplicit : '';
+    if (!code && refererHeader) {
+        try {
+            const segs = new URL(refererHeader).pathname.split('/').filter(Boolean);
+            const first = (segs[0] || '').toLowerCase();
+            if (/^[a-z]{2}$/.test(first)) code = first;
+        } catch {
+            // ignore
+        }
     }
+    if (!code) code = 'en';
+    let acceptLanguage = 'en-US,en;q=0.9';
+    if (code === 'de') {
+        acceptLanguage = 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7';
+    } else if (code !== 'en') {
+        acceptLanguage = `${code},en-US;q=0.8,en;q=0.7`;
+    }
+    return { xLanguage: code, acceptLanguage };
+}
 
-    return new Promise((resolve, reject) => {
-        const request = net.request({
-            method: 'POST',
-            url: 'https://stake.com/_api/graphql',
-            useSessionCookies: true, // IMPORTANT: Use the Electron session cookies automatically
-        });
+type StakeGraphqlInvokePayload = {
+    query: string;
+    variables?: unknown;
+    operationName?: string;
+    referer?: string;
+    language?: string;
+};
 
-        request.setHeader('Content-Type', 'application/json');
-        
-        // Extract session token from cookies if available, otherwise empty string
-        const sessionTokenMatch = sessionData.cookies.match(/session=([^;]+)/);
-        const sessionToken = sessionTokenMatch ? sessionTokenMatch[1] : '';
-        request.setHeader('x-access-token', sessionToken);
-        
-        // Add mimicry headers
-        request.setHeader('Origin', 'https://stake.com');
-        request.setHeader('Referer', 'https://stake.com/');
-        request.setHeader('x-operation-name', operationName || '');
-        if (sessionData.userAgent) {
-            request.setHeader('User-Agent', sessionData.userAgent);
+/**
+ * Stake `/_api/graphql` mit Session, Token-Fallback und 403→Browser-Fallback (wie `api-request`).
+ * @param contextLabel nur für Login-/Fehler-Logs (z. B. `api-request`, `rotate-stake-engine-seed`).
+ */
+async function stakeGraphqlInvoke(
+    payload: StakeGraphqlInvokePayload,
+    contextLabel = 'api-request'
+): Promise<unknown> {
+    const { query, variables, operationName } = payload;
+    const refererOverride =
+        typeof payload?.referer === 'string' ? String(payload.referer).trim() : '';
+    const languageOverride =
+        typeof payload?.language === 'string' ? String(payload.language).trim() : '';
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < STAKE_MAX_AUTH_RETRIES; attempt++) {
+        const forceCheck = attempt > 0;
+        try {
+            const sessionStatus = await ensureValidStakeSession(forceCheck);
+            throwIfSessionInvalid(sessionStatus);
+            const origin = sessionStatus.origin;
+            let refererHeader = `${origin}/`;
+            if (refererOverride) {
+                try {
+                    const ru = new URL(refererOverride);
+                    const ou = new URL(origin);
+                    if (ru.origin === ou.origin) refererHeader = refererOverride;
+                } catch {
+                    // ungültige URL → Default-Referer
+                }
+            }
+            const { xLanguage, acceptLanguage } = stakeGraphqlLanguageHeader(refererHeader, languageOverride);
+            const tokenModes: Array<'with_token' | 'without_token'> = sessionStatus.sessionToken
+                ? ['with_token', 'without_token']
+                : ['without_token'];
+            for (const tokenMode of tokenModes) {
+                try {
+                    /** Seedchange2.har: Queries mit Accept-Wildcard + x-operation-name/type; RotateSeed (Mutation) mit application/graphql+json. */
+                    const gqlOpType = stakeGraphqlOperationType(String(query || ''));
+                    const headers: Record<string, string> = {
+                        'Content-Type': 'application/json',
+                        Origin: origin,
+                        Referer: refererHeader,
+                        'Accept-Language': acceptLanguage,
+                        'x-language': xLanguage,
+                        'User-Agent': sessionStatus.userAgent || 'Mozilla/5.0',
+                    };
+                    if (gqlOpType === 'mutation') {
+                        headers.Accept = 'application/graphql+json, application/json';
+                    } else {
+                        headers.Accept = '*/*';
+                        headers['x-operation-name'] = String(operationName || '');
+                        headers['x-operation-type'] = 'query';
+                    }
+                    if (tokenMode === 'with_token' && sessionStatus.sessionToken) {
+                        headers['x-access-token'] = sessionStatus.sessionToken;
+                    }
+                    let response;
+                    try {
+                        response = await stakeNetPostJson(`${origin}/_api/graphql`, headers, {
+                            query,
+                            variables,
+                        });
+                    } catch (netError) {
+                        if (netError instanceof StakeHttpError && netError.status === 403) {
+                            const preview = String(netError.body || '').slice(0, 180);
+                            const now = Date.now();
+                            if (now - lastNet403FallbackLogAt >= NET_403_FALLBACK_LOG_DEBOUNCE_MS) {
+                                console.warn('[StakeSession] net.request 403, trying browser-context fallback', {
+                                    tokenMode,
+                                    preview,
+                                });
+                                lastNet403FallbackLogAt = now;
+                            }
+                            response = await stakeBrowserPostJson(`${origin}/_api/graphql`, headers, {
+                                query,
+                                variables,
+                            });
+                        } else {
+                            throw netError;
+                        }
+                    }
+                    return response.parsed;
+                } catch (innerError) {
+                    if (
+                        innerError instanceof StakeHttpError &&
+                        (innerError.status === 401 || innerError.status === 403) &&
+                        tokenMode === 'with_token'
+                    ) {
+                        console.warn('[StakeSession] GraphQL rejected with x-access-token, retrying cookie-only');
+                        continue;
+                    }
+                    throw innerError;
+                }
+            }
+        } catch (error) {
+            lastError = error;
+            if (error instanceof StakeHttpError && (error.status === 401 || error.status === 403)) {
+                invalidateStakeSessionStatusCache();
+                if (attempt + 1 < STAKE_MAX_AUTH_RETRIES) continue;
+                openLoginWindowForRejectedSession(`${contextLabel} ${error.status}`);
+                throw new Error(`Session rejected (${error.status}). Login window opened.`);
+            }
+            if (String((error as Error)?.message || '').includes('Session rejected')) {
+                invalidateStakeSessionStatusCache();
+                if (attempt + 1 < STAKE_MAX_AUTH_RETRIES) continue;
+                openLoginWindowForRejectedSession(`${contextLabel} session invalid`);
+                throw new Error('Session rejected. Login window opened.');
+            }
+            throw error;
+        }
+    }
+    throw lastError instanceof Error ? lastError : new Error('API request failed');
+}
+
+ipcMain.handle('api-request', async (_event, payload) => stakeGraphqlInvoke(payload));
+
+/** SSP-kompatibler Name: RGS/Casino-Slot `rotateSeed` (nicht `rotateSeedPair` / Originals). */
+const RGS_ROTATE_GAME_INFORMATION_QUERY = `query GameInformation($gameId: String!) {
+  gameInformation(gameId: $gameId) {
+    name
+    version { version active created modes { costMultiplier name weightSum rtp eventCount __typename } __typename }
+    __typename
+  }
+}`;
+
+const RGS_ROTATE_USER_GAME_FAIR_QUERY = `query UserGameFair($gameId: String!) {
+  userGameFair(gameId: $gameId) {
+    clientSeed
+    nonce
+    serverSeedHash
+    serverSeedNext
+    __typename
+  }
+}`;
+
+const RGS_ROTATE_SEED_MUTATION = `mutation RotateSeed($clientSeed: String!, $gameId: String!, $nextHashedServerSeed: String!) {
+  rotateSeed(clientSeed: $clientSeed, gameId: $gameId, nextHashedServerSeed: $nextHashedServerSeed) {
+    activeSeed { clientSeed nonce serverSeedHash serverSeedNext __typename }
+    revealedSeed { clientSeed serverSeedHash __typename }
+    __typename
+  }
+}`;
+
+function randomRgsClientSeedForMain(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let s = '';
+    for (let i = 0; i < 10; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
+}
+
+ipcMain.handle(
+    'rotate-stake-engine-seed',
+    async (
+        _event,
+        payload: {
+            gameId?: string;
+            clientSeed?: string;
+            /** Fairness-Modal-URL mit tab=seeds empfohlen (HAR Seedchange2). */
+            referer?: string;
+            language?: string;
+        } = {}
+    ) => {
+        const gid = String(payload?.gameId || '').trim();
+        if (!gid) {
+            return { ok: false as const, error: 'missing_gameId', gameId: '' };
         }
 
-        request.on('response', (response) => {
-            const chunks: Buffer[] = [];
-            let total = 0;
-            let abortedForSize = false;
-            response.on('data', (chunk) => {
-                const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-                total += buf.length;
-                if (total > MAX_IPC_RESPONSE_BYTES) {
-                    abortedForSize = true;
-                    request.abort();
-                    return;
+        const seedsReferer = String(payload?.referer || '').trim();
+        const overviewReferer =
+            seedsReferer && /\btab=seeds\b/.test(seedsReferer)
+                ? seedsReferer.replace(/\btab=seeds\b/, 'tab=overview')
+                : seedsReferer;
+        const lang = typeof payload?.language === 'string' ? payload.language : '';
+
+        const ctx = 'rotate-stake-engine-seed';
+        if (overviewReferer) {
+            try {
+                await stakeGraphqlInvoke(
+                    {
+                        query: RGS_ROTATE_GAME_INFORMATION_QUERY,
+                        variables: { gameId: gid },
+                        operationName: 'GameInformation',
+                        referer: overviewReferer,
+                        language: lang,
+                    },
+                    ctx
+                );
+            } catch {
+                /* Prime optional — wie Renderer stakeFairness */
+            }
+            try {
+                await stakeGraphqlInvoke(
+                    {
+                        query: RGS_ROTATE_USER_GAME_FAIR_QUERY,
+                        variables: { gameId: gid },
+                        operationName: 'UserGameFair',
+                        referer: overviewReferer,
+                        language: lang,
+                    },
+                    ctx
+                );
+            } catch {
+                /* idem */
+            }
+        }
+
+        const maxRotateAttempts = 5;
+        let lastError = '';
+        for (let attempt = 0; attempt < maxRotateAttempts; attempt++) {
+            if (attempt > 0) {
+                await new Promise((r) => setTimeout(r, 100 * attempt));
+            }
+
+            let fairParsed: unknown;
+            try {
+                fairParsed = await stakeGraphqlInvoke(
+                    {
+                        query: RGS_ROTATE_USER_GAME_FAIR_QUERY,
+                        variables: { gameId: gid },
+                        operationName: 'UserGameFair',
+                        referer: overviewReferer || undefined,
+                        language: lang,
+                    },
+                    ctx
+                );
+            } catch (e) {
+                const msg = String((e as Error)?.message || e);
+                if (msg.includes('Session rejected')) throw e;
+                lastError = msg;
+                continue;
+            }
+
+            const fair = (fairParsed as { data?: { userGameFair?: { serverSeedNext?: unknown } } })?.data
+                ?.userGameFair;
+            const nextHashed =
+                fair?.serverSeedNext != null ? String(fair.serverSeedNext).trim() : '';
+            if (!nextHashed) {
+                return {
+                    ok: false as const,
+                    error: 'userGameFair ohne serverSeedNext (falsche gameId oder Spiel ohne PF?)',
+                    gameId: gid,
+                };
+            }
+
+            const seed =
+                String(payload?.clientSeed || '').trim() || randomRgsClientSeedForMain();
+            try {
+                const mutParsed = await stakeGraphqlInvoke(
+                    {
+                        query: RGS_ROTATE_SEED_MUTATION,
+                        variables: {
+                            clientSeed: seed,
+                            gameId: gid,
+                            nextHashedServerSeed: nextHashed,
+                        },
+                        operationName: 'RotateSeed',
+                        referer: seedsReferer || undefined,
+                        language: lang,
+                    },
+                    ctx
+                );
+                const rotated = (mutParsed as { data?: { rotateSeed?: { activeSeed?: { clientSeed?: string } } } })
+                    ?.data?.rotateSeed;
+                const active = rotated?.activeSeed;
+                if (active?.clientSeed) {
+                    return {
+                        ok: true as const,
+                        seed: active.clientSeed,
+                        result: rotated ?? null,
+                        gameId: gid,
+                    };
                 }
-                chunks.push(buf);
-            });
-            response.on('end', () => {
-                if (abortedForSize) {
-                    reject(new Error(`API response too large (> ${MAX_IPC_RESPONSE_BYTES} bytes).`));
-                    return;
-                }
-                const body = Buffer.concat(chunks).toString();
-                const status = response.statusCode ?? 0;
-                const trimmed = body.trim();
+                lastError = 'rotateSeed ohne activeSeed';
+            } catch (e) {
+                const msg = String((e as Error)?.message || e);
+                if (msg.includes('Session rejected')) throw e;
+                lastError = msg;
+            }
+        }
 
-                if (status === 401 || status === 403) {
-                    console.error(`API Error ${status}: ${body.slice(0, 500)}`);
-                    console.log('Session expired or forbidden. Triggering re-login...');
-                    createLoginWindow();
-                    reject(new Error(`Session expired (${status}). Login window opened.`));
-                    return;
-                }
-
-                if (status === 429) {
-                    reject(new Error(`API rate limited (429). Bitte kurz warten und erneut versuchen.`));
-                    return;
-                }
-
-                let parsed: unknown;
-                try {
-                    parsed = JSON.parse(body);
-                } catch {
-                    const cf1015 = /1015|cloudflare/i.test(body);
-                    const hint = cf1015
-                        ? ' Cloudflare 1015: zu viele Requests oder Schutz – kurz warten, ggf. im Browser auf stake.com einloggen.'
-                        : '';
-                    const preview = trimmed.slice(0, 280);
-                    reject(
-                        new Error(
-                            `API antwortete nicht mit JSON (HTTP ${status}).${hint} Body: ${preview}`
-                        )
-                    );
-                    return;
-                }
-
-                if (status >= 400) {
-                    console.error(`API Error ${status}: ${body.slice(0, 500)}`);
-                }
-
-                resolve(parsed);
-            });
-        });
-
-        request.on('error', (error) => {
-            console.error('API Request Network Error:', error);
-            reject(error);
-        });
-
-        request.write(JSON.stringify({ query, variables }));
-        request.end();
-    });
-});
+        return {
+            ok: false as const,
+            gameId: gid,
+            error: lastError || 'rotateSeed nach mehreren Versuchen fehlgeschlagen',
+        };
+    }
+);
 
 /** Stake Originals REST (z. B. Blackjack) – POST mit Session-Cookies wie GraphQL. */
 ipcMain.handle(
@@ -542,115 +1261,75 @@ ipcMain.handle(
         if (!pathStr.startsWith('/_api/casino/')) {
             return Promise.reject(new Error('Ungültiger Casino-REST-Pfad.'));
         }
-        const origin = await resolveStakeOrigin();
-        const sessionTokenMatch = sessionData.cookies.match(/session=([^;]+)/);
-        const sessionToken = sessionTokenMatch ? sessionTokenMatch[1] : '';
-        if (!sessionToken) {
-            return Promise.reject(
-                new Error('Keine Stake-Session (Cookie session). Bitte einloggen und erneut starten.')
-            );
-        }
         const bodyObj = payload?.body && typeof payload.body === 'object' ? payload.body : {};
-        const referer =
-            typeof payload?.referer === 'string' && payload.referer.trim().startsWith('http')
-                ? payload.referer.trim()
-                : `${origin}/casino/games/blackjack`;
+        let lastError: unknown = null;
 
-        return new Promise((resolve, reject) => {
-            const request = net.request({
-                method: 'POST',
-                url: origin + pathStr,
-                useSessionCookies: true,
-            });
-            request.setHeader('Content-Type', 'application/json');
-            request.setHeader('Accept', 'application/json');
-            request.setHeader('x-access-token', sessionToken);
-            request.setHeader('x-lockdown-token', `sl-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-            request.setHeader('Origin', origin);
-            request.setHeader('Referer', referer);
-            if (sessionData.userAgent) {
-                request.setHeader('User-Agent', sessionData.userAgent);
-            }
-
-            request.on('response', (response) => {
-                const chunks: Buffer[] = [];
-                let total = 0;
-                let abortedForSize = false;
-                response.on('data', (chunk) => {
-                    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-                    total += buf.length;
-                    if (total > MAX_IPC_RESPONSE_BYTES) {
-                        abortedForSize = true;
-                        request.abort();
-                        return;
-                    }
-                    chunks.push(buf);
-                });
-                response.on('end', () => {
-                    if (abortedForSize) {
-                        reject(new Error(`Casino-REST-Antwort zu groß (> ${MAX_IPC_RESPONSE_BYTES} bytes).`));
-                        return;
-                    }
-                    const body = Buffer.concat(chunks).toString();
-                    const status = response.statusCode ?? 0;
-                    const trimmed = body.trim();
-
-                    if (status === 401 || status === 403) {
-                        console.error(`Casino REST ${status}: ${body.slice(0, 500)}`);
-                        console.log('Session expired or forbidden. Triggering re-login...');
-                        createLoginWindow();
-                        reject(new Error(`Session expired (${status}). Login window opened.`));
-                        return;
-                    }
-
-                    if (status === 429) {
-                        reject(new Error(`API rate limited (429). Bitte kurz warten und erneut versuchen.`));
-                        return;
-                    }
-
-                    let parsed: unknown;
+        for (let attempt = 0; attempt < STAKE_MAX_AUTH_RETRIES; attempt++) {
+            const forceCheck = attempt > 0;
+            try {
+                const sessionStatus = await ensureValidStakeSession(forceCheck);
+                throwIfSessionInvalid(sessionStatus);
+                const origin = sessionStatus.origin;
+                const referer =
+                    typeof payload?.referer === 'string' && payload.referer.trim().startsWith('http')
+                        ? payload.referer.trim()
+                        : `${origin}/casino/games/blackjack`;
+                const tokenModes: Array<'with_token' | 'without_token'> = sessionStatus.sessionToken
+                    ? ['with_token', 'without_token']
+                    : ['without_token'];
+                for (const tokenMode of tokenModes) {
                     try {
-                        parsed = JSON.parse(body);
-                    } catch {
-                        const cf1015 = /1015|cloudflare/i.test(body);
-                        const hint = cf1015
-                            ? ' Cloudflare 1015: zu viele Requests oder Schutz – kurz warten, ggf. im Browser auf stake.com einloggen.'
-                            : '';
-                        const preview = trimmed.slice(0, 280);
-                        reject(
-                            new Error(
-                                `Casino-REST antwortete nicht mit JSON (HTTP ${status}).${hint} Body: ${preview}`
-                            )
-                        );
-                        return;
-                    }
-
-                    if (status >= 400) {
-                        console.error(`Casino REST ${status}: ${body.slice(0, 500)}`);
-                        reject(new Error(`Casino-REST HTTP ${status}: ${extractStakeJsonErrorMessage(parsed)}`));
-                        return;
-                    }
-
-                    if (parsed && typeof parsed === 'object') {
-                        const po = parsed as Record<string, unknown>;
-                        if (Array.isArray(po.errors) && po.errors.length > 0) {
-                            reject(new Error(`Casino-REST: ${extractStakeJsonErrorMessage(parsed)}`));
-                            return;
+                        const headers: Record<string, string> = {
+                            'Content-Type': 'application/json',
+                            Accept: 'application/json, text/plain, */*',
+                            'x-lockdown-token': `sl-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                            Origin: origin,
+                            Referer: referer,
+                            'User-Agent': sessionStatus.userAgent || 'Mozilla/5.0',
+                        };
+                        if (tokenMode === 'with_token' && sessionStatus.sessionToken) {
+                            headers['x-access-token'] = sessionStatus.sessionToken;
                         }
+                        const response = await stakeNetPostJson(origin + pathStr, headers, bodyObj);
+                        const parsed = response.parsed;
+                        if (parsed && typeof parsed === 'object') {
+                            const po = parsed as Record<string, unknown>;
+                            if (Array.isArray(po.errors) && po.errors.length > 0) {
+                                throw new Error(`Casino-REST: ${extractStakeJsonErrorMessage(parsed)}`);
+                            }
+                        }
+                        return parsed;
+                    } catch (innerError) {
+                        if (
+                            innerError instanceof StakeHttpError &&
+                            (innerError.status === 401 || innerError.status === 403) &&
+                            tokenMode === 'with_token'
+                        ) {
+                            console.warn('[StakeSession] Casino-REST rejected with x-access-token, retrying cookie-only');
+                            continue;
+                        }
+                        throw innerError;
                     }
+                }
+            } catch (error) {
+                lastError = error;
+                if (error instanceof StakeHttpError && (error.status === 401 || error.status === 403)) {
+                    invalidateStakeSessionStatusCache();
+                    if (attempt + 1 < STAKE_MAX_AUTH_RETRIES) continue;
+                    openLoginWindowForRejectedSession(`stake-casino-rest-post ${error.status}`);
+                    throw new Error(`Session rejected (${error.status}). Login window opened.`);
+                }
+                if (String((error as Error)?.message || '').includes('Session rejected')) {
+                    invalidateStakeSessionStatusCache();
+                    if (attempt + 1 < STAKE_MAX_AUTH_RETRIES) continue;
+                    openLoginWindowForRejectedSession('stake-casino-rest-post session invalid');
+                    throw new Error('Session rejected. Login window opened.');
+                }
+                throw error;
+            }
+        }
 
-                    resolve(parsed);
-                });
-            });
-
-            request.on('error', (error) => {
-                console.error('Casino REST Network Error:', error);
-                reject(error);
-            });
-
-            request.write(JSON.stringify(bodyObj));
-            request.end();
-        });
+        throw lastError instanceof Error ? lastError : new Error('Casino-REST request failed');
     }
 );
 
@@ -915,6 +1594,7 @@ ipcMain.handle('clawbuster-extract-secret', async (_event, configUrl: string) =>
 });
 
 ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = {}, body = null }) => {
+    const stakeOrigin = await resolveStakeOrigin();
     return new Promise((resolve, reject) => {
         // Validation logic from SwaqSlotbot (Hauptslotprojekt)
         let isAllowed = false;
@@ -938,22 +1618,31 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
              // Target: https://stake.com (or stake.bet)
              // Rewrite: /api/stake -> /_api
              const path = url.replace(/^\/api\/stake/, '/_api');
-             url = 'https://stake.com' + path;
+            url = stakeOrigin + path;
              // Usually allowed by generic check, but we set it explicitly
              isAllowed = true;
              type = 'rgs'; // Standard API handling
         } else if (url.startsWith('/')) {
              // Default other relative URLs to stake.com
-             url = 'https://stake.com' + url;
+            url = stakeOrigin + url;
         }
 
         // 1. Pragmatic Logic
-        if (url.includes('gcmlgxrmkp.net')) {
+        let parsedProxyUrl: URL | null = null;
+        try {
+            parsedProxyUrl = new URL(url);
+        } catch {
+            parsedProxyUrl = null;
+        }
+        const proxyHostname = parsedProxyUrl?.hostname || '';
+        const proxyPathname = parsedProxyUrl?.pathname || '';
+
+        if (proxyHostname && hostnameMatches(proxyHostname, 'gcmlgxrmkp.net')) {
             isAllowed = true;
             type = 'pragmatic';
         } 
         // 2. Forum Logic
-        else if (url.includes('stakecommunity.com/topic/')) {
+        else if (proxyHostname && hostnameMatches(proxyHostname, 'stakecommunity.com') && proxyPathname.startsWith('/topic/')) {
             isAllowed = true;
             type = 'forum';
         }
@@ -965,9 +1654,11 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                 'blueprint', 'endorphina', 'netent', 'gameart', 'push', 'btg', 'oak', 'redtiger',
                 'playngo', 'octoplay', 'peterandsons', 'shady', 'shuffle', 'titan', 'twist',
                 'popiplay', 'helio', 'samurai', '1000lakes', 'hacksawgaming.com', 'd1oa92ndvzdrfz.cloudfront.net',
-                'api.clawbuster.com', 'clawbuster-cdn.com', 'gsplauncher.de'
+                'api.clawbuster.com', 'clawbuster-cdn.com', 'gsplauncher.de',
+                // Mascot launcher/runtime hosts (e.g. open.mascot.host -> <session>.mascot.games)
+                'mascot.host', 'mascot.games'
             ];
-            if (allowed.some(h => url.includes(h))) {
+            if (proxyHostname && allowed.some(h => hostnameMatches(proxyHostname, h))) {
                 isAllowed = true;
                 type = 'rgs';
             }
@@ -980,6 +1671,25 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
 
         // Node https statt net.request – umgeht ERR_BLOCKED_BY_CLIENT (Adblocker/Session)
         const requestHeaders: Record<string, string> = { ...headers };
+        const isStakeTarget = isStakeOriginUrl(url);
+
+        if (isStakeTarget) {
+            if (sessionData.cookies && !requestHeaders['Cookie']) {
+                requestHeaders['Cookie'] = sessionData.cookies;
+            }
+            if (!requestHeaders['Origin']) {
+                requestHeaders['Origin'] = stakeOrigin;
+            }
+            if (!requestHeaders['Referer']) {
+                requestHeaders['Referer'] = `${stakeOrigin}/`;
+            }
+            if (!requestHeaders['Accept']) {
+                requestHeaders['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+            }
+            if (!requestHeaders['Accept-Language']) {
+                requestHeaders['Accept-Language'] = 'en-US,en;q=0.9,de;q=0.8';
+            }
+        }
 
         if (type === 'pragmatic') {
             try {
@@ -1011,7 +1721,7 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                 requestHeaders['Content-Type'] = 'application/json';
             }
         } else if (type === 'rgs') {
-            if (!requestHeaders['Content-Type']) {
+            if (method !== 'GET' && !requestHeaders['Content-Type']) {
                 requestHeaders['Content-Type'] = 'application/json';
             }
         }
@@ -1034,6 +1744,7 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                 port: urlParsed.port || (isHttps ? 443 : 80),
                 path: urlParsed.pathname + urlParsed.search,
                 headers: redirectCount > 0 ? { ...requestHeaders, Origin: urlParsed.origin, Referer: targetUrl } : requestHeaders,
+                agent: isHttps ? PROXY_HTTPS_AGENT : PROXY_HTTP_AGENT,
             };
 
             const req = client.request(opts, (res) => {
@@ -1056,6 +1767,29 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                     if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && loc && redirectCount < 5) {
                         const nextUrl = loc.startsWith('http') ? loc : new URL(loc, targetUrl).href;
                         return doRequest(nextUrl, redirectCount + 1);
+                    }
+                    if (res.statusCode === 403 && isStakeOriginUrl(targetUrl)) {
+                        stakeBrowserGetText(targetUrl, requestHeaders)
+                            .then((fallback) => {
+                                resolve({
+                                    status: fallback.status || 403,
+                                    statusText: fallback.status === 200 ? 'OK (browser-fallback)' : (res.statusMessage || ''),
+                                    headers: res.headers,
+                                    data: fallback.body,
+                                    finalUrl: fallback.finalUrl || targetUrl,
+                                });
+                            })
+                            .catch((fallbackErr) => {
+                                console.warn('[StakeSession] proxy-request 403 fallback failed', fallbackErr);
+                                resolve({
+                                    status: res.statusCode || 0,
+                                    statusText: res.statusMessage || '',
+                                    headers: res.headers,
+                                    data,
+                                    finalUrl: targetUrl,
+                                });
+                            });
+                        return;
                     }
                     resolve({
                         status: res.statusCode || 0,
@@ -1142,13 +1876,34 @@ ipcMain.handle('telegram-listen-stop', async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
+    destroyAuxiliaryBrowserWindows();
     app.quit();
-    win = null;
   }
+});
+
+app.on('before-quit', () => {
+  destroyAuxiliaryBrowserWindows();
 });
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  destroyAuxiliaryBrowserWindows();
+  for (const bw of BrowserWindow.getAllWindows()) {
+    if (!bw.isDestroyed()) {
+      try {
+        bw.destroy();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  try {
+    PROXY_HTTP_AGENT.destroy();
+    PROXY_HTTPS_AGENT.destroy();
+  } catch {
+    /* ignore */
+  }
+  void shutdownTelegramForAppQuit();
 });
 
 app.on('activate', () => {
@@ -1158,12 +1913,50 @@ app.on('activate', () => {
 });
 
 app.whenReady().then(() => {
-    // Inject headers for requests to stake.com from Renderer (if any)
+    session.defaultSession.cookies.on(
+      'changed',
+      (
+        _event: Electron.Event,
+        cookie: Electron.Cookie,
+        cause: string,
+        removed: boolean
+      ) => {
+        const domain = String(cookie.domain || '').toLowerCase();
+        const isStakeCookie = domain.includes('stake.com') || domain.includes('stake.bet');
+        if (!isStakeCookie) return;
+        if (!STAKE_COOKIE_DEBUG_NAMES.has(String(cookie.name || ''))) return;
+        invalidateStakeSessionStatusCache();
+        void captureSession().catch(() => {});
+        console.log('[StakeSession] Cookie changed', {
+          name: cookie.name,
+          domain: cookie.domain,
+          path: cookie.path,
+          secure: cookie.secure,
+          httpOnly: cookie.httpOnly,
+          sameSite: cookie.sameSite,
+          cause,
+          removed,
+        });
+      }
+    );
+
+    // Inject headers for requests to Stake origins from Renderer (if any)
     session.defaultSession.webRequest.onBeforeSendHeaders(
-      { urls: ['*://stake.com/*', '*://*.stake.com/*'] },
-      (details: { requestHeaders: Record<string, string> }, callback: (response: { requestHeaders: Record<string, string> }) => void) => {
-        details.requestHeaders['Origin'] = 'https://stake.com';
-        details.requestHeaders['Referer'] = 'https://stake.com/';
+      { urls: ['*://stake.com/*', '*://*.stake.com/*', '*://stake.bet/*', '*://*.stake.bet/*'] },
+      (
+        details: { url: string; requestHeaders: Record<string, string> },
+        callback: (response: { requestHeaders: Record<string, string> }) => void
+      ) => {
+        if (isStakeOriginUrl(details.url)) {
+          try {
+            const u = new URL(details.url);
+            const origin = `${u.protocol}//${u.host}`;
+            details.requestHeaders['Origin'] = origin;
+            details.requestHeaders['Referer'] = `${origin}/`;
+          } catch {
+            // ignore parse errors and keep existing headers
+          }
+        }
         callback({ requestHeaders: details.requestHeaders });
       }
     );
@@ -1171,7 +1964,14 @@ app.whenReady().then(() => {
     createWindow();
 
     if (app.isPackaged) {
-        console.log('[Updater] App is packaged, checking for updates...');
-        autoUpdater.checkForUpdates();
+      configureGithubAutoUpdater();
+      const runUpdateCheck = () => {
+        console.log('[Updater] Checking for updates…');
+        autoUpdater.checkForUpdates().catch((e) => logger.error('[Updater] check failed:', e));
+      };
+      // Kurz verzögern: Fenster/Netzwerk nach Start (Renderer prüft zusätzlich nach 2 s).
+      setTimeout(runUpdateCheck, 8000);
     }
 });
+
+

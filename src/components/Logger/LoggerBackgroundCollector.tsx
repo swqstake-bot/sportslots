@@ -1,17 +1,21 @@
 import { useEffect } from 'react';
-import { subscribeToBetUpdates } from '../Casino/api/stakeBalanceSubscription';
+import { subscribeToHouseBets } from '../Casino/api/stakeRealtimeFacade';
 import { Queries } from '../../api/queries';
+import { createEventEnvelope } from '../../utils/eventEnvelope';
+import { inferLoggerCategory } from './loggerUtils';
 
+function publishLoggerStatus(status: 'connecting' | 'connected' | 'error' | 'idle', error = '') {
+  try {
+    const detail = { status, error, updatedAt: new Date().toISOString() };
+    localStorage.setItem('logger_subscription_status', JSON.stringify(detail));
+    window.dispatchEvent(new CustomEvent('logger-subscription-status', { detail }));
+  } catch {
+    // Status updates are best-effort UI hints.
+  }
+}
+
+/** Normalisiert Stake HouseBet / Persist-Payload → LoggerBetEntry (Felder wie SSP bet-processor: amounts, ids, multi). */
 function mapLoggerEntry(b: any) {
-  const slug = String(b?.gameSlug || '').toLowerCase();
-  const gameName = String(b?.gameName || '').toLowerCase();
-  const betType = String(b?.betType || '').toLowerCase();
-  const ids = `${String(b?.houseId || '')} ${String(b?.iid || '')} ${String(b?.betId || '')}`.toLowerCase();
-  const isSports =
-    slug.includes('sportsbook') ||
-    gameName.includes('sportsbook') ||
-    betType.includes('sport') ||
-    ids.includes('sport:');
   return {
     receivedAt: b?.receivedAt || new Date().toISOString(),
     houseId: b?.houseId ?? null,
@@ -21,11 +25,17 @@ function mapLoggerEntry(b: any) {
     gameName: b?.gameName ?? null,
     gameSlug: b?.gameSlug ?? null,
     amount: b?.amount != null ? Number(b.amount) : null,
+    amountMajor: b?.amountMajor != null ? Number(b.amountMajor) : null,
+    amountMinor: b?.amountMinor != null ? Number(b.amountMinor) : null,
     payout: b?.payout != null ? Number(b.payout) : null,
+    payoutMajor: b?.payoutMajor != null ? Number(b.payoutMajor) : null,
+    payoutMinor: b?.payoutMinor != null ? Number(b.payoutMinor) : null,
     currency: b?.currency ? String(b.currency).toLowerCase() : null,
     payoutMultiplier: b?.payoutMultiplier != null ? Number(b.payoutMultiplier) : null,
     amountMultiplier: b?.amountMultiplier != null ? Number(b.amountMultiplier) : null,
-    category: isSports ? 'sports' : 'casino',
+    status: b?.status ?? null,
+    category: inferLoggerCategory(b),
+    eventSource: 'realtime.houseBets',
   };
 }
 
@@ -63,6 +73,7 @@ export default function LoggerBackgroundCollector() {
 
     const scheduleRetry = () => {
       if (cancelled) return;
+      publishLoggerStatus('connecting');
       if (retryTimer) clearTimeout(retryTimer);
       retryTimer = setTimeout(() => {
         start().catch(() => {
@@ -73,16 +84,18 @@ export default function LoggerBackgroundCollector() {
 
     async function start() {
       if (cancelled || disconnectObj) return;
+      publishLoggerStatus('connecting');
       const token = await window.electronAPI.getSessionToken();
       if (!token) {
         scheduleRetry();
         return;
       }
-      const sub = await subscribeToBetUpdates(token, (b: any) => {
+      const sub = await subscribeToHouseBets(token, (b: any) => {
         const entry = mapLoggerEntry(b);
+        const envelope = createEventEnvelope('logger.houseBet.persist', entry);
         enrichSportsBetFromIid(entry)
-          .then((enriched) => window.electronAPI.saveLoggerBet(enriched))
-          .catch(() => window.electronAPI.saveLoggerBet(entry))
+          .then((enriched) => window.electronAPI.saveLoggerBet({ ...enriched, eventEnvelope: envelope }))
+          .catch(() => window.electronAPI.saveLoggerBet({ ...entry, eventEnvelope: envelope }))
           .catch(() => {});
       });
       if (cancelled) {
@@ -94,12 +107,17 @@ export default function LoggerBackgroundCollector() {
         return;
       }
       disconnectObj = sub;
+      publishLoggerStatus('connected');
     }
 
-    start().catch(() => scheduleRetry());
+    start().catch((err) => {
+      publishLoggerStatus('error', String(err?.message || err || 'Subscription failed'));
+      scheduleRetry();
+    });
 
     return () => {
       cancelled = true;
+      publishLoggerStatus('idle');
       if (retryTimer) clearTimeout(retryTimer);
       try {
         disconnectObj?.disconnect?.();

@@ -70,8 +70,12 @@ export interface SportBet {
   customBet: boolean;
   cashoutDisabled: boolean;
   amount: number;
+  amountMajor?: number;
+  amountMinor?: number;
   currency: string;
   payout: number;
+  payoutMajor?: number;
+  payoutMinor?: number;
   potentialMultiplier: number;
   payoutMultiplier: number;
   cashoutMultiplier: number;
@@ -90,6 +94,7 @@ export interface SportBet {
   customPrices?: SportBetCustomPrice[];
   /** Stake Shield: angepasste Odds (die wir abgeschlossen haben) */
   adjustments?: { payoutMultiplier?: number };
+  eventEnvelope?: any;
 }
 
 interface User {
@@ -158,10 +163,10 @@ export const useUserStore = create<UserState>((set, get) => ({
     let newSelected = 'btc';
     const currentSelected = get().selectedCurrency;
     
-    // If current selection is valid and not 'usd' (unless we want 'usd'), keep it.
-    // If user wants BTC standard, we default to BTC.
-    // However, if the user explicitly selected something else (like XRP) and it's valid, keep it.
-    if (currentSelected && currencies.includes(currentSelected) && currentSelected !== 'usd') {
+    // Keep the current selection whenever it is still available.
+    // Falling back to BTC only when the current selection disappears avoids
+    // unexpected currency switches during balance refresh.
+    if (currentSelected && currencies.includes(currentSelected)) {
         newSelected = currentSelected;
     }
     
@@ -173,8 +178,12 @@ export const useUserStore = create<UserState>((set, get) => ({
   },
 
   setSelectedCurrency: (currency) => set({ selectedCurrency: currency }),
-  setActiveBets: (bets) => set({ activeBets: bets }),
-  addActiveBet: (bet) => set((state) => ({ activeBets: [bet, ...state.activeBets] })),
+  setActiveBets: (bets) => set({
+    activeBets: Array.from(new Map((bets || []).filter((b) => b?.id).map((b) => [b.id, b])).values()),
+  }),
+  addActiveBet: (bet) => set((state) => ({
+    activeBets: [bet, ...state.activeBets.filter((b) => b.id !== bet.id)],
+  })),
   
   logout: () => set({ user: null, balances: {}, availableCurrencies: ['btc'], selectedCurrency: 'btc', activeBets: [] })
 }));

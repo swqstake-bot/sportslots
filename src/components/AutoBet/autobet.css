@@ -1,0 +1,93 @@
+.autobet-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background:
+    linear-gradient(180deg, rgba(var(--app-accent-rgb), 0.14) 0%, rgba(var(--app-accent-rgb), 0.05) 34%, rgba(8, 12, 10, 0.94) 100%);
+  color: var(--app-text-muted);
+}
+
+.autobet-tabs {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.35rem;
+  border-bottom: 1px solid var(--app-border-subtle);
+  background: color-mix(in srgb, var(--app-bg-card) 82%, rgba(var(--app-accent-rgb), 0.12));
+}
+
+.autobet-tab-btn {
+  flex: 1;
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 0.68rem 0.7rem;
+  background: color-mix(in srgb, var(--app-bg-deep) 86%, transparent);
+  color: var(--app-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.autobet-tab-btn.is-active {
+  color: #06110b;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: linear-gradient(135deg, rgba(var(--app-accent-rgb), 0.92), rgba(var(--app-accent-rgb), 0.72));
+  box-shadow: 0 0 14px var(--app-accent-glow);
+}
+
+.autobet-tab-count {
+  margin-left: 0.4rem;
+  border-radius: 999px;
+  padding: 0.08rem 0.42rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.22);
+  color: inherit;
+}
+
+.autobet-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.7rem;
+  background:
+    linear-gradient(180deg, rgba(var(--app-accent-rgb), 0.09) 0%, rgba(0, 0, 0, 0) 44%),
+    var(--app-bg-card);
+}
+
+.autobet-control {
+  background: color-mix(in srgb, var(--app-bg-deep) 84%, rgba(var(--app-accent-rgb), 0.12)) !important;
+  border: 1px solid var(--app-border) !important;
+  color: var(--app-text) !important;
+}
+
+.autobet-check-card {
+  border: 1px solid var(--app-border);
+  background: color-mix(in srgb, var(--app-bg-deep) 86%, rgba(var(--app-accent-rgb), 0.12));
+}
+
+.autobet-advanced-card {
+  border: 1px solid var(--app-border);
+  background: color-mix(in srgb, var(--app-bg-deep) 84%, rgba(var(--app-accent-rgb), 0.14));
+}
+
+.autobet-start-btn {
+  width: 100%;
+  border-radius: 10px;
+  padding: 0.82rem 0.95rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--app-border);
+}
+
+.autobet-log-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--app-border);
+  background: color-mix(in srgb, var(--app-bg-card) 84%, rgba(var(--app-accent-rgb), 0.1));
+}

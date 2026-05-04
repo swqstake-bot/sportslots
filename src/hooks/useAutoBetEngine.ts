@@ -7,6 +7,7 @@ import { setShieldOdds } from '../store/shieldOddsCache';
 import { fetchCurrencyRates } from '../components/Casino/api/stakeChallenges';
 import { resolveTournamentScope } from '../utils/tournamentScope';
 import { MAIN_FIXTURE_MARKET_GROUP_SLUGS } from '../constants/fixtureMarketGroups';
+import { placeSportBetWithPolicy } from '../services/sportsRuntime';
 
 // Helper to generate UUID for bets
 const generateUUID = () => {
@@ -154,7 +155,7 @@ function clampTournamentFixtureLimit(scanLimit: number | undefined): number {
 }
 
 export function useAutoBetEngine() {
-  const { isRunning, addLog, stop } = useAutoBetStore();
+  const { isRunning, addLog, addRuntimeLog, stop } = useAutoBetStore();
   const { addActiveBet } = useUserStore();
   const [isProcessing, setIsProcessing] = useState(false);
   const processingRef = useRef(false);
@@ -634,8 +635,7 @@ export function useAutoBetEngine() {
 
       // 5. Select Outcomes and Place Bets (Batch Loop)
       let consecutiveFailures = 0;
-      let betsInBatch = 0;
-      
+
       // Use a local balance tracker to prevent overspending before the store updates
       let localAvailableBalance = currentBalance;
       /** Bereits in diesem AutoBet-Durchlauf platzierte outcomeId-Kombinationen (nicht erneut wählen). */
@@ -670,14 +670,6 @@ export function useAutoBetEngine() {
         // Safety break if we've tried too many times in one scan without success
         if (consecutiveFailures >= 10) {
             addLog(`Too many consecutive failures (${consecutiveFailures}). Re-scanning to get fresh odds/fixtures.`, 'warning');
-            break;
-        }
-
-        // Optional: Break after N bets to force a re-scan for fresh odds (e.g. every 10 bets)
-        // User requested "fast one after another", so we keep this high or remove it.
-        // Let's set a safe batch limit of 100 to ensure we don't use stale data for too long.
-        if (betsInBatch >= 100) {
-            addLog(`Batch limit reached (100). Re-scanning for fresh data.`, 'info');
             break;
         }
 
@@ -872,22 +864,22 @@ export function useAutoBetEngine() {
                 betVariables.stakeShieldOfferOdds = stakeShieldOfferOdds;
             }
 
-            const betRes = await StakeApi.query<any>(Queries.PlaceSportBet, betVariables);
+            const betRes = await placeSportBetWithPolicy(betVariables, { maxAttempts: 2 });
 
             let betPlaced = false;
             let betId = '';
 
-            if (betRes.data?.sportBet) {
+            if (betRes.bet) {
                 betPlaced = true;
-                betId = betRes.data.sportBet.id;
-                const betToAdd = { ...betRes.data.sportBet };
+                betId = betRes.bet.id;
+                const betToAdd = { ...betRes.bet };
                 if (stakeShieldEnabled && stakeShieldOfferOdds != null) {
                     betToAdd.adjustments = { payoutMultiplier: stakeShieldOfferOdds };
                     setShieldOdds(betId, stakeShieldOfferOdds);
                 }
                 addActiveBet(betToAdd);
             } else {
-                const betData = betRes.data?.createSportBet || betRes.data?.sportBet;
+                const betData = betRes.bet;
                 if (betData) {
                     betPlaced = true;
                     betId = betData.id;
@@ -903,7 +895,6 @@ export function useAutoBetEngine() {
             if (betPlaced) {
                 placedBetsCount.current += 1;
                 localAvailableBalance -= loopCryptoAmount; // Deduct locally
-                betsInBatch++;
                 consecutiveFailures = 0; // Reset failure count
                 addLog(`Bet #${placedBetsCount.current}/${maxBets} placed successfully — ID: ${betId}`, 'success');
                 placedSlipSignatures.add(slipSignature(outcomeIds));
@@ -955,10 +946,10 @@ export function useAutoBetEngine() {
                                 stakeShieldOfferOdds: coverShieldOfferOdds
                             };
                             
-                            const coverRes = await StakeApi.query<any>(Queries.PlaceSportBet, coverBetVariables);
+                            const coverRes = await placeSportBetWithPolicy(coverBetVariables, { maxAttempts: 2 });
                             
-                            if (coverRes.data?.sportBet || coverRes.data?.createSportBet) {
-                                const coverBet = coverRes.data?.sportBet || coverRes.data?.createSportBet;
+                            if (coverRes.bet) {
+                                const coverBet = coverRes.bet;
                                 const coverId = coverBet.id;
                                 const coverBetToAdd = { ...coverBet };
                                 if (coverShieldOfferOdds != null) {
@@ -1044,6 +1035,22 @@ export function useAutoBetEngine() {
       }
     }
   }, [addLog, stop, addActiveBet]);
+
+  useEffect(() => {
+    function onRuntimeEvent(ev: any) {
+      const detail = ev?.detail;
+      const source = String(detail?.eventSource || '');
+      const correlationId = String(detail?.correlationId || detail?.payload?.correlationId || '');
+      if (!source) return;
+      if (source.includes('sports.placeBet.error')) {
+        addRuntimeLog('Sports runtime error event captured.', source, correlationId, 'warning');
+      } else if (source.includes('sports.placeBet.success')) {
+        addRuntimeLog('Sports runtime success event captured.', source, correlationId, 'info');
+      }
+    }
+    window.addEventListener('sports-runtime-event', onRuntimeEvent);
+    return () => window.removeEventListener('sports-runtime-event', onRuntimeEvent);
+  }, [addRuntimeLog]);
 
   useEffect(() => {
     if (isRunning && !processingRef.current) {

@@ -41,7 +41,7 @@ export default function OriginalsLimboControl({ settings: propSettings, onSettin
     const amt = Number(amount) || Number(settings?.baseBet) || 0.01
     const mult = Number(targetMultiplier)
     if (!(amt > 0 && mult >= 1.01)) {
-      setError('Einsatz > 0 und Multiplikator ≥ 1.01.')
+      setError('Stake must be > 0 and multiplier >= 1.01.')
       return
     }
     setError('')
@@ -60,13 +60,13 @@ export default function OriginalsLimboControl({ settings: propSettings, onSettin
         const win = payout > 0
         const entry: OriginalsBetEntry = { amount: amt, payout, win }
         addEntry(entry)
-        onBetPlaced?.(result ? { iid: result.iid, payout } : { error: 'Keine Antwort' })
+        onBetPlaced?.(result ? { iid: result.iid, payout } : { error: 'No response' })
         if (!result) break
         if (shouldStopSession(sessionEntries, settings ?? {})) break
         await delay(delayMs)
       }
     } catch (e: any) {
-      setError(e?.message || 'Wette fehlgeschlagen')
+      setError(e?.message || 'Bet failed')
       onBetPlaced?.({ error: e?.message })
     } finally {
       setRunning(false)
@@ -83,7 +83,7 @@ export default function OriginalsLimboControl({ settings: propSettings, onSettin
       </h3>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
-          <label className="block text-xs text-[var(--text-muted)] mb-1">Einsatz</label>
+          <label className="block text-xs text-[var(--text-muted)] mb-1">Stake</label>
           <input
             type="number"
             min="0.00000001"
@@ -94,7 +94,7 @@ export default function OriginalsLimboControl({ settings: propSettings, onSettin
           />
         </div>
         <div>
-          <label className="block text-xs text-[var(--text-muted)] mb-1">Währung</label>
+          <label className="block text-xs text-[var(--text-muted)] mb-1">Currency</label>
           <select
             value={currency}
             onChange={(e) => setCurrency(e.target.value)}
@@ -106,7 +106,7 @@ export default function OriginalsLimboControl({ settings: propSettings, onSettin
           </select>
         </div>
         <div>
-          <label className="block text-xs text-[var(--text-muted)] mb-1">Ziel-Multiplikator (×)</label>
+          <label className="block text-xs text-[var(--text-muted)] mb-1">Target multiplier (x)</label>
           <input
             type="number"
             min="1.01"

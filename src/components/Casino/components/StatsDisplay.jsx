@@ -52,6 +52,12 @@ function formatUsdCentsLine(value) {
   return `${formatAmount(Number(value), 'usd')} USD`
 }
 
+function formatBalanceLine(valueMinor, currencyCode) {
+  if (valueMinor == null || !Number.isFinite(Number(valueMinor))) return '–'
+  const curr = String(currencyCode || 'usd').toLowerCase()
+  return `${formatAmount(Number(valueMinor), curr)} ${curr.toUpperCase()}`
+}
+
 export default function StatsDisplay({ stats, currencyCode, compact = false, minimal = false }) {
   const displayStats = useMemo(() => {
     if (!stats || stats.spins === 0) return null
@@ -62,12 +68,18 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
       netResult: stats.totalWon - stats.totalWagered,
       winCount: stats.winCount,
       lossCount: stats.lossCount,
+      breakEvenCount: stats.breakEvenCount ?? 0,
+      fxMissingCount: stats.fxMissingCount ?? 0,
+      fxValuatedCount: stats.fxValuatedCount ?? 0,
       biggestWin: stats.biggestWin,
       biggestMultiplier: stats.biggestMultiplier,
       multiOver100xCount: stats.multiOver100xCount,
       multiOver100xSum: stats.multiOver100xSum,
       currentBalance: stats.currentBalance,
+      currentBalanceRaw: stats.currentBalanceRaw,
+      currentBalanceCurrency: stats.currentBalanceCurrency,
       sessionStartBalance: stats.sessionStartBalance,
+      roiPercent: stats.totalWagered > 0 ? ((stats.totalWon - stats.totalWagered) / stats.totalWagered) * 100 : 0,
     }
   }, [stats])
 
@@ -116,9 +128,25 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
           </span>
         </div>
         <div style={STYLES.item}>
-          <span style={STYLES.label}>Gewinne / Verluste</span>
+          <span style={STYLES.label}>Gewinne / Verluste / Even</span>
           <span style={valueStyle}>
-            {displayStats.winCount} / {displayStats.lossCount}
+            {displayStats.winCount} / {displayStats.lossCount} / {displayStats.breakEvenCount}
+          </span>
+        </div>
+        {(displayStats.fxMissingCount > 0) && (
+        <div style={STYLES.item}>
+          <span style={STYLES.label}>FX nicht bewertet</span>
+          <span style={valueStyle}>{displayStats.fxMissingCount} Spin(s)</span>
+        </div>
+        )}
+        <div style={STYLES.item}>
+          <span style={STYLES.label}>FX bewertet</span>
+          <span style={valueStyle}>{displayStats.fxValuatedCount} Spin(s)</span>
+        </div>
+        <div style={STYLES.item}>
+          <span style={STYLES.label}>ROI</span>
+          <span style={{ ...valueStyle, ...(displayStats.roiPercent >= 0 ? STYLES.valuePositive : STYLES.valueNegative) }}>
+            {displayStats.roiPercent >= 0 ? '+' : ''}{displayStats.roiPercent.toFixed(2)}%
           </span>
         </div>
         <div style={STYLES.item}>
@@ -137,7 +165,9 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
         )}
         <div style={STYLES.item}>
           <span style={STYLES.label}>Kontostand</span>
-          <span style={valueStyle}>{formatUsdCentsLine(displayStats.currentBalance)}</span>
+          <span style={valueStyle}>
+            {formatBalanceLine(displayStats.currentBalanceRaw, displayStats.currentBalanceCurrency || currencyCode)}
+          </span>
         </div>
         {(displayStats.multiOver100xCount > 0 || displayStats.multiOver100xSum > 0) && (
         <div style={STYLES.item}>

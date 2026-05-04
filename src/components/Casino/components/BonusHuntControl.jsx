@@ -2,13 +2,14 @@
  * Bonus Hunt – mehrere Slots nacheinander spielen bis jeder Bonus bekommt.
  * Nutzt gleiche Währung/Einsatz für alle.
  */
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import styles from './BonusHuntControl.module.css'
 import { getProvider } from '../api/providers'
 import { getImpliedScatterLevel } from '../api/providers/hacksaw'
 import { ALL_CURRENCIES, filterCurrenciesByProvider } from '../constants/currencies'
 import { fetchSupportedCurrencies, fetchCurrencyRates } from '../api/stakeChallenges'
 import { formatAmount, formatBetLabel, isFiat, isStable, toMinor, toUnits } from '../utils/formatAmount'
+import { isUsdLikeCurrency } from '../utils/currencyMeta'
 import { getEffectiveBetAmount } from '../constants/bet'
 import { SlotSelectMulti } from './SlotSelectGrouped'
 import SlotSlider from './SlotSlider'
@@ -18,19 +19,51 @@ import { loadHasBonusSlugs, toggleHasBonusSlug, removeHasBonusSlug, clearHasBonu
 import { notifyBonusHit } from '../utils/notifications'
 import { saveBonusLog, isSaveBonusLogsEnabled, setSaveBonusLogsEnabled, exportBonusLogsAsFile, clearBonusLogs } from '../utils/apiLogger'
 import { saveSlotSpinSample, saveBonusSpinSample } from '../utils/slotSpinSamples'
-import { subscribeToBetUpdates } from '../api/stakeBalanceSubscription'
+import { subscribeToHouseBets } from '../api/stakeRealtimeFacade'
 import { PROVIDERS as PROVIDERS_META } from '../constants/providers'
+import { houseBetSlugMatchesSessionSlug } from '../utils/slotSlugMatching'
 import { TipMenu } from '../../ui/TipMenu'
+import { createEventEnvelope, generateCorrelationId } from '../../../utils/eventEnvelope'
+import { publishRealtimeEvent } from '../../../services/realtimeBus'
 
 const HUNT_BET_LEVELS = [
   1100, 2200, 4400, 6600, 8800, 11000, 22000, 44000, 66000, 110000, 220000,
 ]
 const CLOUDFLARE_RETRY_WAIT_MS = 5000
 const CLOUDFLARE_MAX_RETRIES = 3
+const GENERIC_RETRY_WAIT_MS = 5000
 
 function isCloudflareError(err) {
   const msg = (err?.message || '').toLowerCase()
   return msg.includes('just a moment') || msg.includes('cloudflare') || msg.includes('html statt json')
+}
+
+function smoothPathFromPoints(points, tension = 0.22) {
+  if (!Array.isArray(points) || points.length === 0) return ''
+  if (points.length === 1) return `M ${points[0][0]},${points[0][1]}`
+  if (points.length === 2) return `M ${points[0][0]},${points[0][1]} L ${points[1][0]},${points[1][1]}`
+
+  let d = `M ${points[0][0]},${points[0][1]}`
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const p0 = points[Math.max(0, i - 1)]
+    const p1 = points[i]
+    const p2 = points[i + 1]
+    const p3 = points[Math.min(points.length - 1, i + 2)]
+    const cp1x = p1[0] + (p2[0] - p0[0]) * tension
+    const cp1y = p1[1] + (p2[1] - p0[1]) * tension
+    const cp2x = p2[0] - (p3[0] - p1[0]) * tension
+    const cp2y = p2[1] - (p3[1] - p1[1]) * tension
+    d += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2[0]},${p2[1]}`
+  }
+  return d
+}
+
+function normalizeNameToken(v) {
+  return String(v || '')
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 export default function BonusHuntControl({
@@ -74,12 +107,71 @@ export default function BonusHuntControl({
   const cancelRef = useRef(false)
   const [hasBonusSlugs, setHasBonusSlugs] = useState(() => new Set(loadHasBonusSlugs()))
   const [wheelOpenedSlugs, setWheelOpenedSlugs] = useState(() => new Set())
+  const [autoOpenGame, setAutoOpenGame] = useState(true)
+  const [lastWheelWinner, setLastWheelWinner] = useState(null)
+  const [bonusOpeningResults, setBonusOpeningResults] = useState({})
+  const [loggerUpdateSignal, setLoggerUpdateSignal] = useState(0)
+  const [showDetailedProgress, setShowDetailedProgress] = useState(false)
   const [tipCopied, setTipCopied] = useState(false)
   const [showTipMenu, setShowTipMenu] = useState(false)
+  const [huntStartBalanceMinorSnapshot, setHuntStartBalanceMinorSnapshot] = useState(null)
+  const [firstOpeningBalanceMinor, setFirstOpeningBalanceMinor] = useState(null)
+  const HUNT_SETTINGS_STORAGE_KEY = 'slotbot_bonus_hunt_settings_v2'
   const tipMenuRef = useRef(null)
   const pendingSpinsRef = useRef([])
   const recentHouseBetsRef = useRef([])
+  const recentLoggerBetsRef = useRef([])
   const houseBetSubRef = useRef(null)
+  const loggerBetSubRef = useRef(null)
+  const popupOpeningsRef = useRef(new Map())
+  const bonusResolveTimersRef = useRef(new Map())
+  const latestBetHistoryRef = useRef([])
+  const latestBonusOpeningResultsRef = useRef({})
+  const huntStartBalanceMinorSnapshotRef = useRef(null)
+  const huntCorrelationIdRef = useRef('')
+
+  const emitHuntRuntimeEvent = useCallback((eventSource, payload = {}) => {
+    const corr = huntCorrelationIdRef.current || generateCorrelationId('hunt')
+    huntCorrelationIdRef.current = corr
+    const envelope = createEventEnvelope(eventSource, payload, corr)
+    publishRealtimeEvent(eventSource, payload, corr)
+    try {
+      window.dispatchEvent(new CustomEvent('sportslots-hunt-runtime', { detail: envelope }))
+    } catch (_) {}
+  }, [])
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(HUNT_SETTINGS_STORAGE_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (parsed?.sourceCurrency) setSourceCurrency(String(parsed.sourceCurrency).toLowerCase())
+      if (parsed?.targetCurrency) setTargetCurrency(String(parsed.targetCurrency).toLowerCase())
+      if (Number.isFinite(Number(parsed?.betAmount)) && Number(parsed.betAmount) > 0) setBetAmount(Number(parsed.betAmount))
+      if (Number.isFinite(Number(parsed?.maxSpinsPerSlot))) setMaxSpinsPerSlot(Math.max(0, Number(parsed.maxSpinsPerSlot)))
+      if (Number.isFinite(Number(parsed?.maxLossLimit))) setMaxLossLimit(Math.max(0, Number(parsed.maxLossLimit)))
+      if (typeof parsed?.parallelHuntEnabled === 'boolean') setParallelHuntEnabled(parsed.parallelHuntEnabled)
+      if (Number.isFinite(Number(parsed?.maxParallelSlots))) setMaxParallelSlots(Math.max(1, Number(parsed.maxParallelSlots)))
+      if (Number.isFinite(Number(parsed?.sessionRefreshSpins))) setSessionRefreshSpins(Math.max(0, Number(parsed.sessionRefreshSpins)))
+      if (typeof parsed?.autoOpenGame === 'boolean') setAutoOpenGame(parsed.autoOpenGame)
+    } catch (_) {}
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(HUNT_SETTINGS_STORAGE_KEY, JSON.stringify({
+        sourceCurrency,
+        targetCurrency,
+        betAmount,
+        maxSpinsPerSlot,
+        maxLossLimit,
+        parallelHuntEnabled,
+        maxParallelSlots,
+        sessionRefreshSpins,
+        autoOpenGame,
+      }))
+    } catch (_) {}
+  }, [sourceCurrency, targetCurrency, betAmount, maxSpinsPerSlot, maxLossLimit, parallelHuntEnabled, maxParallelSlots, sessionRefreshSpins, autoOpenGame])
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -199,7 +291,7 @@ export default function BonusHuntControl({
 
   const handleUncheckAllBonus = () => {
     if (isRunning) return
-    if (!window.confirm('Möchtest du wirklich bei ALLEN Slots den "hat Bonus"-Status entfernen?')) return
+    if (!window.confirm('Remove the "has bonus" status for ALL slots?')) return
     clearHasBonusSlugs()
     setHasBonusSlugs(new Set())
   }
@@ -209,6 +301,350 @@ export default function BonusHuntControl({
     setSaveBonusLogsEnabled(checked)
   }
 
+  const slotMatchesGame = useCallback((slotSlug, gameSlug) => houseBetSlugMatchesSessionSlug(gameSlug, slotSlug), [])
+  const slotNameBySlug = useMemo(() => {
+    const map = new Map()
+    for (const s of slots || []) {
+      if (s?.slug) map.set(String(s.slug), String(s.name || s.slug))
+    }
+    return map
+  }, [slots])
+
+  useEffect(() => {
+    let cancelled = false
+    const startLoggerStream = async () => {
+      try {
+        let token = accessToken
+        if (!token && window.electronAPI?.getSessionToken) {
+          token = await window.electronAPI.getSessionToken()
+        }
+        if (!token || cancelled) return
+        try {
+          if (loggerBetSubRef.current?.disconnect) loggerBetSubRef.current.disconnect()
+        } catch (_) {}
+        loggerBetSubRef.current = await subscribeToHouseBets(token, (b) => {
+          const ts = Date.parse(String(b?.receivedAt || ''))
+          recentLoggerBetsRef.current = [
+            {
+              gameSlug: String(b?.gameSlug || '').toLowerCase(),
+              gameName: String(b?.gameName || '').toLowerCase(),
+              amount: Number(b?.amount ?? 0),
+              payout: Number(b?.payout ?? 0),
+              payoutMultiplier: Number(b?.payoutMultiplier ?? 0),
+              currency: String(b?.currency || '').toLowerCase(),
+              ts: Number.isFinite(ts) ? ts : Date.now(),
+            },
+            ...recentLoggerBetsRef.current,
+          ].slice(0, 500)
+          const hasPendingOpenings = Object.values(latestBonusOpeningResultsRef.current || {}).some(
+            (entry) => entry?.status === 'opened' || entry?.status === 'closed_pending'
+          )
+          if (hasPendingOpenings) setLoggerUpdateSignal((n) => n + 1)
+        })
+      } catch (_) {
+        // Ignore background logger stream errors for Bonus Hunt panel.
+      }
+    }
+    void startLoggerStream()
+    return () => {
+      cancelled = true
+      try {
+        if (loggerBetSubRef.current?.disconnect) loggerBetSubRef.current.disconnect()
+      } catch (_) {}
+      loggerBetSubRef.current = null
+    }
+  }, [accessToken])
+
+  const clearResolveTimer = useCallback((slotSlug) => {
+    const t = bonusResolveTimersRef.current.get(slotSlug)
+    if (t) {
+      clearTimeout(t)
+      bonusResolveTimersRef.current.delete(slotSlug)
+    }
+  }, [])
+
+  const findResolvedBonusForSlot = useCallback((slotSlug, openingMeta = null) => {
+    if (!slotSlug) return null
+    const latest = [...latestBetHistoryRef.current]
+      .reverse()
+      .find((b) => b?.slotSlug === slotSlug && b?.isBonus && b?.stoppedBonus)
+    if (latest) {
+      const payoutMinor = Number(latest.winAmount ?? 0)
+      const wagerMinor = Number(latest.betAmount ?? 0)
+      if (Number.isFinite(payoutMinor) && payoutMinor > 0 && Number.isFinite(wagerMinor) && wagerMinor > 0) {
+        return {
+          payoutMinor,
+          wagerMinor,
+          multiplier: payoutMinor / wagerMinor,
+        }
+      }
+    }
+
+    // Resolve opened bonus rounds from the same stream used by the Game Logger.
+    const openedTs = Date.parse(String(openingMeta?.openedAt || ''))
+    const closedTs = Date.parse(String(openingMeta?.closedAt || ''))
+    const now = Date.now()
+    const fromTs = Number.isFinite(openedTs) ? openedTs - 15000 : now - 10 * 60 * 1000
+    const toTs = Number.isFinite(closedTs) ? closedTs + 120000 : now + 120000
+    const slotName = String(openingMeta?.slotName || slotNameBySlug.get(slotSlug) || slotSlug)
+    const slotNameNorm = normalizeNameToken(slotName)
+    const candidates = recentLoggerBetsRef.current
+      .filter((lb) => {
+        if (slotMatchesGame(slotSlug, lb?.gameSlug)) return true
+        const gameNameNorm = normalizeNameToken(lb?.gameName || '')
+        if (!slotNameNorm || !gameNameNorm) return false
+        return (
+          gameNameNorm === slotNameNorm ||
+          gameNameNorm.includes(slotNameNorm) ||
+          slotNameNorm.includes(gameNameNorm)
+        )
+      })
+      .filter((lb) => {
+        const ts = Number(lb?.ts || 0)
+        if (!Number.isFinite(ts) || ts <= 0) return true
+        return ts >= fromTs && ts <= toTs
+      })
+      .map((lb) => {
+        const curr = String(lb?.currency || targetCurrency || sourceCurrency || 'usdc').toLowerCase()
+        const amountMajor = Number(lb?.amount || 0)
+        const payoutMajor = Number(lb?.payout || 0)
+        const payoutMultiplier = Number(lb?.payoutMultiplier || 0)
+        const wagerMinor = amountMajor > 0 ? toMinor(amountMajor, curr) : 0
+        let payoutMinor = payoutMajor > 0 ? toMinor(payoutMajor, curr) : 0
+        if (payoutMinor <= 0 && wagerMinor > 0 && Number.isFinite(payoutMultiplier) && payoutMultiplier > 0) {
+          payoutMinor = Math.round(wagerMinor * payoutMultiplier)
+        }
+        const multiplier = wagerMinor > 0
+          ? (Number.isFinite(payoutMultiplier) && payoutMultiplier > 0 ? payoutMultiplier : payoutMinor / wagerMinor)
+          : 0
+        return {
+          payoutMinor,
+          wagerMinor,
+          multiplier,
+          ts: Number(lb?.ts || 0),
+        }
+      })
+      .filter((x) => x.payoutMinor > 0)
+      .sort((a, b) => {
+        const byTs = (Number(b.ts) || 0) - (Number(a.ts) || 0)
+        if (byTs !== 0) return byTs
+        return Number(b.payoutMinor || 0) - Number(a.payoutMinor || 0)
+      })
+    if (candidates.length > 0) {
+      const best = candidates[0]
+      const wagerMinor = best.wagerMinor > 0 ? best.wagerMinor : Number(latest?.betAmount || 0)
+      return {
+        payoutMinor: best.payoutMinor,
+        wagerMinor,
+        multiplier: best.multiplier > 0 ? best.multiplier : (wagerMinor > 0 ? best.payoutMinor / wagerMinor : 0),
+      }
+    }
+    return null
+  }, [slotMatchesGame, slotNameBySlug, sourceCurrency, targetCurrency])
+
+  const findResolvedBonusFromPersistedLogger = useCallback(async (slotSlug, openingMeta = null) => {
+    if (!slotSlug || !window.electronAPI?.loadLoggerBetLogs) return null
+    try {
+      const openedTs = Date.parse(String(openingMeta?.openedAt || ''))
+      const closedTs = Date.parse(String(openingMeta?.closedAt || ''))
+      const now = Date.now()
+      const fromTs = Number.isFinite(openedTs) ? openedTs - 15000 : now - 20 * 60 * 1000
+      const toTs = Number.isFinite(closedTs) ? closedTs + 240000 : now + 240000
+      const slotName = String(openingMeta?.slotName || slotNameBySlug.get(slotSlug) || slotSlug)
+      const slotNameNorm = normalizeNameToken(slotName)
+
+      const rows = await window.electronAPI.loadLoggerBetLogs({ limit: 1000 })
+      if (!Array.isArray(rows) || rows.length === 0) return null
+
+      const candidates = rows
+        .map((row) => {
+          const ts = Date.parse(String(row?.receivedAt || row?.createdAt || row?.timestamp || ''))
+          return { row, ts: Number.isFinite(ts) ? ts : 0 }
+        })
+        .filter(({ row, ts }) => {
+          if (ts > 0 && (ts < fromTs || ts > toTs)) return false
+          const rowSlug = row?.gameSlug
+          if (slotMatchesGame(slotSlug, rowSlug)) return true
+          const gameNameNorm = normalizeNameToken(row?.gameName || row?.slotName || '')
+          if (!slotNameNorm || !gameNameNorm) return false
+          return (
+            gameNameNorm === slotNameNorm ||
+            gameNameNorm.includes(slotNameNorm) ||
+            slotNameNorm.includes(gameNameNorm)
+          )
+        })
+        .map(({ row, ts }) => {
+          const curr = String(row?.currency || targetCurrency || sourceCurrency || 'usdc').toLowerCase()
+          const amountMajor = Number(row?.amount || 0)
+          const payoutMajor = Number(row?.payout || 0)
+          const payoutMultiplier = Number(row?.payoutMultiplier || 0)
+          const wagerMinor = amountMajor > 0 ? toMinor(amountMajor, curr) : 0
+          let payoutMinor = payoutMajor > 0 ? toMinor(payoutMajor, curr) : 0
+          if (payoutMinor <= 0 && wagerMinor > 0 && Number.isFinite(payoutMultiplier) && payoutMultiplier > 0) {
+            payoutMinor = Math.round(wagerMinor * payoutMultiplier)
+          }
+          const multiplier = wagerMinor > 0
+            ? (Number.isFinite(payoutMultiplier) && payoutMultiplier > 0 ? payoutMultiplier : payoutMinor / wagerMinor)
+            : 0
+          return { payoutMinor, wagerMinor, multiplier, ts }
+        })
+        .filter((c) => Number(c.payoutMinor) > 0)
+        .sort((a, b) => {
+          const byTs = (Number(b.ts) || 0) - (Number(a.ts) || 0)
+          if (byTs !== 0) return byTs
+          return Number(b.payoutMinor || 0) - Number(a.payoutMinor || 0)
+        })
+      if (candidates.length === 0) return null
+      return candidates[0]
+    } catch (_) {
+      return null
+    }
+  }, [slotMatchesGame, slotNameBySlug, sourceCurrency, targetCurrency])
+
+  const applyResolvedOpening = useCallback((slotSlug, resolved) => {
+    if (!slotSlug || !resolved) return false
+    clearResolveTimer(slotSlug)
+    setBonusOpeningResults((prev) => {
+      const current = prev[slotSlug] || { slotSlug }
+      return {
+        ...prev,
+        [slotSlug]: {
+          ...current,
+          status: 'resolved',
+          payoutMinor: resolved.payoutMinor,
+          wagerMinor: resolved.wagerMinor,
+          multiplier: resolved.multiplier,
+          resolvedAt: new Date().toISOString(),
+        },
+      }
+    })
+    return true
+  }, [clearResolveTimer])
+
+  const tryResolveOpeningResult = useCallback(async (slotSlug, openingMeta = null, retry = 0, maxRetry = 18) => {
+    if (!slotSlug) return false
+    const resolved = findResolvedBonusForSlot(slotSlug, openingMeta)
+    if (resolved) {
+      return applyResolvedOpening(slotSlug, resolved)
+    }
+    if (retry === 0 || retry % 3 === 0) {
+      const persisted = await findResolvedBonusFromPersistedLogger(slotSlug, openingMeta)
+      if (persisted) return applyResolvedOpening(slotSlug, persisted)
+    }
+    if (retry >= maxRetry) return false
+    clearResolveTimer(slotSlug)
+    const timeout = setTimeout(() => {
+      void tryResolveOpeningResult(slotSlug, openingMeta, retry + 1, maxRetry)
+    }, 900)
+    bonusResolveTimersRef.current.set(slotSlug, timeout)
+    return false
+  }, [applyResolvedOpening, clearResolveTimer, findResolvedBonusForSlot, findResolvedBonusFromPersistedLogger])
+
+  const openBonusGamePopup = useCallback(async (slot, trigger = 'manual') => {
+    if (!slot?.slug) return
+    const latestKnownBalanceMinor = (() => {
+      if (currentBalance != null && Number.isFinite(Number(currentBalance))) return Number(currentBalance)
+      const latestWithBalance = [...(latestBetHistoryRef.current || [])].reverse().find((b) => b?.balance != null)
+      if (latestWithBalance?.balance != null && Number.isFinite(Number(latestWithBalance.balance))) {
+        return Number(latestWithBalance.balance)
+      }
+      return null
+    })()
+    setFirstOpeningBalanceMinor((prev) => {
+      if (prev != null) return prev
+      if (latestKnownBalanceMinor != null) return latestKnownBalanceMinor
+      if (huntStartBalanceMinorSnapshotRef.current != null) return Number(huntStartBalanceMinorSnapshotRef.current)
+      return null
+    })
+    const slug = slot.slug
+    const slotName = slot.name || slot.slug
+    const openedAt = new Date().toISOString()
+    setBonusOpeningResults((prev) => ({
+      ...prev,
+      [slug]: {
+        ...(prev[slug] || {}),
+        slotSlug: slug,
+        slotName,
+        openedAt,
+        status: prev[slug]?.status === 'resolved' ? 'resolved' : 'opened',
+        trigger,
+      },
+    }))
+    if (!window.electronAPI?.openSlotPopup) return
+    try {
+      const res = await window.electronAPI.openSlotPopup({ slug, locale: 'en' })
+      if (res?.ok && res?.popupId) {
+        popupOpeningsRef.current.set(res.popupId, { slotSlug: slug, slotName, openedAt })
+        setBonusOpeningResults((prev) => ({
+          ...prev,
+          [slug]: {
+            ...(prev[slug] || {}),
+            slotSlug: slug,
+            slotName,
+            openedAt,
+            popupId: res.popupId,
+            status: prev[slug]?.status === 'resolved' ? 'resolved' : 'opened',
+            trigger,
+          },
+        }))
+      }
+    } catch (_) {
+      // Ignore popup open errors; opening can be retried manually.
+    }
+  }, [currentBalance])
+
+  useEffect(() => {
+    latestBetHistoryRef.current = betHistory
+    latestBonusOpeningResultsRef.current = bonusOpeningResults
+    const unresolved = Object.values(bonusOpeningResults).filter((entry) => entry?.status === 'closed_pending')
+    if (unresolved.length === 0) return
+    unresolved.forEach((entry) => {
+      if (entry?.slotSlug) void tryResolveOpeningResult(entry.slotSlug, entry, 0, 18)
+    })
+  }, [betHistory, bonusOpeningResults, tryResolveOpeningResult])
+
+  useEffect(() => {
+    if (!loggerUpdateSignal) return
+    const unresolved = Object.values(latestBonusOpeningResultsRef.current || {}).filter(
+      (entry) => entry?.status === 'opened' || entry?.status === 'closed_pending'
+    )
+    if (unresolved.length === 0) return
+    unresolved.forEach((entry) => {
+      if (entry?.slotSlug) void tryResolveOpeningResult(entry.slotSlug, entry, 0, 6)
+    })
+  }, [loggerUpdateSignal, tryResolveOpeningResult])
+
+  useEffect(() => {
+    if (!window.electronAPI?.onSlotPopupClosed) return
+    const unsub = window.electronAPI.onSlotPopupClosed((payload) => {
+      const popupId = payload?.popupId
+      const fromMap = popupId ? popupOpeningsRef.current.get(popupId) : null
+      const slotSlug = fromMap?.slotSlug || payload?.slug
+      if (!slotSlug) return
+      const closedAt = payload?.closedAt || new Date().toISOString()
+      setBonusOpeningResults((prev) => {
+        const current = prev[slotSlug] || { slotSlug, slotName: fromMap?.slotName || slotSlug }
+        if (current.status === 'resolved') return prev
+        return {
+          ...prev,
+          [slotSlug]: {
+            ...current,
+            slotSlug,
+            slotName: current.slotName || fromMap?.slotName || slotSlug,
+            popupId: current.popupId || popupId,
+            closedAt,
+            status: 'closed_pending',
+          },
+        }
+      })
+      if (popupId) popupOpeningsRef.current.delete(popupId)
+      void tryResolveOpeningResult(slotSlug, { ...fromMap, closedAt }, 0, 18)
+    })
+    return () => {
+      if (typeof unsub === 'function') unsub()
+    }
+  }, [tryResolveOpeningResult])
+
   async function runHunt(slugsToRun = null) {
     const slugs = slugsToRun ?? selectedSlugs
     const slugsFiltered = slugs.filter((slug) => !hasBonusSlugs.has(slug))
@@ -217,12 +653,34 @@ export default function BonusHuntControl({
       .filter(Boolean)
 
     if (toRun.length === 0) {
-      setError(slugsToRun ? 'Keine Slots zum Erneut versuchen.' : slugs.length > 0 ? 'Alle ausgewählten Slots haben bereits Bonus (hat Bonus).' : 'Mindestens einen Slot auswählen.')
+      setError(slugsToRun ? 'No slots available to retry.' : slugs.length > 0 ? 'All selected slots already have a bonus (has bonus).' : 'Select at least one slot.')
       return
     }
+    huntCorrelationIdRef.current = generateCorrelationId('hunt')
+    emitHuntRuntimeEvent('hunt.start', {
+      slots: toRun.map((s) => s.slug),
+      parallel: !!parallelHuntEnabled,
+      maxParallelSlots,
+      sourceCurrency,
+      targetCurrency,
+      betAmount,
+    })
 
     cancelRef.current = false
     setWheelOpenedSlugs(new Set())
+    setLastWheelWinner(null)
+    setBonusOpeningResults({})
+    const huntStartSnapshot = (() => {
+      if (currentBalance != null && Number.isFinite(Number(currentBalance))) return Number(currentBalance)
+      const latestWithBalance = [...(latestBetHistoryRef.current || [])].reverse().find((b) => b?.balance != null)
+      if (latestWithBalance?.balance != null && Number.isFinite(Number(latestWithBalance.balance))) {
+        return Number(latestWithBalance.balance)
+      }
+      return null
+    })()
+    setHuntStartBalanceMinorSnapshot(huntStartSnapshot)
+    huntStartBalanceMinorSnapshotRef.current = huntStartSnapshot
+    setFirstOpeningBalanceMinor(null)
     setIsRunning(true)
     setError('')
     setBetHistory([])
@@ -230,12 +688,14 @@ export default function BonusHuntControl({
     setCurrencyCode(null)
     pendingSpinsRef.current = []
     recentHouseBetsRef.current = []
+    recentLoggerBetsRef.current = []
+    popupOpeningsRef.current = new Map()
+    bonusResolveTimersRef.current.forEach((t) => clearTimeout(t))
+    bonusResolveTimersRef.current.clear()
     try {
       if (houseBetSubRef.current?.disconnect) houseBetSubRef.current.disconnect()
     } catch (_) {}
-    const slotMatchesHouseBet = (slotSlug, gameSlug) =>
-      !gameSlug ? false : slotSlug === gameSlug || slotSlug.endsWith('-' + gameSlug)
-    houseBetSubRef.current = await subscribeToBetUpdates(accessToken, (b) => {
+    houseBetSubRef.current = await subscribeToHouseBets(accessToken, (b) => {
       const gameSlug = String(b?.gameSlug || '').toLowerCase()
       const hbCurrency = (b?.currency || '').toLowerCase()
       const target = (targetCurrency || 'eur').toLowerCase()
@@ -251,9 +711,20 @@ export default function BonusHuntControl({
       const amountAsMinor = rawAmount < 500 ? toMinor(rawAmount, curr) : rawAmount
       const pending = pendingSpinsRef.current
       const tol = (v) => Math.max(1, Math.abs(v) * 0.08)
-      const targetRate = ['usd', 'usdc', 'usdt'].includes(target) ? 1 : Number(currencyRates[target] || 0)
+      const targetRate = isUsdLikeCurrency(target) ? 1 : Number(currencyRates[target] || 0)
       const toUsdFromTarget = (minor) => toUnits(minor, target) * targetRate
-      const hbRate = ['usd', 'usdc', 'usdt'].includes(curr) ? 1 : Number(currencyRates[curr] || 0)
+      const hbRate = isUsdLikeCurrency(curr) ? 1 : Number(currencyRates[curr] || 0)
+      // If we cannot value one side in USD, skip cross-currency matching to avoid false 0-valued comparisons.
+      if ((curr !== target) && (targetRate <= 0 || hbRate <= 0)) return
+      const stakeSendsMajor = rawAmount < 500
+      const amountTargetMinor =
+        curr === target
+          ? (stakeSendsMajor ? toMinor(rawAmount, curr) : rawAmount)
+          : (() => {
+              const amountUsd = stakeSendsMajor ? rawAmount * hbRate : toUnits(rawAmount, curr) * hbRate
+              const targetMajor = targetRate > 0 ? amountUsd / targetRate : 0
+              return toMinor(targetMajor, target)
+            })()
       const rawAmountUsd = hbRate > 0 ? (rawAmount < 500 ? rawAmount * hbRate : toUnits(rawAmount, curr) * hbRate) : 0
       const amountMatches = (p) => {
         const m1 = Math.abs(p.effectiveBet - rawAmount) <= tol(rawAmount)
@@ -271,7 +742,7 @@ export default function BonusHuntControl({
         return ok
       }
       const idx = pending.findIndex(
-        (p) => slotMatchesHouseBet(p.slotSlug, gameSlug) && amountMatches(p)
+        (p) => slotMatchesGame(p.slotSlug, gameSlug) && amountMatches(p)
       )
       if (idx >= 0) {
         const { historyId, slotSlug } = pending[idx]
@@ -280,7 +751,6 @@ export default function BonusHuntControl({
         pendingSpinsRef.current = pending.filter((_, i) => i !== idx)
         // Stake Engine: RGS liefert korrekte Daten; houseBets kann Duplikate/0x erzeugen → nicht überschreiben
         if (!isStakeEngine) {
-          const stakeSendsMajor = rawAmount < 500
           let payoutMinor
           if (curr === target) {
             payoutMinor = stakeSendsMajor ? toMinor(rawPayout, curr) : rawPayout
@@ -293,9 +763,22 @@ export default function BonusHuntControl({
           setBetHistory((prev) =>
             prev.map((e) => {
               if (e.id !== historyId) return e
+              // Bonus wurde nur "gesichert" (nicht ausgespielt): nie in Hunt-Win übernehmen.
+              if (e.stoppedBonus) {
+                return {
+                  ...e,
+                  betAmount: amountTargetMinor > 0 ? amountTargetMinor : e.betAmount,
+                  winAmount: 0,
+                }
+              }
               const existing = e.winAmount ?? 0
               if (existing > 0 && payoutMinor <= 0) return e
-              return { ...e, winAmount: payoutMinor }
+              return {
+                ...e,
+                // Source of truth: actual stake from houseBets/logger stream (handles provider-specific extra-bet differences).
+                betAmount: amountTargetMinor > 0 ? amountTargetMinor : e.betAmount,
+                winAmount: payoutMinor,
+              }
             })
           )
         }
@@ -334,14 +817,16 @@ export default function BonusHuntControl({
       if (!provider?.startSession || !provider?.placeBet) {
         setHuntState((h) => ({
           ...h,
-          [slot.slug]: { ...h[slot.slug], status: 'done', spins: 0, totalWagered: 0, error: 'Provider nicht unterstützt' },
+          [slot.slug]: { ...h[slot.slug], status: 'done', spins: 0, totalWagered: 0, error: 'Provider not supported' },
         }))
         return
       }
 
       setHuntState((h) => ({ ...h, [slot.slug]: { ...h[slot.slug], status: 'spinning' } }))
 
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
       let session = null
+      let genericSessionRetryUsed = false
       for (let sessAttempt = 0; sessAttempt <= CLOUDFLARE_MAX_RETRIES; sessAttempt++) {
         try {
           session = await provider.startSession(accessToken, slot.slug, sourceCurrency, targetCurrency)
@@ -351,7 +836,12 @@ export default function BonusHuntControl({
             await new Promise((r) => setTimeout(r, CLOUDFLARE_RETRY_WAIT_MS))
             continue
           }
-          setError(`${slot.name}: ${err?.message || 'Session fehlgeschlagen'}`)
+          if (!isCloudflareError(err) && !genericSessionRetryUsed) {
+            genericSessionRetryUsed = true
+            await sleep(GENERIC_RETRY_WAIT_MS)
+            continue
+          }
+          setError(`${slot.name}: ${err?.message || 'Session failed'}`)
           setHuntState((h) => ({ ...h, [slot.slug]: { ...h[slot.slug], status: 'done', error: err?.message } }))
           return
         }
@@ -363,6 +853,7 @@ export default function BonusHuntControl({
       let spinsSinceRefresh = 0
       let lastBalance = session?.initialBalance ?? null
       const initialBalance = session?.initialBalance ?? lastBalance ?? 0
+      let genericSpinRetryUsed = false
 
       while (!cancelRef.current && !gotBonus) {
         if (maxLossLimit > 0 && initialBalance != null && lastBalance != null) {
@@ -390,6 +881,7 @@ export default function BonusHuntControl({
 
         try {
           if (sessionRefreshSpins > 0 && spinsSinceRefresh >= sessionRefreshSpins) {
+            let genericRefreshRetryUsed = false
             for (let srAttempt = 0; srAttempt <= CLOUDFLARE_MAX_RETRIES; srAttempt++) {
               try {
                 session = await provider.startSession(accessToken, slot.slug, sourceCurrency, targetCurrency)
@@ -398,6 +890,11 @@ export default function BonusHuntControl({
               } catch (srErr) {
                 if (srAttempt < CLOUDFLARE_MAX_RETRIES && isCloudflareError(srErr)) {
                   await new Promise((r) => setTimeout(r, CLOUDFLARE_RETRY_WAIT_MS))
+                  continue
+                }
+                if (!isCloudflareError(srErr) && !genericRefreshRetryUsed) {
+                  genericRefreshRetryUsed = true
+                  await sleep(GENERIC_RETRY_WAIT_MS)
                   continue
                 }
                 throw srErr
@@ -415,6 +912,7 @@ export default function BonusHuntControl({
           let result
           let usedExtraBet = useExtraBet
           let lastPlaceBetErr = null
+          let genericPlaceBetRetryUsed = false
           for (let cfAttempt = 0; cfAttempt <= CLOUDFLARE_MAX_RETRIES; cfAttempt++) {
             try {
               result = await provider.placeBet(session, betAmount, useExtraBet, false, placeBetOpts)
@@ -426,8 +924,14 @@ export default function BonusHuntControl({
                 await new Promise((r) => setTimeout(r, CLOUDFLARE_RETRY_WAIT_MS))
                 continue
               }
+              if (!isCloudflareError(err) && !genericPlaceBetRetryUsed) {
+                genericPlaceBetRetryUsed = true
+                await sleep(GENERIC_RETRY_WAIT_MS)
+                continue
+              }
               if (useExtraBet) {
                 let noExtraOk = false
+                let genericNoExtraRetryUsed = false
                 for (let neAttempt = 0; neAttempt <= CLOUDFLARE_MAX_RETRIES && !noExtraOk; neAttempt++) {
                   try {
                     session = await provider.startSession(accessToken, slot.slug, sourceCurrency, targetCurrency)
@@ -441,6 +945,11 @@ export default function BonusHuntControl({
                   } catch (retryErr) {
                     if (neAttempt < CLOUDFLARE_MAX_RETRIES && isCloudflareError(retryErr)) {
                       await new Promise((r) => setTimeout(r, CLOUDFLARE_RETRY_WAIT_MS))
+                      continue
+                    }
+                    if (!isCloudflareError(retryErr) && !genericNoExtraRetryUsed) {
+                      genericNoExtraRetryUsed = true
+                      await sleep(GENERIC_RETRY_WAIT_MS)
                       continue
                     }
                     setError(`${slot.name}: ${retryErr?.message || 'Spin failed'}`)
@@ -497,7 +1006,7 @@ export default function BonusHuntControl({
           const recentHb = recentHouseBetsRef.current
           const tol = (v) => Math.max(1, Math.abs(v) * 0.02)
           const hbIdx = recentHb.findIndex((hb) => {
-            if (!slotMatchesHouseBet(slot.slug, hb.gameSlug)) return false
+          if (!slotMatchesGame(slot.slug, hb.gameSlug)) return false
             const amtMinor = hb.amountAsMinor ?? hb.rawAmount
             return (
               Math.abs(effectiveBet - hb.rawAmount) <= tol(hb.rawAmount) ||
@@ -519,8 +1028,9 @@ export default function BonusHuntControl({
             if (BONUS_HUNT_DEBUG) {
               const curr = parsed.currencyCode || targetCurrency
               const u = toUnits(parsed.balance, curr)
-              const usd = ['usd', 'usdc', 'usdt'].includes((curr || '').toLowerCase()) ? u : (currencyRates[(curr || '').toLowerCase()] || 0.001) * u
-              console.log('[BH balance]', { raw: parsed.balance, curr, units: u, usdEst: usd.toFixed(2) })
+              const rate = isUsdLikeCurrency((curr || '').toLowerCase()) ? 1 : Number(currencyRates[(curr || '').toLowerCase()] || 0)
+              const usd = rate > 0 ? u * rate : null
+              console.log('[BH balance]', { raw: parsed.balance, curr, units: u, usdEst: usd != null ? usd.toFixed(2) : 'n/a(no-rate)' })
             }
             setCurrentBalance(parsed.balance)
             setCurrencyCode(parsed.currencyCode)
@@ -575,7 +1085,7 @@ export default function BonusHuntControl({
                 balanceEmpty: true,
               },
             }))
-            setError(lastBalance <= 0 ? 'Balance leer – Bonus Hunt gestoppt.' : 'Balance zu niedrig für weiteren Einsatz.')
+            setError(lastBalance <= 0 ? 'Balance empty - bonus hunt stopped.' : 'Balance too low for the next bet.')
             cancelRef.current = true
             return
           }
@@ -600,8 +1110,14 @@ export default function BonusHuntControl({
               [slot.slug]: { ...h[slot.slug], spins: slotSpins, totalWagered: slotWagered },
             }))
           }
+          genericSpinRetryUsed = false
         } catch (err) {
-          setError(`${slot.name}: ${err?.message || 'Spin fehlgeschlagen'}`)
+          if (!isCloudflareError(err) && !genericSpinRetryUsed) {
+            genericSpinRetryUsed = true
+            await sleep(GENERIC_RETRY_WAIT_MS)
+            continue
+          }
+          setError(`${slot.name}: ${err?.message || 'Spin failed'}`)
           setHuntState((h) => ({ ...h, [slot.slug]: { ...h[slot.slug], status: 'done', error: err?.message } }))
           break
         }
@@ -628,6 +1144,10 @@ export default function BonusHuntControl({
     }
 
     setIsRunning(false)
+    emitHuntRuntimeEvent('hunt.complete', {
+      cancelled: !!cancelRef.current,
+      slotsProcessed: toRun.length,
+    })
   }
 
   useEffect(() => {
@@ -636,18 +1156,38 @@ export default function BonusHuntControl({
         if (houseBetSubRef.current?.disconnect) houseBetSubRef.current.disconnect()
       } catch (_) {}
       houseBetSubRef.current = null
+      try {
+        if (loggerBetSubRef.current?.disconnect) loggerBetSubRef.current.disconnect()
+      } catch (_) {}
+      loggerBetSubRef.current = null
+      bonusResolveTimersRef.current.forEach((t) => clearTimeout(t))
+      bonusResolveTimersRef.current.clear()
     }
   }, [])
 
   function stopHunt() {
     cancelRef.current = true
+    emitHuntRuntimeEvent('hunt.stop', { reason: 'manual-stop' })
   }
 
   const statsCurrency = currencyCode || targetCurrency || sourceCurrency || 'usdc'
+  const statsCurrencyRateMissing = !isUsdLikeCurrency(statsCurrency) && !(Number(currencyRates[statsCurrency] || 0) > 0)
+  const fxMissingCount = useMemo(() => {
+    let count = 0
+    for (const b of betHistory) {
+      const c = String(b?.currencyCode || statsCurrency || '').toLowerCase()
+      if (isUsdLikeCurrency(c)) continue
+      const rate = Number(currencyRates[c] || 0)
+      if (!(rate > 0) && ((Number(b?.betAmount) || 0) > 0 || (Number(b?.winAmount) || 0) > 0 || b?.balance != null)) {
+        count += 1
+      }
+    }
+    return count
+  }, [betHistory, currencyRates, statsCurrency])
   const toUsd = (v, curr) => {
     const c = (curr || statsCurrency || 'usdc').toLowerCase()
     const units = toUnits(v, c)
-    if (['usd', 'usdc', 'usdt'].includes(c)) return units
+    if (isUsdLikeCurrency(c)) return units
     const rate = c ? Number(currencyRates[c] || 0) : 0
     return rate > 0 ? units * rate : 0
   }
@@ -680,10 +1220,97 @@ export default function BonusHuntControl({
   }, [completedBonusSlots, selectedSlots, hasBonusSlugs])
   const skippedCount = Object.values(huntState).filter((h) => h?.skipped || h?.stoppedLoss).length
   const totalSpins = Object.values(huntState).reduce((s, h) => s + (h?.spins || 0), 0)
-  const totalWagered = Object.values(huntState).reduce((s, h) => s + (h?.totalWagered || 0), 0)
+  const totalWageredFromHistory = betHistory.reduce((sum, b) => sum + (Number(b?.betAmount) || 0), 0)
+  const totalWageredFromState = Object.values(huntState).reduce((s, h) => s + (h?.totalWagered || 0), 0)
+  const totalWagered = totalWageredFromHistory > 0 ? totalWageredFromHistory : totalWageredFromState
+  const progressRows = useMemo(() => {
+    return selectedSlugs
+      .map((slug) => ({ slot: slots.find((s) => s.slug === slug), state: huntState[slug] }))
+      .filter(({ slot }) => slot)
+  }, [selectedSlugs, slots, huntState])
+  const slotWageredByHistory = useMemo(() => {
+    const map = {}
+    for (const b of betHistory) {
+      const slug = b?.slotSlug
+      if (!slug) continue
+      map[slug] = (map[slug] || 0) + (Number(b?.betAmount) || 0)
+    }
+    return map
+  }, [betHistory])
+  const sliderBonusSlots = useMemo(() => {
+    const source = huntComplete ? wheelSlots : selectedSlots
+    return source.filter((slot) => hasBonusSlugs.has(slot.slug))
+  }, [huntComplete, wheelSlots, selectedSlots, hasBonusSlugs])
+  const openedBonusCount = useMemo(
+    () => sliderBonusSlots.filter((slot) => wheelOpenedSlugs.has(slot.slug)).length,
+    [sliderBonusSlots, wheelOpenedSlugs]
+  )
+  const openingEntries = useMemo(() => Object.values(bonusOpeningResults), [bonusOpeningResults])
+  const resolvedOpeningEntries = useMemo(
+    () => openingEntries.filter((entry) => entry?.status === 'resolved' && Number(entry?.payoutMinor) > 0),
+    [openingEntries]
+  )
+  const openingInProgressEntries = useMemo(
+    () => openingEntries.filter((entry) => entry?.status === 'opened' || entry?.status === 'closed_pending'),
+    [openingEntries]
+  )
+  const huntStartBalanceMinor = useMemo(() => {
+    if (huntStartBalanceMinorSnapshot != null && Number.isFinite(Number(huntStartBalanceMinorSnapshot))) {
+      return Number(huntStartBalanceMinorSnapshot)
+    }
+    const firstWithBalance = betHistory.find((b) => b?.balance != null)
+    if (!firstWithBalance) return null
+    const firstBet = Number(firstWithBalance?.betAmount || 0)
+    const firstWin = firstWithBalance?.stoppedBonus ? 0 : Number(firstWithBalance?.winAmount || 0)
+    return Number(firstWithBalance.balance || 0) + firstBet - firstWin
+  }, [betHistory, huntStartBalanceMinorSnapshot])
+  const latestKnownBalanceMinor = useMemo(() => {
+    if (currentBalance != null && Number.isFinite(Number(currentBalance))) return Number(currentBalance)
+    const latestWithBalance = [...betHistory].reverse().find((b) => b?.balance != null)
+    if (latestWithBalance?.balance != null && Number.isFinite(Number(latestWithBalance.balance))) {
+      return Number(latestWithBalance.balance)
+    }
+    return null
+  }, [currentBalance, betHistory])
+  const openingReferenceBalanceMinor = useMemo(() => {
+    if (firstOpeningBalanceMinor != null && Number.isFinite(Number(firstOpeningBalanceMinor))) {
+      return Number(firstOpeningBalanceMinor)
+    }
+    // Falls das erste Opening-Snapshot fehlte: best effort mit aktueller/letzter bekannter Balance.
+    if (openingEntries.length > 0 && latestKnownBalanceMinor != null) return Number(latestKnownBalanceMinor)
+    return null
+  }, [firstOpeningBalanceMinor, openingEntries.length, latestKnownBalanceMinor])
+  const openingCostMinorFromBalance = useMemo(() => {
+    if (huntStartBalanceMinor == null || openingReferenceBalanceMinor == null) return null
+    return Math.max(0, Math.round(Number(huntStartBalanceMinor) - Number(openingReferenceBalanceMinor)))
+  }, [huntStartBalanceMinor, openingReferenceBalanceMinor])
+  const openingTotalWinMinor = resolvedOpeningEntries.reduce((sum, entry) => sum + Number(entry.payoutMinor || 0), 0)
+  const openingTotalWinUsd = toUsd(openingTotalWinMinor, statsCurrency)
+  // Opening-Stats basieren ausschließlich auf Balance-Differenz (nicht auf Gesamt-Wager/Umsatz).
+  const openingCostUsd = toUsd(openingCostMinorFromBalance ?? 0, statsCurrency)
+  const openingProfitUsd = openingTotalWinUsd - openingCostUsd
+  const openingProfitPct = openingCostUsd > 0 ? (openingProfitUsd / openingCostUsd) * 100 : 0
+  const remainingForBreakEvenUsd = Math.max(0, openingCostUsd - openingTotalWinUsd)
+  const remainingBonusCount = Math.max(0, (sliderBonusSlots?.length || 0) - resolvedOpeningEntries.length)
+  const avgNeedPerBonusUsd = remainingBonusCount > 0 ? remainingForBreakEvenUsd / remainingBonusCount : 0
+  const avgStakeMinor = useMemo(() => {
+    const openedResolvedStakes = resolvedOpeningEntries
+      .map((entry) => Number(entry?.wagerMinor || 0))
+      .filter((n) => Number.isFinite(n) && n > 0)
+    if (openedResolvedStakes.length > 0) {
+      return openedResolvedStakes.reduce((sum, n) => sum + n, 0) / openedResolvedStakes.length
+    }
+    const bets = betHistory.filter((b) => Number(b?.betAmount) > 0)
+    if (bets.length === 0) return Number(betAmount || 0)
+    return bets.reduce((sum, b) => sum + Number(b.betAmount || 0), 0) / bets.length
+  }, [betAmount, betHistory, resolvedOpeningEntries])
+  const avgStakeUsd = toUsd(avgStakeMinor, statsCurrency)
+  const avgNeedMultiPerBonus = avgStakeUsd > 0 ? avgNeedPerBonusUsd / avgStakeUsd : 0
+  const allOpenedAndResolved = (sliderBonusSlots?.length || 0) > 0 && resolvedOpeningEntries.length >= sliderBonusSlots.length
+
   const getDisplayWin = (b) => {
-    const win = b.winAmount ?? 0
-    if (b.isBonus && b.stoppedBonus && win === 0) return 0
+    if (b?.stoppedBonus) return 0
+    const win = b?.winAmount ?? 0
     return win
   }
 
@@ -696,9 +1323,112 @@ export default function BonusHuntControl({
 
   return (
     <div className="bonushunt-root" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div
+        className="casino-card"
+        style={{
+          padding: '1rem 1.25rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.5rem',
+          border: '1px solid var(--border-subtle)',
+          background:
+            'linear-gradient(120deg, rgba(var(--accent-rgb), 0.1) 0%, rgba(var(--accent-rgb), 0.03) 40%, transparent 100%), var(--bg-card)',
+        }}
+      >
+        <h2
+          className="text-sm font-semibold"
+          style={{ color: 'var(--text)', fontFamily: 'var(--font-heading)', letterSpacing: '0.04em' }}
+        >
+          Bonus hunt
+        </h2>
+        <p className="text-xs text-[var(--text-muted)]" style={{ maxWidth: '42rem' }}>
+          Pick games and stake, run the hunt, then open found bonuses (wheel, auto-open, or manual). Use the right column for
+          live progress.
+        </p>
+        <ol
+          className="bonushunt-stepper"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+            gap: '0.5rem',
+            listStyle: 'none',
+            margin: 0,
+            padding: 0,
+            marginTop: '0.25rem',
+          }}
+        >
+          {['Pick slots', 'Currency & bet', 'Run', 'Open bonuses'].map((label, i) => (
+            <li
+              key={label}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                fontSize: '0.7rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                color: 'var(--text-muted)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-md, 8px)',
+                padding: '0.35rem 0.5rem',
+                background: 'rgba(0,0,0,0.15)',
+              }}
+            >
+              <span
+                style={{
+                  minWidth: '1.1rem',
+                  height: '1.1rem',
+                  borderRadius: 999,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'rgba(var(--accent-rgb), 0.2)',
+                  color: 'var(--accent)',
+                  fontWeight: 800,
+                  fontSize: '0.65rem',
+                }}
+              >
+                {i + 1}
+              </span>
+              {label}
+            </li>
+          ))}
+        </ol>
+      </div>
       {(selectedSlots.length >= 2 || (huntComplete && wheelSlots.length >= 2)) && (
         <div className="casino-card" style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '1.25rem' }}>
-          {huntComplete && <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.02em' }}>Bonus Opening – Welchen Bonus als nächstes?</div>}
+          {huntComplete && <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.02em' }}>Bonus opening - choose the next bonus</div>}
+          {sliderBonusSlots.length > 0 && (
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+              Opened: <span style={{ color: 'var(--accent)' }}>{openedBonusCount}</span> / {sliderBonusSlots.length}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={autoOpenGame}
+                onChange={(e) => setAutoOpenGame(e.target.checked)}
+              />
+              Auto Open Game
+            </label>
+            <button
+              type="button"
+              className={styles.btnSecondary}
+              disabled={!lastWheelWinner?.slug}
+              onClick={() => {
+                if (!lastWheelWinner?.slug) return
+                void openBonusGamePopup(lastWheelWinner, 'manual')
+              }}
+            >
+              Open Game
+            </button>
+            {lastWheelWinner?.name && (
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                Current: <strong style={{ color: 'var(--text)' }}>{lastWheelWinner.name}</strong>
+              </span>
+            )}
+          </div>
           <SlotSlider
             slots={huntComplete ? wheelSlots : selectedSlots}
             bonusSlots={huntComplete ? wheelSlots.filter(slot => hasBonusSlugs.has(slot.slug)) : selectedSlots.filter(slot => hasBonusSlugs.has(slot.slug))}
@@ -706,9 +1436,10 @@ export default function BonusHuntControl({
             openedSlugs={wheelOpenedSlugs}
             onWinner={(slot) => {
               if (!slot?.slug) return
+              setLastWheelWinner(slot)
               setWheelOpenedSlugs((prev) => new Set([...prev, slot.slug]))
-              if (window.electronAPI?.openSlotPopup) {
-                void window.electronAPI.openSlotPopup({ slug: slot.slug, locale: 'de' }).catch(() => {})
+              if (autoOpenGame) {
+                void openBonusGamePopup(slot, 'auto')
               }
               if (huntComplete) {
                 // Bei Bonus Opening entfernen wir ihn NICHT aus hasBonusSlugs,
@@ -722,32 +1453,32 @@ export default function BonusHuntControl({
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.25rem', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(360px, 100%), 1fr))', gap: '1.25rem', alignItems: 'start' }}>
       <div className="casino-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: 0 }}>
         <h3 className="casino-card-header" style={{ marginBottom: '0.75rem' }}>
           <span className="casino-card-header-accent"></span>
-          Slots & Einstellungen
+          Slots & Settings
         </h3>
         <div className={styles.section}>
-          <span className={styles.label}>Slots (anklicken zum Auswählen)</span>
+          <span className={styles.label}>Slots (click to select)</span>
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.35rem' }}>
           <select value={loadedSetId} onChange={(e) => onLoadSlotSet?.(e.target.value)} className={styles.select} style={{ width: 'auto', minWidth: 120 }} disabled={isRunning}>
-            <option value="">— Slot-Set laden —</option>
+            <option value="">— Load slot set —</option>
             {slotSets.map((s) => (
               <option key={s.id} value={s.id}>{s.name} ({(s.slugs || s.slots || []).length})</option>
             ))}
           </select>
           <button type="button" onClick={() => onSaveSlotSet?.()} disabled={isRunning || selectedSlugs.length === 0} className={styles.btnSecondary}>
-            Speichern
+            Save
           </button>
           {loadedSetId && (
             <button type="button" onClick={() => onDeleteSlotSet?.()} disabled={isRunning} className={styles.btnSecondary} style={{ color: 'var(--error)' }}>
-              Löschen
+              Delete
             </button>
           )}
           <span style={{ flex: 1 }} />
-          <button type="button" onClick={selectAll} className={styles.btnSecondary} disabled={isRunning}>Alle</button>
-          <button type="button" onClick={selectNone} className={styles.btnSecondary} disabled={isRunning}>Keine</button>
+          <button type="button" onClick={selectAll} className={styles.btnSecondary} disabled={isRunning}>All</button>
+          <button type="button" onClick={selectNone} className={styles.btnSecondary} disabled={isRunning}>None</button>
           <button type="button" onClick={handleUncheckAllBonus} className={styles.btnSecondary} style={{ color: 'var(--text)' }} disabled={isRunning}>Uncheck Bonus</button>
           <button
             type="button"
@@ -757,7 +1488,7 @@ export default function BonusHuntControl({
             }}
             className={styles.btnSecondary} style={{ padding: '0.35rem 0.5rem', fontSize: '0.75rem' }}
             disabled={isRunning || selectedSlots.length === 0}
-            title="Namen für WheelOfNames.com kopieren (ein Name pro Zeile)"
+            title="Copy names for WheelOfNames.com (one name per line)"
           >
             🎡 Copy
           </button>
@@ -766,6 +1497,7 @@ export default function BonusHuntControl({
           slots={slots}
           selectedSlugs={selectedSlugs}
           onToggle={toggleSlot}
+          hasBonusSlugs={hasBonusSlugs}
           favorites={favorites}
           onToggleFavorite={onToggleFavorite}
           disabled={isRunning}
@@ -773,7 +1505,7 @@ export default function BonusHuntControl({
         </div>
 
         <div className={`${styles.section} ${styles.sectionBlock}`}>
-        <span className={styles.label} style={{ marginBottom: '0.5rem' }}>Währung & Einsatz</span>
+        <span className={styles.label} style={{ marginBottom: '0.5rem' }}>Currency & Bet</span>
         <div className={styles.row} style={{ flexWrap: 'wrap', marginBottom: '0.35rem' }}>
           <select value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'usdc')} onChange={(e) => setSourceCurrency(e.target.value)} className={styles.select} style={{ minWidth: 90, flex: 'none' }} disabled={isRunning}>
             {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
@@ -793,38 +1525,38 @@ export default function BonusHuntControl({
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
             <input type="checkbox" checked={saveBonusLogs} onChange={(e) => handleToggleBonusLogs(e.target.checked)} disabled={isRunning} />
-            Bonus-Log
+            Bonus log
           </label>
           <button type="button" onClick={() => exportBonusLogsAsFile()} className={styles.btnSecondary} disabled={isRunning}>Export</button>
-          <button type="button" onClick={() => { if (window.confirm('Bonus-Logs löschen?')) clearBonusLogs() }} className={styles.btnSecondary} style={{ color: 'var(--error)' }} disabled={isRunning}>Löschen</button>
+          <button type="button" onClick={() => { if (window.confirm('Delete bonus logs?')) clearBonusLogs() }} className={styles.btnSecondary} style={{ color: 'var(--error)' }} disabled={isRunning}>Delete</button>
         </div>
         <div className={styles.row} style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
-            Max Spins: <input type="number" min={0} value={maxSpinsPerSlot || ''} onChange={(e) => setMaxSpinsPerSlot(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0=∞" className={styles.select} style={{ width: 52 }} disabled={isRunning} title="0 = unendlich" />
+            Max Spins: <input type="number" min={0} value={maxSpinsPerSlot || ''} onChange={(e) => setMaxSpinsPerSlot(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0=∞" className={styles.select} style={{ width: 52 }} disabled={isRunning} title="0 = unlimited" />
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Stopp bei Verlust in Währung">
-            Verlust: <input type="number" min={0} value={maxLossLimit || ''} onChange={(e) => setMaxLossLimit(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 52 }} disabled={isRunning} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Stop after loss limit in selected currency">
+            Loss: <input type="number" min={0} value={maxLossLimit || ''} onChange={(e) => setMaxLossLimit(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 52 }} disabled={isRunning} />
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
             <input type="checkbox" checked={stopOnMulti} onChange={(e) => setStopOnMulti(e.target.checked)} disabled={isRunning} />
             Multi <input type="number" min={2} value={stopOnMultiplier} onChange={(e) => setStopOnMultiplier(Math.max(2, parseInt(e.target.value) || 2))} className={styles.select} style={{ width: 44 }} disabled={isRunning || !stopOnMulti} />×
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Scatter-Minimum für Bonus-Stopp">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Minimum scatter count to stop on bonus">
             Scatter: <select value={minScatterForStop} onChange={(e) => setMinScatterForStop(Number(e.target.value))} className={styles.select} style={{ width: 90 }} disabled={isRunning}>
-              <option value={0}>Jeder</option>
+              <option value={0}>Any</option>
               <option value={3}>3+</option>
               <option value={4}>4+</option>
               <option value={5}>5</option>
             </select>
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Gamble bei Bonus">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Gamble when bonus triggers">
             <input type="checkbox" checked={gambleOption} onChange={(e) => setGambleOption(e.target.checked)} disabled={isRunning} />
             Gamble
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
             Refresh: <input type="number" min={0} value={sessionRefreshSpins || ''} onChange={(e) => setSessionRefreshSpins(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 48 }} disabled={isRunning} />
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Mehrere Slots parallel">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Run multiple slots in parallel">
             <input type="checkbox" checked={parallelHuntEnabled} onChange={(e) => setParallelHuntEnabled(e.target.checked)} disabled={isRunning} />
             <input type="range" min={2} value={maxParallelSlots} onChange={(e) => setMaxParallelSlots(Math.max(2, parseInt(e.target.value) || 2))} style={{ width: 80 }} disabled={isRunning || !parallelHuntEnabled} />
             <span style={{ minWidth: 16 }}>{maxParallelSlots}</span> parallel
@@ -836,32 +1568,36 @@ export default function BonusHuntControl({
           {!isRunning ? (
             <>
               <button onClick={() => runHunt()} className={styles.btn} disabled={selectedSlugs.length === 0}>
-                Bonus Hunt starten ({selectedSlugs.length} Slot{selectedSlugs.length !== 1 ? 's' : ''})
+                Start bonus hunt ({selectedSlugs.length} slot{selectedSlugs.length !== 1 ? 's' : ''})
               </button>
               {skippedCount > 0 && Object.keys(huntState).length > 0 && (
                 <button onClick={handleRetrySkipped} className={styles.btnSecondary}>
-                  Erneut versuchen ({skippedCount} übrig)
+                  Retry ({skippedCount} remaining)
                 </button>
               )}
             </>
           ) : (
             <button onClick={stopHunt} className={`${styles.btn} ${styles.btnStop}`}>
-              Stoppen
+              Stop
             </button>
           )}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', cursor: 'pointer' }} title="Console-Logs für Balance, Wins und HouseBet-Matching">
-              <input
-                type="checkbox"
-                checked={BONUS_HUNT_DEBUG}
-                onChange={(e) => {
-                  try { window.localStorage.setItem('bonus_hunt_debug', e.target.checked ? '1' : '0') } catch (_) {}
-                  window.location.reload()
-                }}
-                style={{ marginRight: '0.25rem' }}
-              />
-              Debug
-            </label>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <details style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              <summary style={{ cursor: 'pointer', listStyle: 'none', userSelect: 'none' }}>Advanced</summary>
+              <div style={{ marginTop: '0.5rem', padding: '0.5rem', border: '1px solid var(--border-subtle)', borderRadius: 8, background: 'var(--bg-deep)' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }} title="Verbose console-style logs; toggling reloads the app">
+                  <input
+                    type="checkbox"
+                    checked={BONUS_HUNT_DEBUG}
+                    onChange={(e) => {
+                      try { window.localStorage.setItem('bonus_hunt_debug', e.target.checked ? '1' : '0') } catch (_) {}
+                      window.location.reload()
+                    }}
+                  />
+                  Debug logging (page reloads)
+                </label>
+              </div>
+            </details>
             <TipMenu />
           </div>
         </div>
@@ -872,16 +1608,16 @@ export default function BonusHuntControl({
       <div className="casino-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', minWidth: 0 }}>
         <h3 className="casino-card-header" style={{ marginBottom: 0 }}>
           <span className="casino-card-header-accent"></span>
-          Fortschritt & Statistik
+          Progress & Statistics
         </h3>
       {Object.keys(huntState).length === 0 && !isRunning && (
         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-          Starte einen Bonus Hunt, um Fortschritt, Balance und Spins hier zu sehen.
+          Start a bonus hunt to see progress, balance and spins here.
         </p>
       )}
       {(currentBalance != null || isRunning) && (
         <div style={{ marginTop: '1rem', marginBottom: '0.5rem' }}>
-          <span className={styles.label}>Kontostand</span>
+          <span className={styles.label}>Balance</span>
           <div className={styles.balanceBadge}>
             {currentBalance != null
               ? formatWithUsd(currentBalance, currencyCode || targetCurrency || sourceCurrency)
@@ -893,75 +1629,165 @@ export default function BonusHuntControl({
       {Object.keys(huntState).length > 0 && (
         <div className={styles.progressList}>
           <div className={styles.statsTitle}>
-            Fortschritt {doneCount}/{Object.keys(huntState).length}
+            Progress {doneCount}/{Object.keys(huntState).length}
             {skippedCount > 0 && (
               <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: '0.5rem' }}>
-                ({skippedCount} noch offen)
+                    ({skippedCount} skipped/stopped)
               </span>
             )}
           </div>
-          {selectedSlugs
-            .map((slug) => ({ slot: slots.find((s) => s.slug === slug), state: huntState[slug] }))
-            .filter(({ slot }) => slot)
-            .map(({ slot, state }, i, arr) => (
-              <div
-                key={slot.slug}
-                className={`${styles.progressItem} ${i === arr.length - 1 ? styles.progressItemLast : ''}`.trim()}
-              >
-                <span>
-                  {wheelOpenedSlugs.has(slot.slug) ? (
-                    <span className={styles.progressOpened}>🎁 OPEN</span>
-                  ) : hasBonusSlugs.has(slot.slug) ? (
-                    <span className={styles.progressCheck}>✓</span>
-                  ) : state?.status === 'done' && !state?.skipped && !state?.error && !state?.balanceEmpty ? (
-                    <span className={styles.progressCheck}>✓</span>
-                  ) : state?.status === 'done' && (state?.skipped || state?.error || state?.balanceEmpty) ? (
-                    <span className={styles.progressCross}>✗</span>
-                  ) : state?.status === 'spinning' ? (
-                    <span className={styles.progressSpinning}>⟳</span>
-                  ) : (
-                    <span className={styles.progressWait}>○</span>
-                  )}
-                </span>
-                <span style={{ flex: 1 }}>
-                  {slot.name}
-                  {state?.spins != null && state.spins > 0 && (
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
-                      ({state.spins} Spins{state.scatterCount != null ? `, ${state.scatterCount} Scatter` : ''}{state.totalWagered ? `, ${format(state.totalWagered)}` : ''})
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.45rem' }}>
+            {progressRows.map(({ slot, state }) => {
+              const opened = wheelOpenedSlugs.has(slot.slug)
+              const hasBonusState =
+                hasBonusSlugs.has(slot.slug) ||
+                Number(state?.bonusWin || 0) > 0 ||
+                Number(state?.multiWin || 0) > 0 ||
+                (state?.status === 'done' && Number(state?.scatterCount || 0) >= 3)
+              const running = state?.status === 'spinning'
+              const failed =
+                state?.status === 'done' &&
+                !hasBonusState &&
+                (state?.skipped || state?.error || state?.balanceEmpty)
+              const done = (state?.status === 'done' && !failed) || hasBonusState
+              const marker = opened ? 'OPEN' : running ? 'RUN' : failed ? 'ERR' : done ? 'DONE' : 'WAIT'
+              const markerColor = opened
+                ? 'var(--accent)'
+                : running
+                  ? 'var(--accent)'
+                  : failed
+                    ? 'var(--error)'
+                    : done
+                      ? 'var(--success)'
+                      : 'var(--text-muted)'
+              return (
+                <div
+                  key={slot.slug}
+                  style={{
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'color-mix(in srgb, var(--bg-elevated) 90%, rgba(var(--accent-rgb), 0.1))',
+                    padding: '0.45rem 0.55rem',
+                    minWidth: 0,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.35rem', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: markerColor }}>{marker}</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>{state?.spins || 0} Spins</span>
+                  </div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={slot.name}>
+                    {slot.name}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.6rem', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              Bonus opened: <strong style={{ color: 'var(--accent)' }}>{openedBonusCount}</strong> / {sliderBonusSlots.length || 0}
+            </span>
+            <button type="button" className={styles.btnSecondary} onClick={() => setShowDetailedProgress((v) => !v)}>
+              {showDetailedProgress ? 'Hide details' : 'Show details'}
+            </button>
+          </div>
+
+          {showDetailedProgress && progressRows.map(({ slot, state }, i, arr) => (
+            <div
+              key={`${slot.slug}_detail`}
+              className={`${styles.progressItem} ${i === arr.length - 1 ? styles.progressItemLast : ''}`.trim()}
+            >
+              <span>
+                {wheelOpenedSlugs.has(slot.slug) ? (
+                  <span className={styles.progressOpened}>🎁 OPEN</span>
+                ) : hasBonusSlugs.has(slot.slug) ? (
+                  <span className={styles.progressCheck}>✓</span>
+                ) : state?.status === 'done' && !state?.skipped && !state?.error && !state?.balanceEmpty ? (
+                  <span className={styles.progressCheck}>✓</span>
+                ) : state?.status === 'done' && (state?.skipped || state?.error || state?.balanceEmpty) ? (
+                  <span className={styles.progressCross}>✗</span>
+                ) : state?.status === 'spinning' ? (
+                  <span className={styles.progressSpinning}>⟳</span>
+                ) : (
+                  <span className={styles.progressWait}>○</span>
+                )}
+              </span>
+              <span style={{ flex: 1 }}>
+                {slot.name}
+                {state?.spins != null && state.spins > 0 && (
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
+                    ({state.spins} Spins{state.scatterCount != null ? `, ${state.scatterCount} Scatter` : ''}{(slotWageredByHistory[slot.slug] || state.totalWagered) ? `, ${format(slotWageredByHistory[slot.slug] || state.totalWagered)}` : ''})
+                  </span>
+                )}
+              </span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0, cursor: isRunning ? 'default' : 'pointer', fontSize: '0.8rem', color: 'var(--text-muted)' }} title="Skip this slot in the next hunt (prevents session timeouts)">
+                <input
+                  type="checkbox"
+                  checked={hasBonusSlugs.has(slot.slug)}
+                  onChange={() => handleToggleHasBonus(slot.slug)}
+                  disabled={isRunning}
+                />
+                has bonus
+              </label>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(openedBonusCount > 0 || openingEntries.length > 0) && (
+        <div className={styles.statsCard} style={{ marginTop: '0.2rem' }}>
+          <div className={styles.statsTitle} style={{ marginBottom: '0.55rem' }}>Bonus Opening Live Stats</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(140px, 1fr))', gap: '0.4rem 0.75rem', fontSize: '0.84rem' }}>
+            <span>Current total win</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--success)' }}>${openingTotalWinUsd.toFixed(2)}</span>
+            <span>Profit / Loss</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: openingProfitUsd >= 0 ? 'var(--success)' : 'var(--error)' }}>
+              {openingProfitUsd >= 0 ? '+' : ''}${openingProfitUsd.toFixed(2)} ({openingProfitPct >= 0 ? '+' : ''}{openingProfitPct.toFixed(1)}%)
+            </span>
+            <span>Break-even missing</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>
+              ${remainingForBreakEvenUsd.toFixed(2)}
+            </span>
+            <span>Need avg per bonus</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>
+              {remainingBonusCount > 0 ? `${avgNeedMultiPerBonus.toFixed(1)}x / $${avgNeedPerBonusUsd.toFixed(2)}` : 'Reached'}
+            </span>
+          </div>
+
+          {openingInProgressEntries.length > 0 && (
+            <div style={{ marginTop: '0.65rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              Waiting for payout confirmation: {openingInProgressEntries.map((entry) => entry.slotName || entry.slotSlug).join(', ')}
+            </div>
+          )}
+
+          {resolvedOpeningEntries.length > 0 && (
+            <div style={{ marginTop: '0.75rem', borderTop: '1px solid var(--border)', paddingTop: '0.55rem' }}>
+              <div className={styles.statsTitle} style={{ marginBottom: '0.4rem' }}>Bonus Opening Logger</div>
+              <div style={{ display: 'grid', gap: '0.3rem' }}>
+                {[...resolvedOpeningEntries].slice().reverse().map((entry) => (
+                  <div key={`openlog_${entry.slotSlug}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.6rem', fontSize: '0.8rem' }}>
+                    <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.slotName || entry.slotSlug}</span>
+                    <span style={{ fontFamily: 'monospace', color: 'var(--text)' }}>
+                      {Number(entry.multiplier || 0).toFixed(1)}x ${toUsd(entry.payoutMinor || 0, statsCurrency).toFixed(2)}
                     </span>
-                  )}
-                  {state?.error && (
-                    <span style={{ color: 'var(--error)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
-                      {state.error}
-                    </span>
-                  )}
-                  {state?.skipped && (
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
-                      (Max erreicht)
-                    </span>
-                  )}
-                  {state?.stoppedLoss && (
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
-                      (Verlust-Limit)
-                    </span>
-                  )}
-                  {state?.balanceEmpty && (
-                    <span style={{ color: 'var(--error)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
-                      (Balance leer)
-                    </span>
-                  )}
-                </span>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0, cursor: isRunning ? 'default' : 'pointer', fontSize: '0.8rem', color: 'var(--text-muted)' }} title="Bei nächstem Hunt überspringen (verhindert Session-Timeouts)">
-                  <input
-                    type="checkbox"
-                    checked={hasBonusSlugs.has(slot.slug)}
-                    onChange={() => handleToggleHasBonus(slot.slug)}
-                    disabled={isRunning}
-                  />
-                  hat Bonus
-                </label>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+          )}
+
+          {allOpenedAndResolved && (
+            <div style={{ marginTop: '0.85rem', padding: '0.7rem 0.8rem', borderRadius: 'var(--radius-md)', border: `1px solid ${openingProfitUsd >= 0 ? 'var(--success)' : 'var(--error)'}`, background: openingProfitUsd >= 0 ? 'rgba(0,255,136,0.08)' : 'rgba(255,51,102,0.08)' }}>
+              <div style={{ fontSize: '0.9rem', fontWeight: 700, color: openingProfitUsd >= 0 ? 'var(--success)' : 'var(--error)' }}>
+                {openingProfitUsd >= 0 ? 'Profit' : 'Loss'}: {openingProfitUsd >= 0 ? '+' : ''}${openingProfitUsd.toFixed(2)} ({openingProfitPct >= 0 ? '+' : ''}{openingProfitPct.toFixed(1)}%)
+              </div>
+              {remainingForBreakEvenUsd > 0 && (
+                <div style={{ marginTop: '0.3rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Still need avg {avgNeedMultiPerBonus.toFixed(1)}x / ${avgNeedPerBonusUsd.toFixed(2)} per remaining bonus to break even.
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1013,11 +1839,11 @@ export default function BonusHuntControl({
                 textAlign: 'center',
               }}>
                 <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--accent)', marginBottom: '0.5rem' }}>
-                  Bonus Hunt abgeschlossen
+                  Bonus hunt complete
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.9rem' }}>
                   <span>
-                    Netto: <strong style={{ color: totalNet >= 0 ? 'var(--success)' : 'var(--error)' }}>
+                    Net: <strong style={{ color: totalNet >= 0 ? 'var(--success)' : 'var(--error)' }}>
                       {totalNet >= 0 ? '+' : ''}{format(totalNet)}
                     </strong>
                   </span>
@@ -1031,15 +1857,20 @@ export default function BonusHuntControl({
                 </div>
               </div>
             )}
-            <div className={styles.statsTitle}>Bonus Hunt Statistik</div>
+            <div className={styles.statsTitle}>Bonus Hunt Statistics</div>
+          {(statsCurrencyRateMissing || fxMissingCount > 0) && (
+            <div style={{ marginBottom: '0.65rem', fontSize: '0.75rem', color: 'var(--warning, #f59e0b)' }}>
+              FX Hinweis: {statsCurrencyRateMissing ? `fehlender Rate fuer ${String(statsCurrency).toUpperCase()}` : `${fxMissingCount} Eintrag(e) ohne FX-Rate`}
+            </div>
+          )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', fontSize: '0.95rem', marginBottom: slotStats.length > 1 ? '1rem' : 0 }}>
-              <span>Spins gesamt</span>
+              <span>Total spins</span>
               <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{totalSpins}</span>
-              <span>Gesamteinsatz</span>
+              <span>Total wagered</span>
               <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{format(totalWagered)}</span>
-              <span>Gesamtgewinn</span>
+              <span>Total win</span>
               <span style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--success)' }}>{format(totalWon)}</span>
-              <span>Netto</span>
+              <span>Net</span>
               <span style={{ fontFamily: 'monospace', fontWeight: 600, color: totalNet >= 0 ? 'var(--success)' : 'var(--error)' }}>
                 {totalNet >= 0 ? '+' : ''}{format(totalNet)}
               </span>
@@ -1066,8 +1897,8 @@ export default function BonusHuntControl({
                   <span>Slot</span>
                   <span>Spins</span>
                   <span>Max ×</span>
-                  <span>Einsatz</span>
-                  <span>Netto</span>
+                  <span>Wagered</span>
+                  <span>Net</span>
                 </div>
                 {slotStats.map((st) => (
                   <div
@@ -1102,7 +1933,7 @@ export default function BonusHuntControl({
       })()}
 
       {betHistory.length > 0 && (() => {
-        const chartColors = ['#00d4ff', '#a3e635', '#fbbf24', '#a78bfa', '#fb7185', '#38bdf8']
+        const chartColors = ['#d12b3a', '#f97316', '#fb7185', '#fbbf24', '#a78bfa', '#ef4444']
         const slotKeys = [...new Set(betHistory.map((b) => b.slotSlug || b.slotName).filter(Boolean))]
         const slotNames = {}
         betHistory.forEach((b) => {
@@ -1112,12 +1943,12 @@ export default function BonusHuntControl({
 
         if (slotKeys.length === 0) return null
 
-        const padL = 48
-        const padR = 12
-        const padT = 14
-        const padB = 24
-        const w = 340
-        const h = 130
+        const padL = 34
+        const padR = 8
+        const padT = 8
+        const padB = 16
+        const w = 268
+        const h = 82
         const chartW = w - padL - padR
         const chartH = h - padT - padB
 
@@ -1133,17 +1964,19 @@ export default function BonusHuntControl({
           const range = maxB - minB || 0.01
           const divisor = balances.length > 1 ? balances.length - 1 : 1
           const pts = balances.map((v, i) => [toChartX(i, divisor), toChartY(toUsd(v, statsCurrency), minB, range)])
+          const smoothLinePath = smoothPathFromPoints(pts)
+          const latestPoint = pts[pts.length - 1]
           const areaPath = pts.length >= 2
             ? `M ${pts[0][0]},${pts[0][1]} L ${pts.slice(1).map(([x, y]) => `${x},${y}`).join(' ')} L ${pts[pts.length - 1][0]},${h - padB} L ${pts[0][0]},${h - padB} Z`
             : ''
           return (
             <div className={styles.chart}>
               <div className={styles.statsTitle} style={{ marginBottom: '0.75rem', color: 'rgba(255,255,255,0.9)' }}>Balance ($) · {slotNames[slotKeys[0]] || slotKeys[0]}</div>
-              <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', minHeight: 130 }}>
+              <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', minHeight: 82 }}>
                 <defs>
                   <linearGradient id="bh-balance-fill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#00d4ff" stopOpacity="0.25" />
-                    <stop offset="100%" stopColor="#00d4ff" stopOpacity="0" />
+                    <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.25" />
+                    <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
                   </linearGradient>
                 </defs>
                 {[0, 0.25, 0.5, 0.75, 1].map((t) => {
@@ -1152,8 +1985,14 @@ export default function BonusHuntControl({
                   return <g key={t}><line x1={padL} x2={w - padR} y1={y} y2={y} className={styles.chartGrid} /><text x={padL - 6} y={y + 4} fontSize="10" fill="rgba(255,255,255,0.6)" textAnchor="end" fontFamily="system-ui">${val.toFixed(2)}</text></g>
                 })}
                 {areaPath && <path d={areaPath} fill="url(#bh-balance-fill)" />}
-                <polyline fill="none" stroke="#00d4ff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" points={pts.map(([x, y]) => `${x},${y}`).join(' ')} />
-                {pts.map(([x, y], i) => <circle key={i} cx={x} cy={y} r="3" fill="#00d4ff" stroke="rgba(0,0,0,0.3)" strokeWidth="1" />)}
+                {smoothLinePath && <path d={smoothLinePath} fill="none" stroke="rgba(var(--accent-rgb), 0.22)" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />}
+                {smoothLinePath && <path d={smoothLinePath} fill="none" stroke="var(--accent)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />}
+                {latestPoint && (
+                  <g>
+                    <circle cx={latestPoint[0]} cy={latestPoint[1]} r="4.5" fill="rgba(var(--accent-rgb), 0.2)" />
+                    <circle cx={latestPoint[0]} cy={latestPoint[1]} r="2.1" fill="var(--accent)" stroke="rgba(0,0,0,0.35)" strokeWidth="0.8" />
+                  </g>
+                )}
               </svg>
             </div>
           )
@@ -1184,8 +2023,8 @@ export default function BonusHuntControl({
         const yTicks = [0, 0.25, 0.5, 0.75, 1]
         return (
           <div className={`${styles.chart} ${styles.chartMultiSlot}`}>
-            <div className={styles.statsTitle} style={{ marginBottom: '0.75rem', color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>Kumulatives Netto pro Slot ($)</div>
-            <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', minHeight: 130 }}>
+            <div className={styles.statsTitle} style={{ marginBottom: '0.75rem', color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>Cumulative net per slot ($)</div>
+            <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', minHeight: 82 }}>
               {yTicks.map((t) => {
                 const y = padT + chartH * (1 - t)
                 const val = minV + t * range
@@ -1202,19 +2041,36 @@ export default function BonusHuntControl({
                   const y = toChartY(yUsd, minV, range)
                   return [x, y]
                 })
+                const smoothLinePath = smoothPathFromPoints(points)
+                const latestPoint = points[points.length - 1]
                 return (
                   <g key={key}>
-                    <polyline
-                      fill="none"
-                      stroke={color}
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      points={points.map(([x, y]) => `${x},${y}`).join(' ')}
-                    />
-                    {points.map(([x, y], i) => (
-                      <circle key={i} cx={x} cy={y} r="3" fill={color} stroke="rgba(0,0,0,0.25)" strokeWidth="1" />
-                    ))}
+                    {smoothLinePath && (
+                      <path
+                        d={smoothLinePath}
+                        fill="none"
+                        stroke={`${color}55`}
+                        strokeWidth="4.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    )}
+                    {smoothLinePath && (
+                      <path
+                        d={smoothLinePath}
+                        fill="none"
+                        stroke={color}
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    )}
+                    {latestPoint && (
+                      <>
+                        <circle cx={latestPoint[0]} cy={latestPoint[1]} r="4.2" fill={`${color}2f`} />
+                        <circle cx={latestPoint[0]} cy={latestPoint[1]} r="1.9" fill={color} stroke="rgba(0,0,0,0.3)" strokeWidth="0.8" />
+                      </>
+                    )}
                   </g>
                 )
               })}
@@ -1239,9 +2095,9 @@ export default function BonusHuntControl({
           <div className={styles.chart}>
             <div className={styles.betRow} style={{ color: 'var(--text-muted)', fontSize: '0.7rem', borderBottom: '1px solid var(--border)' }}>
               <span>Slot</span>
-              <span>Einsatz</span>
-              <span>Gewinn</span>
-              <span>Netto</span>
+              <span>Wagered</span>
+              <span>Win</span>
+              <span>Net</span>
               <span>×</span>
             </div>
             <div className={styles.betList}>
@@ -1258,13 +2114,13 @@ export default function BonusHuntControl({
                       {b.slotName}
                     </span>
                     <span>{format(b.betAmount)}</span>
-                    <span style={{ color: b.winAmount > 0 ? 'var(--success)' : undefined }}>
-                      {b.isBonus ? 'Bonus' : format(b.winAmount)}
+                    <span style={{ color: displayWin > 0 ? 'var(--success)' : undefined }}>
+                      {b.isBonus ? 'Bonus' : format(displayWin)}
                     </span>
                     <span style={{ color: net >= 0 ? 'var(--success)' : 'var(--error)' }}>
                       {b.isBonus ? '–' : `${net >= 0 ? '+' : ''}${format(net)}`}
                     </span>
-                    <span style={{ color: b.winAmount > 0 ? 'var(--success)' : undefined }}>{b.isBonus ? '–' : `${mult}×`}</span>
+                    <span style={{ color: displayWin > 0 ? 'var(--success)' : undefined }}>{b.isBonus ? '–' : `${mult}×`}</span>
                   </div>
                 )
               })}

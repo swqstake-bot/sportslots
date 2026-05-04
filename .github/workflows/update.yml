@@ -1,6 +1,6 @@
-# Ein Klick: Build + electron-builder --publish → GitHub Release + latest.yml
-# → Nutzer mit installierter App bekommen Update über electron-updater.
-# Vorher: package.json version bumpen & pushen, dann diesen Workflow starten.
+# Build + electron-builder --publish → GitHub Release + latest.yml (electron-updater).
+# Start: GitHub → Actions → „Update“ → „Run workflow“ (Branch auswählen, z. B. main).
+# Kontinuierliche Checks ohne Publish: Workflow „CI“ (bei Push auf main / restore/**).
 
 name: Update
 
@@ -38,8 +38,13 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      - name: Quality Gate (Lint + QA Harness)
+        run: |
+          npm run lint
+          npm run qa:gate
+
       - name: Build and Publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run build
+        run: npm run build:publish

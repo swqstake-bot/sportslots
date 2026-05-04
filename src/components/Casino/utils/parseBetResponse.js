@@ -67,6 +67,9 @@ function isHacksawStyleNamedBonusRound(idRaw) {
   if (id.length < 8) return false
   if (MINI_FEATURE_IDS.has(id)) return false
   if (id.includes('make her day') || id.includes('go ahead')) return true
+  // Le Digger u. a.: 5-Scatter / Epic-Gamble → bonusFeatureWon z. B. „Gold Digger“ / GoldDigger
+  if (id.includes('gold digger')) return true
+  if (id.replace(/\s+/g, '').includes('golddigger')) return true
   return false
 }
 
@@ -350,17 +353,14 @@ export function parseBetResponse(response, betAmount) {
       usedStakeEngineWinMinor = true
     }
   }
-  if (success && !usedStakeEngineWinMinor && response?.round?.winAmountDisplay != null) {
-    // Stake Engine liefert oft den korrekten End-Betrag (Vorsicht: bei Instant Bonus könnte auch hier schon alles drin sein?)
-    // Wir vertrauen winAmountDisplay meistens, aber bei Hacksaw Instant Bonus ist es sicherer, die Events zu filtern.
-    winAmount = Number(response.round.winAmountDisplay)
-  } else if (success && !usedStakeEngineWinMinor && response?.round?.events) {
+  // Third-Party (Hacksaw etc.): `winAmountDisplay` ist nicht zuverlässig in derselben Minor-Skala wie `betAmount`;
+  // wenn Events mit `awa` existieren, die zuerst — sonst falsche Win/Net/Multi in BetList.
+  if (success && !usedStakeEngineWinMinor && Array.isArray(response?.round?.events) && response.round.events.length > 0) {
     const events = response.round.events
     const hasFeatureExit = events.some((ev) => String(ev?.etn || '').toLowerCase() === 'feature_exit')
-    // Nur filtern wenn Bonus GESTOPPT (nicht durchgespielt). Bei feature_exit = Bonus fertig → alle Events nutzen.
     let filteredEvents = events
     if (shouldStopOnBonus && !hasFeatureExit) {
-      filteredEvents = events.filter(ev => {
+      filteredEvents = events.filter((ev) => {
         const etn = String(ev?.etn || '').toLowerCase()
         if (etn.includes('_reveal') && etn.startsWith('fs')) return false
         if (etn === 'feature_exit') return false
@@ -371,6 +371,8 @@ export function parseBetResponse(response, betAmount) {
     if (winAmount === 0) {
       winAmount = extractWinFromActions(filteredEvents)
     }
+  } else if (success && !usedStakeEngineWinMinor && response?.round?.winAmountDisplay != null) {
+    winAmount = Number(response.round.winAmountDisplay)
   }
 
   const effectiveBet = Number(betAmount) || 0
