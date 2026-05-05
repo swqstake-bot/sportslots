@@ -112,6 +112,10 @@ export default function BetList({
                 canCopyShare && shareId.length > 22 ? `${shareId.slice(0, 22)}…` : shareId || ''
               const showWin = !(isBonus && b.stoppedBonus)
               const multiplier = bet > 0 ? (win / bet).toFixed(2) : '0'
+              const scatterCount =
+                b.scatterCount != null && Number.isFinite(Number(b.scatterCount))
+                  ? Number(b.scatterCount)
+                  : null
 
               return (
                 <tr
@@ -135,7 +139,11 @@ export default function BetList({
                       isHubPending && 'terminal-td--pending'
                     )}
                   >
-                    {!showWin ? ' Bonus' : isHubPending ? '…' : `${fmt(win, rowCurrency)}${rowSuffix}`}
+                    {!showWin
+                      ? `Bonus${scatterCount != null ? ` (${scatterCount}S)` : ''}`
+                      : isHubPending
+                        ? '…'
+                        : `${fmt(win, rowCurrency)}${rowSuffix}`}
                   </td>
                   {showNet && (
                     <td

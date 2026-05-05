@@ -179,6 +179,12 @@ function buildRgsUrl(rgsBase, path) {
 
 /** Bonus-/FS-Fortsetzung: kein end-round nach diesem play (sonst bricht Pick/Bonus ab). */
 export function skipStakeEngineEndRoundAfterSuccessfulPlay(round, options = {}) {
+  // Harte Stop-on-Bonus-Regel:
+  // In Hunt/Play mit aktiviertem skipContinueOnBonus darf placeBet selbst niemals
+  // end-round finalisieren. Sonst wird ein getriggerter Bonus (z. B. Wizard 2000)
+  // serverseitig direkt ausgespielt.
+  if (options?.skipContinueOnBonus) return true
+
   const fsLeft = Number(
     round?.freespinsLeft ?? round?.freeSpinsLeft ?? round?.freespins_left ?? round?.fs ?? round?.bonusRounds ?? 0
   )
@@ -193,6 +199,16 @@ export function skipStakeEngineEndRoundAfterSuccessfulPlay(round, options = {}) 
   // Bonus Hunt: wenn Trigger erkannt wurde, darf kein end-round gesendet werden,
   // sonst wird der Bonus serverseitig sofort abgeschlossen statt "liegen gelassen".
   if (options?.skipContinueOnBonus) {
+    const mode = String(round?.mode || '').toLowerCase()
+    if (mode === 'bonus') return true
+
+    const hasBonusEventSignal = evs.some((ev) => {
+      const fid = ev?.c?.bonusFeatureWon || ev?.c?.bonusFeaturewon
+      if (fid != null && String(fid).trim() !== '') return true
+      return (ev?.c?.actions || []).some((a) => String(a?.at || '').toLowerCase() === 'bonusfeaturewon')
+    })
+    if (hasBonusEventSignal) return true
+
     const stateItems = Array.isArray(round?.state) ? round.state : []
     if (stateItems.length > 0) {
       const stateTypes = new Set(
@@ -207,7 +223,7 @@ export function skipStakeEngineEndRoundAfterSuccessfulPlay(round, options = {}) 
         stateTypes.has('enterbonus')
       const autoResolvedSameSpin =
         stateTypes.has('freespintrigger') &&
-        (stateTypes.has('freespinend') || stateTypes.has('finalwin'))
+        stateTypes.has('freespinend')
       if (hasBonusTrigger && !autoResolvedSameSpin) {
         return true
       }

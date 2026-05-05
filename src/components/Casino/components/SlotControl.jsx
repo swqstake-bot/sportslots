@@ -326,8 +326,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       if (b.balance != null) lastBalance = b.balance
       if (b.currencyCode) lastCurrency = b.currencyCode
     }
-    const currentBalance = wsBalance ?? lastBalance ?? balanceFromPlaceBet
-    const balanceCurr = (wsBalance != null ? effectiveTarget : null) ?? (lastCurrency || effectiveTarget || 'usd')
+    // Live-Spin-Balance aus placeBet zuerst verwenden; wsBalance kann ohne WS-Update hinterherhängen.
+    const currentBalance = balanceFromPlaceBet ?? lastBalance ?? wsBalance
+    const balanceCurr = (lastCurrency || effectiveTarget || 'usd')
     const currentBalanceUsd = currentBalance != null ? toUsdCents(currentBalance, balanceCurr) : null
     const sessionStartBalanceUsd = sessionStartBalance != null ? toUsdCents(sessionStartBalance, effectiveTarget) : null
     return {
@@ -407,6 +408,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           betAmount: b.betAmount,
           winAmount: b.winAmount,
           isBonus: b.isBonus,
+          stoppedBonus: !!b.stoppedBonus,
+          scatterCount: b.scatterCount != null ? Number(b.scatterCount) : undefined,
           balance: b.balance,
           roundId: b.roundId,
           addedAt: b.addedAt,
@@ -464,8 +467,12 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       const entry = {
         id: now + Math.random(),
         betAmount: parsed.betAmount,
-        winAmount: parsed.winAmount ?? 0,
+        // Bei Stop-on-bonus soll der Bonus-Win nicht in BetList/Stats als "realisiert" auftauchen.
+        winAmount: parsed.stoppedBonus ? 0 : (parsed.winAmount ?? 0),
+        rawWinAmount: parsed.winAmount ?? 0,
         isBonus: parsed.isBonus,
+        stoppedBonus: !!parsed.stoppedBonus,
+        scatterCount: parsed.scatterCount != null ? Number(parsed.scatterCount) : undefined,
         balance: parsed.balance,
         currencyCode: parsed.currencyCode,
         roundId: roundId ?? undefined,
@@ -699,9 +706,13 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           spinsSinceRefresh = 0
         }
 
-        const placeBetOpts = autospinStopOnBonus && autospinMinScatter >= 1
-          ? { slotSlug: slot.slug, skipContinueIfBonusMinScatter: autospinMinScatter }
-          : { slotSlug: slot.slug }
+        const placeBetOpts = {
+          slotSlug: slot.slug,
+          ...(autospinStopOnBonus ? { skipContinueOnBonus: true } : {}),
+          ...(autospinStopOnBonus && autospinMinScatter >= 1
+            ? { skipContinueIfBonusMinScatter: autospinMinScatter }
+            : {}),
+        }
         const result = await provider.placeBet(currentSession, betAmount, extraBet, false, placeBetOpts)
         const { data, nextSeq, session: updatedSession } = result
         currentSession = updatedSession || { ...currentSession, seq: nextSeq }

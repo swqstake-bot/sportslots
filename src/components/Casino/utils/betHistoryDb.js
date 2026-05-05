@@ -49,7 +49,7 @@ function openDb() {
 /**
  * @param {string} slotSlug
  * @param {number} [limit]
- * @returns {Promise<Array<{ id: number, slotSlug: string, betAmount: number, winAmount: number, isBonus: boolean, balance?: number, roundId?: string, addedAt: number }>>}
+ * @returns {Promise<Array<{ id: number, slotSlug: string, betAmount: number, winAmount: number, rawWinAmount?: number, isBonus: boolean, stoppedBonus?: boolean, scatterCount?: number, balance?: number, roundId?: string, addedAt: number }>>}
  */
 export async function loadBetHistory(slotSlug, limit = 500) {
   const database = await openDb()
@@ -80,14 +80,17 @@ export async function loadBetHistory(slotSlug, limit = 500) {
  */
 export async function appendBet(slotSlug, entry, slotName) {
   const database = await openDb()
-  const { betAmount, winAmount, isBonus, balance, roundId, currencyCode } = entry
+  const { betAmount, winAmount, rawWinAmount, isBonus, stoppedBonus, scatterCount, balance, roundId, currencyCode } = entry
   const doc = {
     id: Date.now() + Math.random(),
     slotSlug,
     slotName: slotName ?? undefined,
     betAmount: Number(betAmount) || 0,
     winAmount: Number(winAmount) || 0,
+    rawWinAmount: rawWinAmount != null ? Number(rawWinAmount) : undefined,
     isBonus: Boolean(isBonus),
+    stoppedBonus: Boolean(stoppedBonus),
+    scatterCount: scatterCount != null ? Number(scatterCount) : undefined,
     balance: balance != null ? Number(balance) : undefined,
     currencyCode: currencyCode ?? undefined,
     roundId: roundId ?? undefined,

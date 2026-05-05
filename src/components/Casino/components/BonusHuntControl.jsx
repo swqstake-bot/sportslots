@@ -1062,7 +1062,7 @@ export default function BonusHuntControl({
             )
             const autoResolvedInSameSpin =
               stateTypes.has('freespintrigger') &&
-              (stateTypes.has('freespinend') || stateTypes.has('finalwin'))
+              stateTypes.has('freespinend')
             if (autoResolvedInSameSpin) {
               shouldStopOnBonus = false
             }
