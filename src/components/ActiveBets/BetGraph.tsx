@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { SvgNetAreaChart } from '../charts/SvgCumulativeCharts';
 
 interface BetGraphProps {
@@ -23,36 +23,43 @@ export const BetGraph: React.FC<BetGraphProps> = ({
 }) => {
   const [data, setData] = useState<DataPoint[]>(() => [{ time: Date.now(), value: currentValue }]);
   const maxDataPoints = 50;
-  const lastValueRef = useRef(currentValue);
+  const currentValueRef = useRef(currentValue);
+  useLayoutEffect(() => {
+    currentValueRef.current = currentValue
+  }, [currentValue])
 
   useEffect(() => {
     const interval = setInterval(() => {
-        setData(prev => {
-         const newPoint = { time: Date.now(), value: currentValue };
-         const newData = [...prev, newPoint];
-         if (newData.length > maxDataPoints) {
-           return newData.slice(newData.length - maxDataPoints);
-         }
-         return newData;
-       });
-    }, 2000);
+      const v = currentValueRef.current
+      setData((prev) => {
+        const newPoint = { time: Date.now(), value: v }
+        const newData = [...prev, newPoint]
+        if (newData.length > maxDataPoints) {
+          return newData.slice(newData.length - maxDataPoints)
+        }
+        return newData
+      })
+    }, 2000)
 
-    return () => clearInterval(interval);
-  }, [currentValue]);
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
-    if (currentValue !== lastValueRef.current) {
-      setData(prev => {
-        const newPoint = { time: Date.now(), value: currentValue };
-        const newData = [...prev, newPoint];
+    const id = requestAnimationFrame(() => {
+      setData((prev) => {
+        const v = currentValueRef.current
+        const lastVal = prev[prev.length - 1]?.value
+        if (lastVal === v) return prev
+        const newPoint = { time: Date.now(), value: v }
+        const newData = [...prev, newPoint]
         if (newData.length > maxDataPoints) {
-          return newData.slice(newData.length - maxDataPoints);
+          return newData.slice(newData.length - maxDataPoints)
         }
-        return newData;
-      });
-      lastValueRef.current = currentValue;
-    }
-  }, [currentValue]);
+        return newData
+      })
+    })
+    return () => cancelAnimationFrame(id)
+  }, [currentValue])
 
   if (data.length < 2) {
     return (
