@@ -20,7 +20,7 @@ import { getSlotCurrency, setSlotCurrency } from '../utils/slotCurrencyConfig'
 import { getSlotBetAmount, setSlotBetAmount, pickClosestBetLevel } from '../utils/slotBetAmountConfig'
 import { subscribeHunterSlotTargets, getHunterSlotTargetsSnapshot } from '../utils/hunterSlotTargetsBridge'
 import { fetchCurrencyRates } from '../api/stakeChallenges'
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
+import { SvgNetAreaChart } from '../../charts/SvgCumulativeCharts'
 import { useSlotRealtime } from './hooks/useSlotRealtime'
 import { getProviderSessionState } from '../api/providers/providerRuntime'
 
@@ -636,7 +636,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           parsed: { isBonus: parsed.isBonus, scatterCount: parsed.scatterCount, bonusFeatureId: parsed.bonusFeatureId },
         })
       }
-      saveSlotSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, slotSlug: slot.slug }, response: data, skipIfFull: slotHasFullSamplesRef.current })
+      saveSlotSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, slotSlug: slot.slug }, response: data, skipIfFull: true })
       if (parsed.isBonus) saveBonusSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, slotSlug: slot.slug }, response: data })
       triggerLogRefresh()
     } catch (err) {
@@ -724,7 +724,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           })
           triggerLogRefresh()
         }
-        saveSlotSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, ...placeBetOpts }, response: data, skipIfFull: slotHasFullSamplesRef.current })
+        saveSlotSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, ...placeBetOpts }, response: data, skipIfFull: true })
         if (parsed.isBonus) saveBonusSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, ...placeBetOpts }, response: data })
 
         let winAmount = parsed.winAmount
@@ -1243,10 +1243,6 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       {session && !settingsCollapsed && (
         <p style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
           Session aktiv{session.seq != null ? ` (seq: ${session.seq})` : session.index != null ? ` (idx: ${session.index})` : ''}
-          <span style={{ marginLeft: '0.5rem' }}>• Runtime:</span>
-          <span style={{ marginLeft: '0.3rem', padding: '0.1rem 0.42rem', borderRadius: 999, fontSize: '0.72rem', fontWeight: 600, ...runtimeBadgeStyle }}>
-            {providerRuntimeState}
-          </span>
           {isAutospinning && autospinProgress != null && (
             <span style={{ marginLeft: '0.5rem', color: 'var(--accent)' }}>
               • Autospin: {autospinProgress}/{autospinCount}
@@ -1321,9 +1317,6 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             .map((net, i) => ({ spin: i + 1, net }))
             .filter((_, i) => i % step === 0 || i === cumNets.length - 1),
         ]
-        const minV = Math.min(0, ...cumNets)
-        const maxV = Math.max(0, ...cumNets)
-        const padding = Math.max(1, (maxV - minV) * 0.05) || 1
         const chartHeight = settingsCollapsed ? 24 : (compact ? 38 : 80)
         const innerChartH = Math.max(16, chartHeight - (settingsCollapsed ? 18 : (compact ? 22 : 36)))
         return (
@@ -1332,36 +1325,18 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
               Session Netto · {slot.name}
               {useStatsAsReference && lastNet !== statsNet && <span style={{ marginLeft: '0.5rem', color: 'var(--text-muted)', fontWeight: 400 }}>(Chart ≠ Stats)</span>}
             </div>
-            <div style={{ width: '100%', height: innerChartH }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
-                  <defs>
-                    <linearGradient id="sessionNettoGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={strokeColor} stopOpacity={0.35} />
-                      <stop offset="100%" stopColor={strokeColor} stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="spin" hide domain={['dataMin', 'dataMax']} />
-                  <YAxis hide domain={[minV - padding, maxV + padding]} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#1a2c38', border: '1px solid var(--border)', borderRadius: 6, fontSize: '0.75rem', color: 'var(--text)' }}
-                    formatter={(val) => [formatAmount(Number(val), currencyCode), 'Netto']}
-                    labelFormatter={(spin) => `Spin ${spin}`}
-                  />
-                  <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" strokeOpacity={0.8} />
-                  <Area
-                    type="monotone"
-                    dataKey="net"
-                    stroke={strokeColor}
-                    strokeWidth={1.5}
-                    fill="url(#sessionNettoGradient)"
-                    fillOpacity={1}
-                    isAnimationActive={true}
-                    animationDuration={400}
-                    animationEasing="ease-out"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+            <div
+              style={{ width: '100%', height: innerChartH }}
+              title={`Session-Netto (letzter Punkt): ${formatAmount(lastNet, currencyCode)} · ${cumNets.length} Spins`}
+            >
+              <SvgNetAreaChart
+                values={chartData.map((d) => d.net)}
+                height={innerChartH}
+                strokeColor={strokeColor}
+                lastSignFrom={lastNet}
+                maxPathPoints={140}
+                title="Session Netto"
+              />
             </div>
           </div>
         )

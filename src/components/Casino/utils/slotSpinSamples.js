@@ -9,6 +9,7 @@ const STORAGE_KEY = 'slotbot_spin_samples'
 const BONUS_STORAGE_KEY = 'slotbot_spin_samples_bonus'
 const MAX_SAMPLES_PER_SLOT = 2
 const MAX_BONUS_SAMPLES_PER_SLOT = 5
+const knownFullSlots = new Set()
 
 function sanitize(obj) {
   if (obj == null) return null
@@ -63,9 +64,12 @@ export async function hasEnoughSamplesForSlot(slotSlug) {
   if (!slotSlug || typeof slotSlug !== 'string') return false
   const slug = slotSlug.toLowerCase().trim()
   if (!slug) return false
+  if (knownFullSlots.has(slug)) return true
   const all = await getSlotSpinSamples()
   const entries = all[slug] || []
-  return entries.length >= MAX_SAMPLES_PER_SLOT
+  const enough = entries.length >= MAX_SAMPLES_PER_SLOT
+  if (enough) knownFullSlots.add(slug)
+  return enough
 }
 
 /**
@@ -77,6 +81,7 @@ export function saveSlotSpinSample({ slotSlug, slotName, providerId, request, re
   if (!slotSlug || typeof slotSlug !== 'string') return
   const slug = slotSlug.toLowerCase().trim()
   if (!slug) return
+  if (skipIfFull && knownFullSlots.has(slug)) return
 
   const doSave = async () => {
     if (skipIfFull) {
@@ -92,6 +97,11 @@ export function saveSlotSpinSample({ slotSlug, slotName, providerId, request, re
       entries = [entry, ...entries].slice(0, MAX_SAMPLES_PER_SLOT)
       all[slug] = entries
       saveAll(all)
+      if (entries.length >= MAX_SAMPLES_PER_SLOT) knownFullSlots.add(slug)
+    }
+    if (skipIfFull) {
+      const enoughAfterSave = await hasEnoughSamplesForSlot(slug)
+      if (enoughAfterSave) knownFullSlots.add(slug)
     }
   }
   doSave().catch((err) => console.warn('[SlotSpinSamples] Save failed:', err))

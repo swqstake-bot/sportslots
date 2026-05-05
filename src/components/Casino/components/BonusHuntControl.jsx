@@ -1050,6 +1050,24 @@ export default function BonusHuntControl({
             shouldStopOnBonus = (parsed.shouldStopOnBonus ?? parsed.isBonus) && bonusMeetsScatter
           }
 
+          // StakeEngine/RGS Sonderfall (Wizard 2000 u. a.): Trigger + Ende des Bonus liegen bereits
+          // in derselben Play-Response (freeSpinTrigger + freeSpinEnd). Dann ist der Bonus serverseitig
+          // schon ausgespielt und kann nicht mehr "ungeoeffnet" gejagt werden.
+          const stateItems = data?._stakeEngine?.raw?.round?.state
+          if (shouldStopOnBonus && Array.isArray(stateItems) && stateItems.length > 0) {
+            const stateTypes = new Set(
+              stateItems
+                .map((s) => String(s?.type || '').toLowerCase().replace(/[_-]/g, ''))
+                .filter(Boolean)
+            )
+            const autoResolvedInSameSpin =
+              stateTypes.has('freespintrigger') &&
+              (stateTypes.has('freespinend') || stateTypes.has('finalwin'))
+            if (autoResolvedInSameSpin) {
+              shouldStopOnBonus = false
+            }
+          }
+
           const hitMulti = stopOnMulti && winAmount > 0 && effectiveBet > 0 && winAmount / effectiveBet >= stopOnMultiplier
 
           // Bei Stopp auf Bonus: Win nicht in Statistik – der Bonus wird vom User selbst gespielt
@@ -1170,7 +1188,7 @@ export default function BonusHuntControl({
     emitHuntRuntimeEvent('hunt.stop', { reason: 'manual-stop' })
   }
 
-  const statsCurrency = currencyCode || targetCurrency || sourceCurrency || 'usdc'
+  const statsCurrency = String(currencyCode || targetCurrency || sourceCurrency || 'usdc').toLowerCase()
   const statsCurrencyRateMissing = !isUsdLikeCurrency(statsCurrency) && !(Number(currencyRates[statsCurrency] || 0) > 0)
   const fxMissingCount = useMemo(() => {
     let count = 0
@@ -1810,15 +1828,18 @@ export default function BonusHuntControl({
         const slotStats = Object.entries(slotStatsMap).map(([k, v]) => ({ key: k, ...v, net: v.won - v.wagered }))
         const totalWon = slotStats.reduce((s, st) => s + st.won, 0)
         const totalNetFromSpins = totalWon - totalWagered
-        // Netto aus echter Balance-Änderung (Start → Ende) – korrekt auch bei gestoppten Boni
+        // Für die Haupt-KPIs immer konsistent zu Total wagered/Total win anzeigen.
         let totalNet = totalNetFromSpins
+        // Balance-Delta separat nur als Zusatzhinweis (kann abweichen bei gestoppten Bonus-Runden).
+        let balanceNet = null
         const firstWithBalance = betHistory.find((b) => b.balance != null)
         const lastWithBalance = betHistory.length > 0 ? betHistory[betHistory.length - 1] : null
         if (firstWithBalance && lastWithBalance?.balance != null) {
           const startBalance = firstWithBalance.balance + (firstWithBalance.betAmount ?? 0) - (getDisplayWin(firstWithBalance) ?? 0)
-          const balanceNet = lastWithBalance.balance - startBalance
-          totalNet = balanceNet
+          balanceNet = lastWithBalance.balance - startBalance
         }
+        const netDeltaVsBalance = balanceNet == null ? 0 : Math.abs(Number(balanceNet) - Number(totalNetFromSpins))
+        const hasNetDeltaVsBalance = balanceNet != null && netDeltaVsBalance > 1
         const roiPct = totalWagered > 0 ? ((totalNet / totalWagered) * 100).toFixed(1) : null
         const scatterDist = { 3: 0, 4: 0, 5: 0 }
         for (const b of betHistory) {
@@ -1874,6 +1895,21 @@ export default function BonusHuntControl({
               <span style={{ fontFamily: 'monospace', fontWeight: 600, color: totalNet >= 0 ? 'var(--success)' : 'var(--error)' }}>
                 {totalNet >= 0 ? '+' : ''}{format(totalNet)}
               </span>
+              {hasNetDeltaVsBalance && (
+                <>
+                  <span title="Aus Balance Start→Ende (kann bei gestoppten Bonus-Runden abweichen)">Net (Balance)</span>
+                  <span
+                    title="Aus Balance Start→Ende (kann bei gestoppten Bonus-Runden abweichen)"
+                    style={{
+                      fontFamily: 'monospace',
+                      fontWeight: 600,
+                      color: Number(balanceNet) >= 0 ? 'var(--success)' : 'var(--error)',
+                    }}
+                  >
+                    {Number(balanceNet) >= 0 ? '+' : ''}{format(Number(balanceNet))}
+                  </span>
+                </>
+              )}
               {roiPct != null && (
                 <>
                   <span>ROI</span>

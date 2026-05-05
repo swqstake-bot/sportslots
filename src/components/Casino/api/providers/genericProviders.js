@@ -190,7 +190,58 @@ async function postViaProxy(upstreamUrl, body) {
   return { ok: res.ok, status: res.status, text: async () => text, json: async () => json }
 }
 
-function wrapResponse(winAmount, currencyCode, roundId) {
+function hasGenericBonusSignal(json) {
+  if (!json || typeof json !== 'object') return false
+  const queue = [json]
+  const seen = new Set()
+  let scanned = 0
+  while (queue.length > 0 && scanned < 120) {
+    const cur = queue.shift()
+    if (!cur || typeof cur !== 'object') continue
+    if (seen.has(cur)) continue
+    seen.add(cur)
+    scanned += 1
+    for (const [kRaw, v] of Object.entries(cur)) {
+      const k = String(kRaw || '').toLowerCase()
+      if (v && typeof v === 'object') queue.push(v)
+      if (typeof v === 'string') {
+        const s = v.toLowerCase()
+        if (
+          (k.includes('feature') || k.includes('bonus') || k.includes('event') || k.includes('state')) &&
+          (s.includes('bonus') || s.includes('freespin') || s.includes('free_spin') || s === 'fs')
+        ) {
+          return true
+        }
+        continue
+      }
+      const n = Number(v)
+      if (
+        Number.isFinite(n) &&
+        n > 0 &&
+        (k.includes('freespin') ||
+          k.includes('free_spin') ||
+          k.includes('bonusspins') ||
+          k.includes('bonus_spins') ||
+          k.includes('scatter'))
+      ) {
+        return true
+      }
+      if (
+        v === true &&
+        (k.includes('bonus') ||
+          k.includes('freespin') ||
+          k.includes('free_spin') ||
+          k.includes('featuretrigger') ||
+          k.includes('feature_trigger'))
+      ) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+function wrapResponse(winAmount, currencyCode, roundId, options = {}) {
   const w = Number(winAmount || 0)
   const cc = (currencyCode || 'EUR').toUpperCase()
   return {
@@ -202,6 +253,8 @@ function wrapResponse(winAmount, currencyCode, roundId) {
       events: [{ awa: w }],
       winAmountDisplay: w,
     },
+    ...(options?.freeRoundOffer ? { freeRoundOffer: true } : {}),
+    ...(options?.raw != null ? { _genericRaw: options.raw } : {}),
   }
 }
 
@@ -264,7 +317,10 @@ function makeAdapter(path) {
           durationMs: Date.now() - t0,
         })
         if (res.ok) {
-          const data = wrapResponse(json?.win ?? 0, session.currencyCode, json?.roundId)
+          const data = wrapResponse(json?.win ?? 0, session.currencyCode, json?.roundId, {
+            freeRoundOffer: hasGenericBonusSignal(json),
+            raw: json,
+          })
           const nextSeq = (session.seq || 0) + 1
           return { data, nextSeq, session: { ...session, seq: nextSeq } }
         }
@@ -335,7 +391,10 @@ export const genericUniversal = {
               error: null,
               durationMs: Date.now() - t0,
             })
-            const data = wrapResponse(Number.isFinite(winFromJson) ? winFromJson : 0, session.currencyCode, roundId)
+            const data = wrapResponse(Number.isFinite(winFromJson) ? winFromJson : 0, session.currencyCode, roundId, {
+              freeRoundOffer: hasGenericBonusSignal(json),
+              raw: json,
+            })
             const nextSeq = (session.seq || 0) + 1
             return { data, nextSeq, session: { ...session, seq: nextSeq } }
           } catch (e) {

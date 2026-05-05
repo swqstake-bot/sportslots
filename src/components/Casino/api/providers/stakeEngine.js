@@ -116,7 +116,7 @@ function winRawFromPayoutMultiplierDisambiguated(
   return win
 }
 
-const STAKEENGINE_MIN_DELAY_MS = 50
+const STAKEENGINE_MIN_DELAY_MS = 0
 const STAKE_ENGINE_PLAY_MODE_BY_SLOT_PREFIX = {
   'coreffectinteractive-cut-n-crash': '688_base',
 }
@@ -178,16 +178,42 @@ function buildRgsUrl(rgsBase, path) {
 }
 
 /** Bonus-/FS-Fortsetzung: kein end-round nach diesem play (sonst bricht Pick/Bonus ab). */
-export function skipStakeEngineEndRoundAfterSuccessfulPlay(round) {
+export function skipStakeEngineEndRoundAfterSuccessfulPlay(round, options = {}) {
   const fsLeft = Number(
     round?.freespinsLeft ?? round?.freeSpinsLeft ?? round?.freespins_left ?? round?.fs ?? round?.bonusRounds ?? 0
   )
   if (Number.isFinite(fsLeft) && fsLeft > 0) return true
   const evs = Array.isArray(round?.events) ? round.events : []
-  return evs.some((ev) => {
+  const hasFeatureEnter = evs.some((ev) => {
     const etn = String(ev?.etn || '').toLowerCase()
     return etn === 'feature_enter' || etn === 'fs_enter' || etn === 'freespins_enter' || etn === 'fs_start'
   })
+  if (hasFeatureEnter) return true
+
+  // Bonus Hunt: wenn Trigger erkannt wurde, darf kein end-round gesendet werden,
+  // sonst wird der Bonus serverseitig sofort abgeschlossen statt "liegen gelassen".
+  if (options?.skipContinueOnBonus) {
+    const stateItems = Array.isArray(round?.state) ? round.state : []
+    if (stateItems.length > 0) {
+      const stateTypes = new Set(
+        stateItems
+          .map((s) => String(s?.type || '').toLowerCase().replace(/[_-]/g, ''))
+          .filter(Boolean)
+      )
+      const hasBonusTrigger =
+        stateTypes.has('freespintrigger') ||
+        stateTypes.has('freespinstart') ||
+        stateTypes.has('freespinenter') ||
+        stateTypes.has('enterbonus')
+      const autoResolvedSameSpin =
+        stateTypes.has('freespintrigger') &&
+        (stateTypes.has('freespinend') || stateTypes.has('finalwin'))
+      if (hasBonusTrigger && !autoResolvedSameSpin) {
+        return true
+      }
+    }
+  }
+  return false
 }
 
 async function rgsPost(rgsUrl, body) {
@@ -499,9 +525,15 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
   let winDisplay
   if (isZeroDecimalCurrency(respCurrency)) {
     winDisplay = Math.round(winInUnits)
-    // VND: RGS liefert teils 1 Einheit = 100 VND (14→1400), teils bereits in VND (z.B. payoutMult-Pfad)
-    // Heuristik: winInUnits >= 1000 = bereits VND; sonst RGS-Format (×100)
-    if (respCurrency === 'vnd' && winDisplay > 0 && winDisplay < 1000) {
+    // VND: Legacy-Responses waren teils in 1/100 VND kodiert. Bei Wizard/Titan sehen wir jedoch
+    // konsistente payout/amount-Werte (payoutMultiplier-Pfad), dort darf NICHT nochmals ×100 erfolgen.
+    // Daher nur noch als enger Fallback, wenn weder payout noch payoutMultiplier belastbar sind.
+    const shouldApplyVndCentFallback =
+      respCurrency === 'vnd' &&
+      winDisplay > 0 &&
+      winDisplay < 1000 &&
+      !(hasAuthoritativePayout || fromPayoutMult > 0)
+    if (shouldApplyVndCentFallback) {
       winDisplay = winDisplay * 100
     }
   } else {
@@ -527,7 +559,7 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
   // waylanders.har: Gewinn → round.active:true bis /wallet/end-round; ohne finalize ERR_VAL beim nächsten play.
   const needsEndRoundFinalize =
     round.active === true || (winDisplay > 0 && round.active !== false)
-  if (needsEndRoundFinalize && !skipStakeEngineEndRoundAfterSuccessfulPlay(round)) {
+  if (needsEndRoundFinalize && !skipStakeEngineEndRoundAfterSuccessfulPlay(round, options)) {
     const endT = Date.now()
     const endRes = await rgsPost(endUrl, { sessionID: session.sessionID })
     let endPayload = null

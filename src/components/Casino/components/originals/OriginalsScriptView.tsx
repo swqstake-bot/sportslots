@@ -4,7 +4,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import { SvgCumulativeProfitLineChart } from '../../../charts/SvgCumulativeCharts'
 import { Button } from '../ui/Button'
 import { fetchCurrencyRates } from '../../api/stakeChallenges'
 import OriginalsScriptBuilder from './scriptBuilder/OriginalsScriptBuilder'
@@ -233,15 +233,7 @@ export default function OriginalsScriptView() {
               <div className="text-xs font-medium text-[var(--text-muted)] mb-1">Chart & Statistik</div>
               {chartData.length > 0 && (
                 <div className="h-32 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
-                      <XAxis dataKey="index" tick={{ fontSize: 10 }} stroke="var(--text-muted)" />
-                      <YAxis tick={{ fontSize: 10 }} stroke="var(--text-muted)" tickFormatter={(v) => (v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2))} />
-                      <Tooltip formatter={(v: number | undefined) => [v != null ? (v >= 0 ? `+${v.toFixed(4)}` : v.toFixed(4)) : '—', 'Kum. Profit']} contentStyle={{ background: 'var(--bg-deep)', border: '1px solid var(--border)' }} labelFormatter={(i) => `Bet #${i}`} />
-                      <Line type="monotone" dataKey="profit" stroke="var(--accent)" strokeWidth={1.5} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  <SvgCumulativeProfitLineChart profits={chartData.map((d) => d.profit)} height={128} stroke="var(--accent)" />
                 </div>
               )}
               {lastStats && (

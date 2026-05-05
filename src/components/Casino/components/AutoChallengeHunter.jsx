@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback, startTransition } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, useId, startTransition } from 'react'
 import { fetchChallengeList, fetchCurrencyRates, extractProviderGroupSlug } from '../api/stakeChallenges'
 import { getProvider } from '../api/providers'
 import { isFiat, isStable, formatAmount, formatBetLabel, toUnits, toMinor, ZERO_DECIMAL_CURRENCIES } from '../utils/formatAmount'
@@ -22,7 +22,6 @@ import {
 import { normalizeBetSlugForHouseMatch, houseBetSlugMatchesSessionSlug } from '../utils/slotSlugMatching'
 import { setHunterSlotTargets } from '../utils/hunterSlotTargetsBridge'
 import { subscribeToHouseBets } from '../api/stakeRealtimeFacade'
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import {
   usdLimitToInputStr,
   parseUsdLimitInput,
@@ -638,8 +637,12 @@ const HUNTER_SPIN_ERROR_RETRY_MS = 2000
 /** Nach Session-Timeout / abgelaufener Session: 2–3s Pause, dann `startSession` + weiter spinnen (max. Versuche). */
 const SESSION_TIMEOUT_RECOVERY_DELAY_MS = 2500
 const SESSION_TIMEOUT_RECOVERY_MAX = 5
-/** Ohne Limit: bei mehreren parallelen Läufen wächst die Recharts-Serie unbegrenzt → Renderer-Abstürze (OOM). */
-const SESSION_NET_SERIES_MAX_POINTS = 5000
+/**
+ * Session-Net-Sparkline: max. gespeicherte Stützstellen (RAM). Anzeige wird auf ~HUNTER_NET_SPARKLINE_PATH_MAX
+ * Punkte uniform gesampelt — kein Recharts (SSP-Bundle nutzt Chart.js/Recharts; hier bewusst leicht).
+ */
+const SESSION_NET_SERIES_MAX_POINTS = 720
+const HUNTER_NET_SPARKLINE_PATH_MAX = 140
 /** Probe-Candidates: kein harter Stablecoin-Ausschluss mehr (USDC/USDT-Funding häufig). */
 const AUTO_PROBE_EXCLUDED_CURRENCIES = new Set()
 
@@ -1047,6 +1050,113 @@ const STYLES = {
   }
 }
 
+function uniformSampleArray(arr, n) {
+  if (!arr?.length || n <= 0) return []
+  if (arr.length <= n) return arr
+  const out = []
+  for (let j = 0; j < n; j++) {
+    const idx = Math.round((j / Math.max(1, n - 1)) * (arr.length - 1))
+    out.push(arr[idx])
+  }
+  return out
+}
+
+/** SVG-Sparkline: ein Pfad + optionale 0-Linie, kein Chart-Framework (geringer Render-Overhead als Recharts). */
+function SessionNetSparkline({ series, netUsdNow }) {
+  const gradId = useId().replace(/:/g, '')
+  const { lineD, fillD, zeroY, stroke, fill } = useMemo(() => {
+    const W = 200
+    const H = 50
+    const pad = 4
+    const innerW = W - 2 * pad
+    const innerH = H - 2 * pad
+    const pts = uniformSampleArray(series, HUNTER_NET_SPARKLINE_PATH_MAX)
+    const nets = pts.map((p) => (Number.isFinite(p.netUsd) ? p.netUsd : 0))
+    if (nets.length === 0) {
+      return { lineD: '', fillD: '', zeroY: null, stroke: '#64748b', fill: 'rgba(100,116,139,0.12)' }
+    }
+    if (nets.length === 1) {
+      const y = pad + innerH / 2
+      const x0 = pad
+      const x1 = pad + innerW
+      const s = netUsdNow >= 0 ? '#00e701' : '#f43f5e'
+      return {
+        lineD: `M ${x0} ${y} L ${x1} ${y}`,
+        fillD: '',
+        zeroY: y,
+        stroke: s,
+        fill: netUsdNow >= 0 ? 'rgba(0,231,1,0.08)' : 'rgba(244,63,94,0.08)',
+      }
+    }
+    const min = Math.min(0, ...nets)
+    const max = Math.max(0, ...nets)
+    const span = Math.max(max - min, 1e-6)
+    const padY = span * 0.06
+    const lo = min - padY
+    const hi = max + padY
+    const span2 = hi - lo
+    const xAt = (i) => pad + (i / (nets.length - 1)) * innerW
+    const yAt = (v) => pad + innerH * (1 - (v - lo) / span2)
+    let d = ''
+    for (let i = 0; i < nets.length; i++) {
+      const x = xAt(i)
+      const y = yAt(nets[i])
+      d += `${i === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)} `
+    }
+    const firstX = xAt(0)
+    const lastX = xAt(nets.length - 1)
+    const bottom = pad + innerH
+    const fillD = `${d} L ${lastX.toFixed(2)} ${bottom} L ${firstX.toFixed(2)} ${bottom} Z`
+    let zeroY = pad + innerH * (1 - (0 - lo) / span2)
+    zeroY = Math.min(pad + innerH, Math.max(pad, zeroY))
+    const stroke = netUsdNow >= 0 ? '#00e701' : '#f43f5e'
+    const fill = netUsdNow >= 0 ? 'rgba(0,231,1,0.12)' : 'rgba(244,63,94,0.12)'
+    return { lineD: d.trim(), fillD, zeroY, stroke, fill }
+  }, [series, netUsdNow])
+
+  const strokeUrl = `url(#${gradId})`
+
+  return (
+    <svg
+      width="100%"
+      height={50}
+      viewBox="0 0 200 50"
+      preserveAspectRatio="none"
+      style={{ display: 'block' }}
+      aria-hidden
+    >
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor={stroke} stopOpacity={0.55} />
+          <stop offset="100%" stopColor={stroke} stopOpacity={1} />
+        </linearGradient>
+      </defs>
+      {fillD ? <path d={fillD} fill={fill} stroke="none" /> : null}
+      {zeroY != null ? (
+        <line
+          x1={4}
+          x2={196}
+          y1={zeroY}
+          y2={zeroY}
+          stroke="var(--border)"
+          strokeDasharray="3 3"
+          strokeOpacity={0.85}
+        />
+      ) : null}
+      {lineD ? (
+        <path
+          d={lineD}
+          fill="none"
+          stroke={strokeUrl}
+          strokeWidth={1.5}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+      ) : null}
+    </svg>
+  )
+}
+
 export default function AutoChallengeHunter({ accessToken, webSlots = [], onDiscoveredSlots, onHubStatsChange }) {
   const hubBetListCtx = useChallengeHubBetListOptional()
   const hubRecentBets = hubBetListCtx?.recentBets
@@ -1110,10 +1220,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const [logs, setLogs] = useState([])
   const [lastRefresh, setLastRefresh] = useState(null)
   const [totalSessionStats, setTotalSessionStats] = useState({ wagered: 0, won: 0, lost: 0 })
-  // Mini-Chart: kumulierte Netto-Entwicklung (USD) pro Spin (global für diese Session)
-  // React/Chart kann bei sehr vielen Spins zusätzlichen Render-Overhead erzeugen.
-  // Wenn du nur Stats brauchst: Chart aus.
-  const ENABLE_SESSION_NET_CHART = false
+  // Session-Net-Sparkline (SVG, gesampelt) — Recharts war bei 5k Punkten schwer; siehe SESSION_NET_SERIES_MAX_POINTS.
+  const ENABLE_SESSION_NET_CHART = true
   const [sessionNetSeries, setSessionNetSeries] = useState(() => [{ time: Date.now(), netUsd: 0 }])
   /** Höchster getroffener Multiplikator pro Slot-Slug (persistiert). */
   const [bestMultiBySlot, setBestMultiBySlot] = useState(() => loadBestMultiMap())
@@ -2156,13 +2264,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   }, [queue])
 
   const netUsd = totalSessionStats.won - totalSessionStats.lost
-  const sessionNetChartData = useMemo(
-    () => sessionNetSeries.map((p) => ({ time: p.time, net: p.netUsd })),
-    [sessionNetSeries]
-  )
-  const sessionNetMin = Math.min(0, ...sessionNetSeries.map((p) => p.netUsd))
-  const sessionNetMax = Math.max(0, ...sessionNetSeries.map((p) => p.netUsd))
-  const sessionNetPadding = Math.max(0.01, (sessionNetMax - sessionNetMin) * 0.08)
 
   const hasAnythingToStop =
     runningCount > 0 || queue.length > 0 || huntEnabled || autoStart
@@ -4220,44 +4321,12 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.25rem' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Session Netto-Verlauf</div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{Math.max(0, sessionNetSeries.length - 1)} Spins</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }} title="Letzte Stützstellen im Speicher; Kurve für Anzeige gesampelt">
+                  {Math.max(0, sessionNetSeries.length - 1)} Spins
+                </div>
               </div>
-              <div style={{ width: '100%', height: 54 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={sessionNetChartData} margin={{ top: 2, right: 4, bottom: 0, left: 4 }}>
-                    <defs>
-                      <linearGradient id="hunterNetGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop
-                          offset="0%"
-                          stopColor={netUsd >= 0 ? '#00e701' : '#f43f5e'}
-                          stopOpacity={0.35}
-                        />
-                        <stop
-                          offset="100%"
-                          stopColor={netUsd >= 0 ? '#00e701' : '#f43f5e'}
-                          stopOpacity={0}
-                        />
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="time" hide domain={['dataMin', 'dataMax']} />
-                    <YAxis hide domain={[sessionNetMin - sessionNetPadding, sessionNetMax + sessionNetPadding]} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#1a2c38', border: '1px solid var(--border)', borderRadius: 6, fontSize: '0.75rem', color: 'var(--text)' }}
-                      formatter={(val) => [`$${Number(val).toFixed(2)}`, 'Netto']}
-                      labelFormatter={() => ''}
-                    />
-                    <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" strokeOpacity={0.8} />
-                    <Area
-                      type="monotone"
-                      dataKey="net"
-                      stroke={netUsd >= 0 ? '#00e701' : '#f43f5e'}
-                      strokeWidth={1.6}
-                      fill="url(#hunterNetGradient)"
-                      fillOpacity={1}
-                      isAnimationActive={false}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
+              <div style={{ width: '100%', height: 50 }} title={`Netto jetzt: $${netUsd.toFixed(2)}`}>
+                <SessionNetSparkline series={sessionNetSeries} netUsdNow={netUsd} />
               </div>
             </div>
           )}

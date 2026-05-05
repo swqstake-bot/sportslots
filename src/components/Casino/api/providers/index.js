@@ -180,7 +180,7 @@ const WEB_PROVIDERS = {
   shady: genericProviders.shady,
   shuffle: genericProviders.shuffle,
   titan: genericProviders.titan,
-  'titan-gaming': genericProviders.twist,
+  'titan-gaming': genericProviders.titan,
   twist: genericProviders.twist,
   valkyrie: genericProviders.twist,
   popiplay: genericProviders.popiplay,

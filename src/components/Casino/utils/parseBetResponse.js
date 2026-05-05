@@ -159,11 +159,15 @@ function extractBonusFeatureFromState(state) {
   if (!Array.isArray(state)) return { bonusFeatureId: null, scatterCount: null }
   for (const s of state) {
     const t = String(s?.type || '').toLowerCase()
-    if (t === 'freespintrigger') {
+    const tNorm = t.replace(/[_-]/g, '')
+    if (tNorm === 'freespintrigger' || tNorm === 'freespinstart' || tNorm === 'freespinenter') {
       const scatterCount = Array.isArray(s?.positions) ? s.positions.length : null
       return { bonusFeatureId: 'fs', scatterCount }
     }
-    if (t === 'enterbonus' || t.includes('bonus') || s?.bonusType != null) {
+    if (tNorm === 'enterbonus' || tNorm === 'updatefreespin' || tNorm === 'freespinend') {
+      return { bonusFeatureId: 'fs', scatterCount: null }
+    }
+    if (t.includes('bonus') || t.includes('freespin') || s?.bonusType != null) {
       const bonusFeatureId = s?.bonusType ?? (t.includes('bonus') ? 'fs' : null)
       if (bonusFeatureId) return { bonusFeatureId, scatterCount: null }
     }

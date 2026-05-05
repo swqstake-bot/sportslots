@@ -327,7 +327,7 @@ export const PROVIDERS = {
   'titan-gaming': {
     id: 'titan-gaming',
     name: 'Titan Gaming',
-    aliasOf: 'twist',
+    aliasOf: 'titan',
   },
   valkyrie: {
     id: 'valkyrie',

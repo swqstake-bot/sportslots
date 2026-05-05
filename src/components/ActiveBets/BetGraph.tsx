@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { SvgNetAreaChart } from '../charts/SvgCumulativeCharts';
 
 interface BetGraphProps {
   currentValue: number;
@@ -16,19 +16,16 @@ interface DataPoint {
 
 export const BetGraph: React.FC<BetGraphProps> = ({ 
   currentValue, 
-  maxValue, 
+  maxValue: _maxValue, 
   label = 'Value', 
   color = 'var(--app-accent)',
   height = 60
 }) => {
   const [data, setData] = useState<DataPoint[]>(() => [{ time: Date.now(), value: currentValue }]);
-  const maxDataPoints = 50; // Keep last 50 points for smooth rendering
+  const maxDataPoints = 50;
   const lastValueRef = useRef(currentValue);
 
-  // Update data when currentValue changes or periodically
   useEffect(() => {
-    // Only add point if value changed or it's been a while (to keep graph moving)
-    // For now, let's just add points on interval to show "live" feel even if static
     const interval = setInterval(() => {
         setData(prev => {
          const newPoint = { time: Date.now(), value: currentValue };
@@ -38,15 +35,13 @@ export const BetGraph: React.FC<BetGraphProps> = ({
          }
          return newData;
        });
-    }, 2000); // Update every 2 seconds
+    }, 2000);
 
     return () => clearInterval(interval);
   }, [currentValue]);
 
-  // Also update immediately if value changes significantly
   useEffect(() => {
     if (currentValue !== lastValueRef.current) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setData(prev => {
         const newPoint = { time: Date.now(), value: currentValue };
         const newData = [...prev, newPoint];
@@ -68,51 +63,19 @@ export const BetGraph: React.FC<BetGraphProps> = ({
     );
   }
 
-  const minVal = Math.min(...data.map(d => d.value)) * 0.95;
-  const maxVal = maxValue || Math.max(...data.map(d => d.value)) * 1.05;
+  const values = data.map(d => d.value);
+  const last = values[values.length - 1] ?? currentValue;
 
   return (
-    <div style={{ height }} className="w-full select-none">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data}>
-          <defs>
-            <linearGradient id={`gradient-${label}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={color} stopOpacity={0.3}/>
-              <stop offset="95%" stopColor={color} stopOpacity={0}/>
-            </linearGradient>
-          </defs>
-          <XAxis 
-            dataKey="time" 
-            hide 
-            domain={['dataMin', 'dataMax']} 
-          />
-          <YAxis 
-            hide 
-            domain={[minVal, maxVal]} 
-          />
-          <Tooltip 
-            contentStyle={{
-              backgroundColor: 'var(--app-bg-card)',
-              borderColor: 'var(--app-border)',
-              borderRadius: 8,
-              fontSize: '10px',
-              color: 'var(--app-text-muted)',
-            }}
-            itemStyle={{ color: 'var(--app-text)' }}
-            labelFormatter={() => ''}
-            formatter={(value: any) => [value.toFixed(2), label]}
-          />
-          <Area 
-            type="monotone" 
-            dataKey="value" 
-            stroke={color} 
-            fillOpacity={1} 
-            fill={`url(#gradient-${label})`} 
-            strokeWidth={2}
-            isAnimationActive={false}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
+    <div style={{ height }} className="w-full select-none" title={`${label}: ${last.toFixed(2)}`}>
+      <SvgNetAreaChart
+        values={values}
+        height={height}
+        strokeColor={color}
+        lastSignFrom={last}
+        maxPathPoints={80}
+        title={label}
+      />
     </div>
   );
 };
