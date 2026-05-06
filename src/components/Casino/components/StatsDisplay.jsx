@@ -177,19 +177,6 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
           </span>
         </div>
         )}
-        {(displayStats.sessionStartBalance != null && displayStats.currentBalance != null) && (
-        <div style={STYLES.item}>
-          <span style={STYLES.label}>Session Δ Balance</span>
-          <span
-            style={{
-              ...valueStyle,
-              ...((displayStats.currentBalance - displayStats.sessionStartBalance) >= 0 ? STYLES.valuePositive : STYLES.valueNegative),
-            }}
-          >
-            {formatUsdCentsLine(displayStats.currentBalance - displayStats.sessionStartBalance)}
-          </span>
-        </div>
-        )}
       </div>
     </div>
   )
