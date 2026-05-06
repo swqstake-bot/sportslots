@@ -202,6 +202,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const spinsSinceRefreshRef = useRef(0)
   const lastBalanceRef = useRef(null)
   const slotHasFullSamplesRef = useRef(false)
+  const openedBonusPopupsRef = useRef(new Map())
   sessionRef.current = session
   slotHasFullSamplesRef.current = slotHasFullSamples
   const [supportedCurrencies, setSupportedCurrencies] = useState(ALL_CURRENCIES)
@@ -545,8 +546,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     }
   }, [slot?.slug, slot?.providerId, addToBetHistory, fillBetHistoryFromPlaceBet])
 
-  const handleOpenSlotFromBet = useCallback(async (slotSlug) => {
-    const slug = String(slotSlug || '').trim()
+  const handleOpenSlotFromBet = useCallback(async (betEntry) => {
+    const slug = String(betEntry?.slotSlug || '').trim()
     if (!slug) return
     if (!window.electronAPI?.openSlotPopup) {
       setError('Open slot popup is not available in this build.')
@@ -567,11 +568,43 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       })
       if (!res?.ok) {
         setError(res?.error || 'Could not open slot popup.')
+        return
+      }
+      if (res?.popupId && betEntry?.id != null) {
+        openedBonusPopupsRef.current.set(res.popupId, {
+          betId: betEntry.id,
+        })
       }
     } catch (e) {
       setError(e?.message || 'Could not open slot popup.')
     }
   }, [accessToken, effectiveSource, effectiveTarget])
+
+  useEffect(() => {
+    if (!window.electronAPI?.onSlotPopupClosed) return
+    const unsub = window.electronAPI.onSlotPopupClosed((payload) => {
+      const popupId = payload?.popupId
+      if (!popupId) return
+      const opened = openedBonusPopupsRef.current.get(popupId)
+      if (!opened?.betId) return
+      setBetHistory((prev) =>
+        prev.map((entry) => {
+          if (entry.id !== opened.betId) return entry
+          if (!entry.stoppedBonus) return entry
+          const realizedWin = Number(entry.rawWinAmount ?? entry.winAmount ?? 0)
+          return {
+            ...entry,
+            winAmount: Number.isFinite(realizedWin) ? realizedWin : 0,
+            stoppedBonus: false,
+          }
+        })
+      )
+      openedBonusPopupsRef.current.delete(popupId)
+    })
+    return () => {
+      if (typeof unsub === 'function') unsub()
+    }
+  }, [])
 
   useSlotRealtime({
     accessToken,

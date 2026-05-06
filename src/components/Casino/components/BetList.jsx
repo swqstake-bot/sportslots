@@ -148,7 +148,7 @@ export default function BetList({
                           <button
                             type="button"
                             className="terminal-copy-btn"
-                            onClick={() => onOpenSlot(b.slotSlug)}
+                            onClick={() => onOpenSlot(b)}
                             title={`Open ${b.slotName || b.slotSlug}`}
                           >
                             Open
