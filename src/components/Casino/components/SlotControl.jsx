@@ -23,6 +23,7 @@ import { fetchCurrencyRates } from '../api/stakeChallenges'
 import { SvgNetAreaChart } from '../../charts/SvgCumulativeCharts'
 import { useSlotRealtime } from './hooks/useSlotRealtime'
 import { getProviderSessionState } from '../api/providers/providerRuntime'
+import { startThirdPartySession } from '../api/stake'
 
 const DEFAULT_BET_LEVELS = [
   1100, 2200, 4400, 6600, 8800, 11000, 13200, 15400, 17600, 19800,
@@ -405,6 +406,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       .then((list) => {
         const mapped = list.map((b) => ({
           id: b.id,
+          slotSlug: b.slotSlug || slot.slug,
+          slotName: b.slotName || slot.name,
           betAmount: b.betAmount,
           winAmount: b.winAmount,
           isBonus: b.isBonus,
@@ -466,6 +469,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       }
       const entry = {
         id: now + Math.random(),
+        slotSlug: slot.slug,
+        slotName: slot.name,
         betAmount: parsed.betAmount,
         // Bei Stop-on-bonus soll der Bonus-Win nicht in BetList/Stats als "realisiert" auftauchen.
         winAmount: parsed.stoppedBonus ? 0 : (parsed.winAmount ?? 0),
@@ -539,6 +544,34 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       addToBetHistory({ ...parsed, winAmount: parsed.winAmount })
     }
   }, [slot?.slug, slot?.providerId, addToBetHistory, fillBetHistoryFromPlaceBet])
+
+  const handleOpenSlotFromBet = useCallback(async (slotSlug) => {
+    const slug = String(slotSlug || '').trim()
+    if (!slug) return
+    if (!window.electronAPI?.openSlotPopup) {
+      setError('Open slot popup is not available in this build.')
+      return
+    }
+    try {
+      const launchSession = await startThirdPartySession(accessToken, slug, effectiveSource, effectiveTarget)
+      const launchUrl =
+        typeof launchSession?.config === 'string'
+          ? launchSession.config
+          : launchSession?.config?.url || ''
+      const res = await window.electronAPI.openSlotPopup({
+        slug,
+        locale: 'en',
+        sourceCurrency: effectiveSource,
+        targetCurrency: effectiveTarget,
+        launchUrl,
+      })
+      if (!res?.ok) {
+        setError(res?.error || 'Could not open slot popup.')
+      }
+    } catch (e) {
+      setError(e?.message || 'Could not open slot popup.')
+    }
+  }, [accessToken, effectiveSource, effectiveTarget])
 
   useSlotRealtime({
     accessToken,
@@ -1363,7 +1396,13 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             winAmount: hasUsd ? winUsd : b.winAmount,
             currencyCode: hasUsd ? 'USD' : (b.currencyCode || effectiveTarget || 'USD'),
           }
-        })} totalCount={betHistory.length} currencyCode={effectiveTarget || 'usd'} compact={compact} minimal={settingsCollapsed} />
+        })}
+        totalCount={betHistory.length}
+        currencyCode={effectiveTarget || 'usd'}
+        compact={compact}
+        minimal={settingsCollapsed}
+        onOpenSlot={handleOpenSlotFromBet}
+      />
 
       {!compact && (
       <details style={{ marginTop: '0.5rem' }}>

@@ -14,6 +14,7 @@ import { getEffectiveBetAmount } from '../constants/bet'
 import { SlotSelectMulti } from './SlotSelectGrouped'
 import SlotSlider from './SlotSlider'
 import { parseBetResponse } from '../utils/parseBetResponse'
+import { startThirdPartySession } from '../api/stake'
 import { isSlotNoExtraBet, addSlotNoExtraBet } from '../utils/slotExtraBetMemory'
 import { loadHasBonusSlugs, toggleHasBonusSlug, removeHasBonusSlug, clearHasBonusSlugs } from '../utils/slotSets'
 import { notifyBonusHit } from '../utils/notifications'
@@ -572,7 +573,18 @@ export default function BonusHuntControl({
     }))
     if (!window.electronAPI?.openSlotPopup) return
     try {
-      const res = await window.electronAPI.openSlotPopup({ slug, locale: 'en' })
+      const launchSession = await startThirdPartySession(accessToken, slug, sourceCurrency, targetCurrency)
+      const launchUrl =
+        typeof launchSession?.config === 'string'
+          ? launchSession.config
+          : launchSession?.config?.url || ''
+      const res = await window.electronAPI.openSlotPopup({
+        slug,
+        locale: 'en',
+        sourceCurrency,
+        targetCurrency,
+        launchUrl,
+      })
       if (res?.ok && res?.popupId) {
         popupOpeningsRef.current.set(res.popupId, { slotSlug: slug, slotName, openedAt })
         setBonusOpeningResults((prev) => ({
@@ -591,7 +603,7 @@ export default function BonusHuntControl({
     } catch (_) {
       // Ignore popup open errors; opening can be retried manually.
     }
-  }, [currentBalance])
+  }, [accessToken, currentBalance, sourceCurrency, targetCurrency])
 
   useEffect(() => {
     latestBetHistoryRef.current = betHistory

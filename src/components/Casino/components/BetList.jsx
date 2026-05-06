@@ -20,6 +20,7 @@ export default function BetList({
   maxRows = 0,
   title = 'Spins',
   emptyMessage,
+  onOpenSlot = null,
 }) {
   const displayBets = useMemo(() => {
     const nonZero = (bets || []).filter((b) => (b.betAmount ?? 0) !== 0 || (b.winAmount ?? 0) !== 0)
@@ -116,6 +117,7 @@ export default function BetList({
                 b.scatterCount != null && Number.isFinite(Number(b.scatterCount))
                   ? Number(b.scatterCount)
                   : null
+              const canOpenSlot = !showWin && typeof onOpenSlot === 'function' && typeof b.slotSlug === 'string' && b.slotSlug.length > 0
 
               return (
                 <tr
@@ -139,11 +141,21 @@ export default function BetList({
                       isHubPending && 'terminal-td--pending'
                     )}
                   >
-                    {!showWin
-                      ? `Bonus${scatterCount != null ? ` (${scatterCount}S)` : ''}`
-                      : isHubPending
-                        ? '…'
-                        : `${fmt(win, rowCurrency)}${rowSuffix}`}
+                    {!showWin ? (
+                      <span className="terminal-inline">
+                        <span>{`Bonus${scatterCount != null ? ` (${scatterCount}S)` : ''}`}</span>
+                        {canOpenSlot ? (
+                          <button
+                            type="button"
+                            className="terminal-copy-btn"
+                            onClick={() => onOpenSlot(b.slotSlug)}
+                            title={`Open ${b.slotName || b.slotSlug}`}
+                          >
+                            Open
+                          </button>
+                        ) : null}
+                      </span>
+                    ) : isHubPending ? '…' : `${fmt(win, rowCurrency)}${rowSuffix}`}
                   </td>
                   {showNet && (
                     <td

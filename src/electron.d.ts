@@ -31,7 +31,7 @@ export interface ElectronAPI {
   exportLoggerBetLogs: (bets: any[]) => Promise<{ ok: boolean; cancelled?: boolean; path?: string; error?: string }>;
   importLoggerBetLogs: () => Promise<{ ok: boolean; cancelled?: boolean; bets?: any[]; saved?: boolean; error?: string }>;
   deleteAllLoggerBetLogs: () => Promise<{ ok: boolean; deleted?: number; error?: string }>;
-  openSlotPopup: (payload: { slug: string; locale?: string }) => Promise<{ ok: boolean; url?: string; popupId?: string; error?: string }>;
+  openSlotPopup: (payload: { slug: string; locale?: string; sourceCurrency?: string; targetCurrency?: string; launchUrl?: string }) => Promise<{ ok: boolean; url?: string; popupId?: string; error?: string }>;
   openStakeWithdrawPrefill: (payload: {
     address: string;
     currency: string;

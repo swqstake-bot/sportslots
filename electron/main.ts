@@ -638,15 +638,52 @@ ipcMain.handle('open-external', async (_event, url) => {
     await openExternalSafe(String(url || ''));
 });
 
-ipcMain.handle('open-slot-popup', async (event, payload: { slug?: string; locale?: string } = {}) => {
+ipcMain.handle(
+    'open-slot-popup',
+    async (
+        event,
+        payload: {
+            slug?: string
+            locale?: string
+            sourceCurrency?: string
+            targetCurrency?: string
+            launchUrl?: string
+        } = {}
+    ) => {
     const rawSlug = String(payload?.slug || '').trim().toLowerCase();
     const slug = rawSlug.replace(/[^a-z0-9-]/g, '');
     if (!slug) return { ok: false, error: 'invalid_slug' };
 
     const localeRaw = String(payload?.locale || 'de').trim().toLowerCase();
     const locale = /^[a-z]{2}(-[a-z]{2})?$/.test(localeRaw) ? localeRaw : 'de';
-    const origin = await resolveStakeOrigin();
-    const targetUrl = `${origin}/${locale}/casino/games/${slug}`;
+    const sourceCurrency = String(payload?.sourceCurrency || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const targetCurrency = String(payload?.targetCurrency || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const launchUrlRaw = String(payload?.launchUrl || '').trim()
+    let targetUrl = ''
+    if (launchUrlRaw) {
+        try {
+            const parsed = new URL(launchUrlRaw)
+            if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+                targetUrl = parsed.toString()
+            }
+        } catch {
+            // ignore invalid launch URL and fallback below
+        }
+    }
+    if (!targetUrl) {
+        const origin = await resolveStakeOrigin();
+        const url = new URL(`${origin}/${locale}/casino/games/${slug}`);
+        if (targetCurrency) {
+            url.searchParams.set('currency', targetCurrency);
+            url.searchParams.set('target', targetCurrency);
+            url.searchParams.set('targetCurrency', targetCurrency);
+        }
+        if (sourceCurrency) {
+            url.searchParams.set('source', sourceCurrency);
+            url.searchParams.set('sourceCurrency', sourceCurrency);
+        }
+        targetUrl = url.toString();
+    }
     const popupId = `slot-popup-${Date.now()}-${++slotPopupSeq}`;
 
     const popup = new BrowserWindow({
