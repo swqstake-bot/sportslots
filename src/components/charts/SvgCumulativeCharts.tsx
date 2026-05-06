@@ -11,6 +11,49 @@ function uniformSampleNumbers(arr: number[], n: number): number[] {
   return out
 }
 
+/**
+ * Verdichtet lange Reihen performant ohne Trendverlust:
+ * pro Bucket werden Min/Max (in Original-Reihenfolge) behalten.
+ * So bleibt der komplette Verlauf sichtbar, auch bei Millionen Punkten.
+ */
+function downsampleWithExtrema(arr: number[], targetBuckets: number): number[] {
+  if (!arr.length || targetBuckets <= 0) return []
+  if (arr.length <= targetBuckets * 2) return [...arr]
+  const buckets = Math.max(1, Math.floor(targetBuckets))
+  const bucketSize = arr.length / buckets
+  const out: number[] = [arr[0]!]
+  for (let b = 0; b < buckets; b++) {
+    const start = Math.floor(b * bucketSize)
+    const end = Math.min(arr.length, Math.floor((b + 1) * bucketSize))
+    if (end <= start) continue
+    let minV = Number.POSITIVE_INFINITY
+    let maxV = Number.NEGATIVE_INFINITY
+    let minI = start
+    let maxI = start
+    for (let i = start; i < end; i++) {
+      const v = arr[i]!
+      if (v < minV) {
+        minV = v
+        minI = i
+      }
+      if (v > maxV) {
+        maxV = v
+        maxI = i
+      }
+    }
+    if (minI === maxI) {
+      out.push(arr[minI]!)
+    } else if (minI < maxI) {
+      out.push(arr[minI]!, arr[maxI]!)
+    } else {
+      out.push(arr[maxI]!, arr[minI]!)
+    }
+  }
+  const last = arr[arr.length - 1]!
+  if (out[out.length - 1] !== last) out.push(last)
+  return out
+}
+
 type AreaGeom = {
   lineD: string
   fillD: string
@@ -25,7 +68,9 @@ function buildNetAreaGeometry(values: number[], lastForSign: number, maxPathPoin
   const pad = 4
   const innerW = W - 2 * pad
   const innerH = H - 2 * pad
-  const nets = uniformSampleNumbers(values, maxPathPoints)
+  const autoBuckets = Math.max(220, Math.floor(W * 3))
+  const targetBuckets = Number.isFinite(maxPathPoints) && maxPathPoints > 0 ? maxPathPoints : autoBuckets
+  const nets = downsampleWithExtrema(values, targetBuckets)
   if (nets.length === 0) {
     return { lineD: '', fillD: '', zeroY: null, stroke: '#64748b', fill: 'rgba(100,116,139,0.12)' }
   }

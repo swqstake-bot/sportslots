@@ -1386,14 +1386,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         const chartColors = ['#00e701', '#22c55e', '#f59e0b', '#8b5cf6']
         const colorIndex = [...slot.slug].reduce((a, c) => a + c.charCodeAt(0), 0) % chartColors.length
         const strokeColor = chartColors[colorIndex]
-        const maxPoints = 200
-        const step = cumNets.length > maxPoints ? Math.ceil(cumNets.length / maxPoints) : 1
-        const chartData = [
-          { spin: 0, net: 0 },
-          ...cumNets
-            .map((net, i) => ({ spin: i + 1, net }))
-            .filter((_, i) => i % step === 0 || i === cumNets.length - 1),
-        ]
+        // Stake-like Verlauf: komplette Session seit Start anzeigen.
+        // Das Chart verdichtet intern adaptiv (Min/Max je Bucket) für sehr lange Sessions.
+        const chartValues = [0, ...cumNets]
         const chartHeight = settingsCollapsed ? 24 : (compact ? 38 : 80)
         const innerChartH = Math.max(16, chartHeight - (settingsCollapsed ? 18 : (compact ? 22 : 36)))
         return (
@@ -1407,11 +1402,10 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
               title={`Session-Netto (letzter Punkt): ${formatAmount(lastNet, currencyCode)} · ${cumNets.length} Spins`}
             >
               <SvgNetAreaChart
-                values={chartData.map((d) => d.net)}
+                values={chartValues}
                 height={innerChartH}
                 strokeColor={strokeColor}
                 lastSignFrom={lastNet}
-                maxPathPoints={140}
                 title="Session Netto"
               />
             </div>
