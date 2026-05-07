@@ -65,6 +65,30 @@ export function convertMinorToUsdCents(amountMinor, currencyCode, currencyRates 
   }
 }
 
+export function convertMinorToUsdMajor(amountMinor, currencyCode, currencyRates = {}) {
+  const base = normalizeMinorAmount(amountMinor, currencyCode)
+  if (!Number.isFinite(base.amountMajor)) {
+    return { usd: null, fxStatus: 'invalid-amount', fxRateSource: null, fxRate: null, ...base }
+  }
+
+  if (isUsdLikeCurrency(base.currencyCode)) {
+    return { usd: base.amountMajor, fxStatus: 'ok', fxRateSource: 'usd-like', fxRate: 1, ...base }
+  }
+
+  const rate = Number(currencyRates?.[base.currencyCode])
+  if (!Number.isFinite(rate) || rate <= 0) {
+    return { usd: null, fxStatus: 'missing-rate', fxRateSource: 'rates', fxRate: null, ...base }
+  }
+
+  return {
+    usd: base.amountMajor * rate,
+    fxStatus: 'ok',
+    fxRateSource: 'rates',
+    fxRate: rate,
+    ...base,
+  }
+}
+
 export function inferHouseBetAmountUnit(rawAmount) {
   const raw = Number(rawAmount)
   if (!Number.isFinite(raw) || raw <= 0) return 'major'

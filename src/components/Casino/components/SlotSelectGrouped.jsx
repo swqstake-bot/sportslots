@@ -4,6 +4,12 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { getSlotsGroupedByProvider, PROVIDERS as PROVIDERS_BASIC } from '../constants/slots'
 import { PROVIDERS as PROVIDERS_META, supportsMultiCurrencySameSlot } from '../constants/providers'
+import {
+  loadProviderFavorites,
+  saveProviderFavorites,
+  loadSlotViewPreset,
+  saveSlotViewPreset,
+} from '../utils/slotDiscoveryPreferences'
 
 const SearchIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -157,8 +163,11 @@ export function SlotSelectMulti({
 }) {
   const isInstanceMode = !!onAddInstance
   const groups = getSlotsGroupedByProvider(slots)
-  const [search, setSearch] = useState('')
-  const [providerFilter, setProviderFilter] = useState('')
+  const initialPreset = useMemo(() => loadSlotViewPreset(), [])
+  const [search, setSearch] = useState(initialPreset.search || '')
+  const [providerFilter, setProviderFilter] = useState(initialPreset.providerFilter || '')
+  const [onlyFavoriteProviders, setOnlyFavoriteProviders] = useState(Boolean(initialPreset.onlyFavoriteProviders))
+  const [favoriteProviders, setFavoriteProviders] = useState(() => loadProviderFavorites())
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
   // Debounce-Suche für bessere Performance
@@ -172,7 +181,11 @@ export function SlotSelectMulti({
   const filteredGroups = useMemo(() => {
     // Erst Provider-Filter anwenden (schneller)
     let out = groups
-    if (providerFilter) {
+    if (onlyFavoriteProviders) {
+      const favoriteSet = new Set(favoriteProviders)
+      out = Object.fromEntries(Object.entries(groups).filter(([pid]) => favoriteSet.has(pid)))
+    }
+    if (providerFilter && out[providerFilter]) {
       out = { [providerFilter]: groups[providerFilter] }
     }
     
@@ -191,9 +204,20 @@ export function SlotSelectMulti({
     }
     
     return searchOut
-  }, [groups, debouncedSearch, providerFilter])
+  }, [groups, debouncedSearch, providerFilter, onlyFavoriteProviders, favoriteProviders])
 
-  const providerIds = useMemo(() => Object.keys(groups), [groups])
+  const providerIds = useMemo(() => {
+    const fav = new Set(favoriteProviders)
+    return Object.keys(groups).sort((a, b) => {
+      const af = fav.has(a)
+      const bf = fav.has(b)
+      if (af && !bf) return -1
+      if (!af && bf) return 1
+      const an = String(PROVIDERS_META[a]?.name || PROVIDERS_BASIC[a]?.name || a)
+      const bn = String(PROVIDERS_META[b]?.name || PROVIDERS_BASIC[b]?.name || b)
+      return an.localeCompare(bn, 'de')
+    })
+  }, [groups, favoriteProviders])
   const allSlotsFlat = useMemo(() => {
     const list = []
     for (const [, data] of Object.entries(filteredGroups)) {
@@ -222,6 +246,23 @@ export function SlotSelectMulti({
     if (Array.isArray(hasBonusSlugs)) return new Set(hasBonusSlugs)
     return new Set()
   }, [hasBonusSlugs])
+
+  useEffect(() => {
+    saveProviderFavorites(favoriteProviders)
+  }, [favoriteProviders])
+
+  useEffect(() => {
+    saveSlotViewPreset({ search, providerFilter, onlyFavoriteProviders })
+  }, [search, providerFilter, onlyFavoriteProviders])
+
+  const toggleProviderFavorite = (providerId) => {
+    setFavoriteProviders((prev) => {
+      const set = new Set(prev)
+      if (set.has(providerId)) set.delete(providerId)
+      else set.add(providerId)
+      return Array.from(set)
+    })
+  }
 
   const showSlotSkeleton = Boolean(loading && (!slots || slots.length === 0))
 
@@ -289,6 +330,23 @@ export function SlotSelectMulti({
               }}
             />
           </div>
+          <button
+            type="button"
+            onClick={() => setOnlyFavoriteProviders((v) => !v)}
+            style={{
+              padding: '0.4rem 0.6rem',
+              borderRadius: 'var(--radius-md)',
+              border: `1px solid ${onlyFavoriteProviders ? 'var(--accent)' : 'var(--border-subtle)'}`,
+              background: onlyFavoriteProviders ? 'rgba(var(--accent-rgb), 0.1)' : 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.05))',
+              color: onlyFavoriteProviders ? 'var(--accent)' : 'var(--text-muted)',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+            title="Show only favorite providers"
+          >
+            Fav Providers
+          </button>
         </div>
         {/* Horizontale Provider-Chips */}
         <div 
@@ -325,26 +383,43 @@ export function SlotSelectMulti({
             const color = getProviderColor(pid)
             const isActive = providerFilter === pid
             return (
-              <button
-                key={pid}
-                type="button"
-                onClick={() => setProviderFilter(pid)}
-                style={{
-                  flexShrink: 0,
-                  padding: '0.4rem 0.75rem',
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  border: `1px solid ${isActive ? color : 'var(--border-subtle)'}`,
-                  background: isActive ? `${color}1f` : 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.045))',
-                  color: isActive ? color : 'var(--text-muted)',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  boxShadow: isActive ? `0 0 7px ${color}24` : 'none',
-                }}
-              >
-                {PROVIDERS_META[pid]?.name || PROVIDERS_BASIC[pid]?.name || pid} ({count})
-              </button>
+              <div key={pid} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
+                <button
+                  type="button"
+                  onClick={() => setProviderFilter(pid)}
+                  style={{
+                    flexShrink: 0,
+                    padding: '0.4rem 0.75rem',
+                    borderRadius: 'var(--radius-md)',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    border: `1px solid ${isActive ? color : 'var(--border-subtle)'}`,
+                    background: isActive ? `${color}1f` : 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.045))',
+                    color: isActive ? color : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    boxShadow: isActive ? `0 0 7px ${color}24` : 'none',
+                  }}
+                >
+                  {PROVIDERS_META[pid]?.name || PROVIDERS_BASIC[pid]?.name || pid} ({count})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleProviderFavorite(pid)}
+                  style={{
+                    border: '1px solid var(--border-subtle)',
+                    background: 'transparent',
+                    color: favoriteProviders.includes(pid) ? 'var(--warning)' : 'var(--text-muted)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '0.3rem 0.4rem',
+                    fontSize: '0.75rem',
+                    cursor: 'pointer',
+                  }}
+                  title={favoriteProviders.includes(pid) ? 'Remove provider favorite' : 'Add provider favorite'}
+                >
+                  {favoriteProviders.includes(pid) ? '★' : '☆'}
+                </button>
+              </div>
             )
           })}
         </div>

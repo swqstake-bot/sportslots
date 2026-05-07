@@ -1,6 +1,6 @@
 import { memo } from 'react'
 
-export type HubTab = 'casino' | 'autorun' | 'telegram' | 'forum' | 'promotions'
+export type HubTab = 'casino' | 'autorun' | 'telegram' | 'forum' | 'promotions' | 'archive'
 
 const HUB_TABS: { id: HubTab; label: string; title: string }[] = [
   {
@@ -16,6 +16,7 @@ const HUB_TABS: { id: HubTab; label: string; title: string }[] = [
   { id: 'telegram', label: 'Telegram', title: 'Challenges aus Telegram-Kanälen' },
   { id: 'forum', label: 'Forum', title: 'Forum-Challenge-Ansicht' },
   { id: 'promotions', label: 'Promotions', title: 'Stake-Promos & Aktionen' },
+  { id: 'archive', label: 'Archive', title: 'Session review, trends, top games and exports from stored bet history' },
 ]
 
 interface ChallengeHubTabStripProps {

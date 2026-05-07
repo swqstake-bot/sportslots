@@ -100,7 +100,7 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
     <div style={cardStyle}>
       <div style={titleStyle}>Statistik</div>
       <div style={{ fontSize: minimal ? '0.5rem' : (compact ? '0.58rem' : '0.65rem'), color: 'var(--text-muted)', marginBottom: compact ? '0.2rem' : '0.35rem' }}>
-        Einsatz/Gewinn/Netto/Kontostand: Näherung in USD (intern USD-Cent)
+        Einsatz/Gewinn/Netto/Kontostand: USD (präzise akkumuliert, Anzeige in Cent)
         {currencyCode ? ` · Spiel: ${String(currencyCode).toUpperCase()}` : ''}
       </div>
       <div style={{ ...STYLES.grid, gap: minimal ? '0.12rem 0.4rem' : (compact ? '0.2rem 0.6rem' : '0.5rem 1.5rem') }}>

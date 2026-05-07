@@ -5,6 +5,7 @@ import ForumChallengeView from '../ForumChallengeView'
 import { SectionCard } from '../ui/SectionCard'
 import { PromotionsView } from './PromotionsView'
 import { AutorunTab } from './AutorunTab'
+import { BetArchiveTab } from './BetArchiveTab'
 import type { HubStatsPayload } from './hubTypes'
 import type { HubTab } from './ChallengeHubTabStrip'
 import type { CasinoChallengeSelection } from '../../types'
@@ -22,7 +23,7 @@ export interface ChallengeHubTabContentProps {
 }
 
 /**
- * Renders only the active hub tab to avoid hidden-but-mounted heavy trees (faster tab switches, cleaner focus).
+ * Keep all tab trees mounted so long-running hunters keep visible state across tab switches.
  */
 export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
   tab,
@@ -38,13 +39,8 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
   const TelegramChallengeHunterAny = TelegramChallengeHunter as any
 
   return (
-    <div
-      id={`hub-panel-${tab}`}
-      role="tabpanel"
-      aria-labelledby={`hub-tab-${tab}`}
-      className="min-w-0"
-    >
-      {tab === 'casino' && (
+    <div className="min-w-0">
+      <div id="hub-panel-casino" role="tabpanel" aria-labelledby="hub-tab-casino" hidden={tab !== 'casino'} className="min-w-0">
         <SectionCard title="Casino challenges">
           <AutoChallengeHunter
             accessToken={accessToken}
@@ -53,9 +49,9 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
             onHubStatsChange={onHubStatsChange}
           />
         </SectionCard>
-      )}
+      </div>
 
-      {tab === 'autorun' && (
+      <div id="hub-panel-autorun" role="tabpanel" aria-labelledby="hub-tab-autorun" hidden={tab !== 'autorun'} className="min-w-0">
         <SectionCard title="Autorun">
           <AutorunTab
             accessToken={accessToken}
@@ -63,9 +59,9 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
             onHubStatsChange={onHubStatsChange}
           />
         </SectionCard>
-      )}
+      </div>
 
-      {tab === 'telegram' && (
+      <div id="hub-panel-telegram" role="tabpanel" aria-labelledby="hub-tab-telegram" hidden={tab !== 'telegram'} className="min-w-0">
         <SectionCard title="Telegram challenges">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-[var(--text-muted)]">
@@ -94,19 +90,25 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
             </div>
           )}
         </SectionCard>
-      )}
+      </div>
 
-      {tab === 'forum' && (
+      <div id="hub-panel-forum" role="tabpanel" aria-labelledby="hub-tab-forum" hidden={tab !== 'forum'} className="min-w-0">
         <SectionCard title="Forum challenges">
           <ForumChallengeView accessToken={accessToken} webSlots={webSlots as any} onSelectChallenge={onSelectChallenge} />
         </SectionCard>
-      )}
+      </div>
 
-      {tab === 'promotions' && (
+      <div id="hub-panel-promotions" role="tabpanel" aria-labelledby="hub-tab-promotions" hidden={tab !== 'promotions'} className="min-w-0">
         <SectionCard title="Promotions">
           <PromotionsView accessToken={accessToken} webSlots={webSlots as any} />
         </SectionCard>
-      )}
+      </div>
+
+      <div id="hub-panel-archive" role="tabpanel" aria-labelledby="hub-tab-archive" hidden={tab !== 'archive'} className="min-w-0">
+        <SectionCard title="Bet Archive">
+          <BetArchiveTab accessToken={accessToken} />
+        </SectionCard>
+      </div>
     </div>
   )
 })

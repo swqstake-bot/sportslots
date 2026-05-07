@@ -7,6 +7,17 @@ function fmt(val, cc) {
   return formatAmount(val, cc)
 }
 
+function multiplierTone(multiplier) {
+  if (!Number.isFinite(multiplier) || multiplier <= 0) return ''
+  if (multiplier >= 500) return 'terminal-multi-pill--legend'
+  if (multiplier >= 100) return 'terminal-multi-pill--jackpot'
+  if (multiplier >= 50) return 'terminal-multi-pill--epic'
+  if (multiplier >= 20) return 'terminal-multi-pill--great'
+  if (multiplier >= 10) return 'terminal-multi-pill--good'
+  if (multiplier >= 2) return 'terminal-multi-pill--nice'
+  return ''
+}
+
 export default function BetList({
   bets,
   totalCount,
@@ -112,7 +123,9 @@ export default function BetList({
               const sharePreview =
                 canCopyShare && shareId.length > 22 ? `${shareId.slice(0, 22)}…` : shareId || ''
               const showWin = !(isBonus && b.stoppedBonus)
-              const multiplier = bet > 0 ? (win / bet).toFixed(2) : '0'
+              const multiplierNum = bet > 0 ? (win / bet) : 0
+              const multiplier = Number.isFinite(multiplierNum) ? multiplierNum.toFixed(2) : '0.00'
+              const multiplierToneClass = multiplierTone(multiplierNum)
               const scatterCount =
                 b.scatterCount != null && Number.isFinite(Number(b.scatterCount))
                   ? Number(b.scatterCount)
@@ -224,11 +237,12 @@ export default function BetList({
                       )}
                     </td>
                   )}
-                  <td
-                    className={clsx('terminal-td', !isHubPending && win > 0 && 'terminal-td--win', isHubPending && 'terminal-td--pending')}
-                    title={!isHubPending && showWin ? `${multiplier}× stake` : undefined}
-                  >
-                    {!showWin ? '–' : isHubPending ? '…' : `${multiplier}×`}
+                  <td className={clsx('terminal-td', isHubPending && 'terminal-td--pending')} title={!isHubPending && showWin ? `${multiplier}× stake` : undefined}>
+                    {!showWin ? '–' : isHubPending ? '…' : (
+                      <span className={clsx('terminal-multi-pill', multiplierToneClass)}>
+                        {multiplier}×
+                      </span>
+                    )}
                   </td>
                 </tr>
               )

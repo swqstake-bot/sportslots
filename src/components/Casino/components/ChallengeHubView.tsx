@@ -6,6 +6,7 @@ import { ChallengeHubTabStrip, type HubTab } from './challengeHub/ChallengeHubTa
 import { ChallengeHubTabContent } from './challengeHub/ChallengeHubTabContent'
 import type { HubStatsPayload } from './challengeHub/hubTypes'
 import type { CasinoChallengeSelection } from '../types'
+import { useInAppNotificationStore } from '../../../store/inAppNotificationStore'
 
 interface ChallengeHubViewProps {
   accessToken: string
@@ -75,7 +76,8 @@ export function ChallengeHubView({
         wanted === 'autorun' ||
         wanted === 'telegram' ||
         wanted === 'forum' ||
-        wanted === 'promotions'
+        wanted === 'promotions' ||
+        wanted === 'archive'
       ) {
         setTab(wanted as HubTab)
       }
@@ -86,20 +88,43 @@ export function ChallengeHubView({
 
   const aggregated = useMemo(() => {
     const values = Object.values(hubStatsBySource)
-    return values.reduce(
-      (acc, item) => ({
-        queued: acc.queued + (Number(item.queued) || 0),
-        running: acc.running + (Number(item.running) || 0),
-        completed: acc.completed + (Number(item.completed) || 0),
-        bestMulti: Math.max(acc.bestMulti, Number(item.bestMulti) || 0),
-      }),
-      { queued: 0, running: 0, completed: 0, bestMulti: 0 }
-    )
+    if (values.length === 0) return { queued: 0, running: 0, completed: 0, bestMulti: 0 }
+    const latest = values.reduce((best, item) => {
+      if (!best) return item
+      return Number(item?.ts || 0) >= Number(best?.ts || 0) ? item : best
+    }, values[0])
+    const bestMulti = values.reduce((m, item) => Math.max(m, Number(item.bestMulti) || 0), 0)
+    const lastUpdateTs = Number(latest?.ts) || 0
+    return {
+      queued: Number(latest?.queued) || 0,
+      running: Number(latest?.running) || 0,
+      completed: Number(latest?.completed) || 0,
+      bestMulti,
+      sourceCount: values.length,
+      lastUpdateTs,
+    }
   }, [hubStatsBySource])
 
   const handleHubStatsChange = useCallback((payload: HubStatsPayload) => {
     if (!payload?.source) return
-    setHubStatsBySource((prev) => ({ ...prev, [payload.source]: payload }))
+    setHubStatsBySource((prev) => {
+      const prevSource = prev[payload.source]
+      if (prevSource && Number(payload.completed || 0) > Number(prevSource.completed || 0)) {
+        try {
+          useInAppNotificationStore.getState().push({
+            source: 'challengeHub',
+            kind: 'run_completed',
+            title: 'Run completed',
+            body: `${payload.source}: ${payload.completed} completed`,
+            severity: 'success',
+            meta: { source: payload.source },
+          })
+        } catch {
+          // ignore
+        }
+      }
+      return { ...prev, [payload.source]: payload }
+    })
     onHubStatsChange?.(payload)
   }, [onHubStatsChange])
 

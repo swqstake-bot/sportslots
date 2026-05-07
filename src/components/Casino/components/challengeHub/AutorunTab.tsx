@@ -3,7 +3,8 @@ import { useUserStore } from '../../../../store/userStore'
 import { fetchCurrencyRates } from '../../api/stakeChallenges'
 import { getProvider } from '../../api/providers'
 import { parseBetResponse } from '../../utils/parseBetResponse'
-import { convertToUsd } from '../../../../utils/monetaryContract'
+import { toMinor } from '../../utils/formatAmount'
+import { convertMinorToUsdMajor } from '../../utils/monetaryContract'
 import { notify } from '../../utils/notifications'
 import type { HubStatsPayload } from './hubTypes'
 import { computeBetFromMinBetAndSession } from './autorunBetSizing'
@@ -22,6 +23,7 @@ const SPIN_GAP_MS = 180
 type ParsedBet = {
   success: boolean
   error?: string
+  winAmount?: number
   netResult: number
   multiplier?: number
 }
@@ -69,6 +71,10 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
   const [editingId, setEditingId] = useState<string | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
+  const [sessionWageredUsd, setSessionWageredUsd] = useState(0)
+  const [sessionPayoutUsd, setSessionPayoutUsd] = useState(0)
+  const [sessionProfitUsd, setSessionProfitUsd] = useState(0)
+  const [sessionBestMulti, setSessionBestMulti] = useState(0)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const configRef = useRef(config)
@@ -86,12 +92,59 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
   const ratesRef = useRef<Record<string, number> | null>(null)
   const spinContextRef = useRef<SpinContext | null>(null)
   const lastRuleScanAtRef = useRef(0)
+  const sessionKpiRef = useRef({ wagered: 0, payout: 0, profit: 0, bestMulti: 0 })
+  const kpiWorkerRef = useRef<Worker | null>(null)
+  const kpiWorkerReqIdRef = useRef(0)
 
   useEffect(() => {
     configRef.current = config
     accessTokenRef.current = accessToken
     webSlotsRef.current = webSlots
   }, [config, accessToken, webSlots])
+
+  const applySessionTotals = useCallback((totals: { wagered: number; payout: number; profit: number; bestMulti: number }) => {
+    sessionKpiRef.current = {
+      wagered: Number(totals?.wagered) || 0,
+      payout: Number(totals?.payout) || 0,
+      profit: Number(totals?.profit) || 0,
+      bestMulti: Number(totals?.bestMulti) || 0,
+    }
+    setSessionWageredUsd(sessionKpiRef.current.wagered)
+    setSessionPayoutUsd(sessionKpiRef.current.payout)
+    setSessionProfitUsd(sessionKpiRef.current.profit)
+    setSessionBestMulti(sessionKpiRef.current.bestMulti)
+  }, [])
+
+  const postKpiWorker = useCallback((message: Record<string, unknown>) => {
+    const worker = kpiWorkerRef.current
+    if (!worker) return
+    kpiWorkerReqIdRef.current += 1
+    worker.postMessage({ reqId: kpiWorkerReqIdRef.current, ...message })
+  }, [])
+
+  useEffect(() => {
+    if (typeof Worker === 'undefined') return
+    try {
+      const worker = new Worker(new URL('../../workers/autorunKpi.worker.js', import.meta.url), { type: 'module' })
+      worker.onmessage = (ev) => {
+        const payload = ev?.data || {}
+        if (!payload?.ok || !payload?.totals) return
+        applySessionTotals(payload.totals as { wagered: number; payout: number; profit: number; bestMulti: number })
+      }
+      kpiWorkerRef.current = worker
+      postKpiWorker({ type: 'reset' })
+    } catch {
+      kpiWorkerRef.current = null
+    }
+    return () => {
+      if (!kpiWorkerRef.current) return
+      try {
+        kpiWorkerRef.current.terminate()
+      } catch {
+      }
+      kpiWorkerRef.current = null
+    }
+  }, [applySessionTotals, postKpiWorker])
 
   const pushLog = useCallback((msg: string) => {
     const line = `${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}  ${msg}`
@@ -114,8 +167,8 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
         source: 'autorun',
         queued: 0,
         running: 0,
-        completed: 0,
-        bestMulti: 0,
+        completed: totalSpinsRef.current,
+        bestMulti: sessionKpiRef.current.bestMulti,
         ts: Date.now(),
       })
     },
@@ -126,8 +179,9 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     const st = useUserStore.getState()
     const balCur = (st.selectedCurrency || 'btc').toLowerCase()
     const raw = Number(st.balances[balCur] ?? 0)
-    const conv = convertToUsd(raw, balCur, 'major', rates)
-    return conv.usdAmount != null && Number.isFinite(conv.usdAmount) ? conv.usdAmount : 0
+    const minor = toMinor(raw, balCur)
+    const conv = convertMinorToUsdMajor(minor, balCur, rates)
+    return conv.usd != null && Number.isFinite(conv.usd) ? conv.usd : 0
   }, [])
 
   const checkGlobalStops = useCallback(
@@ -373,6 +427,36 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
             await sleep(2000)
             continue
           }
+          if (kpiWorkerRef.current) {
+            postKpiWorker({
+              type: 'spin',
+              betMinor: ctx.betAmount,
+              winMinor: parsed.winAmount ?? 0,
+              currencyCode: cfg.targetCurrency,
+              rates,
+              multiplier: parsed.multiplier ?? 0,
+            })
+          } else {
+            const betUsd = Number(convertMinorToUsdMajor(ctx.betAmount, cfg.targetCurrency, rates)?.usd) || 0
+            const winUsd = Number(convertMinorToUsdMajor(parsed.winAmount ?? 0, cfg.targetCurrency, rates)?.usd) || 0
+            const spinBestMulti = Number(parsed.multiplier)
+            applySessionTotals({
+              wagered: sessionKpiRef.current.wagered + betUsd,
+              payout: sessionKpiRef.current.payout + winUsd,
+              profit: sessionKpiRef.current.profit + (winUsd - betUsd),
+              bestMulti: Number.isFinite(spinBestMulti) && spinBestMulti > sessionKpiRef.current.bestMulti
+                ? spinBestMulti
+                : sessionKpiRef.current.bestMulti,
+            })
+          }
+          onHubStatsChange?.({
+            source: 'autorun',
+            queued: 0,
+            running: 1,
+            completed: totalSpinsRef.current,
+            bestMulti: sessionKpiRef.current.bestMulti,
+            ts: Date.now(),
+          })
           if (parsed.netResult < 0) losingStreakRef.current += 1
           else losingStreakRef.current = 0
 
@@ -405,7 +489,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     return () => {
       cancelled = true
     }
-  }, [isRunning, runRuleScan, pushLog, stopAll, walletUsd, checkGlobalStops])
+  }, [isRunning, runRuleScan, pushLog, stopAll, walletUsd, checkGlobalStops, applySessionTotals, postKpiWorker])
 
   useEffect(() => {
     const t = window.setTimeout(() => saveAutorunConfigToStorage(config), 400)
@@ -447,6 +531,8 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     totalSpinsRef.current = 0
     ruleSpinCountsRef.current = {}
     losingStreakRef.current = 0
+    applySessionTotals({ wagered: 0, payout: 0, profit: 0, bestMulti: 0 })
+    postKpiWorker({ type: 'reset' })
     sessionRef.current = null
     activeSlugRef.current = null
     activeRuleIdRef.current = null
@@ -465,7 +551,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
       queued: 0,
       running: 1,
       completed: 0,
-      bestMulti: 0,
+      bestMulti: sessionKpiRef.current.bestMulti,
       ts: Date.now(),
     })
   }
@@ -480,8 +566,8 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
       source: 'autorun',
       queued: 0,
       running: 0,
-      completed: 0,
-      bestMulti: 0,
+      completed: totalSpinsRef.current,
+      bestMulti: sessionKpiRef.current.bestMulti,
       ts: Date.now(),
     })
   }
@@ -539,8 +625,9 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
       const rates = await fetchCurrencyRates(accessToken, { force: true })
       const balCur = selectedCurrency.toLowerCase()
       const raw = Number(balances[balCur] || 0)
-      const conv = convertToUsd(raw, balCur, 'major', rates)
-      const usd = conv.usdAmount != null && Number.isFinite(conv.usdAmount) ? conv.usdAmount : 0
+      const minor = toMinor(raw, balCur)
+      const conv = convertMinorToUsdMajor(minor, balCur, rates)
+      const usd = conv.usd != null && Number.isFinite(conv.usd) ? conv.usd : 0
       setLiveBalanceUsd(usd)
       pushLog(`Test: ${balCur.toUpperCase()} → ~$${usd.toFixed(4)} (Kurs ok)`)
     } catch (e) {
@@ -596,6 +683,12 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
         <span className={chip}>Laufzeit: {runtimeLabel}</span>
         <span className={chip}>Spins (heute): {spinsToday}</span>
         <span className={chip}>Gesamt (Lauf): {isRunning ? sessionSpinCount : 0}</span>
+        <span className={chip}>Wagered: ${sessionWageredUsd.toFixed(2)}</span>
+        <span className={chip}>Payout: ${sessionPayoutUsd.toFixed(2)}</span>
+        <span className={chip} style={{ color: sessionProfitUsd >= 0 ? 'var(--success)' : 'var(--error)' }}>
+          Profit: {sessionProfitUsd >= 0 ? '+' : ''}${sessionProfitUsd.toFixed(2)}
+        </span>
+        <span className={chip}>Best ×: {sessionBestMulti > 0 ? `${sessionBestMulti.toFixed(2)}x` : '—'}</span>
       </div>
 
       <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/80 p-3 space-y-3">

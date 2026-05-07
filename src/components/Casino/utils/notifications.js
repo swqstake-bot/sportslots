@@ -2,6 +2,8 @@
  * Web Notifications – Benachrichtigungen bei wichtigen Events (Bonus, etc.).
  */
 
+import { useInAppNotificationStore } from '../../../store/inAppNotificationStore'
+
 const PERMISSION_KEY = 'slotbot_notifications_enabled'
 
 /**
@@ -46,6 +48,18 @@ export function hasNotificationPermission() {
  * @param {{ tag?: string }} [options]
  */
 export function notify(title, body, options = {}) {
+  try {
+    useInAppNotificationStore.getState().push({
+      source: 'challengeHub',
+      kind: String(options?.tag || 'notification'),
+      title: String(title || 'Notification'),
+      body: body != null ? String(body) : undefined,
+      severity: 'info',
+      meta: { tag: options?.tag || 'slotbot' },
+    })
+  } catch {
+    // ignore
+  }
   if (!('Notification' in window) || Notification.permission !== 'granted') return
   try {
     const n = new Notification(title, {
@@ -72,6 +86,18 @@ export function notifyBonusHit(slotName, spinCount) {
   const msg = spinCount != null
     ? `Bonus bei ${slotName} nach ${spinCount} Spin(s)`
     : `Bonus bei ${slotName}`
+  try {
+    useInAppNotificationStore.getState().push({
+      source: 'bonusHunt',
+      kind: 'bonus_hit',
+      title: 'Bonus getroffen',
+      body: msg,
+      severity: 'success',
+      meta: { slotName, spinCount },
+    })
+  } catch {
+    // ignore
+  }
   notify('Bonus getroffen', msg, { tag: 'slotbot-bonus' })
 }
 
@@ -87,6 +113,18 @@ export function notifyChallengeStart(slotName, targetMulti) {
     targetMulti === '' ||
     targetMulti === '—'
   if (openEnded) {
+    try {
+      useInAppNotificationStore.getState().push({
+        source: 'autoChallengeHunter',
+        kind: 'challenge_start',
+        title: 'Challenge gestartet',
+        body: `Starte Originals-Challenge bei ${slotName} (offenes Ziel)`,
+        severity: 'info',
+        meta: { slotName, targetMulti: null },
+      })
+    } catch {
+      // ignore
+    }
     notify(
       'Challenge gestartet',
       `Starte Originals-Challenge bei ${slotName} (offenes Ziel – Stop Loss / manuell)`,
@@ -98,5 +136,17 @@ export function notifyChallengeStart(slotName, targetMulti) {
   const msg = Number.isFinite(n)
     ? `Starte Challenge bei ${slotName} (Ziel: ${n}x)`
     : `Starte Challenge bei ${slotName} (Ziel: ${targetMulti}x)`
+  try {
+    useInAppNotificationStore.getState().push({
+      source: 'autoChallengeHunter',
+      kind: 'challenge_start',
+      title: 'Challenge gestartet',
+      body: msg,
+      severity: 'info',
+      meta: { slotName, targetMulti },
+    })
+  } catch {
+    // ignore
+  }
   notify('Challenge gestartet', msg, { tag: 'slotbot-challenge-start' })
 }

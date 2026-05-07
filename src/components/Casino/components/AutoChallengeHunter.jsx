@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback, useId, startTransition } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, startTransition } from 'react'
 import { fetchChallengeList, fetchCurrencyRates, extractProviderGroupSlug } from '../api/stakeChallenges'
 import { getProvider } from '../api/providers'
 import { isFiat, isStable, formatAmount, formatBetLabel, toUnits, toMinor, ZERO_DECIMAL_CURRENCIES } from '../utils/formatAmount'
@@ -31,11 +31,13 @@ import { saveFirstSlotWinIfNeeded } from '../utils/slotFirstWin'
 import { getHunterState, saveHunterState, clearHunterState } from '../utils/challengeCompletion'
 import { getChallengeHubRecentBets, publishChallengeHubBet } from '../utils/challengeHubLiveFeed'
 import { convertMinorToUsdCents } from '../utils/monetaryContract'
+import { buildUsdSpinDelta } from '../utils/casinoStatsEngine'
 import { buildStakeCasinoFairnessReferer, rotateStakeRgsGameSeed } from '../api/stakeFairness'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { usePrefersReducedMotion } from '../../../hooks/usePrefersReducedMotion'
 import { TipMenu } from '../../ui/TipMenu'
 import { useChallengeHubBetListOptional } from './challengeHub/ChallengeHubBetListContext'
+import { SvgCumulativeProfitLineChart } from '../../charts/SvgCumulativeCharts'
 
 /** Challenge-Liste: alle Einträge wie von Stake; Session/Spins über stakeEngine — nicht unterstützte Slots scheitern zur Laufzeit. */
 
@@ -402,28 +404,8 @@ function hunterSpinToUsdCentsRow(betMinor, winMinor, currency, rates) {
  * Netto-Statistik pro Spin in USD (gleiche Spur wie challengeHub Bet-Liste).
  * houseBets bleibt für Share-IDs / Anreicherung, nicht doppelt in`s KPI zählen.
  */
-function hunterSpinKpiUsdDeltas(hubUsdRow, betMinor, winMinor, tCurr, rates) {
-  if (hubUsdRow) {
-    const betU = hubUsdRow.betUsdCents / 100
-    const winU = hubUsdRow.winUsdCents / 100
-    const netU = winU - betU
-    return {
-      wagered: betU,
-      won: Math.max(0, netU),
-      lost: Math.max(0, -netU),
-    }
-  }
-  const c = String(tCurr || 'usd').toLowerCase()
-  const r = getRateForCurrency(rates, c) || 0
-  if (!r) return null
-  const bu = toUnits(betMinor, c) * r
-  const wu = toUnits(winMinor ?? 0, c) * r
-  const netU = wu - bu
-  return {
-    wagered: bu,
-    won: Math.max(0, netU),
-    lost: Math.max(0, -netU),
-  }
+function hunterSpinKpiUsdDeltas(betMinor, winMinor, tCurr, rates) {
+  return buildUsdSpinDelta(betMinor, winMinor ?? 0, tCurr || 'usd', rates || {})
 }
 
 /** Ohne Flag: ältere Zeilen gelten als settled (DB / vor Migration). */
@@ -637,12 +619,6 @@ const HUNTER_SPIN_ERROR_RETRY_MS = 2000
 /** Nach Session-Timeout / abgelaufener Session: 2–3s Pause, dann `startSession` + weiter spinnen (max. Versuche). */
 const SESSION_TIMEOUT_RECOVERY_DELAY_MS = 2500
 const SESSION_TIMEOUT_RECOVERY_MAX = 5
-/**
- * Session-Net-Sparkline: max. gespeicherte Stützstellen (RAM). Anzeige wird auf ~HUNTER_NET_SPARKLINE_PATH_MAX
- * Punkte uniform gesampelt — kein Recharts (SSP-Bundle nutzt Chart.js/Recharts; hier bewusst leicht).
- */
-const SESSION_NET_SERIES_MAX_POINTS = 720
-const HUNTER_NET_SPARKLINE_PATH_MAX = 140
 /** Probe-Candidates: kein harter Stablecoin-Ausschluss mehr (USDC/USDT-Funding häufig). */
 const AUTO_PROBE_EXCLUDED_CURRENCIES = new Set()
 
@@ -1050,113 +1026,6 @@ const STYLES = {
   }
 }
 
-function uniformSampleArray(arr, n) {
-  if (!arr?.length || n <= 0) return []
-  if (arr.length <= n) return arr
-  const out = []
-  for (let j = 0; j < n; j++) {
-    const idx = Math.round((j / Math.max(1, n - 1)) * (arr.length - 1))
-    out.push(arr[idx])
-  }
-  return out
-}
-
-/** SVG-Sparkline: ein Pfad + optionale 0-Linie, kein Chart-Framework (geringer Render-Overhead als Recharts). */
-function SessionNetSparkline({ series, netUsdNow }) {
-  const gradId = useId().replace(/:/g, '')
-  const { lineD, fillD, zeroY, stroke, fill } = useMemo(() => {
-    const W = 200
-    const H = 50
-    const pad = 4
-    const innerW = W - 2 * pad
-    const innerH = H - 2 * pad
-    const pts = uniformSampleArray(series, HUNTER_NET_SPARKLINE_PATH_MAX)
-    const nets = pts.map((p) => (Number.isFinite(p.netUsd) ? p.netUsd : 0))
-    if (nets.length === 0) {
-      return { lineD: '', fillD: '', zeroY: null, stroke: '#64748b', fill: 'rgba(100,116,139,0.12)' }
-    }
-    if (nets.length === 1) {
-      const y = pad + innerH / 2
-      const x0 = pad
-      const x1 = pad + innerW
-      const s = netUsdNow >= 0 ? '#00e701' : '#f43f5e'
-      return {
-        lineD: `M ${x0} ${y} L ${x1} ${y}`,
-        fillD: '',
-        zeroY: y,
-        stroke: s,
-        fill: netUsdNow >= 0 ? 'rgba(0,231,1,0.08)' : 'rgba(244,63,94,0.08)',
-      }
-    }
-    const min = Math.min(0, ...nets)
-    const max = Math.max(0, ...nets)
-    const span = Math.max(max - min, 1e-6)
-    const padY = span * 0.06
-    const lo = min - padY
-    const hi = max + padY
-    const span2 = hi - lo
-    const xAt = (i) => pad + (i / (nets.length - 1)) * innerW
-    const yAt = (v) => pad + innerH * (1 - (v - lo) / span2)
-    let d = ''
-    for (let i = 0; i < nets.length; i++) {
-      const x = xAt(i)
-      const y = yAt(nets[i])
-      d += `${i === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)} `
-    }
-    const firstX = xAt(0)
-    const lastX = xAt(nets.length - 1)
-    const bottom = pad + innerH
-    const fillD = `${d} L ${lastX.toFixed(2)} ${bottom} L ${firstX.toFixed(2)} ${bottom} Z`
-    let zeroY = pad + innerH * (1 - (0 - lo) / span2)
-    zeroY = Math.min(pad + innerH, Math.max(pad, zeroY))
-    const stroke = netUsdNow >= 0 ? '#00e701' : '#f43f5e'
-    const fill = netUsdNow >= 0 ? 'rgba(0,231,1,0.12)' : 'rgba(244,63,94,0.12)'
-    return { lineD: d.trim(), fillD, zeroY, stroke, fill }
-  }, [series, netUsdNow])
-
-  const strokeUrl = `url(#${gradId})`
-
-  return (
-    <svg
-      width="100%"
-      height={50}
-      viewBox="0 0 200 50"
-      preserveAspectRatio="none"
-      style={{ display: 'block' }}
-      aria-hidden
-    >
-      <defs>
-        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor={stroke} stopOpacity={0.55} />
-          <stop offset="100%" stopColor={stroke} stopOpacity={1} />
-        </linearGradient>
-      </defs>
-      {fillD ? <path d={fillD} fill={fill} stroke="none" /> : null}
-      {zeroY != null ? (
-        <line
-          x1={4}
-          x2={196}
-          y1={zeroY}
-          y2={zeroY}
-          stroke="var(--border)"
-          strokeDasharray="3 3"
-          strokeOpacity={0.85}
-        />
-      ) : null}
-      {lineD ? (
-        <path
-          d={lineD}
-          fill="none"
-          stroke={strokeUrl}
-          strokeWidth={1.5}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-        />
-      ) : null}
-    </svg>
-  )
-}
-
 export default function AutoChallengeHunter({ accessToken, webSlots = [], onDiscoveredSlots, onHubStatsChange }) {
   const hubBetListCtx = useChallengeHubBetListOptional()
   const hubRecentBets = hubBetListCtx?.recentBets
@@ -1219,10 +1088,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   }, [rates])
   const [logs, setLogs] = useState([])
   const [lastRefresh, setLastRefresh] = useState(null)
-  const [totalSessionStats, setTotalSessionStats] = useState({ wagered: 0, won: 0, lost: 0 })
-  // Session-Net-Sparkline (SVG, gesampelt) — Recharts war bei 5k Punkten schwer; siehe SESSION_NET_SERIES_MAX_POINTS.
+  const [totalSessionStats, setTotalSessionStats] = useState({ wagered: 0, payout: 0, profit: 0 })
   const ENABLE_SESSION_NET_CHART = true
   const [sessionNetSeries, setSessionNetSeries] = useState(() => [{ time: Date.now(), netUsd: 0 }])
+  const [sessionNetSpinCount, setSessionNetSpinCount] = useState(0)
   /** Höchster getroffener Multiplikator pro Slot-Slug (persistiert). */
   const [bestMultiBySlot, setBestMultiBySlot] = useState(() => loadBestMultiMap())
   useEffect(() => {
@@ -1760,6 +1629,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 const payoutUsd = stakeMajor * Math.max(0, effectiveMulti) * houseBetRate
                 hubPatch.betAmount = Math.round(wageredUsd * 100)
                 hubPatch.winAmount = Math.round(payoutUsd * 100)
+                hubPatch.multiplier = Math.max(0, Number(effectiveMulti) || 0)
                 hubPatch.currencyCode = 'USD'
                 hubPatch.hubSettlement = 'settled'
                 hubPatch.settlementSource = 'houseBets'
@@ -2263,7 +2133,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     return map
   }, [queue])
 
-  const netUsd = totalSessionStats.won - totalSessionStats.lost
+  const netUsd = totalSessionStats.profit
 
   const hasAnythingToStop =
     runningCount > 0 || queue.length > 0 || huntEnabled || autoStart
@@ -2355,7 +2225,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         wagered: 0,
         /** Gleiche USD-Einsatz-Spur wie Session-KPI (kpi.wagered), nicht nachträglich minorToUsd(Summe Minor). */
         wageredUsd: 0,
-        /** Kumuliertes Spin-Netto in USD: Σ(win − bet) = Σ(kpi.won − kpi.lost). */
+        /** Kumuliertes Spin-Netto in USD: Σ(win − bet) = Σ(kpi.profit). */
         wonUsd: 0,
         balance: 0,
         currentBet: 0,
@@ -2781,21 +2651,20 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             if (oldK != null) runSeenRounds.delete(oldK)
           }
 
-          const kpi = hunterSpinKpiUsdDeltas(hubUsdRow, betAmount, win, tCurr, rates)
+          const kpi = hunterSpinKpiUsdDeltas(betAmount, win, tCurr, rates)
           if (kpi) {
             setTotalSessionStats((s) => ({
               wagered: s.wagered + kpi.wagered,
-              won: s.won + kpi.won,
-              lost: s.lost + kpi.lost,
+              payout: s.payout + kpi.payout,
+              profit: s.profit + kpi.profit,
             }))
             if (ENABLE_SESSION_NET_CHART) {
               const t0 = totalStatsRef.current
-              const nextNet = t0.won - t0.lost + kpi.won - kpi.lost
+              const nextNet = t0.profit + kpi.profit
               setSessionNetSeries((prev) => {
-                const n = [...prev, { time: Date.now(), netUsd: nextNet }]
-                if (n.length <= SESSION_NET_SERIES_MAX_POINTS) return n
-                return n.slice(-SESSION_NET_SERIES_MAX_POINTS)
+                return [...prev, { time: Date.now(), netUsd: nextNet }]
               })
+              setSessionNetSpinCount((c) => c + 1)
             }
           }
 
@@ -2862,6 +2731,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     slotName: gName,
                     betAmount: hubListBet,
                     winAmount: wCents,
+                    multiplier: multiForStop,
                     currencyCode: hubListCc,
                     hubSettlement: 'settled',
                     settlementSource: 'http_deferred',
@@ -2908,7 +2778,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               spins: prev[runId].spins + 1,
               wagered: prev[runId].wagered + betAmount,
               wageredUsd: (prev[runId].wageredUsd ?? 0) + (kpi?.wagered ?? 0),
-              wonUsd: (prev[runId].wonUsd ?? 0) + (kpi ? kpi.won - kpi.lost : 0),
+              wonUsd: (prev[runId].wonUsd ?? 0) + (kpi?.profit ?? 0),
               balance: parsed.balance,
               bestMultiRun: prev[runId].bestMultiRun ?? 0,
               bestBetId: prev[runId].bestBetId ?? null,
@@ -3271,9 +3141,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     setQueue([])
     setActiveRuns({})
     setHunterSlotTargets({})
-    setTotalSessionStats({ wagered: 0, won: 0, lost: 0 })
+    setTotalSessionStats({ wagered: 0, payout: 0, profit: 0 })
     if (ENABLE_SESSION_NET_CHART) {
       setSessionNetSeries([{ time: Date.now(), netUsd: 0 }])
+      setSessionNetSpinCount(0)
     }
     setAutoStart(false)
     setHuntEnabled(false)
@@ -4295,16 +4166,14 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               <div className="hunter-kpi-value">${totalSessionStats.wagered.toFixed(2)}</div>
             </div>
             <div className="hunter-kpi-card">
-              <div className="hunter-kpi-label">Netto-Gewinne (USD)</div>
-              <div className="hunter-kpi-value">${totalSessionStats.won.toFixed(2)}</div>
+              <div className="hunter-kpi-label">Payout (USD)</div>
+              <div className="hunter-kpi-value">${totalSessionStats.payout.toFixed(2)}</div>
             </div>
             <div className="hunter-kpi-card">
-              <div className="hunter-kpi-label">Netto-Verluste (USD)</div>
-              <div className="hunter-kpi-value">${totalSessionStats.lost.toFixed(2)}</div>
-            </div>
-            <div className="hunter-kpi-card">
-              <div className="hunter-kpi-label">Netto (USD)</div>
-              <div className="hunter-kpi-value" style={{ color: netUsd >= 0 ? 'var(--success)' : 'var(--error)' }}>${netUsd.toFixed(2)}</div>
+              <div className="hunter-kpi-label">Profit (USD)</div>
+              <div className="hunter-kpi-value" style={{ color: totalSessionStats.profit >= 0 ? 'var(--success)' : 'var(--error)' }}>
+                ${totalSessionStats.profit.toFixed(2)}
+              </div>
             </div>
           </div>
 
@@ -4313,20 +4182,24 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               className="hunter-net-chart"
               style={{
                 marginTop: '0.5rem',
-                padding: '0.45rem 0.55rem',
+                padding: '0.6rem 0.7rem',
                 border: '1px solid var(--border)',
                 borderRadius: 'var(--radius-sm)',
                 background: 'var(--bg-elevated)',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.25rem' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Session Netto-Verlauf</div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }} title="Letzte Stützstellen im Speicher; Kurve für Anzeige gesampelt">
-                  {Math.max(0, sessionNetSeries.length - 1)} Spins
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Profit trend (session)</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }} title="Kompletter Session-Verlauf im Speicher; Chart wird fuer die Darstellung intern gesampelt">
+                  {Math.max(0, sessionNetSpinCount)} Spins
                 </div>
               </div>
-              <div style={{ width: '100%', height: 50 }} title={`Netto jetzt: $${netUsd.toFixed(2)}`}>
-                <SessionNetSparkline series={sessionNetSeries} netUsdNow={netUsd} />
+              <div style={{ width: '100%' }} title={`Netto jetzt: $${netUsd.toFixed(2)}`}>
+                <SvgCumulativeProfitLineChart
+                  profits={sessionNetSeries.map((p) => (Number.isFinite(Number(p?.netUsd)) ? Number(p.netUsd) : 0))}
+                  height={188}
+                  stroke={netUsd >= 0 ? 'var(--success)' : 'var(--error)'}
+                />
               </div>
             </div>
           )}

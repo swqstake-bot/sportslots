@@ -10,6 +10,7 @@ import { ALL_CURRENCIES, filterCurrenciesByProvider } from '../constants/currenc
 import { fetchSupportedCurrencies, fetchCurrencyRates } from '../api/stakeChallenges'
 import { formatAmount, formatBetLabel, isFiat, isStable, toMinor, toUnits } from '../utils/formatAmount'
 import { isUsdLikeCurrency } from '../utils/currencyMeta'
+import { convertMinorToUsdMajor } from '../utils/monetaryContract'
 import { getEffectiveBetAmount } from '../constants/bet'
 import { SlotSelectMulti } from './SlotSelectGrouped'
 import SlotSlider from './SlotSlider'
@@ -26,6 +27,7 @@ import { houseBetSlugMatchesSessionSlug } from '../utils/slotSlugMatching'
 import { TipMenu } from '../../ui/TipMenu'
 import { createEventEnvelope, generateCorrelationId } from '../../../utils/eventEnvelope'
 import { publishRealtimeEvent } from '../../../services/realtimeBus'
+import { createEmptyCasinoAggregate, recomputeCasinoAggregate, aggregateToStatsSnapshot } from '../utils/casinoStatsEngine'
 
 const HUNT_BET_LEVELS = [
   1100, 2200, 4400, 6600, 8800, 11000, 22000, 44000, 66000, 110000, 220000,
@@ -33,6 +35,7 @@ const HUNT_BET_LEVELS = [
 const CLOUDFLARE_RETRY_WAIT_MS = 5000
 const CLOUDFLARE_MAX_RETRIES = 3
 const GENERIC_RETRY_WAIT_MS = 5000
+const BONUS_HUNT_STATS_WORKER_ENABLED = true
 
 function isCloudflareError(err) {
   const msg = (err?.message || '').toLowerCase()
@@ -104,6 +107,7 @@ export default function BonusHuntControl({
   const [currentBalance, setCurrentBalance] = useState(null)
   const [currencyCode, setCurrencyCode] = useState(null)
   const [currencyRates, setCurrencyRates] = useState({})
+  const [statsAgg, setStatsAgg] = useState(() => createEmptyCasinoAggregate())
   const [saveBonusLogs, setSaveBonusLogs] = useState(isSaveBonusLogsEnabled())
   const cancelRef = useRef(false)
   const [hasBonusSlugs, setHasBonusSlugs] = useState(() => new Set(loadHasBonusSlugs()))
@@ -130,6 +134,8 @@ export default function BonusHuntControl({
   const latestBonusOpeningResultsRef = useRef({})
   const huntStartBalanceMinorSnapshotRef = useRef(null)
   const huntCorrelationIdRef = useRef('')
+  const statsWorkerRef = useRef(null)
+  const statsWorkerReqIdRef = useRef(0)
 
   const emitHuntRuntimeEvent = useCallback((eventSource, payload = {}) => {
     const corr = huntCorrelationIdRef.current || generateCorrelationId('hunt')
@@ -777,19 +783,32 @@ export default function BonusHuntControl({
               if (e.id !== historyId) return e
               // Bonus wurde nur "gesichert" (nicht ausgespielt): nie in Hunt-Win übernehmen.
               if (e.stoppedBonus) {
+                const betValue = amountTargetMinor > 0 ? amountTargetMinor : e.betAmount
+                const curr = String(e.currencyCode || target || targetCurrency || 'usd').toLowerCase()
+                const betConv = convertMinorToUsdMajor(betValue, curr, currencyRates || {})
                 return {
                   ...e,
-                  betAmount: amountTargetMinor > 0 ? amountTargetMinor : e.betAmount,
+                  betAmount: betValue,
                   winAmount: 0,
+                  betUsdSnapshotMajor: Number.isFinite(Number(betConv?.usd)) ? Number(betConv.usd) : e.betUsdSnapshotMajor,
+                  winUsdSnapshotMajor: 0,
+                  fxRateSnapshot: Number.isFinite(Number(betConv?.fxRate)) ? Number(betConv.fxRate) : e.fxRateSnapshot,
                 }
               }
               const existing = e.winAmount ?? 0
               if (existing > 0 && payoutMinor <= 0) return e
+              const betValue = amountTargetMinor > 0 ? amountTargetMinor : e.betAmount
+              const curr = String(e.currencyCode || target || targetCurrency || 'usd').toLowerCase()
+              const betConv = convertMinorToUsdMajor(betValue, curr, currencyRates || {})
+              const winConv = convertMinorToUsdMajor(payoutMinor, curr, currencyRates || {})
               return {
                 ...e,
                 // Source of truth: actual stake from houseBets/logger stream (handles provider-specific extra-bet differences).
-                betAmount: amountTargetMinor > 0 ? amountTargetMinor : e.betAmount,
+                betAmount: betValue,
                 winAmount: payoutMinor,
+                betUsdSnapshotMajor: Number.isFinite(Number(betConv?.usd)) ? Number(betConv.usd) : e.betUsdSnapshotMajor,
+                winUsdSnapshotMajor: Number.isFinite(Number(winConv?.usd)) ? Number(winConv.usd) : e.winUsdSnapshotMajor,
+                fxRateSnapshot: Number.isFinite(Number(betConv?.fxRate)) ? Number(betConv.fxRate) : e.fxRateSnapshot,
               }
             })
           )
@@ -1102,6 +1121,24 @@ export default function BonusHuntControl({
               scatterCount: scatterForStat,
               balance: parsed.balance,
               stoppedBonus: shouldStopOnBonus,
+              betUsdSnapshotMajor: (() => {
+                const curr = String(parsed.currencyCode || targetCurrency || 'usd').toLowerCase()
+                const conv = convertMinorToUsdMajor(effectiveBet, curr, currencyRates || {})
+                const usd = Number(conv?.usd)
+                return Number.isFinite(usd) ? usd : undefined
+              })(),
+              winUsdSnapshotMajor: (() => {
+                const curr = String(parsed.currencyCode || targetCurrency || 'usd').toLowerCase()
+                const conv = convertMinorToUsdMajor(statWinAmount, curr, currencyRates || {})
+                const usd = Number(conv?.usd)
+                return Number.isFinite(usd) ? usd : undefined
+              })(),
+              fxRateSnapshot: (() => {
+                const curr = String(parsed.currencyCode || targetCurrency || 'usd').toLowerCase()
+                const conv = convertMinorToUsdMajor(effectiveBet, curr, currencyRates || {})
+                const r = Number(conv?.fxRate)
+                return Number.isFinite(r) ? r : undefined
+              })(),
             },
           ])
 
@@ -1253,6 +1290,60 @@ export default function BonusHuntControl({
   const totalWageredFromHistory = betHistory.reduce((sum, b) => sum + (Number(b?.betAmount) || 0), 0)
   const totalWageredFromState = Object.values(huntState).reduce((s, h) => s + (h?.totalWagered || 0), 0)
   const totalWagered = totalWageredFromHistory > 0 ? totalWageredFromHistory : totalWageredFromState
+  useEffect(() => {
+    if (!BONUS_HUNT_STATS_WORKER_ENABLED || typeof Worker === 'undefined') {
+      setStatsAgg(recomputeCasinoAggregate(betHistory, currencyRates))
+      return
+    }
+    if (!statsWorkerRef.current) {
+      try {
+        const worker = new Worker(new URL('../workers/casinoStatsAggregate.worker.js', import.meta.url), { type: 'module' })
+        worker.onmessage = (ev) => {
+          const payload = ev?.data || {}
+          if ((Number(payload?.reqId) || 0) !== statsWorkerReqIdRef.current) return
+          if (payload?.agg) {
+            setStatsAgg(payload.agg)
+            return
+          }
+          setStatsAgg(recomputeCasinoAggregate(betHistory, currencyRates))
+        }
+        worker.onerror = () => {
+          setStatsAgg(recomputeCasinoAggregate(betHistory, currencyRates))
+        }
+        statsWorkerRef.current = worker
+      } catch {
+        setStatsAgg(recomputeCasinoAggregate(betHistory, currencyRates))
+        return
+      }
+    }
+    statsWorkerReqIdRef.current += 1
+    const reqId = statsWorkerReqIdRef.current
+    try {
+      statsWorkerRef.current.postMessage({ reqId, betHistory, currencyRates })
+    } catch {
+      setStatsAgg(recomputeCasinoAggregate(betHistory, currencyRates))
+    }
+  }, [betHistory, currencyRates])
+
+  useEffect(() => {
+    return () => {
+      if (!statsWorkerRef.current) return
+      try {
+        statsWorkerRef.current.terminate()
+      } catch {
+      }
+      statsWorkerRef.current = null
+    }
+  }, [])
+
+  const statsSnapshot = useMemo(() => {
+    return aggregateToStatsSnapshot(statsAgg, {
+      wsBalance: currentBalance,
+      effectiveTarget: statsCurrency,
+      rates: currencyRates,
+    })
+  }, [statsAgg, currentBalance, statsCurrency, currencyRates])
+  const fmtUsdCents = (v) => `$${(Number(v || 0) / 100).toFixed(2)}`
   const progressRows = useMemo(() => {
     return selectedSlugs
       .map((slug) => ({ slot: slots.find((s) => s.slug === slug), state: huntState[slug] }))
@@ -1838,9 +1929,13 @@ export default function BonusHuntControl({
           if (multi > st.maxMulti) st.maxMulti = multi
         }
         const slotStats = Object.entries(slotStatsMap).map(([k, v]) => ({ key: k, ...v, net: v.won - v.wagered }))
-        const totalWon = slotStats.reduce((s, st) => s + st.won, 0)
-        const totalNetFromSpins = totalWon - totalWagered
-        // Für die Haupt-KPIs immer konsistent zu Total wagered/Total win anzeigen.
+        const sortedByNetDesc = [...slotStats].sort((a, b) => Number(b.net || 0) - Number(a.net || 0))
+        const topWinners = sortedByNetDesc.slice(0, 3)
+        const topLosers = [...sortedByNetDesc].reverse().slice(0, 3)
+        const bestHit = [...slotStats].sort((a, b) => Number(b.maxMulti || 0) - Number(a.maxMulti || 0))[0] || null
+        const totalWon = Number(statsSnapshot.totalWon || 0)
+        const totalWageredUsdCents = Number(statsSnapshot.totalWagered || 0)
+        const totalNetFromSpins = totalWon - totalWageredUsdCents
         let totalNet = totalNetFromSpins
         // Balance-Delta separat nur als Zusatzhinweis (kann abweichen bei gestoppten Bonus-Runden).
         let balanceNet = null
@@ -1852,7 +1947,10 @@ export default function BonusHuntControl({
         }
         const netDeltaVsBalance = balanceNet == null ? 0 : Math.abs(Number(balanceNet) - Number(totalNetFromSpins))
         const hasNetDeltaVsBalance = balanceNet != null && netDeltaVsBalance > 1
-        const roiPct = totalWagered > 0 ? ((totalNet / totalWagered) * 100).toFixed(1) : null
+        const roiPct = totalWageredUsdCents > 0 ? ((totalNet / totalWageredUsdCents) * 100).toFixed(1) : null
+        const bonusesFound = Array.from(hasBonusSlugs || []).length
+        const spinsPerBonus = bonusesFound > 0 ? (totalSpins / bonusesFound) : null
+        const wagerPerBonus = bonusesFound > 0 ? (totalWageredUsdCents / bonusesFound) : null
         const scatterDist = { 3: 0, 4: 0, 5: 0 }
         for (const b of betHistory) {
           if (b.isBonus && b.scatterCount >= 3 && b.scatterCount <= 5) {
@@ -1877,7 +1975,7 @@ export default function BonusHuntControl({
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.9rem' }}>
                   <span>
                     Net: <strong style={{ color: totalNet >= 0 ? 'var(--success)' : 'var(--error)' }}>
-                      {totalNet >= 0 ? '+' : ''}{format(totalNet)}
+                      {totalNet >= 0 ? '+' : ''}{fmtUsdCents(totalNet)}
                     </strong>
                   </span>
                   {roiPct != null && (
@@ -1887,6 +1985,48 @@ export default function BonusHuntControl({
                       </strong>
                     </span>
                   )}
+                </div>
+                <div style={{ marginTop: '0.7rem', borderTop: '1px solid var(--border)', paddingTop: '0.6rem', textAlign: 'left' }}>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '0.45rem' }}>Run review</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.55rem 1rem', fontSize: '0.82rem' }}>
+                    <div>
+                      <div style={{ color: 'var(--text-muted)' }}>Best hit</div>
+                      <div style={{ fontWeight: 700, color: 'var(--accent)' }}>
+                        {bestHit ? `${bestHit.slotName} ${Number(bestHit.maxMulti || 0).toFixed(1)}x` : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: 'var(--text-muted)' }}>Efficiency</div>
+                      <div style={{ fontFamily: 'monospace' }}>
+                        {spinsPerBonus != null ? `${spinsPerBonus.toFixed(1)} spins/bonus` : '—'}
+                        {wagerPerBonus != null ? `, ${fmtUsdCents(Math.round(wagerPerBonus))}/bonus` : ''}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem', marginTop: '0.65rem' }}>
+                    <div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--success)', marginBottom: '0.25rem' }}>Top Winners</div>
+                      {topWinners.length === 0 ? (
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>No winner data.</div>
+                      ) : topWinners.map((st) => (
+                        <div key={`winner_${st.key}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
+                          <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{st.slotName}</span>
+                          <strong style={{ color: 'var(--success)' }}>{st.net >= 0 ? '+' : ''}{format(st.net)}</strong>
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--error)', marginBottom: '0.25rem' }}>Top Losers</div>
+                      {topLosers.length === 0 ? (
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>No loser data.</div>
+                      ) : topLosers.map((st) => (
+                        <div key={`loser_${st.key}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
+                          <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{st.slotName}</span>
+                          <strong style={{ color: 'var(--error)' }}>{st.net >= 0 ? '+' : ''}{format(st.net)}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -1900,12 +2040,12 @@ export default function BonusHuntControl({
               <span>Total spins</span>
               <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{totalSpins}</span>
               <span>Total wagered</span>
-              <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{format(totalWagered)}</span>
+              <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{fmtUsdCents(totalWageredUsdCents)}</span>
               <span>Total win</span>
-              <span style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--success)' }}>{format(totalWon)}</span>
+              <span style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--success)' }}>{fmtUsdCents(totalWon)}</span>
               <span>Net</span>
               <span style={{ fontFamily: 'monospace', fontWeight: 600, color: totalNet >= 0 ? 'var(--success)' : 'var(--error)' }}>
-                {totalNet >= 0 ? '+' : ''}{format(totalNet)}
+                {totalNet >= 0 ? '+' : ''}{fmtUsdCents(totalNet)}
               </span>
               {hasNetDeltaVsBalance && (
                 <>

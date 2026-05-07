@@ -409,6 +409,235 @@ html[data-theme='light'] .casino-root {
   transform: translateY(-1px);
 }
 
+.casino-root .challenge-hub-inbox {
+  position: relative;
+}
+
+.casino-root .challenge-hub-inbox-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  z-index: 40;
+  width: min(420px, 92vw);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(145deg, rgba(var(--accent-rgb), 0.08) 0%, rgba(var(--accent-rgb), 0.02) 44%, rgba(8, 8, 12, 0.95) 100%),
+    var(--bg-card);
+  box-shadow: var(--shadow-card), 0 0 26px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.casino-root .challenge-hub-inbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.45rem 0.55rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.casino-root .challenge-hub-inbox-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.casino-root .challenge-hub-inbox-list {
+  max-height: 330px;
+  overflow-y: auto;
+  padding: 0.4rem;
+}
+
+.casino-root .challenge-hub-inbox-empty {
+  padding: 0.55rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.casino-root .challenge-hub-inbox-item {
+  width: 100%;
+  text-align: left;
+  margin-bottom: 0.35rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  padding: 0.45rem 0.52rem;
+  background: color-mix(in srgb, var(--bg-deep) 92%, rgba(var(--accent-rgb), 0.03));
+  transition: border-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.casino-root .challenge-hub-inbox-item.is-read {
+  opacity: 0.68;
+}
+
+.casino-root .challenge-hub-inbox-item.is-unread {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border-subtle));
+}
+
+.casino-root .challenge-hub-inbox-item:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
+  transform: translateY(-1px);
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.14);
+}
+
+.casino-root .challenge-hub-inbox-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.casino-root .challenge-hub-inbox-item-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.casino-root .challenge-hub-inbox-item-time {
+  font-size: 0.64rem;
+  color: var(--text-muted);
+}
+
+.casino-root .challenge-hub-inbox-item-body {
+  margin-top: 0.2rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.casino-root .challenge-hub-archive {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.casino-root .challenge-hub-archive-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.casino-root .challenge-hub-archive-meta {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.casino-root .challenge-hub-archive-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.casino-root .challenge-hub-archive-limit-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.casino-root .challenge-hub-archive-limit-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.casino-root .challenge-hub-archive-limit-select {
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-deep) 88%, var(--accent) 4%);
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.34rem 0.62rem;
+}
+
+.casino-root .challenge-hub-archive-error {
+  border: 1px solid var(--error, #ef4444);
+  border-radius: var(--radius-md);
+  padding: 0.45rem 0.55rem;
+  font-size: 0.74rem;
+  color: var(--error, #ef4444);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.casino-root .challenge-hub-archive-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.casino-root .challenge-hub-archive-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 0.5rem 0.6rem;
+  background:
+    linear-gradient(160deg, rgba(var(--accent-rgb), 0.05) 0%, rgba(var(--accent-rgb), 0.015) 50%, rgba(8, 8, 12, 0.95) 100%),
+    var(--bg-deep);
+}
+
+.casino-root .challenge-hub-archive-title {
+  margin-bottom: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.casino-root .challenge-hub-archive-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+}
+
+.casino-root .challenge-hub-archive-list {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.casino-root .challenge-hub-archive-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0.28rem 0;
+  font-size: 0.75rem;
+}
+
+.casino-root .challenge-hub-archive-row:last-child {
+  border-bottom: none;
+}
+
+.casino-root .challenge-hub-archive-row-name {
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.casino-root .challenge-hub-archive-row-value {
+  font-family: var(--font-mono, monospace);
+  color: var(--text);
+}
+
+.casino-root .challenge-hub-archive-empty {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+@media (min-width: 960px) {
+  .casino-root .challenge-hub-archive-kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .casino-root .challenge-hub-archive-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* Slot grid loading skeleton (Play mode fresh catalog) */
 @keyframes slot-skeleton-pulse {
   0%,

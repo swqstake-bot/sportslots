@@ -49,7 +49,7 @@ function openDb() {
 /**
  * @param {string} slotSlug
  * @param {number} [limit]
- * @returns {Promise<Array<{ id: number, slotSlug: string, betAmount: number, winAmount: number, rawWinAmount?: number, isBonus: boolean, stoppedBonus?: boolean, scatterCount?: number, balance?: number, roundId?: string, addedAt: number }>>}
+ * @returns {Promise<Array<{ id: number, slotSlug: string, betAmount: number, winAmount: number, rawWinAmount?: number, isBonus: boolean, stoppedBonus?: boolean, scatterCount?: number, balance?: number, roundId?: string, betUsdSnapshotMajor?: number, winUsdSnapshotMajor?: number, fxRateSnapshot?: number, addedAt: number }>>}
  */
 export async function loadBetHistory(slotSlug, limit = 500) {
   const database = await openDb()
@@ -80,7 +80,20 @@ export async function loadBetHistory(slotSlug, limit = 500) {
  */
 export async function appendBet(slotSlug, entry, slotName) {
   const database = await openDb()
-  const { betAmount, winAmount, rawWinAmount, isBonus, stoppedBonus, scatterCount, balance, roundId, currencyCode } = entry
+  const {
+    betAmount,
+    winAmount,
+    rawWinAmount,
+    isBonus,
+    stoppedBonus,
+    scatterCount,
+    balance,
+    roundId,
+    currencyCode,
+    betUsdSnapshotMajor,
+    winUsdSnapshotMajor,
+    fxRateSnapshot,
+  } = entry
   const doc = {
     id: Date.now() + Math.random(),
     slotSlug,
@@ -94,6 +107,9 @@ export async function appendBet(slotSlug, entry, slotName) {
     balance: balance != null ? Number(balance) : undefined,
     currencyCode: currencyCode ?? undefined,
     roundId: roundId ?? undefined,
+    betUsdSnapshotMajor: betUsdSnapshotMajor != null ? Number(betUsdSnapshotMajor) : undefined,
+    winUsdSnapshotMajor: winUsdSnapshotMajor != null ? Number(winUsdSnapshotMajor) : undefined,
+    fxRateSnapshot: fxRateSnapshot != null ? Number(fxRateSnapshot) : undefined,
     addedAt: Date.now(),
   }
   return new Promise((resolve, reject) => {
@@ -112,6 +128,8 @@ export async function appendBet(slotSlug, entry, slotName) {
  */
 export async function loadRecentBets(limit = 30) {
   const database = await openDb()
+  const parsedLimit = Number(limit)
+  const unlimited = !Number.isFinite(parsedLimit) || parsedLimit <= 0
   return new Promise((resolve, reject) => {
     const tx = database.transaction(STORE_NAME, 'readonly')
     const store = tx.objectStore(STORE_NAME)
@@ -120,7 +138,7 @@ export async function loadRecentBets(limit = 30) {
     const results = []
     req.onsuccess = () => {
       const cursor = req.result
-      if (!cursor || results.length >= limit) {
+      if (!cursor || (!unlimited && results.length >= parsedLimit)) {
         resolve(results)
         return
       }
