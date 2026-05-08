@@ -1598,8 +1598,15 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               }
             }
 
-            // Run-Bet-ID nur wenn dieser Spin den Lauf-Best × verbessert (nicht jede neue houseBets-Zeile).
-            if (shareId && trackMulti > prevBest) {
+            // Run-Bet-ID übernehmen, sobald ein valider houseBets-Share da ist:
+            // - wie bisher bei echtem Best-Multi-Upgrade
+            // - zusätzlich bei Gleichstand, falls im Run noch keine Bet-ID gesetzt ist
+            //   (z. B. wenn Best-Multi vorher bereits per deferred/UI sichtbar war).
+            const hasRunBetId = Boolean(activeRunsRef.current?.[runId]?.bestBetId)
+            const shouldSetRunBetId =
+              Boolean(shareId) &&
+              (trackMulti > prevBest || (!hasRunBetId && trackMulti >= prevBest && trackMulti > 0))
+            if (shouldSetRunBetId) {
               bestBetByRunId[runId] = shareId
               const key = p.storageSlug != null ? p.storageSlug : p.slug
               if (
