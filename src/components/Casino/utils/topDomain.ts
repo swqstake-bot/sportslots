@@ -1,5 +1,5 @@
 import { toMinor } from './formatAmount'
-import { formatStakeShareBetId } from './stakeBetShareId'
+import { formatStakeShareBetId, pickStakeHouseBetShareRawId } from './stakeBetShareId'
 
 export const TOP_DOMAIN_STORAGE_KEY = 'slotbot_challenge_hub_top_multis_v1'
 export const TOP_DOMAIN_STORAGE_MAX = 600
@@ -54,7 +54,11 @@ export function toTopEntry(row: any): TopEntry | null {
   if (!Number.isFinite(explicitMultiplier) && (!Number.isFinite(bet) || bet <= 0 || !Number.isFinite(win) || win <= 0)) return null
   const multiplier = Number.isFinite(explicitMultiplier) && explicitMultiplier > 0 ? explicitMultiplier : (win / bet)
   if (!Number.isFinite(multiplier) || multiplier <= 0) return null
-  const shareId = formatStakeShareBetId(row?.shareIid || row?.houseTopId || row?.houseId || row?.iid || null)
+  const shareRaw = pickStakeHouseBetShareRawId({
+    shareIid: row?.shareIid ?? row?.iid ?? null,
+    houseTopId: row?.houseTopId ?? row?.houseId ?? null,
+  })
+  const shareId = formatStakeShareBetId(shareRaw)
   const id = String(row?.id ?? '')
   const key = String(id || shareId || `${row?.slotSlug || 'slot'}:${bet}:${win}:${row?.addedAt || ''}`)
   if (!key) return null
@@ -161,7 +165,12 @@ export function loggerBetToTopCandidate(row: any): any | null {
     betAmount,
     winAmount,
     currencyCode: currency.toUpperCase(),
-    shareIid: formatStakeShareBetId(row?.iid || row?.houseId || row?.betId || null) || undefined,
+    shareIid: formatStakeShareBetId(
+      pickStakeHouseBetShareRawId({
+        shareIid: row?.iid ?? null,
+        houseTopId: row?.houseId ?? null,
+      })
+    ) || undefined,
     addedAt: row?.receivedAt ? Date.parse(String(row.receivedAt)) : Date.now(),
     hubSettlement: 'settled',
   }

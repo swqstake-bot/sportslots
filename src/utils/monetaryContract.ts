@@ -20,6 +20,7 @@ export interface UsdConversion extends MonetaryAmount {
   usdCents: number | null
   fxStatus: FxStatus
   fxSource: 'usd-like' | 'rates' | null
+  fxRateSource: 'usd-like' | 'rates' | null
   fxRate: number | null
 }
 
@@ -32,6 +33,10 @@ export function getMinorFactor(currencyCode: unknown): number {
   if (ZERO_DECIMAL.has(c)) return 1
   if (FIAT.has(c)) return 100
   return 1e8
+}
+
+export function isUsdLikeCurrency(currencyCode: unknown): boolean {
+  return USD_LIKE.has(normalizeCurrencyCode(currencyCode))
 }
 
 export function normalizeAmount(value: unknown, currencyCode: unknown, unit: MonetaryUnit): MonetaryAmount {
@@ -52,17 +57,67 @@ export function normalizeAmount(value: unknown, currencyCode: unknown, unit: Mon
 export function convertToUsd(value: unknown, currencyCode: unknown, unit: MonetaryUnit, rates: Record<string, number> = {}): UsdConversion {
   const base = normalizeAmount(value, currencyCode, unit)
   if (!Number.isFinite(base.amountMajor)) {
-    return { ...base, usdAmount: null, usdCents: null, fxStatus: 'invalid-amount', fxSource: null, fxRate: null }
+    return {
+      ...base,
+      usdAmount: null,
+      usdCents: null,
+      fxStatus: 'invalid-amount',
+      fxSource: null,
+      fxRateSource: null,
+      fxRate: null,
+    }
   }
   if (USD_LIKE.has(base.currencyCode)) {
     const usd = base.amountMajor
-    return { ...base, usdAmount: usd, usdCents: Math.round(usd * 100), fxStatus: 'ok', fxSource: 'usd-like', fxRate: 1 }
+    return {
+      ...base,
+      usdAmount: usd,
+      usdCents: Math.round(usd * 100),
+      fxStatus: 'ok',
+      fxSource: 'usd-like',
+      fxRateSource: 'usd-like',
+      fxRate: 1,
+    }
   }
   const rate = Number(rates?.[base.currencyCode])
   if (!Number.isFinite(rate) || rate <= 0) {
-    return { ...base, usdAmount: null, usdCents: null, fxStatus: 'missing-rate', fxSource: 'rates', fxRate: null }
+    return {
+      ...base,
+      usdAmount: null,
+      usdCents: null,
+      fxStatus: 'missing-rate',
+      fxSource: 'rates',
+      fxRateSource: 'rates',
+      fxRate: null,
+    }
   }
   const usd = base.amountMajor * rate
-  return { ...base, usdAmount: usd, usdCents: Math.round(usd * 100), fxStatus: 'ok', fxSource: 'rates', fxRate: rate }
+  return {
+    ...base,
+    usdAmount: usd,
+    usdCents: Math.round(usd * 100),
+    fxStatus: 'ok',
+    fxSource: 'rates',
+    fxRateSource: 'rates',
+    fxRate: rate,
+  }
+}
+
+export function inferHouseBetAmountUnit(rawAmount: unknown): MonetaryUnit {
+  const raw = Number(rawAmount)
+  if (!Number.isFinite(raw) || raw <= 0) return 'major'
+  return Number.isInteger(raw) ? 'minor' : 'major'
+}
+
+export function normalizeHouseBetAmount(rawAmount: unknown, currencyCode: unknown): MonetaryAmount {
+  return normalizeAmount(rawAmount, currencyCode, inferHouseBetAmountUnit(rawAmount))
+}
+
+export function netMinor(winMinor: unknown, betMinor: unknown): number {
+  const win = Number(winMinor)
+  const bet = Number(betMinor)
+  const safeWin = Number.isFinite(win) ? win : 0
+  const safeBet = Number.isFinite(bet) ? bet : 0
+  return Math.round(safeWin - safeBet)
 }
 

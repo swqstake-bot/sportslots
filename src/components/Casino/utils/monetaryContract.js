@@ -44,22 +44,23 @@ export function normalizeMonetaryAmount(value, currencyCode, unit = 'minor') {
 export function convertMinorToUsdCents(amountMinor, currencyCode, currencyRates = {}) {
   const base = normalizeMinorAmount(amountMinor, currencyCode)
   if (!Number.isFinite(base.amountMajor)) {
-    return { usdCents: null, fxStatus: 'invalid-amount', fxRateSource: null, fxRate: null, ...base }
+    return { usdCents: null, fxStatus: 'invalid-amount', fxRateSource: null, fxSource: null, fxRate: null, ...base }
   }
 
   if (isUsdLikeCurrency(base.currencyCode)) {
-    return { usdCents: Math.round(base.amountMajor * 100), fxStatus: 'ok', fxRateSource: 'usd-like', fxRate: 1, ...base }
+    return { usdCents: Math.round(base.amountMajor * 100), fxStatus: 'ok', fxRateSource: 'usd-like', fxSource: 'usd-like', fxRate: 1, ...base }
   }
 
   const rate = Number(currencyRates?.[base.currencyCode])
   if (!Number.isFinite(rate) || rate <= 0) {
-    return { usdCents: null, fxStatus: 'missing-rate', fxRateSource: 'rates', fxRate: null, ...base }
+    return { usdCents: null, fxStatus: 'missing-rate', fxRateSource: 'rates', fxSource: 'rates', fxRate: null, ...base }
   }
 
   return {
     usdCents: Math.round(base.amountMajor * rate * 100),
     fxStatus: 'ok',
     fxRateSource: 'rates',
+    fxSource: 'rates',
     fxRate: rate,
     ...base,
   }
@@ -68,25 +69,34 @@ export function convertMinorToUsdCents(amountMinor, currencyCode, currencyRates 
 export function convertMinorToUsdMajor(amountMinor, currencyCode, currencyRates = {}) {
   const base = normalizeMinorAmount(amountMinor, currencyCode)
   if (!Number.isFinite(base.amountMajor)) {
-    return { usd: null, fxStatus: 'invalid-amount', fxRateSource: null, fxRate: null, ...base }
+    return { usd: null, fxStatus: 'invalid-amount', fxRateSource: null, fxSource: null, fxRate: null, ...base }
   }
 
   if (isUsdLikeCurrency(base.currencyCode)) {
-    return { usd: base.amountMajor, fxStatus: 'ok', fxRateSource: 'usd-like', fxRate: 1, ...base }
+    return { usd: base.amountMajor, fxStatus: 'ok', fxRateSource: 'usd-like', fxSource: 'usd-like', fxRate: 1, ...base }
   }
 
   const rate = Number(currencyRates?.[base.currencyCode])
   if (!Number.isFinite(rate) || rate <= 0) {
-    return { usd: null, fxStatus: 'missing-rate', fxRateSource: 'rates', fxRate: null, ...base }
+    return { usd: null, fxStatus: 'missing-rate', fxRateSource: 'rates', fxSource: 'rates', fxRate: null, ...base }
   }
 
   return {
     usd: base.amountMajor * rate,
     fxStatus: 'ok',
     fxRateSource: 'rates',
+    fxSource: 'rates',
     fxRate: rate,
     ...base,
   }
+}
+
+export function convertToUsd(value, currencyCode, unit = 'minor', currencyRates = {}) {
+  if (unit === 'major') {
+    const major = normalizeMajorAmount(value, currencyCode)
+    return convertMinorToUsdMajor(major.amountMinor, major.currencyCode, currencyRates)
+  }
+  return convertMinorToUsdMajor(value, currencyCode, currencyRates)
 }
 
 export function inferHouseBetAmountUnit(rawAmount) {

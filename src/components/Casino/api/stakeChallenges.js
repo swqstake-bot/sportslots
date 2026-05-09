@@ -1,5 +1,6 @@
 import { StakeApi } from '../../../api/client'
 import { logApiCall } from '../utils/apiLogger'
+import { executeWithReliability } from '../../../utils/reliabilityRuntime'
 
 const CURRENCY_CONFIG_QUERY = `query CurrencyConfiguration($isAcp: Boolean!) {
   currencyConfiguration(isAcp: $isAcp) {
@@ -29,14 +30,20 @@ export async function fetchCurrencyRates(accessToken, options = {}) {
   const variables = { isAcp: false }
 
   try {
-    const response = await StakeApi.query(CURRENCY_CONFIG_QUERY, variables)
+    const { result: response, attempts } = await executeWithReliability({
+      domain: 'casino',
+      action: 'stake/currencyConfiguration',
+      maxAttempts: 3,
+      baseDelayMs: 300,
+      task: () => StakeApi.query(CURRENCY_CONFIG_QUERY, variables),
+    })
     const json = response.data
 
     logApiCall({
       type: 'stake/currencyConfiguration',
       endpoint: 'graphql',
       request: variables,
-      response: json,
+      response: { ...(json || {}), _reliabilityAttempts: attempts },
       error: null,
       durationMs: Date.now() - t0,
     })
@@ -88,14 +95,20 @@ export async function fetchSupportedCurrencies(accessToken) {
   const variables = { isAcp: false }
 
   try {
-    const response = await StakeApi.query(CURRENCY_CONFIG_QUERY, variables)
+    const { result: response, attempts } = await executeWithReliability({
+      domain: 'casino',
+      action: 'stake/supportedCurrencies',
+      maxAttempts: 3,
+      baseDelayMs: 300,
+      task: () => StakeApi.query(CURRENCY_CONFIG_QUERY, variables),
+    })
     const json = response.data
 
     logApiCall({
       type: 'stake/currencyConfiguration',
       endpoint: 'graphql',
       request: variables,
-      response: json,
+      response: { ...(json || {}), _reliabilityAttempts: attempts },
       error: null,
       durationMs: Date.now() - t0,
     })
@@ -199,14 +212,20 @@ export async function fetchChallengeList(accessToken, options = {}) {
   }
 
   try {
-    const response = await StakeApi.query(CHALLENGE_LIST_QUERY, variables)
+    const { result: response, attempts } = await executeWithReliability({
+      domain: 'casino',
+      action: 'stake/challengeList',
+      maxAttempts: 3,
+      baseDelayMs: 350,
+      task: () => StakeApi.query(CHALLENGE_LIST_QUERY, variables),
+    })
     const json = response.data
 
     logApiCall({
       type: 'stake/challengeList',
       endpoint: 'graphql',
       request: variables,
-      response: json,
+      response: { ...(json || {}), _reliabilityAttempts: attempts },
       error: null,
       durationMs: Date.now() - t0,
     })

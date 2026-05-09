@@ -27,6 +27,7 @@ export function pickStakeHouseBetShareRawId(payload) {
   if (ht) return ht
   const top = payload.id != null && String(payload.id).trim() !== '' ? String(payload.id).trim() : null
   if (top && /^house:/i.test(top)) return top
+  if (top && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(top)) return top
   if (top && /^casino:[0-9a-f-]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(top)) return top
   if (top && /^\d+$/.test(top)) return top
   return null
@@ -57,6 +58,18 @@ export function stakeBetIdForPreviewApi(rawOrPrefixed) {
   if (!s) return null
   const m = /^(casino|house):(.+)$/i.exec(s)
   return (m ? m[2] : s).trim() || null
+}
+
+export function normalizedStakeShareIdCore(rawOrPrefixed) {
+  const formatted = formatStakeShareBetId(rawOrPrefixed == null ? null : String(rawOrPrefixed).trim())
+  if (!formatted) return null
+  return stakeBetIdForPreviewApi(formatted)
+}
+
+export function areStakeShareIdsEquivalent(a, b) {
+  const ca = normalizedStakeShareIdCore(a)
+  const cb = normalizedStakeShareIdCore(b)
+  return Boolean(ca && cb && ca === cb)
 }
 
 /**

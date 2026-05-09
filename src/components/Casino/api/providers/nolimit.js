@@ -5,10 +5,16 @@ import { parseNlcSpin } from '../../utils/nlcSpinParser'
 import { normalizeProviderError } from './providerErrors'
 
 const NLC_FS_URL = 'https://casino.nolimitcity.com/EjsFrontWeb/fs'
+const NLC_WS_URL = 'wss://casino.nolimitcity.com/EjsGameWeb/ws/game?data='
+const NLC_WS_PROTOCOL = '@nolimitcity/game-communication@0.3.0'
+const NLC_WS_CLIENT_VERSION = '1.1.182'
+const NLC_WS_TIMEOUT_MS = 10_000
+const NLC_WS_MAX_CONTINUES = 240
 const DEFAULT_CHIP_AMOUNTS = [1000, 5000, 25000, 100000, 500000, 1000000]
 const DEFAULT_CURRENCY_MULT = 1000
 const EVO_CLIENT_VERSION = '6.20250423.223717.51350-8d183b2fff'
 const DEFAULT_EVO_ORIGIN = 'https://babylonstkn.evo-games.com'
+const HEX = '0123456789abcdef'
 
 function nolimitError(message, cause) {
   return normalizeProviderError('nolimit', cause || new Error(message), message)
@@ -360,6 +366,338 @@ function toChipFromMinor(minorAmount, currencyMult) {
   return Math.max(1, Math.round((Number(minorAmount) / 100) * Number(currencyMult || DEFAULT_CURRENCY_MULT)))
 }
 
+function randomMessagePrefix() {
+  return `${Math.random().toString(36).slice(2, 12)}-`
+}
+
+function stringToByteArray(value) {
+  const encoded = encodeURIComponent(String(value || '')).split('')
+  const out = []
+  for (let i = 0; i < encoded.length; i += 1) {
+    if (encoded[i] === '%') {
+      out.push((HEX.indexOf(encoded[i + 1].toLowerCase()) << 4) | HEX.indexOf(encoded[i + 2].toLowerCase()))
+      i += 2
+    } else {
+      out.push(encoded[i].charCodeAt(0))
+    }
+  }
+  return out
+}
+
+function rc4Transform(keyBytes, dataBytes) {
+  let i = 0
+  let j = 0
+  let swap = 0
+  const s = []
+  const out = []
+  for (i = 0; i < 256; i += 1) s[i] = i
+  for (i = 0, j = 0; i < 256; i += 1) {
+    j = (j + s[i] + keyBytes[i % keyBytes.length]) % 256
+    swap = s[i]
+    s[i] = s[j]
+    s[j] = swap
+  }
+  let x = 0
+  let y = 0
+  for (let n = 0; n < dataBytes.length; n += 1) {
+    x = (x + 1) % 256
+    y = (y + s[x]) % 256
+    swap = s[x]
+    s[x] = s[y]
+    s[y] = swap
+    out.push(dataBytes[n] ^ s[(s[x] + s[y]) % 256])
+  }
+  return out
+}
+
+function bytesToHex(bytes) {
+  const out = []
+  for (const b of bytes) {
+    out.push(HEX.charAt((b >> 4) & 0xf))
+    out.push(HEX.charAt(b & 0xf))
+  }
+  return out.join('')
+}
+
+function hexToBytes(value) {
+  if (typeof value !== 'string') return []
+  const out = []
+  const chars = value.split('')
+  for (let i = 0; i < chars.length; i += 2) {
+    out.push((HEX.indexOf(chars[i]) << 4) | HEX.indexOf(chars[i + 1]))
+  }
+  return out
+}
+
+function encryptNolimitMessage(payload, sessionSecret) {
+  try {
+    if (!sessionSecret) return null
+    const text = JSON.stringify(payload)
+    return bytesToHex(rc4Transform(stringToByteArray(sessionSecret), stringToByteArray(text)))
+  } catch {
+    return null
+  }
+}
+
+function bytesToDecodedString(bytes) {
+  let pct = ''
+  for (const b of bytes) {
+    pct += `%${HEX.charAt((b >> 4) & 0xf)}${HEX.charAt(b & 0xf)}`
+  }
+  return decodeURIComponent(pct)
+}
+
+function lzwDecode(value) {
+  if (!String(value || '').startsWith('lzw:')) return value
+  const dict = {}
+  const data = String(value).slice(4)
+  let currChar = data.substr(0, 1)
+  let oldPhrase = currChar
+  const out = [currChar]
+  let code = 256
+  for (let i = 1; i < data.length; i += 1) {
+    const currCode = data.charCodeAt(i)
+    const phrase = currCode < 256 ? data.substr(i, 1) : (dict[currCode] ? dict[currCode] : (oldPhrase + currChar))
+    out.push(phrase)
+    currChar = phrase.substr(0, 1)
+    dict[code] = oldPhrase + currChar
+    code += 1
+    oldPhrase = phrase
+  }
+  return out.join('')
+}
+
+function decryptNolimitMessage(rawMessage, sessionSecret) {
+  try {
+    if (!sessionSecret) return null
+    const raw = String(rawMessage ?? '')
+    if (raw.startsWith('lzw:')) {
+      const decoded = lzwDecode(raw)
+      try {
+        return JSON.parse(decoded)
+      } catch {
+        return decoded
+      }
+    }
+    const plain = bytesToDecodedString(rc4Transform(stringToByteArray(sessionSecret), hexToBytes(raw)))
+    return JSON.parse(plain)
+  } catch {
+    return null
+  }
+}
+
+function resolveNolimitWsUrl(wsSessionData) {
+  const raw = String(wsSessionData || '').trim()
+  if (!raw) return null
+  if (/^wss?:\/\//i.test(raw)) return raw
+  if (raw.includes('?data=')) return raw
+  return `${NLC_WS_URL}${raw}`
+}
+
+function createNolimitWsState(sessionSecret) {
+  return {
+    socket: null,
+    callbacks: new Map(),
+    nextRequestId: 0,
+    messagePrefix: randomMessagePrefix(),
+    sessionSecret: String(sessionSecret || ''),
+  }
+}
+
+async function connectNolimitWs(wsState, wsSessionData) {
+  const url = resolveNolimitWsUrl(wsSessionData)
+  if (!url) throw new Error('Nolimit WS URL fehlt.')
+  if (wsState?.socket && wsState.socket.readyState === WebSocket.OPEN) return
+  if (wsState?.socket && wsState.socket.readyState === WebSocket.CONNECTING) {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Nolimit WS connect timeout.')), NLC_WS_TIMEOUT_MS)
+      wsState.socket.addEventListener('open', () => {
+        clearTimeout(timeout)
+        resolve()
+      }, { once: true })
+      wsState.socket.addEventListener('error', () => {
+        clearTimeout(timeout)
+        reject(new Error('Nolimit WS connect failed.'))
+      }, { once: true })
+    })
+    return
+  }
+  if (wsState?.socket) {
+    try { wsState.socket.close() } catch {}
+  }
+  wsState.nextRequestId = 0
+  wsState.callbacks.clear()
+  wsState.messagePrefix = randomMessagePrefix()
+
+  await new Promise((resolve, reject) => {
+    const ws = new WebSocket(url)
+    wsState.socket = ws
+    const timeout = setTimeout(() => {
+      try { ws.close() } catch {}
+      reject(new Error('Nolimit WS open timeout.'))
+    }, NLC_WS_TIMEOUT_MS)
+
+    ws.onopen = () => {
+      clearTimeout(timeout)
+      resolve()
+    }
+    ws.onmessage = (event) => {
+      const decoded = decryptNolimitMessage(event?.data, wsState.sessionSecret)
+      const decodedId = String(decoded?.id || '')
+      const reqId = decodedId.includes('-') ? decodedId.split('-').pop() : decodedId
+      const cb = wsState.callbacks.get(String(reqId || '0'))
+      if (cb) {
+        cb(decoded)
+        wsState.callbacks.delete(String(reqId || '0'))
+      }
+    }
+    ws.onerror = () => {
+      clearTimeout(timeout)
+      reject(new Error('Nolimit WS Fehler.'))
+    }
+    ws.onclose = () => {
+      wsState.socket = null
+    }
+  })
+}
+
+function isNolimitWsOpen(wsState) {
+  return !!(wsState?.socket && wsState.socket.readyState === WebSocket.OPEN)
+}
+
+async function sendNolimitWsRequest(wsState, sessionSecret, payload, timeoutMs = NLC_WS_TIMEOUT_MS) {
+  if (!isNolimitWsOpen(wsState)) {
+    throw new Error('Nolimit WS ist nicht verbunden.')
+  }
+  const requestId = String(wsState.nextRequestId++)
+  const message = { ...payload, id: `${wsState.messagePrefix}${requestId}` }
+  const encrypted = encryptNolimitMessage(message, sessionSecret)
+  if (!encrypted) throw new Error('Nolimit WS Nachricht konnte nicht verschluesselt werden.')
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      wsState.callbacks.delete(requestId)
+      reject(new Error('Nolimit WS request timeout.'))
+    }, timeoutMs)
+
+    wsState.callbacks.set(requestId, (response) => {
+      clearTimeout(timeout)
+      resolve(response)
+    })
+
+    try {
+      wsState.socket.send(encrypted)
+    } catch (err) {
+      clearTimeout(timeout)
+      wsState.callbacks.delete(requestId)
+      reject(err)
+    }
+  })
+}
+
+function pickNolimitPayload(message) {
+  if (!message || typeof message !== 'object') return null
+  const contentData = message?.content?.data
+  if (contentData && typeof contentData === 'object') return contentData
+  if (message?.data && typeof message.data === 'object' && !Array.isArray(message.data)) return message.data
+  return message
+}
+
+function shouldContinueNolimitSpin(parsed, payload) {
+  if (!parsed) return false
+  const mode = String(parsed?.mode || 'NORMAL').toUpperCase()
+  const fsLeft = Number(parsed?.freespinsLeft || 0)
+  const possibleActions = payload?.possibleActions || payload?.actions || payload?.availableActions
+  if (Array.isArray(possibleActions) && possibleActions.length > 0) return true
+  if (fsLeft > 0) return true
+  return mode !== 'NORMAL'
+}
+
+function toProviderSpinResponse(rawPayload, session, winAmount, parsedData, status = 'complete') {
+  return {
+    statusCode: 0,
+    accountBalance: { balance: null, currencyCode: (session.currencyCode || 'EUR').toUpperCase() },
+    round: {
+      status,
+      roundId: findByKeys(rawPayload, ['roundId', 'round_id', 'round']) || null,
+      events: [{ awa: Number(winAmount || 0) }],
+      winAmountDisplay: Number(winAmount || 0),
+      freespinsLeft: Number(parsedData?.freespinsLeft || 0),
+      mode: parsedData?.mode || 'NORMAL',
+      isBonus: !!parsedData?.isBonus,
+    },
+    _nolimitRaw: rawPayload,
+  }
+}
+
+async function ensureNolimitWsReady(session) {
+  const s = session?._internal
+  if (!s) throw new Error('Nolimit Session ungueltig.')
+  if (!s.wsState) s.wsState = createNolimitWsState(s.wsSessionData || s.extPlayerKey || s.tokenString)
+  await connectNolimitWs(s.wsState, s.wsSessionData || s.extPlayerKey || s.tokenString)
+  if (s.wsInitialized) return
+  const initResponse = await sendNolimitWsRequest(s.wsState, s.wsSessionData || s.extPlayerKey || s.tokenString, {
+    type: 'init',
+    content: { type: 'init' },
+    protocol: NLC_WS_PROTOCOL,
+    id: 'messageId',
+    gameClientVersion: NLC_WS_CLIENT_VERSION,
+    data: {},
+  })
+  if (!initResponse) throw new Error('Nolimit WS init ohne Antwort.')
+  s.wsInitialized = true
+}
+
+async function placeBetViaWs(session, chipAmount) {
+  const s = session._internal
+  await ensureNolimitWsReady(session)
+
+  let currentResponse = await sendNolimitWsRequest(s.wsState, s.wsSessionData || s.extPlayerKey || s.tokenString, {
+    type: 'normal',
+    content: {
+      type: 'normalBet',
+      bet: String(chipAmount),
+      playerInteraction: { actionSpin: true },
+      data: { balanceId: 'combined' },
+    },
+    protocol: NLC_WS_PROTOCOL,
+    id: 'messageId',
+    data: { extPlayerKey: s.extPlayerKey },
+  })
+  let rawPayload = pickNolimitPayload(currentResponse)
+  let parsed = parseNlcSpin(rawPayload || currentResponse)
+  let winAmount = Number(parsed?.win || 0)
+  let loops = 0
+
+  while (shouldContinueNolimitSpin(parsed, rawPayload) && loops < NLC_WS_MAX_CONTINUES) {
+    loops += 1
+    currentResponse = await sendNolimitWsRequest(s.wsState, s.wsSessionData || s.extPlayerKey || s.tokenString, {
+      type: 'normal',
+      content: {
+        type: 'continueBet',
+        bet: '0.00',
+        data: { balanceId: 'combined' },
+      },
+      protocol: NLC_WS_PROTOCOL,
+      id: 'messageId',
+      data: { extPlayerKey: s.extPlayerKey },
+    })
+    rawPayload = pickNolimitPayload(currentResponse)
+    parsed = parseNlcSpin(rawPayload || currentResponse)
+    winAmount = Number(parsed?.win || winAmount || 0)
+  }
+
+  if (loops >= NLC_WS_MAX_CONTINUES) {
+    throw new Error(`Nolimit continue limit erreicht (${NLC_WS_MAX_CONTINUES}).`)
+  }
+
+  return {
+    data: toProviderSpinResponse(rawPayload || currentResponse, session, winAmount, parsed, 'complete'),
+    nextSeq: (session.seq || 0) + 1,
+    session: { ...session, seq: (session.seq || 0) + 1, lastPlayAt: Date.now() },
+    meta: { continueCount: loops, transport: 'ws' },
+  }
+}
+
 function snapToNearest(amount, levels) {
   if (!levels?.length) return amount
   let best = levels[0]
@@ -531,9 +869,8 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
       throw new Error(`Nolimit open_game fehlgeschlagen: ${lastOpenErr}`)
     }
 
-    const extPlayerKey = String(
-      findByKeys(openData, ['session', 'sessionKey', 'key', 'extPlayerKey']) || tokenString
-    )
+    const wsSessionData = String(findByKeys(openData, ['session', 'sessionKey']) || tokenString)
+    const extPlayerKey = String(findByKeys(openData, ['extPlayerKey', 'key']) || wsSessionData)
     const currencyMultRaw = Number(findByKeys(openData, ['currencyMult', 'currencymult', 'currency_multiplier']))
     const currencyMult = Number.isFinite(currencyMultRaw) && currencyMultRaw > 0 ? currencyMultRaw : DEFAULT_CURRENCY_MULT
 
@@ -555,6 +892,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
       },
       response: {
         ok: true,
+        wsSession: !!wsSessionData,
         extPlayerKey: !!extPlayerKey,
         currencyMult,
         betLevelsCount: betLevels.length,
@@ -582,6 +920,9 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
         gameCodeString,
         tableId,
         extPlayerKey,
+        wsSessionData,
+        wsState: createNolimitWsState(wsSessionData || extPlayerKey || tokenString),
+        wsInitialized: false,
         origin,
         referer,
       },
@@ -610,108 +951,63 @@ export async function placeBet(session, betAmount, extraBet, _autoplay = false) 
     chipAmount = snapToNearest(chipAmount, session.betLevelsRaw)
   }
 
-  const spinJson = {
-    table_id: s.tableId,
-    session: s.extPlayerKey,
-    chipAmount,
+  try {
+    const wsResult = await placeBetViaWs(session, chipAmount)
+    const parsed = parseNlcSpin(wsResult?.data?._nolimitRaw)
+    logApiCall({
+      type: 'nolimit/spin',
+      endpoint: NLC_WS_URL,
+      request: { chipAmount, extraBet: !!extraBet, transport: 'ws' },
+      response: { ok: true, winAmount: Number(parsed?.win || 0), continueCount: wsResult?.meta?.continueCount || 0 },
+      error: null,
+      durationMs: Date.now() - t0,
+    })
+    return wsResult
+  } catch (wsError) {
+    const wsMessage = wsError?.message || String(wsError)
+    logApiCall({
+      type: 'nolimit/spin',
+      endpoint: NLC_WS_URL,
+      request: { chipAmount, extraBet: !!extraBet, transport: 'ws' },
+      response: null,
+      error: wsMessage,
+      durationMs: Date.now() - t0,
+    })
+    throw nolimitError(`Nolimit WS Spin fehlgeschlagen: ${safePreview(wsMessage, 260)}`, wsError)
   }
-
-  const actionCandidates = ['spin', 'play', 'bet']
-  let lastError = 'Unbekannter Fehler'
-
-  for (const action of actionCandidates) {
-    const payload = new URLSearchParams({
-      action,
-      clientString: s.clientString,
-      language: s.language || 'de',
-      gameCodeString: s.gameCodeString,
-      jsonData: JSON.stringify(spinJson),
-      tokenString: s.tokenString,
-    }).toString()
-
-    try {
-      const res = await safeProxyRequest({
-        url: NLC_FS_URL,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-          Accept: 'application/json, text/plain, */*',
-          'X-Requested-With': 'XMLHttpRequest',
-          'Accept-Language': 'de-DE,de;q=0.9,en;q=0.8',
-          Origin: s.origin || 'https://casino.nolimitcdn.com',
-          Referer: s.referer || 'https://casino.nolimitcdn.com/loader/evo.html',
-          ...buildCookieHeader(s.cookieJar || []),
-        },
-        body: payload,
-      })
-
-      const text = await res.text()
-      const data = parseJsonSafe(text) || {}
-      const err = extractError(data, text, res.status)
-
-      if (!res.ok) {
-        lastError = err
-        logApiCall({
-          type: 'nolimit/spin',
-          endpoint: NLC_FS_URL,
-          request: { action, chipAmount },
-          response: data,
-          error: err,
-          durationMs: Date.now() - t0,
-        })
-        continue
-      }
-
-      const parsedData = parseNlcSpin(data?.data && typeof data.data === 'object' ? data.data : data)
-      const winAmount = Number(parsedData?.win ?? 0)
-
-      logApiCall({
-        type: 'nolimit/spin',
-        endpoint: NLC_FS_URL,
-        request: { action, chipAmount },
-        response: { ok: true, winAmount },
-        error: null,
-        durationMs: Date.now() - t0,
-      })
-
-      return {
-        data: {
-          statusCode: 0,
-          accountBalance: { balance: null, currencyCode: (session.currencyCode || 'EUR').toUpperCase() },
-          round: {
-            status: 'complete',
-            roundId: findByKeys(data, ['roundId', 'round_id', 'round']) || null,
-            events: [{ awa: winAmount }],
-            winAmountDisplay: winAmount,
-            freespinsLeft: Number(parsedData?.freespinsLeft || 0),
-            mode: parsedData?.mode || 'NORMAL',
-            isBonus: !!parsedData?.isBonus,
-          },
-          _nolimitRaw: data,
-        },
-        nextSeq: (session.seq || 0) + 1,
-        session: { ...session, seq: (session.seq || 0) + 1, lastPlayAt: Date.now() },
-      }
-    } catch (e) {
-      lastError = e?.message || String(e)
-      logApiCall({
-        type: 'nolimit/spin',
-        endpoint: NLC_FS_URL,
-        request: { action, chipAmount },
-        response: null,
-        error: lastError,
-        durationMs: Date.now() - t0,
-      })
-    }
-  }
-
-  throw nolimitError(`Nolimit Spin fehlgeschlagen: ${lastError}`)
 }
 
-export async function sendKeepAlive() {
-  return { ok: true }
+export async function sendKeepAlive(session) {
+  const wsState = session?._internal?.wsState
+  return { ok: true, connected: isNolimitWsOpen(wsState) }
 }
 
-export async function sendContinue() {
-  return { ok: true }
+export async function sendContinue(session) {
+  const s = session?._internal
+  if (!s) return { ok: true }
+  await ensureNolimitWsReady(session)
+  const response = await sendNolimitWsRequest(s.wsState, s.wsSessionData || s.extPlayerKey || s.tokenString, {
+    type: 'normal',
+    content: {
+      type: 'continueBet',
+      bet: '0.00',
+      data: { balanceId: 'combined' },
+    },
+    protocol: NLC_WS_PROTOCOL,
+    id: 'messageId',
+    data: { extPlayerKey: s.extPlayerKey },
+  })
+  const payload = pickNolimitPayload(response) || response
+  const parsed = parseNlcSpin(payload)
+  return {
+    ok: true,
+    data: toProviderSpinResponse(
+      payload,
+      session,
+      Number(parsed?.win || 0),
+      parsed,
+      shouldContinueNolimitSpin(parsed, payload) ? 'started' : 'complete'
+    ),
+    session: { ...session, seq: (session.seq || 0) + 1, lastPlayAt: Date.now() },
+  }
 }

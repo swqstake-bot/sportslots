@@ -313,6 +313,17 @@ async function stakeNetPostJson(
   payload: unknown
 ): Promise<{ status: number; body: string; parsed: unknown }> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const settleResolve = (value: { status: number; body: string; parsed: unknown }) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const settleReject = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
     const request = net.request({ method: 'POST', url, useSessionCookies: true });
     for (const [name, value] of Object.entries(headers)) {
       request.setHeader(name, value);
@@ -334,38 +345,43 @@ async function stakeNetPostJson(
       });
       response.on('end', () => {
         if (abortedForSize) {
-          reject(new Error(`API response too large (> ${MAX_IPC_RESPONSE_BYTES} bytes).`));
+          settleReject(new Error(`API response too large (> ${MAX_IPC_RESPONSE_BYTES} bytes).`));
           return;
         }
         const body = Buffer.concat(chunks).toString();
         const status = response.statusCode ?? 0;
         if (status === 401 || status === 403) {
-          reject(new StakeHttpError(status, body, `Session rejected (${status})`));
+          settleReject(new StakeHttpError(status, body, `Session rejected (${status})`));
           return;
         }
         if (status === 429) {
-          reject(new StakeHttpError(status, body, 'API rate limited (429). Bitte kurz warten und erneut versuchen.'));
+          settleReject(new StakeHttpError(status, body, 'API rate limited (429). Bitte kurz warten und erneut versuchen.'));
           return;
         }
         let parsed: unknown;
         try {
           parsed = JSON.parse(body);
         } catch {
-          reject(new StakeHttpError(status, body, `API antwortete nicht mit JSON (HTTP ${status}).`));
+          settleReject(new StakeHttpError(status, body, `API antwortete nicht mit JSON (HTTP ${status}).`));
           return;
         }
         if (status >= 400) {
-          reject(
+          settleReject(
             new StakeHttpError(status, body, `HTTP ${status}: ${extractStakeJsonErrorMessage(parsed)}`)
           );
           return;
         }
-        resolve({ status, body, parsed });
+        settleResolve({ status, body, parsed });
+      });
+      response.on('error', (error) => {
+        // Electron net stack can emit stream-level ECONNRESET (SimpleURLLoaderWrapper).
+        // Treat as request failure instead of bubbling as uncaught main-process exception.
+        settleReject(error);
       });
     });
 
     request.on('error', (error) => {
-      reject(error);
+      settleReject(error);
     });
 
     request.write(JSON.stringify(payload));

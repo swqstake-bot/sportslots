@@ -14,6 +14,7 @@ import {
 import { appendBet } from '../utils/betHistoryDb'
 import {
   formatStakeShareBetId,
+  areStakeShareIdsEquivalent,
   isPersistableStakeHouseBetShareId,
   pickStakeHouseBetShareRawId,
   stakeBetIdForPreviewApi,
@@ -253,20 +254,6 @@ function hasPendingHouseBetForPayloadSlug(pendingMap, payloadSlug) {
     }
   }
   return false
-}
-
-function normalizedShareCoreForHunterCompare(rawOrPrefixed) {
-  const f = formatStakeShareBetId(
-    rawOrPrefixed == null || rawOrPrefixed === '' ? null : String(rawOrPrefixed).trim()
-  )
-  if (!f) return null
-  return stakeBetIdForPreviewApi(f)
-}
-
-function shareIdsEquivalentForHunter(a, b) {
-  const ca = normalizedShareCoreForHunterCompare(a)
-  const cb = normalizedShareCoreForHunterCompare(b)
-  return Boolean(ca && cb && ca === cb)
 }
 
 function pickLoggerRowHouseShareRaw(row) {
@@ -1090,8 +1077,14 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const [lastRefresh, setLastRefresh] = useState(null)
   const [totalSessionStats, setTotalSessionStats] = useState({ wagered: 0, payout: 0, profit: 0 })
   const ENABLE_SESSION_NET_CHART = true
-  const [sessionNetSeries, setSessionNetSeries] = useState(() => [{ time: Date.now(), netUsd: 0 }])
+  const sessionNetSeriesRef = useRef([0])
+  const [sessionNetSeriesVersion, setSessionNetSeriesVersion] = useState(0)
   const [sessionNetSpinCount, setSessionNetSpinCount] = useState(0)
+  const sessionNetChartFlushTimerRef = useRef(null)
+  const sessionNetSeriesSnapshot = useMemo(
+    () => sessionNetSeriesRef.current.slice(),
+    [sessionNetSeriesVersion]
+  )
   /** Höchster getroffener Multiplikator pro Slot-Slug (persistiert). */
   const [bestMultiBySlot, setBestMultiBySlot] = useState(() => loadBestMultiMap())
   useEffect(() => {
@@ -1223,12 +1216,12 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       const loggerShare = formatStakeShareBetId(raw)
       if (!loggerShare || !isPersistableStakeHouseBetShareId(loggerShare)) return
 
-      if (shareIdsEquivalentForHunter(run.bestBetId, loggerShare)) return
+      if (areStakeShareIdsEquivalent(run.bestBetId, loggerShare)) return
 
       setActiveRuns((prev) => {
         const r = prev[rid]
         if (!r || r.status !== 'running') return prev
-        if (shareIdsEquivalentForHunter(r.bestBetId, loggerShare)) return prev
+        if (areStakeShareIdsEquivalent(r.bestBetId, loggerShare)) return prev
         return {
           ...prev,
           [rid]: { ...r, bestBetId: loggerShare },
@@ -1342,6 +1335,15 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   )
   const totalStatsRef = useRef(totalSessionStats)
   totalStatsRef.current = totalSessionStats
+  const scheduleSessionNetChartFlush = useCallback(() => {
+    if (!ENABLE_SESSION_NET_CHART) return
+    if (sessionNetChartFlushTimerRef.current != null) return
+    sessionNetChartFlushTimerRef.current = setTimeout(() => {
+      sessionNetChartFlushTimerRef.current = null
+      setSessionNetSeriesVersion((v) => v + 1)
+      setSessionNetSpinCount(Math.max(0, sessionNetSeriesRef.current.length - 1))
+    }, 220)
+  }, [ENABLE_SESSION_NET_CHART])
   /** Stabil für refreshChallenges-Deps: sonst ändert sich webSlots bei jeder Discovery → useEffect feuert endlos. */
   const webSlotsRef = useRef(webSlots)
   webSlotsRef.current = webSlots
@@ -1352,6 +1354,15 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     const persisted = getHunterState()
     processedIdsRef.current = new Set(persisted.processedIds || [])
     dismissedChallengeIdsRef.current = new Set(persisted.dismissedIds || [])
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (sessionNetChartFlushTimerRef.current != null) {
+        clearTimeout(sessionNetChartFlushTimerRef.current)
+        sessionNetChartFlushTimerRef.current = null
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -1598,15 +1609,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               }
             }
 
-            // Run-Bet-ID übernehmen, sobald ein valider houseBets-Share da ist:
-            // - wie bisher bei echtem Best-Multi-Upgrade
-            // - zusätzlich bei Gleichstand, falls im Run noch keine Bet-ID gesetzt ist
-            //   (z. B. wenn Best-Multi vorher bereits per deferred/UI sichtbar war).
-            const hasRunBetId = Boolean(activeRunsRef.current?.[runId]?.bestBetId)
-            const shouldSetRunBetId =
-              Boolean(shareId) &&
-              (trackMulti > prevBest || (!hasRunBetId && trackMulti >= prevBest && trackMulti > 0))
-            if (shouldSetRunBetId) {
+            // SSP-nah: houseBets-ID immer an den Run binden (ID-Linking getrennt von Best-Multi).
+            // Best-Multi bleibt eigene Logik ueber trackMulti/BetList.
+            if (shareId) {
               bestBetByRunId[runId] = shareId
               const key = p.storageSlug != null ? p.storageSlug : p.slug
               if (
@@ -1654,6 +1659,40 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           }
 
           if (!p && hasRunningForHouseBet) {
+            const rawShareFallback = pickStakeHouseBetShareRawId(bItem)
+            const shareIdFallback = rawShareFallback ? formatStakeShareBetId(rawShareFallback) : null
+            if (shareIdFallback) {
+              const candidateRuns = Object.values(active).filter((r) => {
+                if (!r || r.status !== 'running') return false
+                const runSlug = normalizeBetSlugForHouseMatch(r.slotSlug)
+                if (!houseBetSlugMatchesSessionSlug(payloadSlug, runSlug)) return false
+                if (!payloadCurr) return true
+                const runCurr = String(r.runCurrency || '').toLowerCase()
+                return !runCurr || runCurr === payloadCurr
+              })
+              if (candidateRuns.length === 1) {
+                const targetRun = candidateRuns[0]
+                const targetRunId = targetRun.id
+                if (
+                  targetRunId &&
+                  !areStakeShareIdsEquivalent(targetRun.bestBetId, shareIdFallback)
+                ) {
+                  bestBetByRunId[targetRunId] = shareIdFallback
+                }
+                const hbMultiFallback = Number(bItem?.payoutMultiplier)
+                if (targetRunId && Number.isFinite(hbMultiFallback) && hbMultiFallback > 0) {
+                  const prevUiM = multiUiByRunId[targetRunId]?.multi ?? 0
+                  if (hbMultiFallback > prevUiM) {
+                    multiUiByRunId[targetRunId] = {
+                      multi: hbMultiFallback,
+                      storageSlug: targetRun.slotSlug,
+                      slug: targetRun.slotSlug,
+                      spinSeq: null,
+                    }
+                  }
+                }
+              }
+            }
             // Ohne Pending (WS vor HTTP) oder mit Pending aber kein sicherer Match (z. B. Timing) — später erneut matchen.
             const dedupeKey = pickStakeHouseBetShareRawId(bItem) || bItem?.id
             if (dedupeKey) {
@@ -2668,10 +2707,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             if (ENABLE_SESSION_NET_CHART) {
               const t0 = totalStatsRef.current
               const nextNet = t0.profit + kpi.profit
-              setSessionNetSeries((prev) => {
-                return [...prev, { time: Date.now(), netUsd: nextNet }]
-              })
-              setSessionNetSpinCount((c) => c + 1)
+              sessionNetSeriesRef.current.push(nextNet)
+              scheduleSessionNetChartFlush()
             }
           }
 
@@ -3150,7 +3187,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     setHunterSlotTargets({})
     setTotalSessionStats({ wagered: 0, payout: 0, profit: 0 })
     if (ENABLE_SESSION_NET_CHART) {
-      setSessionNetSeries([{ time: Date.now(), netUsd: 0 }])
+      sessionNetSeriesRef.current = [0]
+      setSessionNetSeriesVersion((v) => v + 1)
       setSessionNetSpinCount(0)
     }
     setAutoStart(false)
@@ -4201,9 +4239,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                   {Math.max(0, sessionNetSpinCount)} Spins
                 </div>
               </div>
-              <div style={{ width: '100%' }} title={`Netto jetzt: $${netUsd.toFixed(2)}`}>
+              <div style={{ width: '100%' }} title={`Netto jetzt: $${netUsd.toFixed(2)}`} data-series-version={sessionNetSeriesVersion}>
                 <SvgCumulativeProfitLineChart
-                  profits={sessionNetSeries.map((p) => (Number.isFinite(Number(p?.netUsd)) ? Number(p.netUsd) : 0))}
+                  profits={sessionNetSeriesSnapshot}
                   height={188}
                   stroke={netUsd >= 0 ? 'var(--success)' : 'var(--error)'}
                 />
