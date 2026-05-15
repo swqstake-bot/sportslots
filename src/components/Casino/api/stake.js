@@ -14,6 +14,8 @@ export async function verifyStakeToken(accessToken) {
  */
 export async function startThirdPartySession(accessToken, slug = 'hacksaw-le-bandit', source = 'usdc', target = 'eur') {
   const t0 = Date.now()
+  const src = String(source || 'usdc').toLowerCase().trim()
+  const tgt = String(target || 'eur').toLowerCase().trim()
   const mutation = `
         mutation StartThirdPartySession($slug: String!, $source: CurrencyEnum!, $target: CurrencyEnum!) {
           startThirdPartySession(slug: $slug, source: $source, target: $target) {
@@ -22,12 +24,12 @@ export async function startThirdPartySession(accessToken, slug = 'hacksaw-le-ban
         }
       `
   try {
-      const response = await StakeApi.mutate(mutation, { slug, source, target })
+      const response = await StakeApi.mutate(mutation, { slug, source: src, target: tgt })
       
       logApiCall({
         type: 'stake/startThirdPartySession',
         endpoint: 'graphql',
-        request: { slug, source, target },
+        request: { slug, source: src, target: tgt },
         response: response.data,
         error: null,
         durationMs: Date.now() - t0,
@@ -38,7 +40,7 @@ export async function startThirdPartySession(accessToken, slug = 'hacksaw-le-ban
       logApiCall({
         type: 'stake/startThirdPartySession',
         endpoint: 'graphql',
-        request: { slug, source, target },
+        request: { slug, source: src, target: tgt },
         response: null,
         error: error.message,
         durationMs: Date.now() - t0,

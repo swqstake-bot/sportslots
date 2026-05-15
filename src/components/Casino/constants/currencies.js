@@ -8,6 +8,12 @@
 /** Welche Währungen jeder Provider unterstützt (SSP-Pattern / Stake thirdPartyGame) */
 export const PROVIDER_CURRENCIES = {
   hacksaw: ['eur', 'usd', 'ars', 'cad', 'clp', 'cny', 'dkk', 'idr', 'inr', 'jpy', 'krw', 'mxn', 'ngn', 'pen', 'php', 'pln', 'rub', 'try', 'vnd', 'usdc', 'usdt', 'btc', 'eth', 'ltc', 'bch', 'doge', 'shib', 'sol', 'xrp', 'trx', 'matic', 'ada', 'bnb'],
+  /**
+   * Truelab / Softswiss: nicht die volle stakeEngine-Liste — PKR u. a. provozieren oft
+   * `softswiss_currency_not_supported` und danach GraphQL-Fallbacks mit `error.invalid_enum`.
+   * Gleiches Muster wie hacksaw (kein PKR).
+   */
+  truelab: ['eur', 'usd', 'ars', 'cad', 'clp', 'cny', 'dkk', 'idr', 'inr', 'jpy', 'krw', 'mxn', 'ngn', 'pen', 'php', 'pln', 'rub', 'try', 'vnd', 'usdc', 'usdt', 'btc', 'eth', 'ltc', 'bch', 'doge', 'shib', 'sol', 'xrp', 'trx', 'matic', 'ada', 'bnb'],
   stakeEngine: ['eur', 'usd', 'ars', 'cad', 'clp', 'cny', 'dkk', 'idr', 'inr', 'jpy', 'krw', 'mxn', 'pen', 'php', 'pln', 'pkr', 'rub', 'try', 'vnd', 'usdc', 'usdt', 'btc', 'eth', 'ltc', 'bch', 'doge', 'shib', 'sol', 'xrp', 'trx', 'matic', 'ada', 'bnb'],
   pragmatic: ['eur', 'usd', 'ars', 'cad', 'clp', 'cny', 'dkk', 'idr', 'inr', 'jpy', 'krw', 'mxn', 'ngn', 'pen', 'php', 'pkr', 'pln', 'rub', 'try', 'vnd', 'usdc', 'usdt', 'btc', 'eth', 'ltc', 'bch', 'doge', 'shib', 'sol', 'xrp', 'trx', 'matic', 'ada', 'bnb'],
   nolimit: ['eur', 'usd', 'ars', 'cad', 'clp', 'cny', 'dkk', 'idr', 'inr', 'jpy', 'krw', 'mxn', 'ngn', 'pen', 'php', 'pln', 'rub', 'try', 'vnd', 'usdc', 'usdt', 'btc', 'eth', 'ltc', 'bch', 'doge', 'shib', 'sol', 'xrp', 'trx', 'matic', 'ada', 'bnb'],

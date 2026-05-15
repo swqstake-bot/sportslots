@@ -6,7 +6,7 @@ import { parseBetResponse } from '../utils/parseBetResponse'
 import { Button } from './ui/Button'
 import { CURRENCY_GROUPS, PROVIDER_CURRENCIES } from '../constants/currencies'
 import { notifyChallengeStart, requestNotificationPermission } from '../utils/notifications'
-import { addDiscoveredFromChallenges } from '../utils/discoveredSlots'
+import { addDiscoveredFromChallenges, inferProviderId } from '../utils/discoveredSlots'
 import {
   effectiveSpinMultiplierFromParsed,
   skipStakeEngineEndRoundAfterSuccessfulPlay,
@@ -40,7 +40,13 @@ import { TipMenu } from '../../ui/TipMenu'
 import { useChallengeHubBetListOptional } from './challengeHub/ChallengeHubBetListContext'
 import { SvgCumulativeProfitLineChart } from '../../charts/SvgCumulativeCharts'
 
-/** Challenge-Liste: alle Einträge wie von Stake; Session/Spins über stakeEngine — nicht unterstützte Slots scheitern zur Laufzeit. */
+/** Challenge-Liste: alle Einträge wie von Stake; Provider aus Slug/WebSlots (`inferProviderId`), nicht blind stakeEngine. */
+
+function resolveHunterProviderId(slug, challengeGame) {
+  const fromChallenge = String(challengeGame?.providerId || '').toLowerCase()
+  if (fromChallenge && fromChallenge !== 'stakeengine') return fromChallenge
+  return inferProviderId(String(slug || ''))
+}
 
 const REFRESH_INTERVAL_MS = 2 * 60 * 1000 // 2 Minuten
 /** DevTools: [Hunter-BetID] — nur bei Bedarf auf true (sonst volle Konsole). */
@@ -214,6 +220,60 @@ function splicePendingHouseBetMatch(pendingMap, payloadSlug, payloadCurr, bItem)
   if (!pendingMap || typeof pendingMap !== 'object' || bItem == null) return null
   const trySplice = (currencyStrict) => {
     const candidates = collectPendingHouseBetCandidates(pendingMap, payloadSlug, payloadCurr, currencyStrict)
+    const chosen = selectPendingEntryForHouseBet(candidates, bItem)
+    if (!chosen) return null
+    const q = pendingMap[chosen.runId]
+    if (!Array.isArray(q) || chosen.idx < 0 || chosen.idx >= q.length) return null
+    const [removed] = q.splice(chosen.idx, 1)
+    if (q.length === 0) delete pendingMap[chosen.runId]
+    return removed
+  }
+  if (payloadCurr) {
+    const strict = trySplice(true)
+    if (strict) return strict
+    return trySplice(false)
+  }
+  return trySplice(false)
+}
+
+function splicePendingHouseBetByProviderBetId(pendingMap, payloadSlug, providerBetId) {
+  const wanted = String(providerBetId || '').trim()
+  if (!wanted || !pendingMap || typeof pendingMap !== 'object') return null
+  for (const runId of Object.keys(pendingMap)) {
+    const q = pendingMap[runId]
+    if (!Array.isArray(q) || q.length === 0) continue
+    for (let i = 0; i < q.length; i++) {
+      const p = q[i]
+      const pBetId = String(p?.providerBetId || '').trim()
+      if (!pBetId || pBetId !== wanted) continue
+      const pSlug = String(p?.slug || '').trim()
+      if (payloadSlug && pSlug && !houseBetSlugMatchesSessionSlug(payloadSlug, pSlug)) continue
+      const [removed] = q.splice(i, 1)
+      if (q.length === 0) delete pendingMap[runId]
+      return removed
+    }
+  }
+  return null
+}
+
+function splicePendingHouseBetMatchWithoutSlug(pendingMap, payloadCurr, bItem) {
+  if (!pendingMap || typeof pendingMap !== 'object' || bItem == null) return null
+  const trySplice = (currencyStrict) => {
+    const candidates = []
+    for (const runId of Object.keys(pendingMap)) {
+      const q = pendingMap[runId]
+      if (!Array.isArray(q)) continue
+      for (let i = 0; i < q.length; i++) {
+        const p = q[i]
+        if (p == null || p.multi == null) continue
+        if (currencyStrict) {
+          if (!payloadCurr || String(p.currency || '').toLowerCase() !== String(payloadCurr).toLowerCase()) {
+            continue
+          }
+        }
+        candidates.push({ runId, idx: i, p, at: Number(p.at) || 0 })
+      }
+    }
     const chosen = selectPendingEntryForHouseBet(candidates, bItem)
     if (!chosen) return null
     const q = pendingMap[chosen.runId]
@@ -602,7 +662,7 @@ const HUNTER_SPIN_DELAY_MS = 0
 const STAKE_RGS_FAIRNESS_AFTER_SPIN_MS = 500
 /** Voller Wechsel (rotate + neue Session): so viele Versuche bei Fehler, bevor abgebrochen wird. */
 const STAKE_RGS_SEED_RESET_SWITCH_ATTEMPTS = 4
-const HUNTER_SPIN_ERROR_RETRY_MS = 2000
+const HUNTER_SPIN_ERROR_RETRY_MS = 0
 /** Nach Session-Timeout / abgelaufener Session: 2–3s Pause, dann `startSession` + weiter spinnen (max. Versuche). */
 const SESSION_TIMEOUT_RECOVERY_DELAY_MS = 2500
 const SESSION_TIMEOUT_RECOVERY_MAX = 5
@@ -1557,20 +1617,30 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         for (const bItem of batch) {
           const payloadSlug = normalizeBetSlugForHouseMatch(bItem?.gameSlug)
           const payloadCurr = String(bItem?.currency || '').toLowerCase()
-          if (!payloadSlug) continue
 
           const active = activeRunsRef.current || {}
           const runningSlugList = Object.values(active)
             .filter((r) => r?.status === 'running' && r?.slotSlug)
             .map((r) => normalizeBetSlugForHouseMatch(r.slotSlug))
           const pendingMap = pendingHouseBetMatchRef.current
-          const hasRunningForHouseBet =
-            runningSlugList.some((s) => houseBetSlugMatchesSessionSlug(payloadSlug, s)) ||
-            hasPendingHouseBetForPayloadSlug(pendingMap, payloadSlug)
+          const hasRunningForHouseBet = payloadSlug
+            ? (
+              runningSlugList.some((s) => houseBetSlugMatchesSessionSlug(payloadSlug, s)) ||
+              hasPendingHouseBetForPayloadSlug(pendingMap, payloadSlug)
+            )
+            : (
+              Object.values(active).some((r) => r?.status === 'running') ||
+              Object.keys(pendingMap || {}).some((rid) => Array.isArray(pendingMap[rid]) && pendingMap[rid].length > 0)
+            )
           if (!hasRunningForHouseBet) continue
 
-          // houseBets.iid direkt nutzen; Zuordnung zu Pending per Slot+Währung+Einsatz+Multi (parallele Runs gleicher Slot).
-          const p = splicePendingHouseBetMatch(pendingMap, payloadSlug, payloadCurr, bItem)
+          // Primär exakt wie SSP-Idee: zuerst direkte Bet-ID-Verknüpfung (bet.id), dann heuristisch über Einsatz/Multi.
+          const directProviderBetId = String(bItem?.betId || '').trim()
+          const p =
+            splicePendingHouseBetByProviderBetId(pendingMap, payloadSlug, directProviderBetId) ||
+            (payloadSlug
+              ? splicePendingHouseBetMatch(pendingMap, payloadSlug, payloadCurr, bItem)
+              : splicePendingHouseBetMatchWithoutSlug(pendingMap, payloadCurr, bItem))
 
           if (p) {
             const runId = p.runId
@@ -1798,6 +1868,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     }
 
     subscribeToHouseBets(accessToken, (b) => {
+      const betType = String(b?.betType || '')
+      if (/sport/i.test(betType)) return
       if (!shouldEnqueueHouseBet()) return
       const now = Date.now()
       prunePendingHouseBetMap(pendingHouseBetMatchRef.current, now)
@@ -2022,10 +2094,31 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           isMinBetOk && isPrizeOk && !c.completedAt && c.active !== false
 
         if (eligible) {
-          log(`Neue Challenge gefunden: ${cName} (${c.minBetUsd}$)`)
-          processedIdsRef.current.add(c.id)
-          setQueue((q) => [...q, buildQueueItemForChallenge(c.id, q, null, sourceCurrency, cSlug)])
-          addedCount++
+          let queuedNow = false
+          const srcKey = String(sourceCurrency || 'usd').toLowerCase()
+          setQueue((q) => {
+            const hasSameSlotInQueue = q.some((item) => {
+              const n = normalizeQueueItem(item)
+              const qSource = String(n.sourceCurrency || srcKey).toLowerCase()
+              if (qSource !== srcKey) return false
+              const qSlug = String(n.slotSlug || resolveChallengeSlugById(n.challengeId)).toLowerCase()
+              return Boolean(cSlug) && qSlug === cSlug
+            })
+            const hasSameSlotRunning = Object.values(activeRunsRef.current || {}).some((run) => {
+              if (!run || run.status !== 'running') return false
+              const runSource = String(run.runSourceCurrency || srcKey).toLowerCase()
+              if (runSource !== srcKey) return false
+              return String(run.slotSlug || '').toLowerCase() === String(cSlug || '').toLowerCase()
+            })
+            if (hasSameSlotInQueue || hasSameSlotRunning) return q
+            queuedNow = true
+            return [...q, buildQueueItemForChallenge(c.id, q, null, sourceCurrency, cSlug)]
+          })
+          if (queuedNow) {
+            log(`Neue Challenge gefunden: ${cName} (${c.minBetUsd}$)`)
+            processedIdsRef.current.add(c.id)
+            addedCount++
+          }
         } else {
           if (c.completedAt || c.active === false) processedIdsRef.current.add(c.id)
         }
@@ -2245,15 +2338,21 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     const gSlug = challenge.gameSlug || challenge.game?.slug
     const gName = challenge.gameName || challenge.game?.name || gSlug
     let slot = (webSlotsRef.current || []).find((s) => s.slug === gSlug)
+    const resolvedPid = resolveHunterProviderId(gSlug, challenge.game)
     if (!slot) {
       slot = {
         slug: gSlug,
         name: gName || gSlug,
-        providerId: 'stakeEngine',
+        providerId: resolvedPid,
         ...(challenge.game?.id != null ? { stakeGameId: String(challenge.game.id) } : {}),
       }
-    } else if (!slot.stakeGameId && challenge.game?.id != null) {
-      slot = { ...slot, stakeGameId: String(challenge.game.id) }
+    } else {
+      if (String(slot.providerId || '').toLowerCase() === 'stakeengine' && resolvedPid !== 'stakeengine') {
+        slot = { ...slot, providerId: resolvedPid }
+      }
+      if (!slot.stakeGameId && challenge.game?.id != null) {
+        slot = { ...slot, stakeGameId: String(challenge.game.id) }
+      }
     }
 
     const prizeParts = formatChallengePrize(challenge)
@@ -2520,7 +2619,17 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       }
 
       if (!session) {
-        tCurr = preferredTarget
+        const allowedTargets = getAllowedTargetCurrenciesForSlot(providerId)
+        let targetForStart = preferredTarget
+        if (!allowedTargets.includes(targetForStart)) {
+          const pick =
+            ['usd', 'eur', 'usdc'].find((c) => allowedTargets.includes(c)) || allowedTargets[0] || 'eur'
+          log(
+            `Zielwährung ${preferredTarget.toUpperCase()} nicht in Provider-Liste — Fallback ${pick.toUpperCase()} (vermeidet GraphQL invalid_enum).`
+          )
+          targetForStart = pick
+        }
+        tCurr = targetForStart
         log(`Starte Session: ${sCurr.toUpperCase()} -> ${tCurr.toUpperCase()}...`)
         session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
         noteSessionFairnessId(session)
@@ -2718,6 +2827,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             challengeId,
             slug: normalizeBetSlugForHouseMatch(gSlug),
             storageSlug: gSlug,
+            providerBetId: String(
+              rawRound?.betId ??
+              rawRound?.id ??
+              rawRound?.roundId ??
+              rawRound?.betID ??
+              ''
+            ).trim() || null,
             currency: String(tCurr).toLowerCase(),
             betAmountMajor: toUnits(betAmount, tCurr),
             at: Date.now(),
@@ -2789,6 +2905,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
           // RoundId für "Beste Multi" Kopieren (nicht nur wenn Ziel erreicht ist)
           const resolvedRoundId = roundIdForDedup
+          const provisionalRunBetId = formatStakeShareBetId(
+            matchEntry.providerBetId || resolvedRoundId || null
+          )
 
           if (win > 0) {
             void saveFirstSlotWinIfNeeded({
@@ -2825,7 +2944,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               wonUsd: (prev[runId].wonUsd ?? 0) + (kpi?.profit ?? 0),
               balance: parsed.balance,
               bestMultiRun: prev[runId].bestMultiRun ?? 0,
-              bestBetId: prev[runId].bestBetId ?? null,
+              bestBetId: prev[runId].bestBetId ?? provisionalRunBetId ?? null,
             },
           }))
 
@@ -3022,8 +3141,16 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         } catch (e) {
           const msg = String(e?.message || '')
           log(`Spin Fehler: ${msg}`)
-          if (e?.insufficientBalance || msg.includes('ERR_IPB')) {
-            log('Guthaben reicht nicht (ERR_IPB) – alle Hunter-Läufe und Auto-Start werden gestoppt.')
+          const msgLower = msg.toLowerCase()
+          const insufficientFundsMsg =
+            e?.insufficientBalance ||
+            msg.includes('ERR_IPB') ||
+            msgLower.includes('balance is less than bet') ||
+            msgLower.includes('insufficient balance (truelab') ||
+            /\bcode\s*[=:]?\s*10\b/.test(msgLower) ||
+            (msgLower.includes('unable to create bet') && msgLower.includes('balance'))
+          if (insufficientFundsMsg) {
+            log('Guthaben reicht nicht – alle Hunter-Läufe und Auto-Start werden gestoppt.')
             Object.keys(runnersRef.current).forEach((id) => {
               if (runnersRef.current[id]) runnersRef.current[id].stop = true
             })
@@ -3034,7 +3161,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             stopReason = 'insufficient_balance'
             break
           }
-          const msgLower = msg.toLowerCase()
           const isSessionTimeout =
             e?.sessionClosed === true ||
             msgLower.includes('session abgelaufen') ||

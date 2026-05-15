@@ -1721,7 +1721,9 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                 'popiplay', 'helio', 'samurai', '1000lakes', 'hacksawgaming.com', 'd1oa92ndvzdrfz.cloudfront.net',
                 'api.clawbuster.com', 'clawbuster-cdn.com', 'gsplauncher.de',
                 // Mascot launcher/runtime hosts (e.g. open.mascot.host -> <session>.mascot.games)
-                'mascot.host', 'mascot.games'
+                'mascot.host', 'mascot.games',
+                // Truelab / Stake third-party: startThirdPartySession config → grandgames launcher, RGS play.launcher-gg.com
+                'grandgames.io', 'launcher-gg.com',
             ];
             if (proxyHostname && allowed.some(h => hostnameMatches(proxyHostname, h))) {
                 isAllowed = true;

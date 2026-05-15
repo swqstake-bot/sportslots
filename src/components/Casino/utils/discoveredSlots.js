@@ -57,7 +57,8 @@ export function inferProviderId(slug) {
   if (s.startsWith('jade-rabbit-') || s.startsWith('jaderabbit-')) return 'jaderabbit'
   if (s.startsWith('penguin-king-')) return 'octoplay'
   if (s.startsWith('massive-')) return 'massive'
-  if (s.startsWith('truelab-') || s.startsWith('true-lab-')) return 'truelab'
+  // Stake nutzt teils „truelabs-…“ (Plural), teils „truelab-…“
+  if (s.startsWith('truelabs-') || s.startsWith('truelab-') || s.startsWith('true-lab-')) return 'truelab'
   if (s.startsWith('slotmill-')) return 'slotmill'
   if (s.startsWith('octoplay-')) return 'octoplay'
   if (s.startsWith('peter-sons-') || s.startsWith('peterandsons-') || s.startsWith('petersons-')) return 'peterandsons'

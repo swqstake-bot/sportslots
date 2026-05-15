@@ -78,7 +78,7 @@ function sortTargetCandidatesForProbe(allowedList, rates, minBetUsd, preferred) 
 /** Telegram-Hunter: alle klassischen Fiat-Proben wie AutoChallengeHunter (kein künstliches Limit). */
 const SESSION_PROBE_DELAY_MS = 400
 export const HUNTER_SPIN_DELAY_MS = 150
-export const HUNTER_SPIN_ERROR_RETRY_MS = 2000
+export const HUNTER_SPIN_ERROR_RETRY_MS = 0
 const AUTO_PROBE_EXCLUDED_CURRENCIES = new Set(['usdc', 'usdt'])
 const DIRECT_ORIGINALS_SLUGS = new Set(['packs', 'dice', 'limbo', 'mines', 'plinko', 'keno'])
 
@@ -617,7 +617,15 @@ export async function runTelegramChallengeSession(ctx) {
       } catch (e) {
         const msg = String(e?.message || '')
         log(`Spin-Fehler: ${msg}`)
-        if (e?.insufficientBalance || msg.includes('ERR_IPB')) {
+        const msgLower = msg.toLowerCase()
+        if (
+          e?.insufficientBalance ||
+          msg.includes('ERR_IPB') ||
+          msgLower.includes('balance is less than bet') ||
+          msgLower.includes('insufficient balance (truelab') ||
+          /\bcode\s*[=:]?\s*10\b/.test(msgLower) ||
+          (msgLower.includes('unable to create bet') && msgLower.includes('balance'))
+        ) {
           log('Guthaben reicht nicht – Telegram-Hunter stoppt alle Läufe.')
           Object.keys(runnersRef.current).forEach((id) => {
             if (runnersRef.current[id]) runnersRef.current[id].stop = true
