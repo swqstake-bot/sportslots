@@ -1,6 +1,8 @@
 import { startThirdPartySession } from '../stake'
 import { logApiCall } from '../../utils/apiLogger'
 import { getEffectiveBetAmount } from '../../constants/bet'
+import { getMinorFactor, normalizeCurrencyCode } from '../../utils/currencyMeta'
+import { normalizeMajorAmount } from '../../utils/monetaryContract'
 
 export function parseConfig(urlStr, targetCurrency) {
   const fallbackCurrency = (targetCurrency || 'EUR').toUpperCase()
@@ -205,19 +207,101 @@ function decodeJwtPayloadLoose(jwt) {
   }
 }
 
-/** Minor-Units (App) → Truelab HAR „stakes[].amount“ in Major (z. B. USD 0.10). */
+/** Minor-Units (App, vgl. getMinorFactor) → Truelab HAR „stakes[].amount“ in Major. */
 function truelabStakeAmountMajor(minorUnits, currencyCode) {
-  const currency = (currencyCode || 'eur').toLowerCase()
+  const c = normalizeCurrencyCode(currencyCode)
   const n = Number(minorUnits)
   if (!Number.isFinite(n) || n <= 0) return 0.01
-  const isZeroDec = ['idr', 'jpy', 'krw', 'vnd'].includes(currency)
-  const isFiat = [
-    'eur', 'usd', 'brl', 'cad', 'cny', 'inr', 'mxn', 'php', 'pln', 'rub', 'try', 'ngn', 'ars', 'cop', 'pen', 'clp',
-    'pkr', 'dkk', 'sek', 'nok', 'hkd', 'sgd', 'nzd', 'chf', 'aud',
-  ].includes(currency)
-  if (isZeroDec) return Math.max(1, Math.round(n))
-  if (isFiat) return Math.max(0.01, Math.round(n) / 100)
-  return Math.max(1e-8, n / 1e8)
+  const factor = getMinorFactor(c)
+  const major = n / factor
+  if (!Number.isFinite(major) || major <= 0) return 0.01
+  return major
+}
+
+/**
+ * session/activate liefert wie SSP/Main.Spin `session.bets`: [{ amount, level }, …]
+ * (level = Linienanzahl). Ohne Parsing bleibt betIndex=0 → Softswiss nutzt nur Mindeststufe (~0,10 $).
+ */
+function extractTrueLabLadderFromActivate(json) {
+  if (!json || typeof json !== 'object') return { bets: [], availableLines: [] }
+  const session =
+    json.session || json.data?.session || (typeof json.data === 'object' ? json.data?.session : null)
+  const root = session && typeof session === 'object' ? session : json.data || json
+  const rawBets = root?.bets || root?.Bets || json.bets || json.data?.bets
+  if (!Array.isArray(rawBets)) return { bets: [], availableLines: [] }
+  const bets = []
+  for (const row of rawBets) {
+    if (!row || typeof row !== 'object') continue
+    const amount = Number(row.amount ?? row.stake ?? row.value)
+    const levelRaw = row.level ?? row.lines ?? row.lineCount ?? row.line
+    const level = levelRaw != null && levelRaw !== '' ? Number(levelRaw) : null
+    if (!Number.isFinite(amount) || amount <= 0) continue
+    bets.push({
+      amount,
+      level: Number.isFinite(level) ? level : null,
+    })
+  }
+  const lineSet = bets.map((b) => b.level).filter((x) => x != null && Number.isFinite(x))
+  const availableLines = [...new Set(lineSet)].sort((a, b) => a - b)
+  return { bets, availableLines }
+}
+
+function trueLabDefaultLinePick(availableLines, trueLabBets) {
+  if (Array.isArray(availableLines) && availableLines.length > 0) return availableLines[0]
+  const fromBets = trueLabBets?.map((b) => b.level).filter((x) => x != null && Number.isFinite(x)) ?? []
+  if (fromBets.length) return Math.min(...fromBets)
+  return null
+}
+
+/** Mindest-Linien-Stufe: alle Beträge der Leiter als App-Minor (für Hunter/SlotControl). */
+function trueLabBetsToMinorBetLevels(trueLabBets, linePick, currencyCode) {
+  if (!Array.isArray(trueLabBets) || trueLabBets.length === 0) return []
+  const pool =
+    linePick != null
+      ? trueLabBets.filter((b) => b.level === linePick)
+      : trueLabBets.filter((b) => b.level == null)
+  const usePool = pool.length ? pool : trueLabBets
+  const minors = []
+  const cc = normalizeCurrencyCode(currencyCode)
+  for (const b of usePool) {
+    if (!Number.isFinite(b.amount) || b.amount <= 0) continue
+    const m = normalizeMajorAmount(b.amount, cc).amountMinor
+    if (Number.isFinite(m) && m > 0) minors.push(m)
+  }
+  return [...new Set(minors)].sort((a, b) => a - b)
+}
+
+/**
+ * @returns {{ betIndex: number, amountMajor: number, stakeLevel: number|undefined }}
+ */
+function resolveTrueLabOpenStake(effectiveBetMinor, currencyCode, session) {
+  const targetMajor = truelabStakeAmountMajor(effectiveBetMinor, currencyCode)
+  const bets = session?.trueLabBets
+  if (!Array.isArray(bets) || bets.length === 0) {
+    return { betIndex: 0, amountMajor: targetMajor, stakeLevel: undefined }
+  }
+  const lines = session?.trueLabAvailableLines
+  const selected =
+    session?.truelabSelectedLines != null &&
+    Number.isFinite(Number(session.truelabSelectedLines)) &&
+    Array.isArray(lines) &&
+    lines.includes(Number(session.truelabSelectedLines))
+      ? Number(session.truelabSelectedLines)
+      : trueLabDefaultLinePick(lines, bets)
+  const pool =
+    selected != null ? bets.filter((b) => b.level === selected) : bets.filter((b) => b.level == null)
+  const sorted = (pool.length ? pool : bets)
+    .filter((b) => Number.isFinite(b.amount) && b.amount > 0)
+    .slice()
+    .sort((a, b) => a.amount - b.amount)
+  if (!sorted.length) {
+    return { betIndex: 0, amountMajor: targetMajor, stakeLevel: selected ?? undefined }
+  }
+  let idx = sorted.findIndex((b) => b.amount + 1e-12 >= targetMajor)
+  if (idx < 0) idx = sorted.length - 1
+  const chosen = sorted[idx]
+  const stakeLevel = chosen.level != null ? chosen.level : selected ?? undefined
+  return { betIndex: idx, amountMajor: chosen.amount, stakeLevel }
 }
 
 function truelabExtractWinAndRoundId(json) {
@@ -519,6 +603,9 @@ export const truelab = {
     }
     const auth = s.token ? { Authorization: `Bearer ${s.token}` } : {}
     const actUrl = `${apiBase}/session/activate`
+    const curLower = String(targetCurrency || s.currencyCode || 'usd').toLowerCase()
+    let ladderMeta = { bets: [], availableLines: [] }
+    let mergedBetLevels = Array.isArray(s.betLevels) ? [...s.betLevels] : []
     try {
       const res = await postViaProxy(
         actUrl,
@@ -528,12 +615,30 @@ export const truelab = {
         },
         auth
       )
-      const preview = (await res.text().catch(() => '')).slice(0, 200)
+      const rawActivate = await res.text().catch(() => '')
+      let activateJson = null
+      try {
+        activateJson = rawActivate ? JSON.parse(rawActivate) : null
+      } catch {
+        activateJson = null
+      }
+      ladderMeta = extractTrueLabLadderFromActivate(activateJson)
+      const linePick = trueLabDefaultLinePick(ladderMeta.availableLines, ladderMeta.bets)
+      const minorFromLadder = trueLabBetsToMinorBetLevels(ladderMeta.bets, linePick, curLower)
+      if (minorFromLadder.length) {
+        mergedBetLevels = [...new Set([...(s.betLevels || []), ...minorFromLadder])]
+          .map((v) => Number(v))
+          .filter((v) => v > 0)
+          .sort((a, b) => a - b)
+      }
+      const preview = rawActivate.slice(0, 200)
       logApiCall({
         type: 'provider/truelab/activate',
         endpoint: actUrl,
         request: { lang: 'en' },
-        response: res.ok ? { ok: true, preview } : { preview },
+        response: res.ok
+          ? { ok: true, preview, trueLabBetRungs: minorFromLadder.length }
+          : { preview },
         error: res.ok ? null : `HTTP ${res.status}`,
         durationMs: null,
       })
@@ -550,6 +655,10 @@ export const truelab = {
     const out = {
       ...s,
       truelabApiBase: apiBase,
+      currencyCode: curLower.toUpperCase(),
+      trueLabBets: ladderMeta.bets,
+      trueLabAvailableLines: ladderMeta.availableLines,
+      betLevels: mergedBetLevels.length ? mergedBetLevels : s.betLevels || [],
     }
     logApiCall({
       type: 'provider/truelab/init',
@@ -568,13 +677,21 @@ export const truelab = {
     }
     const auth = session.token ? { Authorization: `Bearer ${session.token}` } : {}
     const effectiveBet = getEffectiveBetAmount(betAmount, extraBet)
-    const amountMajor = truelabStakeAmountMajor(effectiveBet, session.currencyCode)
+    const { betIndex, amountMajor, stakeLevel } = resolveTrueLabOpenStake(
+      effectiveBet,
+      session.currencyCode,
+      session
+    )
     const openUrl = `${apiBase}/round/open`
     const analytics = JSON.stringify({ s: 1, qs: 0, as: 0, pr: 1, rc: 0, tlv: '3.13.0' })
+    const stakeEntry = { name: 'default', amount: amountMajor }
+    if (stakeLevel != null && Number.isFinite(Number(stakeLevel))) {
+      stakeEntry.level = Number(stakeLevel)
+    }
     const openBody = {
-      stakes: [{ name: 'default', amount: amountMajor }],
+      stakes: [stakeEntry],
       analytics,
-      betIndex: 0,
+      betIndex,
     }
     const t0 = Date.now()
     const res = await postViaProxy(openUrl, openBody, auth)
