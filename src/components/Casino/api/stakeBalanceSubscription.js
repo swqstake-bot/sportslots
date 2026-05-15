@@ -99,6 +99,8 @@ const HOUSEBETS_SUBSCRIPTION = `
   }
 `
 
+const PROCESSED_HOUSEBET_KEYS_MAX = 2000
+
 /** Optional: auf `true` setzen = immer detaillierte houseBets-Logs (sehr laut). */
 const DEBUG_HOUSEBETS_FORCE = false
 
@@ -189,6 +191,7 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
   let unsubscribe = null
   let client = null
   let debugNextCount = 0
+  const processedHouseBetKeys = new Set()
   // Init-Log: hilft zu erkennen, ob die Subscription überhaupt startet
   try {
     const dbg = isDebugHouseBetsEnabled()
@@ -231,79 +234,108 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
           if (doRawLog) {
             console.warn('[houseBets] RAW:', JSON.stringify(result?.data?.houseBets ?? result, null, 2))
           }
-          const hb = result?.data?.houseBets
-          if (!hb?.bet) {
-            if (doCompactLog) console.warn('[houseBets] SKIP: kein bet')
+          const rawHouseBets = result?.data?.houseBets
+          const houseBetItems = Array.isArray(rawHouseBets)
+            ? rawHouseBets
+            : rawHouseBets
+              ? [rawHouseBets]
+              : []
+          if (houseBetItems.length === 0) {
+            if (doCompactLog) console.warn('[houseBets] SKIP: keine houseBets im payload')
             return
           }
-          const { bet, game } = hb
-          const tn = bet?.__typename || ''
-          const isSportsType = /sport/i.test(tn)
-          // Ohne passendes Inline-Fragment fehlen Felder — Typ muss zur GraphQL-Query passen.
-          if (!HOUSE_BETS_ALLOWED_TYPEN.has(tn)) {
-            if (doCompactLog) console.warn('[houseBets] SKIP: __typename=', tn)
-            return
+
+          for (const hb of houseBetItems) {
+            const bet = hb?.bet
+            if (!bet) {
+              if (doCompactLog) console.warn('[houseBets] SKIP: kein bet')
+              continue
+            }
+            const tn = bet?.__typename || ''
+            const isSportsType = /sport/i.test(tn)
+            // Ohne passendes Inline-Fragment fehlen Felder — Typ muss zur GraphQL-Query passen.
+            if (!HOUSE_BETS_ALLOWED_TYPEN.has(tn)) {
+              if (doCompactLog) console.warn('[houseBets] SKIP: __typename=', tn)
+              continue
+            }
+            const game = hb?.game
+            const shareIid = hb?.iid != null && String(hb.iid).trim() !== '' ? String(hb.iid).trim() : null
+            const houseTopId = hb?.id != null && String(hb.id).trim() !== '' ? String(hb.id).trim() : null
+            const providerBetId = bet?.id != null && String(bet.id).trim() !== '' ? String(bet.id).trim() : null
+            const dedupeKey = shareIid || houseTopId || providerBetId
+            if (dedupeKey) {
+              if (processedHouseBetKeys.has(dedupeKey)) {
+                if (doCompactLog) console.warn('[houseBets] SKIP: duplicate iid/id', dedupeKey)
+                continue
+              }
+              processedHouseBetKeys.add(dedupeKey)
+              if (processedHouseBetKeys.size > PROCESSED_HOUSEBET_KEYS_MAX) {
+                const first = processedHouseBetKeys.values().next().value
+                processedHouseBetKeys.delete(first)
+              }
+            }
+
+            const amountRaw = Number(bet?.amount)
+            const amountCanonical = normalizeHouseBetAmount(amountRaw, bet?.currency)
+            const hasValidAmount = Number.isFinite(amountCanonical.amountMajor) && amountCanonical.amountMajor > 0
+            if (!hasValidAmount && !isSportsType && !dedupeKey) {
+              if (doCompactLog) console.warn('[houseBets] SKIP: amount<=0 ohne iid/id', { amount: amountRaw, bet })
+              continue
+            }
+            const payoutRaw = Number(bet?.payout)
+            const payoutCanonical = normalizeHouseBetAmount(payoutRaw, bet?.currency)
+            const payoutMajor = Number.isFinite(payoutCanonical.amountMajor) && payoutCanonical.amountMajor >= 0
+              ? payoutCanonical.amountMajor
+              : (isSportsType ? null : 0)
+            const directPayoutMultiplier = Number(bet?.payoutMultiplier)
+            const payoutMultiplier = Number.isFinite(directPayoutMultiplier) && directPayoutMultiplier > 0
+              ? directPayoutMultiplier
+              : (hasValidAmount && Number.isFinite(payoutMajor) ? payoutMajor / amountCanonical.amountMajor : null)
+            const houseId = shareIid ?? providerBetId ?? houseTopId
+            const gameSlug = game?.slug || gameNameToSlug(game?.name) || ''
+            const name = (game?.name || '').toLowerCase()
+            const icon = (game?.icon || '').toLowerCase()
+            // Heuristik: "Vault" in echten Slot-Games (z.B. "Lokis Vault") darf NICHT rausgefiltert werden.
+            // Wir filtern nur echte "wallet/transfer/deposit/withdraw"-Systeme oder "vault"-UIs, die NICHT nach Slots aussehen.
+            const looksLikeSlotGame = icon.includes('provider-slots') || icon.includes('slots')
+            const isWalletLike = /wallet|transfer|deposit|withdraw/.test(name)
+            const isVaultUiButNotSlots = name.includes('vault') && !looksLikeSlotGame
+            if (isWalletLike || isVaultUiButNotSlots) {
+              if (doCompactLog) console.warn('[houseBets] SKIP: gefiltert (wallet/transfer/deposit/withdraw + vault-non-slots)', { name, icon })
+              continue
+            }
+            const payload = {
+              receivedAt: new Date().toISOString(),
+              /** House-ID analog Logger: bevorzugt `houseBets.iid`, dann bet.id, dann houseBets.id */
+              houseId,
+              /** Bet-ID des Union-Objekts (provider-/bet-spezifisch) */
+              betId: providerBetId ?? houseTopId ?? null,
+              /** Raw `houseBets.iid` */
+              iid: shareIid,
+              betType: tn,
+              gameName: game?.name || null,
+              /** Union `bet.id` (oft RGS-/Provider-intern, z. B. 527… bei Third-Party) — nicht mit Share-`house:460…` verwechseln. */
+              id: houseId,
+              /** GraphQL `houseBets.iid` — Share-Identifier (z. B. house:… / casino:…), für Links wie FRIDA/Bet-Modal */
+              shareIid,
+              /** Top-Level `houseBets.id` — Fallback wenn `iid` fehlt */
+              houseTopId,
+              gameSlug,
+              amount: hasValidAmount ? amountCanonical.amountMajor : null,
+              amountMajor: hasValidAmount ? amountCanonical.amountMajor : null,
+              amountMinor: hasValidAmount ? amountCanonical.amountMinor : null,
+              payout: payoutMajor,
+              payoutMajor: Number.isFinite(payoutCanonical.amountMajor) ? payoutCanonical.amountMajor : null,
+              payoutMinor: Number.isFinite(payoutCanonical.amountMinor) ? payoutCanonical.amountMinor : null,
+              currency: (bet?.currency || '').toLowerCase(),
+              payoutMultiplier,
+              amountMultiplier: Number(bet?.amountMultiplier) || 0,
+              unit: 'major',
+              source: 'houseBets',
+            }
+            if (doCompactLog) console.warn('[houseBets] OK → onUpdate:', payload)
+            onUpdate(payload)
           }
-          const amountRaw = Number(bet?.amount)
-          const amountCanonical = normalizeHouseBetAmount(amountRaw, bet?.currency)
-          const hasValidAmount = Number.isFinite(amountCanonical.amountMajor) && amountCanonical.amountMajor > 0
-          if (!hasValidAmount && !isSportsType) {
-            if (doCompactLog) console.warn('[houseBets] SKIP: amount<=0', { amount: amountRaw, bet })
-            return
-          }
-          const payoutRaw = Number(bet?.payout)
-          const payoutCanonical = normalizeHouseBetAmount(payoutRaw, bet?.currency)
-          const payout = Number.isFinite(payoutCanonical.amountMajor) && payoutCanonical.amountMajor >= 0
-            ? payoutCanonical.amountMajor
-            : (isSportsType ? null : 0)
-          const directPayoutMultiplier = Number(bet?.payoutMultiplier)
-          const payoutMultiplier = Number.isFinite(directPayoutMultiplier) && directPayoutMultiplier > 0
-            ? directPayoutMultiplier
-            : (hasValidAmount && Number.isFinite(payout) ? payout / amountCanonical.amountMajor : null)
-          const houseId = hb?.iid ?? bet?.id ?? hb?.id
-          const gameSlug = game?.slug || gameNameToSlug(game?.name) || ''
-          const name = (game?.name || '').toLowerCase()
-          const icon = (game?.icon || '').toLowerCase()
-          // Heuristik: "Vault" in echten Slot-Games (z.B. "Lokis Vault") darf NICHT rausgefiltert werden.
-          // Wir filtern nur echte "wallet/transfer/deposit/withdraw"-Systeme oder "vault"-UIs, die NICHT nach Slots aussehen.
-          const looksLikeSlotGame = icon.includes('provider-slots') || icon.includes('slots')
-          const isWalletLike = /wallet|transfer|deposit|withdraw/.test(name)
-          const isVaultUiButNotSlots = name.includes('vault') && !looksLikeSlotGame
-          if (isWalletLike || isVaultUiButNotSlots) {
-            if (doCompactLog) console.warn('[houseBets] SKIP: gefiltert (wallet/transfer/deposit/withdraw + vault-non-slots)', { name, icon })
-            return
-          }
-          const payload = {
-            receivedAt: new Date().toISOString(),
-            /** House-ID analog Logger: bevorzugt `houseBets.iid`, dann bet.id, dann houseBets.id */
-            houseId,
-            /** Bet-ID des Union-Objekts (provider-/bet-spezifisch) */
-            betId: bet?.id ?? hb?.id ?? null,
-            /** Raw `houseBets.iid` */
-            iid: hb?.iid ?? null,
-            betType: tn,
-            gameName: game?.name || null,
-            /** Union `bet.id` (oft RGS-/Provider-intern, z. B. 527… bei Third-Party) — nicht mit Share-`house:460…` verwechseln. */
-            id: houseId,
-            /** GraphQL `houseBets.iid` — Share-Identifier (z. B. house:… / casino:…), für Links wie FRIDA/Bet-Modal */
-            shareIid: hb?.iid != null && String(hb.iid).trim() !== '' ? String(hb.iid).trim() : null,
-            /** Top-Level `houseBets.id` — Fallback wenn `iid` fehlt */
-            houseTopId: hb?.id != null && String(hb.id).trim() !== '' ? String(hb.id).trim() : null,
-            gameSlug,
-            amount: hasValidAmount ? amountCanonical.amountMajor : null,
-            amountMajor: hasValidAmount ? amountCanonical.amountMajor : null,
-            amountMinor: hasValidAmount ? amountCanonical.amountMinor : null,
-            payout,
-            payoutMajor: Number.isFinite(payoutCanonical.amountMajor) ? payoutCanonical.amountMajor : null,
-            payoutMinor: Number.isFinite(payoutCanonical.amountMinor) ? payoutCanonical.amountMinor : null,
-            currency: (bet?.currency || '').toLowerCase(),
-            payoutMultiplier,
-            amountMultiplier: Number(bet?.amountMultiplier) || 0,
-            unit: 'major',
-            source: 'houseBets',
-          }
-          if (doCompactLog) console.warn('[houseBets] OK → onUpdate:', payload)
-          onUpdate(payload)
         },
         error: (err) => {
           console.warn('[StakeBetWS] Subscription error:', err?.message || err)
