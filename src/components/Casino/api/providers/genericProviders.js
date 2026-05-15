@@ -371,8 +371,16 @@ function hasGenericBonusSignal(json) {
 }
 
 function wrapResponse(winAmount, currencyCode, roundId, options = {}) {
-  const w = Number(winAmount || 0)
   const cc = (currencyCode || 'EUR').toUpperCase()
+  let w = Number(winAmount || 0)
+  // Softswiss/Truelab u. a. liefern Gewinn in Major; parseBetResponse / Hunter erwarten Minor (wie betAmount).
+  if (options?.winInMajor) {
+    if (Number.isFinite(w) && w > 0) {
+      w = normalizeMajorAmount(w, cc).amountMinor
+    } else {
+      w = 0
+    }
+  }
   return {
     statusCode: 0,
     accountBalance: { balance: null, currencyCode: cc },
@@ -760,6 +768,7 @@ export const truelab = {
     const data = wrapResponse(win, session.currencyCode, roundId, {
       freeRoundOffer: hasGenericBonusSignal(json),
       raw: json,
+      winInMajor: true,
     })
     const nextSeq = (session.seq || 0) + 1
     return { data, nextSeq, session: { ...session, seq: nextSeq } }

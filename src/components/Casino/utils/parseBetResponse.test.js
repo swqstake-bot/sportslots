@@ -28,6 +28,20 @@ describe('parseBetResponse', () => {
     expect(result.isBonus).toBe(false)
   })
 
+  it('computes multiplier when events awa is in minor (Truelab wrapResponse contract)', () => {
+    const betMinor = 50_000_000 // 0.5 SOL @ Stake 1e8 minor
+    const winMinor = 250_000_000 // 5×
+    const response = createResponse({
+      round: {
+        roundId: 'truelab-round-1',
+        events: [{ awa: winMinor }],
+      },
+    })
+    const result = parseBetResponse(response, betMinor)
+    expect(result.winAmount).toBe(winMinor)
+    expect(result.multiplier).toBeCloseTo(5, 5)
+  })
+
   it('should detect Hacksaw Bonus with Scatter Count (Gridwin method)', () => {
     const response = createResponse({
       round: {
