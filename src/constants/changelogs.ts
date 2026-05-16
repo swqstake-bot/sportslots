@@ -1,4 +1,9 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.152': [
+    '🐛 Stats: Wagered/Payout/Profit stabilisiert (HouseBets/HTTP-Reconcile + stärkeres Dedup)',
+    '🐛 Stats: KPI-Summen aus USD-Snapshots statt nachträglicher FX-Neubewertung',
+    '✨ Realtime: HouseBets-Parsing robuster (Batch-Payloads + dedup auf iid/id/betId)',
+  ],
   '1.0.103': ['challenge updated'],
   '1.0.91': [
     '🐛 Hacksaw: Autospin stoppt bei Insufficient Funds, Session timeout, Invalid seq',
