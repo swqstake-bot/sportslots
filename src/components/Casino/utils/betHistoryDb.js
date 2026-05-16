@@ -49,7 +49,7 @@ function openDb() {
 /**
  * @param {string} slotSlug
  * @param {number} [limit]
- * @returns {Promise<Array<{ id: number, slotSlug: string, betAmount: number, winAmount: number, rawWinAmount?: number, isBonus: boolean, stoppedBonus?: boolean, scatterCount?: number, balance?: number, roundId?: string, betUsdSnapshotMajor?: number, winUsdSnapshotMajor?: number, fxRateSnapshot?: number, addedAt: number }>>}
+ * @returns {Promise<Array<{ id: number, slotSlug: string, betAmount: number, winAmount: number, rawWinAmount?: number, isBonus: boolean, stoppedBonus?: boolean, scatterCount?: number, balance?: number, roundId?: string, source?: string, betUsdSnapshotMajor?: number, winUsdSnapshotMajor?: number, fxRateSnapshot?: number, addedAt: number }>>}
  */
 export async function loadBetHistory(slotSlug, limit = 500) {
   const database = await openDb()
@@ -89,6 +89,7 @@ export async function appendBet(slotSlug, entry, slotName) {
     scatterCount,
     balance,
     roundId,
+    source,
     currencyCode,
     betUsdSnapshotMajor,
     winUsdSnapshotMajor,
@@ -107,6 +108,7 @@ export async function appendBet(slotSlug, entry, slotName) {
     balance: balance != null ? Number(balance) : undefined,
     currencyCode: currencyCode ?? undefined,
     roundId: roundId ?? undefined,
+    source: source != null ? String(source) : undefined,
     betUsdSnapshotMajor: betUsdSnapshotMajor != null ? Number(betUsdSnapshotMajor) : undefined,
     winUsdSnapshotMajor: winUsdSnapshotMajor != null ? Number(winUsdSnapshotMajor) : undefined,
     fxRateSnapshot: fxRateSnapshot != null ? Number(fxRateSnapshot) : undefined,

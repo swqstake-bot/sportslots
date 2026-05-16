@@ -107,6 +107,8 @@ const STYLES = {
 const SESSION_DEPENDENT_BET_LEVELS = [500, 1000, 2000, 5000, 10000, 20000, 50000, 100000]
 
 const EMPTY_TARGET_MULTIS = []
+const BET_HISTORY_DEDUP_MAX = 6000
+const FALLBACK_RECONCILE_WINDOW_MS = 8000
 
 function formatTargetMultiLabel(n) {
   const x = Number(n)
@@ -171,6 +173,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const [lastResult, setLastResult] = useState(null)
   const [betHistory, setBetHistory] = useState([])
   const betHistoryLengthRef = useRef(0)
+  const seenBetDedupKeysRef = useRef(new Set())
+  const seenBetDedupOrderRef = useRef([])
   const prevSlotSlugRef = useRef(slot.slug)
   const [logRefreshKey, setLogRefreshKey] = useState(0)
   const lastLogRefreshAtRef = useRef(0)
@@ -413,6 +417,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     setSession(null)
     setError('')
     setBalanceFromPlaceBet(null)
+    seenBetDedupKeysRef.current.clear()
+    seenBetDedupOrderRef.current = []
   }, [slot.slug])
 
   useEffect(() => {
@@ -433,7 +439,26 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           balance: b.balance,
           roundId: b.roundId,
           addedAt: b.addedAt,
+          source: b.source,
         }))
+        const dedupSet = new Set()
+        const dedupOrder = []
+        for (const row of mapped) {
+          const rid = row?.roundId != null ? String(row.roundId) : ''
+          if (!rid) continue
+          const key = `round:${rid}`
+          if (dedupSet.has(key)) continue
+          dedupSet.add(key)
+          dedupOrder.push(key)
+        }
+        if (dedupOrder.length > BET_HISTORY_DEDUP_MAX) {
+          const keep = dedupOrder.slice(-BET_HISTORY_DEDUP_MAX)
+          seenBetDedupKeysRef.current = new Set(keep)
+          seenBetDedupOrderRef.current = keep
+        } else {
+          seenBetDedupKeysRef.current = dedupSet
+          seenBetDedupOrderRef.current = dedupOrder
+        }
         setBetHistory((prev) => {
           const maxLoaded = mapped.length ? Math.max(...mapped.map((x) => x.addedAt || 0)) : 0
           const newer = prev.filter((p) => (p.addedAt || 0) > maxLoaded)
@@ -469,11 +494,71 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     const now = Date.now()
     const roundId = parsed.roundId
     const rid = roundId != null ? String(roundId) : null
+    const source = String(parsed?.source || 'unknown')
+    const currencyCode = parsed.currencyCode
+    const normCurr = String(currencyCode || effectiveTarget || 'usd').toLowerCase()
+    const parsedBet = Number(parsed.betAmount) || 0
+    const parsedWin = Number(parsed.stoppedBonus ? 0 : (parsed.winAmount ?? 0)) || 0
+    const signature = `${normCurr}|${parsedBet}|${parsedWin}|${parsed.isBonus ? 1 : 0}`
     setBetHistory((prev) => {
+      if (rid) {
+        const roundKey = `round:${rid}`
+        if (seenBetDedupKeysRef.current.has(roundKey)) {
+          recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-roundId-set', roundId: rid })
+          return prev
+        }
+      }
       const last = prev[prev.length - 1]
       if (rid && last && String(last.roundId ?? '') === rid) {
         recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-roundId', roundId: rid })
         return prev // Duplikat vermeiden (gleicher Round)
+      }
+      if (source === 'housebets') {
+        let fallbackIdx = -1
+        for (let i = prev.length - 1; i >= 0; i--) {
+          const row = prev[i]
+          if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) break
+          if (String(row?.source || '') !== 'http_fallback') continue
+          const rowCurr = String(row?.currencyCode || effectiveTarget || 'usd').toLowerCase()
+          const rowSig = `${rowCurr}|${Number(row?.betAmount) || 0}|${Number(row?.winAmount) || 0}|${row?.isBonus ? 1 : 0}`
+          if (rowSig === signature) {
+            fallbackIdx = i
+            break
+          }
+        }
+        if (fallbackIdx >= 0) {
+          const clone = prev.slice()
+          clone[fallbackIdx] = {
+            ...clone[fallbackIdx],
+            source: 'housebets',
+            roundId: rid ?? clone[fallbackIdx]?.roundId,
+            currencyCode: currencyCode ?? clone[fallbackIdx]?.currencyCode,
+          }
+          if (rid) {
+            const roundKey = `round:${rid}`
+            seenBetDedupKeysRef.current.add(roundKey)
+            seenBetDedupOrderRef.current.push(roundKey)
+            while (seenBetDedupOrderRef.current.length > BET_HISTORY_DEDUP_MAX) {
+              const old = seenBetDedupOrderRef.current.shift()
+              if (old) seenBetDedupKeysRef.current.delete(old)
+            }
+          }
+          recordBetHistoryAudit({ slotSlug: slot.slug, event: 'replace-http-fallback-with-housebets', roundId: rid ?? null })
+          return clone
+        }
+      } else if (source === 'http_fallback') {
+        for (let i = prev.length - 1; i >= 0; i--) {
+          const row = prev[i]
+          if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) break
+          const rowSource = String(row?.source || '')
+          if (rowSource === 'http_fallback') continue
+          const rowCurr = String(row?.currencyCode || effectiveTarget || 'usd').toLowerCase()
+          const rowSig = `${rowCurr}|${Number(row?.betAmount) || 0}|${Number(row?.winAmount) || 0}|${row?.isBonus ? 1 : 0}`
+          if (rowSig === signature) {
+            recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-http-fallback-vs-existing' })
+            return prev
+          }
+        }
       }
       if (!rid && last && (now - (last.addedAt ?? 0)) < 150) {
         const same = (last.betAmount ?? 0) === (parsed.betAmount ?? 0) &&
@@ -496,9 +581,10 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         stoppedBonus: !!parsed.stoppedBonus,
         scatterCount: parsed.scatterCount != null ? Number(parsed.scatterCount) : undefined,
         balance: parsed.balance,
-        currencyCode: parsed.currencyCode,
+        currencyCode,
         roundId: roundId ?? undefined,
         addedAt: now,
+        source,
       }
       const curr = (entry.currencyCode || effectiveTarget || 'usd').toLowerCase()
       const betConv = convertMinorToUsdMajor(entry.betAmount, curr, currencyRates)
@@ -538,6 +624,15 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         betAmount: entry.betAmount,
         winAmount: entry.winAmount,
       })
+      if (rid) {
+        const roundKey = `round:${rid}`
+        seenBetDedupKeysRef.current.add(roundKey)
+        seenBetDedupOrderRef.current.push(roundKey)
+        while (seenBetDedupOrderRef.current.length > BET_HISTORY_DEDUP_MAX) {
+          const old = seenBetDedupOrderRef.current.shift()
+          if (old) seenBetDedupKeysRef.current.delete(old)
+        }
+      }
       return [...prev, entry]
     })
   }, [slot.slug, slot.name, effectiveTarget, toUsdMajor, currencyRates])
@@ -554,7 +649,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     if (!parsed?.success) return
     setTimeout(() => {
       if (betHistoryLengthRef.current > baselineCount) return
-      addToBetHistory({ ...parsed, winAmount: parsed.winAmount ?? 0 })
+      addToBetHistory({ ...parsed, winAmount: parsed.winAmount ?? 0, source: 'http_fallback' })
     }, delayMs)
   }, [fillBetHistoryFromPlaceBet, addToBetHistory])
 
@@ -565,7 +660,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     if (parsed.balance != null) setBalanceFromPlaceBet(parsed.balance)
     // Stake Engine: houseBets liefert oft nichts – BetList aus placeBet füllen
     if (fillBetHistoryFromPlaceBet && parsed.success) {
-      addToBetHistory({ ...parsed, winAmount: parsed.winAmount })
+      addToBetHistory({ ...parsed, winAmount: parsed.winAmount, source: 'placebet' })
     }
   }, [slot?.slug, slot?.providerId, addToBetHistory, fillBetHistoryFromPlaceBet])
 
@@ -846,7 +941,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           (parsed.scatterCount == null && parsed.isBonus)
         if (autospinStopOnBonus && (parsed.shouldStopOnBonus ?? parsed.isBonus) && bonusMeetsScatter) {
           lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
-          addToBetHistory({ ...parsed, winAmount, stoppedBonus: true })
+          addToBetHistory({ ...parsed, winAmount, stoppedBonus: true, source: 'placebet' })
           setError(`Autospin stopped: bonus${parsed.scatterCount != null ? ` (${parsed.scatterCount} scatters)` : ''} hit after ${spinsDone + 1} spin(s)`)
           notifyBonusHit(slot.name, spinsDone + 1)
           triggerLogRefresh()
@@ -855,14 +950,14 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
 
         if (autospinStopOnProfit && netAfterUsd >= profitThresholdUsd) {
           lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
-          addToBetHistory({ ...parsed, winAmount })
+          addToBetHistory({ ...parsed, winAmount, source: 'placebet' })
           setError(`Autospin stopped: profit reached after ${spinsDone + 1} spin(s)`)
           triggerLogRefresh()
           break
         }
         if (autospinStopOnNetLoss && netAfterUsd <= -lossThresholdUsd) {
           lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
-          addToBetHistory({ ...parsed, winAmount })
+          addToBetHistory({ ...parsed, winAmount, source: 'placebet' })
           setError(`Autospin stopped: loss limit reached after ${spinsDone + 1} spin(s)`)
           triggerLogRefresh()
           break
@@ -875,7 +970,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             (hasBetUsd && betUsd >= 0.09 && betUsd <= 0.11)
           if (mult >= autospinStopMultiplier && stakeOkForMultiStop) {
             lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
-            addToBetHistory({ ...parsed, winAmount })
+            addToBetHistory({ ...parsed, winAmount, source: 'placebet' })
             const stakeHint = autospinStopMultiOnlyAt010Usd ? ' (~$0.10 stake)' : ''
             setError(
               `Autospin stopped: ${mult.toFixed(1)}x (>=${autospinStopMultiplier}x)${stakeHint} after ${spinsDone + 1} spin(s)`
@@ -896,21 +991,21 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
 
         if (autospinStopOnWin && isWin) {
           lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
-          addToBetHistory({ ...parsed, winAmount })
+          addToBetHistory({ ...parsed, winAmount, source: 'placebet' })
           setError(`Autospin stopped: win after ${spinsDone + 1} spin(s)`)
           triggerLogRefresh()
           break
         }
         if (autospinStopOnLoss && !isWin) {
           lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
-          addToBetHistory({ ...parsed, winAmount })
+          addToBetHistory({ ...parsed, winAmount, source: 'placebet' })
           setError(`Autospin stopped: loss after ${spinsDone + 1} spin(s)`)
           triggerLogRefresh()
           break
         }
         if (autospinStopOnMinutes && sessionStartAt && Math.floor((Date.now() - sessionStartAt) / 60000) >= Math.max(1, autospinStopMinutes || 0)) {
           lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
-          addToBetHistory({ ...parsed, winAmount })
+          addToBetHistory({ ...parsed, winAmount, source: 'placebet' })
           setError(`Autospin stopped: time limit reached after ${spinsDone + 1} spin(s)`)
           triggerLogRefresh()
           break
@@ -922,7 +1017,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             (autospinStopStreakType === 'loss' && lossStreak >= n)
           if (hit) {
             lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
-            addToBetHistory({ ...parsed, winAmount })
+            addToBetHistory({ ...parsed, winAmount, source: 'placebet' })
             setError(`Autospin stopped: ${n}x ${autospinStopStreakType === 'win' ? 'win' : 'loss'} streak after ${spinsDone + 1} spin(s)`)
             triggerLogRefresh()
             break

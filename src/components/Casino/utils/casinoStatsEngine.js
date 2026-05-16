@@ -33,6 +33,10 @@ function resolveUsdMajor(minorAmount, currencyCode, rates, snapshotMajor) {
   if (snapshotMajor != null && Number.isFinite(Number(snapshotMajor))) {
     return Number(snapshotMajor)
   }
+  return null
+}
+
+function resolveLiveUsdMajor(minorAmount, currencyCode, rates) {
   const conv = convertMinorToUsdMajor(minorAmount, currencyCode, rates || {})
   const usd = Number(conv?.usd)
   return Number.isFinite(usd) ? usd : null
@@ -96,10 +100,10 @@ export function aggregateToStatsSnapshot(agg, balanceView = {}) {
     balanceView?.balanceFromPlaceBet ?? a.lastBalance ?? balanceView?.wsBalance ?? null
   const currentBalanceCurrency = a.lastCurrency || balanceView?.effectiveTarget || 'usd'
   const currentBalanceUsd = currentBalanceRaw != null
-    ? resolveUsdMajor(currentBalanceRaw, currentBalanceCurrency, balanceView?.rates || {}, null)
+    ? resolveLiveUsdMajor(currentBalanceRaw, currentBalanceCurrency, balanceView?.rates || {})
     : null
   const sessionStartBalanceUsd = balanceView?.sessionStartBalance != null
-    ? resolveUsdMajor(balanceView.sessionStartBalance, balanceView?.effectiveTarget || 'usd', balanceView?.rates || {}, null)
+    ? resolveLiveUsdMajor(balanceView.sessionStartBalance, balanceView?.effectiveTarget || 'usd', balanceView?.rates || {})
     : null
   return {
     spins: a.spins,
