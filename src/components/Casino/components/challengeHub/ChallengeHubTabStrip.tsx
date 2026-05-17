@@ -5,8 +5,8 @@ export type HubTab = 'casino' | 'autorun' | 'telegram' | 'forum' | 'promotions' 
 const HUB_TABS: { id: HubTab; label: string; title: string }[] = [
   {
     id: 'casino',
-    label: 'Bets & KPI',
-    title: 'Challenge bet lists and KPIs (manual/overview). Bonus Hunt is available under Play → Bonus Hunt.',
+    label: 'Challenge Hunt',
+    title: 'Challenge hunt: live bet list and session KPIs (manual overview). Bonus Hunt is under Play → Bonus Hunt.',
   },
   {
     id: 'autorun',
