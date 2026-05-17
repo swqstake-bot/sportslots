@@ -141,26 +141,26 @@ export default function OriginalsMultiStrategies({ value = {}, onChange }: Origi
     <div className="casino-card space-y-4">
       <h3 className="casino-card-header text-base">
         <span className="casino-card-header-accent" />
-        Multi-Strategien
+        Multi strategies
       </h3>
 
       <div>
-        <div className="text-xs font-medium text-[var(--text-muted)] mb-1.5">Pro Spiel (für Rotation / Switch)</div>
+        <div className="text-xs font-medium text-[var(--text-muted)] mb-1.5">Per game (rotation / switch)</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-lg bg-[var(--bg-deep)]/50 border border-[var(--border-subtle)]">
           <div>
             <label className={labelCls}>Dice: Chance % (Roll Under)</label>
             <input type="number" min="0.01" max="99.99" step="0.01" value={v.multiDiceChance ?? 49.5} onChange={(e) => emit({ multiDiceChance: Number(e.target.value) || 49.5 })} className={inputCls} />
           </div>
           <div>
-            <label className={labelCls}>Limbo: Ziel-Multiplikator</label>
+            <label className={labelCls}>Limbo: target multiplier</label>
             <input type="number" min="1.01" max="1000000" step="0.01" value={v.multiLimboMultiplier ?? 2} onChange={(e) => emit({ multiLimboMultiplier: Number(e.target.value) || 2 })} className={inputCls} />
           </div>
           <div>
-            <label className={labelCls}>Mines: Minenanzahl</label>
+            <label className={labelCls}>Mines: mine count</label>
             <input type="number" min="1" max="24" value={v.multiMinesCount ?? 3} onChange={(e) => emit({ multiMinesCount: Math.max(1, Math.min(24, Number(e.target.value) || 3)) })} className={inputCls} />
           </div>
           <div>
-            <label className={labelCls}>Plinko: Reihen</label>
+            <label className={labelCls}>Plinko: rows</label>
             <input type="number" min="8" max="16" value={v.multiPlinkoRows ?? 16} onChange={(e) => emit({ multiPlinkoRows: Math.max(8, Math.min(16, Number(e.target.value) || 16)) })} className={inputCls} />
           </div>
           <div>
@@ -172,7 +172,7 @@ export default function OriginalsMultiStrategies({ value = {}, onChange }: Origi
             </select>
           </div>
           <div>
-            <label className={labelCls}>Keno: Anzahl Picks (Felder)</label>
+            <label className={labelCls}>Keno: number of picks</label>
             <input type="number" min="1" max="10" value={v.multiKenoPicks ?? 5} onChange={(e) => emit({ multiKenoPicks: Math.max(1, Math.min(10, Number(e.target.value) || 5)) })} className={inputCls} />
           </div>
           <div>
@@ -187,7 +187,7 @@ export default function OriginalsMultiStrategies({ value = {}, onChange }: Origi
       </div>
 
       <div>
-        <div className="text-xs font-medium text-[var(--text-muted)] mb-1.5">Rotation (Vorgabe)</div>
+        <div className="text-xs font-medium text-[var(--text-muted)] mb-1.5">Rotation (presets)</div>
         <div className="flex flex-wrap gap-2 mb-2">
           {ROTATION_PRESETS.map((preset) => (
             <button
@@ -222,15 +222,15 @@ export default function OriginalsMultiStrategies({ value = {}, onChange }: Origi
                 style={{ width: '5rem' }}
               />
               <span className="text-xs text-[var(--text-muted)]">Bets</span>
-              <button type="button" onClick={() => removeRotationRow(i)} className="text-red-400 text-xs">Entfernen</button>
+              <button type="button" onClick={() => removeRotationRow(i)} className="text-red-400 text-xs">Remove</button>
             </div>
           ))}
-          <button type="button" onClick={addRotationRow} className="text-xs text-[var(--accent)]">+ Zeile</button>
+          <button type="button" onClick={addRotationRow} className="text-xs text-[var(--accent)]">+ Row</button>
         </div>
       </div>
 
       <div>
-        <div className="text-xs font-medium text-[var(--text-muted)] mb-1.5">Conditional Switch (pro Original: Von-Spiel → Bedingung → Ziel)</div>
+        <div className="text-xs font-medium text-[var(--text-muted)] mb-1.5">Conditional switch (per Original: from game → condition → target)</div>
         <div className="space-y-2">
           {switchEntries.map((row, i) => {
             const opts = conditionsForGame(row.fromGame)
@@ -239,7 +239,7 @@ export default function OriginalsMultiStrategies({ value = {}, onChange }: Origi
             const showValue = needsValue(row.fromGame, condition)
             return (
               <div key={i} className="flex gap-2 items-center flex-wrap p-2 rounded-lg bg-[var(--bg-deep)]/50 border border-[var(--border-subtle)]">
-                <span className="text-xs text-[var(--text-muted)]">Wenn</span>
+                <span className="text-xs text-[var(--text-muted)]">If</span>
                 <select
                   value={row.fromGame}
                   onChange={(e) => {
@@ -275,7 +275,7 @@ export default function OriginalsMultiStrategies({ value = {}, onChange }: Origi
                   )
                 })()}
                 <span className="text-[var(--text-muted)]">→</span>
-                <span className="text-xs text-[var(--text-muted)]">→ wechsle zu</span>
+                <span className="text-xs text-[var(--text-muted)]">switch to</span>
                 <select
                   value={row.targetGame}
                   onChange={(e) => updateSwitchRow(i, { targetGame: e.target.value as OriginalsGameId })}
@@ -286,11 +286,11 @@ export default function OriginalsMultiStrategies({ value = {}, onChange }: Origi
                     <option key={g.id} value={g.id}>{g.label}</option>
                   ))}
                 </select>
-                <button type="button" onClick={() => removeSwitchRow(i)} className="text-red-400 text-xs ml-auto">Entfernen</button>
+                <button type="button" onClick={() => removeSwitchRow(i)} className="text-red-400 text-xs ml-auto">Remove</button>
               </div>
             )
           })}
-          <button type="button" onClick={addSwitchRow} className="text-xs text-[var(--accent)]">+ Regel</button>
+          <button type="button" onClick={addSwitchRow} className="text-xs text-[var(--accent)]">+ Rule</button>
         </div>
       </div>
 
@@ -315,7 +315,7 @@ export default function OriginalsMultiStrategies({ value = {}, onChange }: Origi
             onChange={(e) => emit({ streakBasedMode: e.target.checked })}
             className="w-4 h-4 rounded accent-[var(--accent)]"
           />
-          <span className="text-xs">Streak-Based (6+ Wins aggressiver)</span>
+          <span className="text-xs">Streak-based (6+ wins, more aggressive)</span>
         </label>
         <label className="flex items-center gap-2 cursor-pointer">
           <input

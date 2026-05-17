@@ -22,29 +22,34 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
     throw new Error('ChallengeHubBetListPanel must be used inside ChallengeHubBetListProvider')
   }
   const { recentBets, setRecentBets } = hubList
-  const [lastUpdate, setLastUpdate] = useState<number>(() => Date.now())
-  const [topMultisLimit, setTopMultisLimit] = useState<number>(20)
+  const [topMultisLimit, setTopMultisLimit] = useState<number>(10)
+  const [feedOpen, setFeedOpen] = useState(true)
+  const [highlightsOpen, setHighlightsOpen] = useState(true)
+  const [highlightMode, setHighlightMode] = useState<'multis' | 'wins' | 'slots'>('multis')
   const [topMultisAll, setTopMultisAll] = useState<TopEntry[]>(() => parseStoredTopEntries())
 
   useEffect(() => {
     let cancelled = false
     const max = CHALLENGE_HUB_BET_LIST_MAX_ROWS
 
-    const hasCasinoSourceTag = (rows: any[]) =>
-      (rows || []).some((x) => String(x?.sourceTag || '').startsWith('casino:'))
+    const hasHubSourceTag = (rows: any[]) =>
+      (rows || []).some((x) => {
+        const tag = String(x?.sourceTag || '').toLowerCase()
+        return tag.startsWith('casino:') || tag.startsWith('autorun:') || tag.startsWith('telegram:')
+      })
 
     const hydrate = async () => {
       const fast = getChallengeHubRecentBets()
       if (fast.length > 0) {
         setRecentBets(fast.slice(0, max))
-        setLastUpdate(Date.now())
+        setTopMultisAll((prev) => mergeTopEntries(prev, fast))
       }
       try {
         const db = await loadRecentBets(max)
         if (cancelled) return
         if (db?.length) {
           setRecentBets((prev) => {
-            if (hasCasinoSourceTag(prev) || hasCasinoSourceTag(getChallengeHubRecentBets())) {
+            if (hasHubSourceTag(prev) || hasHubSourceTag(getChallengeHubRecentBets())) {
               if (getChallengeHubRecentBets().length) {
                 return getChallengeHubRecentBets().slice(0, max)
               }
@@ -52,32 +57,40 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
             }
             return db
           })
-          if (!cancelled) setLastUpdate(Date.now())
+          setTopMultisAll((prev) => mergeTopEntries(prev, db))
         }
       } catch {
+        // keep panel resilient on db read failures
       }
     }
 
-    const dbRefresh = async () => {
+    const fallbackRefresh = async () => {
       try {
         const db = await loadRecentBets(max)
-        if (cancelled) return
-        if (!db?.length) return
+        if (cancelled || !db?.length) return
         setRecentBets((prev) => {
-          const hasLiveFeedRows = (prev || []).some((x) => String(x?.sourceTag || '').startsWith('casino:'))
-          if (hasLiveFeedRows) return prev
+          if (hasHubSourceTag(prev)) return prev
           const prevFirst = prev?.[0]?.id ?? null
           const dbFirst = db?.[0]?.id ?? null
           if (prevFirst === dbFirst && prev.length === db.length) return prev
           return db
         })
-        setLastUpdate(Date.now())
+        setTopMultisAll((prev) => mergeTopEntries(prev, db))
       } catch {
+        // optional fallback refresh may fail
+      }
+    }
+
+    const dbRefresh = async () => {
+      try {
+        await fallbackRefresh()
+      } catch {
+        // fallback failure is non-fatal
       }
     }
 
     hydrate()
-    const dbIntervalId = window.setInterval(dbRefresh, 2000)
+    const dbIntervalId = window.setInterval(dbRefresh, 15_000)
     const unsubscribe = subscribeChallengeHubBetFeed((entry) => {
       if (cancelled) return
       setRecentBets((prev) => {
@@ -91,7 +104,7 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
         }
         return [entry, ...prev].slice(0, max)
       })
-      setLastUpdate(Date.now())
+      setTopMultisAll((prev) => mergeTopEntries(prev, [entry]))
     })
     return () => {
       cancelled = true
@@ -99,10 +112,6 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
       unsubscribe()
     }
   }, [setRecentBets])
-
-  useEffect(() => {
-    setTopMultisAll((prev) => mergeTopEntries(prev, recentBets || []))
-  }, [recentBets])
 
   useEffect(() => {
     let cancelled = false
@@ -118,6 +127,7 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
         if (!mapped.length) return
         setTopMultisAll((prev) => mergeTopEntries(prev, mapped))
       } catch {
+        // optional logger enrichment
       }
     }
     loadLoggerTopRows()
@@ -129,33 +139,88 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
   }, [topMultisAll])
 
   const topMultis = useMemo(() => {
-    return topMultisAll.slice(0, Math.max(20, topMultisLimit))
+    return topMultisAll.slice(0, Math.max(10, topMultisLimit))
   }, [topMultisAll, topMultisLimit])
   const topWins = useMemo(() => {
-    return deriveTopWins(topMultisAll, Math.max(20, topMultisLimit))
+    return deriveTopWins(topMultisAll, Math.max(10, topMultisLimit))
   }, [topMultisAll, topMultisLimit])
   const topSlots = useMemo(() => {
-    return deriveTopSlots(topMultisAll, Math.max(20, topMultisLimit))
+    return deriveTopSlots(topMultisAll, Math.max(10, topMultisLimit))
   }, [topMultisAll, topMultisLimit])
   const clearTopMultis = () => {
     setTopMultisAll([])
     clearTopEntries()
   }
 
+  const highlightRows = useMemo(() => {
+    if (highlightMode === 'wins') {
+      return topWins.map((row, idx) => ({
+        key: `win:${row.key}`,
+        title: row.slotName,
+        subtitle: formatAmount(row.winAmount, row.currencyCode),
+        value: `${row.multiplier.toFixed(2)}x`,
+        rank: idx + 1,
+        shareId: row.shareId ?? null,
+      }))
+    }
+    if (highlightMode === 'slots') {
+      return topSlots.map((row, idx) => ({
+        key: `slot:${row.slotName}`,
+        title: row.slotName,
+        subtitle: `${row.spins} hits · best win ${formatAmount(row.bestWinAmount, row.currencyCode)}`,
+        value: `${row.bestMulti.toFixed(2)}x`,
+        rank: idx + 1,
+        shareId: null,
+      }))
+    }
+    return topMultis.map((row, idx) => ({
+      key: row.key,
+      title: row.slotName,
+      subtitle: formatAmount(row.winAmount, row.currencyCode),
+      value: `${row.multiplier.toFixed(2)}x`,
+      rank: idx + 1,
+      shareId: row.shareId ?? null,
+    }))
+  }, [highlightMode, topMultis, topSlots, topWins])
+
   return (
-    <SectionCard title="Hub activity">
-      <ChallengeHubBetListFeed lastUpdate={lastUpdate} recentBets={recentBets} />
-      <div className="mt-3 border-t border-[var(--border)]/80 pt-2">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-[0.65rem] uppercase tracking-wide text-[var(--text-muted)]">Top multis</p>
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1.5 text-[0.64rem] text-[var(--text-muted)]">
+    <SectionCard title="Hub activity" className="challenge-hub-activity-panel">
+      <div className="challenge-hub-activity-head">
+        <p className="challenge-hub-activity-label">Feed</p>
+        <button type="button" className="challenge-hub-action challenge-hub-action--ghost" onClick={() => setFeedOpen((prev) => !prev)}>
+          {feedOpen ? 'Collapse' : 'Expand'}
+        </button>
+      </div>
+      {feedOpen ? (
+        <div className="challenge-hub-activity-feed-wrap">
+          <ChallengeHubBetListFeed recentBets={recentBets} />
+        </div>
+      ) : (
+        <p className="challenge-hub-activity-empty">Feed collapsed.</p>
+      )}
+
+      <div className="challenge-hub-activity-divider" />
+      <div className="challenge-hub-activity-highlights">
+        <div className="challenge-hub-activity-head">
+          <p className="challenge-hub-activity-label">Highlights</p>
+          <div className="challenge-hub-activity-controls">
+            <select
+              value={highlightMode}
+              onChange={(e) => setHighlightMode((e.target.value as 'multis' | 'wins' | 'slots') || 'multis')}
+              className="challenge-hub-activity-select"
+            >
+              <option value="multis">Top multis</option>
+              <option value="wins">Top wins</option>
+              <option value="slots">Top slots</option>
+            </select>
+            <label className="challenge-hub-activity-show">
               Show
               <select
                 value={topMultisLimit}
-                onChange={(e) => setTopMultisLimit(Math.max(20, Number(e.target.value) || 20))}
-                className="rounded border border-[var(--border)] bg-[var(--bg-deep)] px-1.5 py-0.5 text-[0.65rem] text-[var(--text)]"
+                onChange={(e) => setTopMultisLimit(Math.max(10, Number(e.target.value) || 10))}
+                className="challenge-hub-activity-select"
               >
+                <option value={10}>10</option>
                 <option value={20}>20</option>
                 <option value={30}>30</option>
                 <option value={50}>50</option>
@@ -164,36 +229,48 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
             </label>
             <button
               type="button"
+              className="challenge-hub-action challenge-hub-action--ghost"
+              onClick={() => setHighlightsOpen((prev) => !prev)}
+            >
+              {highlightsOpen ? 'Collapse' : 'Expand'}
+            </button>
+            <button
+              type="button"
               onClick={clearTopMultis}
-              className="rounded border border-[var(--border)] px-1.5 py-0.5 text-[0.64rem] text-[var(--text-muted)] hover:text-[var(--error)]"
+              className="challenge-hub-action challenge-hub-action--danger"
               title="Clear top multis list"
             >
               Clear
             </button>
           </div>
         </div>
-        {topMultis.length === 0 ? (
-          <p className="text-[0.72rem] text-[var(--text-muted)]">No settled multipliers yet.</p>
+        {!highlightsOpen ? null : highlightRows.length === 0 ? (
+          <p className="challenge-hub-activity-empty">No highlight rows yet.</p>
         ) : (
-          <div className="space-y-1.5">
-            {topMultis.map((row, idx) => (
+          <div className="challenge-hub-highlight-list">
+            {highlightRows.map((row) => (
               <div
                 key={row.key}
-                className="flex items-center justify-between gap-2 rounded border border-[var(--border)]/70 bg-[var(--bg-card)]/70 px-2 py-1.5"
+                className="challenge-hub-highlight-row"
               >
-                <div className="min-w-0">
-                  <p className="truncate text-[0.72rem] font-medium text-[var(--text)]">{row.slotName}</p>
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-[0.64rem] text-[var(--text-muted)]">{formatAmount(row.winAmount, row.currencyCode)}</p>
+                <div className="challenge-hub-highlight-main">
+                  <div className="challenge-hub-highlight-title-row">
+                    <p className="challenge-hub-highlight-title">{row.title}</p>
+                    <p className="challenge-hub-highlight-rank">#{row.rank}</p>
+                  </div>
+                  <div className="challenge-hub-highlight-sub-row">
+                    <p className="challenge-hub-highlight-sub">{row.subtitle}</p>
                     {row.shareId ? (
                       <button
                         type="button"
-                        className="rounded border border-[var(--border)] px-1.5 py-0.5 text-[0.6rem] text-[var(--accent)]"
+                        className="challenge-hub-highlight-copy"
                         title={`Copy house id (${row.shareId})`}
                         onClick={() => {
                           try {
                             navigator?.clipboard?.writeText(row.shareId).catch(() => {})
-                          } catch {}
+                          } catch {
+                            // ignore clipboard errors
+                          }
                         }}
                       >
                         Copy ID
@@ -201,51 +278,8 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
                     ) : null}
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-[0.8rem] font-semibold text-[var(--success)] tabular-nums">{row.multiplier.toFixed(2)}x</p>
-                  <p className="text-[0.62rem] text-[var(--text-muted)]">#{idx + 1}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="mt-3 border-t border-[var(--border)]/80 pt-2">
-        <p className="mb-2 text-[0.65rem] uppercase tracking-wide text-[var(--text-muted)]">Top wins</p>
-        {topWins.length === 0 ? (
-          <p className="text-[0.72rem] text-[var(--text-muted)]">No settled wins yet.</p>
-        ) : (
-          <div className="space-y-1.5">
-            {topWins.map((row, idx) => (
-              <div key={`win:${row.key}`} className="flex items-center justify-between gap-2 rounded border border-[var(--border)]/70 bg-[var(--bg-card)]/70 px-2 py-1.5">
-                <div className="min-w-0">
-                  <p className="truncate text-[0.72rem] font-medium text-[var(--text)]">{row.slotName}</p>
-                  <p className="text-[0.64rem] text-[var(--text-muted)]">{formatAmount(row.winAmount, row.currencyCode)}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[0.8rem] font-semibold text-[var(--success)] tabular-nums">{row.multiplier.toFixed(2)}x</p>
-                  <p className="text-[0.62rem] text-[var(--text-muted)]">#{idx + 1}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="mt-3 border-t border-[var(--border)]/80 pt-2">
-        <p className="mb-2 text-[0.65rem] uppercase tracking-wide text-[var(--text-muted)]">Top slots</p>
-        {topSlots.length === 0 ? (
-          <p className="text-[0.72rem] text-[var(--text-muted)]">No slot aggregates yet.</p>
-        ) : (
-          <div className="space-y-1.5">
-            {topSlots.map((row, idx) => (
-              <div key={`slot:${row.slotName}`} className="flex items-center justify-between gap-2 rounded border border-[var(--border)]/70 bg-[var(--bg-card)]/70 px-2 py-1.5">
-                <div className="min-w-0">
-                  <p className="truncate text-[0.72rem] font-medium text-[var(--text)]">{row.slotName}</p>
-                  <p className="text-[0.64rem] text-[var(--text-muted)]">{row.spins} top hits · best win {formatAmount(row.bestWinAmount, row.currencyCode)}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[0.8rem] font-semibold text-[var(--success)] tabular-nums">{row.bestMulti.toFixed(2)}x</p>
-                  <p className="text-[0.62rem] text-[var(--text-muted)]">#{idx + 1}</p>
+                <div className="challenge-hub-highlight-value-wrap">
+                  <p className="challenge-hub-highlight-value">{row.value}</p>
                 </div>
               </div>
             ))}

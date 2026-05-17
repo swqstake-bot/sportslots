@@ -160,7 +160,7 @@ function App() {
         window.dispatchEvent(new CustomEvent('stake-session-revalidated'));
         fetchData();
       } else {
-        setError('Session noch nicht validiert. Bitte Login-Fenster abschließen.');
+        setError('Session not validated yet. Finish the login window first.');
       }
     } catch (err: any) {
       console.error(`Login error: ${err.message}`);
@@ -284,6 +284,19 @@ function App() {
 
   const appTitle = currentView === 'casino' ? 'STAKESLOTS' : currentView === 'logger' ? 'STAKELOGGER' : 'STAKESPORTS';
 
+  const appHeaderProps = {
+    currentView,
+    onChangeView: setCurrentView,
+    appTitle,
+    userName: user?.name,
+    isChallengeRunning,
+    isRunning,
+    isLoading,
+    onRefresh: fetchData,
+    onLogin: handleLogin,
+    onSessionRevalidate: handleSessionRevalidate,
+  } as const
+
   return (
     <div 
       className="flex flex-col h-screen overflow-hidden select-none"
@@ -304,33 +317,8 @@ function App() {
         version={changelogVersion} 
         changes={changelogContent} 
       />
-      <AppHeader
-        currentView={currentView}
-        onChangeView={setCurrentView}
-        appTitle={appTitle}
-        userName={user?.name}
-        isChallengeRunning={isChallengeRunning}
-        isRunning={isRunning}
-        isLoading={isLoading}
-        onRefresh={fetchData}
-        onLogin={handleLogin}
-        onSessionRevalidate={handleSessionRevalidate}
-      />
 
-      {currentView === 'sports' && (
-        <SportsSubbar
-          sportFilterType={sportFilterType}
-          onChangeFilter={setSportFilterType}
-          selectedSportSlug={selectedSportSlug || 'soccer'}
-          onChangeSportSlug={setSelectedSportSlug}
-          fixtureSearchQuery={fixtureSearchQuery}
-          onChangeSearch={setFixtureSearchQuery}
-          sportsMenu={sportsMenu}
-        />
-      )}
-
-      {/* Main Content */}
-      <div className="app-main-layout">
+      <div className="flex flex-1 flex-col min-h-0 relative">
         {/* Error Toast */}
         {error && (
           <div
@@ -349,17 +337,40 @@ function App() {
           </div>
         )}
 
-        {/* Casino View stays mounted so challenge/hunter processes keep running across tab switches */}
+        {/* Casino: single rounded module = StakeSlots bar + Control center (CasinoView stays mounted when hidden) */}
         <div
-          className="app-view-casino"
-          style={{
-            display: currentView === 'casino' ? 'block' : 'none',
-          }}
+          className={currentView === 'casino' ? 'flex flex-1 flex-col min-h-0' : 'hidden'}
+          aria-hidden={currentView !== 'casino'}
         >
-          <CasinoView />
+          <div className="app-casino-unified flex flex-1 flex-col min-h-0">
+            <div className="app-casino-unified__header">
+              <AppHeader {...appHeaderProps} />
+            </div>
+            <div className="app-view-casino app-casino-unified__scroll flex-1 min-h-0 overflow-auto">
+              <CasinoView />
+            </div>
+          </div>
         </div>
 
-        {currentView === 'sports' && (
+        {/* Sports + Logger */}
+        <div
+          className={currentView === 'casino' ? 'hidden' : 'flex flex-1 flex-col min-h-0 overflow-hidden'}
+          aria-hidden={currentView === 'casino'}
+        >
+          <AppHeader {...appHeaderProps} />
+          {currentView === 'sports' && (
+            <SportsSubbar
+              sportFilterType={sportFilterType}
+              onChangeFilter={setSportFilterType}
+              selectedSportSlug={selectedSportSlug || 'soccer'}
+              onChangeSportSlug={setSelectedSportSlug}
+              fixtureSearchQuery={fixtureSearchQuery}
+              onChangeSearch={setFixtureSearchQuery}
+              sportsMenu={sportsMenu}
+            />
+          )}
+          <div className="app-main-layout flex-1">
+            {currentView === 'sports' && (
               <>
                 <div className="sports-view app-view-sports">
                   {user ? (
@@ -406,13 +417,15 @@ function App() {
                 
                 <RightSidebar />
               </>
-        )}
+            )}
 
-        {currentView === 'logger' && (
-          <div className="app-view-logger">
-            <LoggerView />
+            {currentView === 'logger' && (
+              <div className="app-view-logger">
+                <LoggerView />
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
       {/* AutoBet Manager (Headless): always mounted to avoid remount restarts */}
       <AutoBetManager />

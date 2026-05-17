@@ -1117,6 +1117,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const [localChallengeSlotSlug, setLocalChallengeSlotSlug] = useState('')
   const [localChallengeTargetMulti, setLocalChallengeTargetMulti] = useState('10')
   const [localChallengeMinBetUsd, setLocalChallengeMinBetUsd] = useState('0.10')
+  const [localChallengeExpanded, setLocalChallengeExpanded] = useState(false)
+  const [localChallengeSlotSearch, setLocalChallengeSlotSearch] = useState('')
+  const [opsSectionsOpen, setOpsSectionsOpen] = useState({
+    presets: true,
+    local: false,
+    runtime: true,
+  })
   const [challengeSearch, setChallengeSearch] = useState('')
   const [challengeSort, setChallengeSort] = useState('prize-desc')
   /** Pro Challenge: nächste Queue-Zielwährung — '' = Auto (Sortierung / Probes). */
@@ -1571,10 +1578,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     console.log(
       '%c[Hunter] Best Multi / Bet-IDs',
       'color:#39d98a;font-weight:bold',
-      '— betIdOverall = Lifetime (Slot) · betIdRun = dieser Lauf · nur houseBets'
+      '— betIdOverall = lifetime (slot) · betIdRun = this run · houseBets only'
     )
     if (rows.length) console.table(rows)
-    else console.log('[Hunter] (noch keine Best×- oder Bet-ID-Einträge)')
+    else console.log('[Hunter] (no best× or bet ID rows yet)')
   }, [bestMultiBySlot, activeRuns, hunterStorageTick])
 
   useEffect(() => {
@@ -1837,7 +1844,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         } catch (_) {}
 
         if (DEBUG_HUNTER_BETID_MATCH) {
-          log(`houseBets: Bet-ID + Best-Multi für ${runIds.length} Run(s) (nach houseBets).`)
+          log(`houseBets: Bet ID + best multi for ${runIds.length} run(s) (after houseBets).`)
         }
       }
 
@@ -1914,7 +1921,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const restoreDefaultFilters = useCallback(() => {
     applyFilters(DEFAULT_HUNTER_FILTERS)
     setPresetSelectValue('')
-    log('Filter auf Standard zurückgesetzt (gespeichert).')
+    log('Filters reset to defaults (saved).')
   }, [applyFilters, log])
 
   const loadPresetById = useCallback(
@@ -1923,7 +1930,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       const user = userPresets.find((p) => p.id === id)
       if (user) {
         applyFilters(user)
-        log(`Vorlage geladen: ${user.name}`)
+        log(`Preset loaded: ${user.name}`)
       }
     },
     [applyFilters, userPresets, log]
@@ -1932,7 +1939,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const saveCurrentPreset = useCallback(() => {
     const name = presetNameDraft.trim()
     if (!name) {
-      log('Bitte einen Namen für die Vorlage eingeben.')
+      log('Please enter a name for the preset.')
       return
     }
     const raw = {
@@ -1957,7 +1964,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       return next
     })
     setPresetSelectValue(id)
-    log(`Vorlage gespeichert: ${name}`)
+    log(`Preset saved: ${name}`)
   }, [
     presetNameDraft,
     minMinBet,
@@ -1978,7 +1985,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     if (!presetSelectValue) return
     const isUser = userPresets.some((p) => p.id === presetSelectValue)
     if (!isUser) {
-      log('Nur gespeicherte Vorlagen können gelöscht werden.')
+      log('Only saved presets can be deleted.')
       return
     }
     setUserPresets((prev) => {
@@ -1987,7 +1994,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       return next
     })
     setPresetSelectValue('')
-    log('Vorlage gelöscht.')
+    log('Preset deleted.')
   }, [presetSelectValue, userPresets, log])
 
   useEffect(() => {
@@ -2019,7 +2026,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const refreshChallenges = useCallback(async () => {
     if (!accessToken) return
     try {
-      log('Lade Challenges & Kurse...')
+      log('Loading challenges & rates...')
       
       // Rates laden für Umrechnungen
       const newRates = await fetchCurrencyRates(accessToken)
@@ -2045,7 +2052,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
       const localOnly = localChallengesRef.current || []
       const merged = [...localOnly, ...unique.filter((c) => !localOnly.some((l) => String(l.id) === String(c.id)))]
-      log(`${unique.length} Stake-Challenges gefunden (${localOnly.length} lokale).`)
+      log(`${unique.length} Stake challenges found (${localOnly.length} local).`)
       setChallenges(merged)
       setLastRefresh(Date.now())
 
@@ -2054,7 +2061,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       const knownSlugs = new Set(slotsSnapshot.map((s) => s.slug))
       const addedSlots = addDiscoveredFromChallenges(unique, knownSlugs)
       if (addedSlots.length > 0) {
-        log(`${addedSlots.length} neue Slots/Provider entdeckt: ${addedSlots.map(s => s.name).join(', ')}`)
+        log(`${addedSlots.length} new slots/providers discovered: ${addedSlots.map(s => s.name).join(', ')}`)
         onDiscoveredSlotsRef.current?.(addedSlots)
       }
 
@@ -2115,7 +2122,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             return [...q, buildQueueItemForChallenge(c.id, q, null, sourceCurrency, cSlug)]
           })
           if (queuedNow) {
-            log(`Neue Challenge gefunden: ${cName} (${c.minBetUsd}$)`)
+            log(`New challenge: ${cName} (${c.minBetUsd}$)`)
             processedIdsRef.current.add(c.id)
             addedCount++
           }
@@ -2124,22 +2131,22 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         }
       }
       
-      if (addedCount > 0) log(`${addedCount} Challenges zur Queue hinzugefügt.`)
+      if (addedCount > 0) log(`${addedCount} challenges added to queue.`)
 
     } catch (err) {
-      log(`Fehler beim Laden: ${err.message}`)
+      log(`Load error: ${err.message}`)
     }
   }, [accessToken, minMinBet, maxMinBet, minPrizeUsd, pagesToLoadClamped, log, buildQueueItemForChallenge, sourceCurrency])
 
   const createLocalChallenge = useCallback(() => {
     const slotSlug = String(localChallengeSlotSlug || '').trim().toLowerCase()
     if (!slotSlug) {
-      log('Local Challenge: bitte zuerst ein Spiel wählen.')
+      log('Local challenge: please select a game first.')
       return
     }
     const slot = (webSlotsRef.current || []).find((s) => String(s?.slug || '').toLowerCase() === slotSlug)
     if (!slot) {
-      log(`Local Challenge: Slot nicht gefunden (${slotSlug}).`)
+      log(`Local challenge: slot not found (${slotSlug}).`)
       return
     }
     const targetMultiplierRaw = Number(localChallengeTargetMulti)
@@ -2168,7 +2175,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     dismissedChallengeIdsRef.current.delete(challengeId)
     processedIdsRef.current.add(challengeId)
     setQueue((q) => [...q, buildQueueItemForChallenge(challengeId, q, null, sourceCurrency, slotSlug)])
-    log(`Local Challenge erstellt: ${slot.name || slotSlug} (${targetMultiplier.toFixed(2)}x, min $${minBetUsd.toFixed(2)})`)
+    log(`Local challenge created: ${slot.name || slotSlug} (${targetMultiplier.toFixed(2)}x, min $${minBetUsd.toFixed(2)})`)
   }, [
     localChallengeSlotSlug,
     localChallengeTargetMulti,
@@ -2327,7 +2334,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     const forced = (forcedRaw || '').trim().toLowerCase()
     const challenge = challenges.find((c) => c.id === challengeId)
     if (!challenge) {
-      log(`Challenge ${challengeId} nicht mehr gefunden.`)
+      log(`Challenge ${challengeId} not found anymore.`)
       return
     }
 
@@ -2389,14 +2396,14 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       },
     }))
 
-    const copyLabel = currencySlotIndex > 0 ? ` (Kopie #${currencySlotIndex + 1})` : ''
-    const manualCurrLabel = forced ? ` · ${forced.toUpperCase()} (manuell)` : ''
-    log(`Starte Challenge: ${gName}${copyLabel}${manualCurrLabel} (Ziel: ${challenge.targetMultiplier}x)`)
+    const copyLabel = currencySlotIndex > 0 ? ` (Copy #${currencySlotIndex + 1})` : ''
+    const manualCurrLabel = forced ? ` · ${forced.toUpperCase()} (manual)` : ''
+    log(`Starting challenge: ${gName}${copyLabel}${manualCurrLabel} (target: ${challenge.targetMultiplier}x)`)
     notifyChallengeStart(gName || gSlug, challenge.targetMultiplier)
 
     try {
       const provider = await getProvider(slot.providerId)
-      if (!provider) throw new Error(`Kein Provider für ${slot.providerId}`)
+      if (!provider) throw new Error(`No provider found for ${slot.providerId}`)
 
       const providerId = slot.providerId || 'stakeEngine'
       const preferredTarget = (targetCurrency || 'usd').toLowerCase()
@@ -2422,16 +2429,16 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
       if (forced) {
         const r = getRateForCurrency(rates, forced)
-        if (!r) throw new Error(`Kein Kurs für ${forced.toUpperCase()}`)
+        if (!r) throw new Error(`No rate for ${forced.toUpperCase()}`)
         tCurr = forced
         rate = r
-        log(`Session mit manueller Zielwährung: ${sCurr.toUpperCase()} → ${forced.toUpperCase()}…`)
+        log(`Session with manual target currency: ${sCurr.toUpperCase()} → ${forced.toUpperCase()}…`)
         session = await provider.startSession(accessToken, slot.slug, sCurr, forced)
         noteSessionFairnessId(session)
         const computed = computeBetFromMinBetAndSession(session, forced, r, minBetUsd)
         betAmount = computed.betAmount
         log(
-          `Manuell: Einsatz effektiv ~$${computed.usdAt.toFixed(2)} USD · Challenge-Mindesteinsatz (Stake, USD): $${minBetUsd}`
+          `Manual: effective stake ~$${computed.usdAt.toFixed(2)} USD · challenge min bet (Stake, USD): $${minBetUsd}`
         )
       } else if (autoOptimalTargetCurrency) {
         const allowed = getAllowedTargetCurrenciesForSlot(providerId)
@@ -2461,7 +2468,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         // Fehlende FX-Rates: Kandidaten fallen in sortTargetCandidatesForProbe raus — Rates nachladen, bis alle Probe-Pool-Fiats Kurse haben (oder Refresh scheitert).
         if (ordered.length < probePool.length && probePool.length > 1) {
           try {
-            log('Probe-Rates unvollständig — lade FX-Rates neu für Zielwährungs-Probe…')
+            log('Probe rates incomplete — refreshing FX for target-currency probe…')
             const freshRates = await fetchCurrencyRates(accessToken, { force: true })
             if (freshRates && typeof freshRates === 'object') {
               const mergedRates = { ...(probeRates || {}), ...freshRates }
@@ -2473,7 +2480,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                   : ordered
             }
           } catch (rateErr) {
-            log(`FX-Refresh für Probe fehlgeschlagen: ${String(rateErr?.message || rateErr)}`)
+            log(`FX refresh for probe failed: ${String(rateErr?.message || rateErr)}`)
           }
         }
 
@@ -2519,10 +2526,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             tCurr = bestProbe.tCurr
             rate = bestProbe.rate
             log(
-              `Zielwährung auto (Bet-Levels): ${tCurr.toUpperCase()} — Einsatz effektiv ~$${bestProbe.usdAt.toFixed(2)} USD · Challenge-Min (Stake, USD): $${minBetUsd}`
+              `Auto target currency (bet levels): ${tCurr.toUpperCase()} — effective stake ~$${bestProbe.usdAt.toFixed(2)} USD · challenge min (Stake, USD): $${minBetUsd}`
             )
             if (probeLimit > 1) {
-              log(`  (${probeLimit} Proben; gewählt: geringster effektiver USD-Bet)`)
+              log(`  (${probeLimit} probes; picked: lowest effective USD bet)`)
             }
             /**
              * Wichtig: Jede Probe ruft startSession auf — beim Anbieter (z. B. Hacksaw) ist oft nur die
@@ -2531,13 +2538,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
              */
             if (probeLimit > 1) {
               await new Promise((res) => setTimeout(res, SESSION_PROBE_DELAY_MS))
-              log(`Session für ${tCurr.toUpperCase()} nach Proben neu starten (gültig für Spins)…`)
+              log(`Restarting session for ${tCurr.toUpperCase()} after probes (valid for spins)…`)
               session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
               noteSessionFairnessId(session)
               const recomputed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
               betAmount = recomputed.betAmount
               log(
-                `Einsatz nach frischer Session: ${formatAmount(betAmount, tCurr)} ${tCurr.toUpperCase()} (≈ $${recomputed.usdAt.toFixed(2)} USD)`
+                `Stake after fresh session: ${formatAmount(betAmount, tCurr)} ${tCurr.toUpperCase()} (≈ $${recomputed.usdAt.toFixed(2)} USD)`
               )
             } else {
               session = bestProbe.session
@@ -2557,7 +2564,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               const rProbe = getRateForCurrency(probeRates, candProbe)
               if (!rProbe) continue
               try {
-                log(`Session-Probe (Kopie): ${sCurr.toUpperCase()} -> ${candProbe.toUpperCase()}…`)
+                log(`Session probe (copy): ${sCurr.toUpperCase()} -> ${candProbe.toUpperCase()}…`)
                 const sessProbe = await provider.startSession(accessToken, slot.slug, sCurr, candProbe)
                 const { usdAt } = computeBetFromMinBetAndSession(sessProbe, candProbe, rProbe, minBetUsd)
                 measuredProbes.push({ tCurr: candProbe, usdAt })
@@ -2585,16 +2592,16 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           const cand = ranked[idx]
           const r = getRateForCurrency(probeRates, cand)
           if (!r) {
-            log(`Kein Kurs für ${String(cand).toUpperCase()} — Fallback manuelle Zielwährung.`)
+            log(`No rate for ${String(cand).toUpperCase()} — fallback to manual target currency.`)
           } else {
             try {
               if (idx !== currencySlotIndex) {
                 log(
-                  `Nur ${ranked.length} Ziel-Kandidaten — nutze Index ${idx} statt ${currencySlotIndex} (${cand.toUpperCase()})`
+                  `Only ${ranked.length} target candidates — using index ${idx} instead of ${currencySlotIndex} (${cand.toUpperCase()})`
                 )
               } else {
                 log(
-                  `Zielwährung Kopie #${currencySlotIndex + 1}: ${cand.toUpperCase()} (${measured.length > 0 ? 'gemessene' : 'modellierte'} Sortierung, Index ${idx})`
+                  `Target currency copy #${currencySlotIndex + 1}: ${cand.toUpperCase()} (${measured.length > 0 ? 'measured' : 'modeled'} sorting, index ${idx})`
                 )
               }
               await new Promise((res) => setTimeout(res, SESSION_PROBE_DELAY_MS))
@@ -2606,7 +2613,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               rate = r
               betAmount = ba
               log(
-                `Einsatz effektiv ~$${usdAt.toFixed(2)} USD in ${cand.toUpperCase()} · Challenge-Min (Stake, USD): $${minBetUsd}`
+                `Effective stake ~$${usdAt.toFixed(2)} USD in ${cand.toUpperCase()} · challenge min (Stake, USD): $${minBetUsd}`
               )
             } catch (e) {
               log(`Session ${cand.toUpperCase()}: ${e?.message || e}`)
@@ -2614,7 +2621,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             }
           }
         } else if (currencySlotIndex > 0 && ordered.length === 0) {
-          log('Keine Ziel-Kandidaten für Kopie-Zuweisung — Fallback manuelle Zielwährung.')
+          log('No target candidates for copy assignment — falling back to manual target currency.')
         }
       }
 
@@ -2625,29 +2632,29 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           const pick =
             ['usd', 'eur', 'usdc'].find((c) => allowedTargets.includes(c)) || allowedTargets[0] || 'eur'
           log(
-            `Zielwährung ${preferredTarget.toUpperCase()} nicht in Provider-Liste — Fallback ${pick.toUpperCase()} (vermeidet GraphQL invalid_enum).`
+            `Target currency ${preferredTarget.toUpperCase()} not in provider list — fallback ${pick.toUpperCase()} (avoids GraphQL invalid_enum).`
           )
           targetForStart = pick
         }
         tCurr = targetForStart
-        log(`Starte Session: ${sCurr.toUpperCase()} -> ${tCurr.toUpperCase()}...`)
+        log(`Starting session: ${sCurr.toUpperCase()} -> ${tCurr.toUpperCase()}...`)
         session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
         noteSessionFairnessId(session)
         rate = getRateForCurrency(rates, tCurr)
-        if (!rate) throw new Error(`Kein Kurs für ${tCurr.toUpperCase()}`)
+        if (!rate) throw new Error(`No rate for ${tCurr.toUpperCase()}`)
         const computed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
         betAmount = computed.betAmount
         log(
-          `Einsatz effektiv ~$${computed.usdAt.toFixed(2)} USD · Challenge-Min (Stake, USD): $${minBetUsd}`
+          `Effective stake ~$${computed.usdAt.toFixed(2)} USD · challenge min (Stake, USD): $${minBetUsd}`
         )
       }
 
       const betUsdLine =
         rate && betAmount != null ? (toUnits(betAmount, tCurr) * rate).toFixed(2) : null
       log(
-        `Berechneter Einsatz: ${formatAmount(betAmount, tCurr)} ${tCurr.toUpperCase()}` +
+        `Computed stake: ${formatAmount(betAmount, tCurr)} ${tCurr.toUpperCase()}` +
           (betUsdLine != null ? ` (≈ $${betUsdLine} USD)` : '') +
-          ` · Challenge-Min (Stake, nur USD-Vorgabe): $${minBetUsd}`
+          ` · challenge minimum (Stake, USD-only constraint): $${minBetUsd}`
       )
       setActiveRuns((prev) => ({
         ...prev,
@@ -2667,7 +2674,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       let sessionTimeoutRecoveryAttempts = 0
       while (!runnersRef.current[runId]?.stop) {
         if (targetHit && finalizeSpinsRemaining === 0) {
-          log('Ziel erreicht — Abschluss-Spin erledigt, Run beendet.')
+          log('Target hit — final spin done, run ended.')
           break
         }
         let targetDetectedThisLoop = false
@@ -2676,7 +2683,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         const total = totalStatsRef.current
         const net = total.won - total.lost
         if (stopLoss > 0 && net <= -Math.abs(stopLoss)) {
-          log(`Stop Loss erreicht: Netto $${net.toFixed(2)} (Limit: -$${Math.abs(stopLoss).toFixed(2)}) – alle Läufe stoppen, Auto-Start aus, Warteschlange leer.`)
+          log(`Stop loss reached: net $${net.toFixed(2)} (limit: -$${Math.abs(stopLoss).toFixed(2)}) — stopping all runs, auto off, queue cleared.`)
           Object.keys(runnersRef.current).forEach((id) => {
             if (runnersRef.current[id]) runnersRef.current[id].stop = true
           })
@@ -2687,7 +2694,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           break
         }
         if (stopProfit > 0 && net >= Math.abs(stopProfit)) {
-          log(`Stop Profit erreicht: Netto $${net.toFixed(2)} (Limit: +$${Math.abs(stopProfit).toFixed(2)}) – alle Läufe stoppen, Auto-Start aus, Warteschlange leer.`)
+          log(`Stop profit reached: net $${net.toFixed(2)} (limit: +$${Math.abs(stopProfit).toFixed(2)}) — stopping all runs, auto off, queue cleared.`)
           Object.keys(runnersRef.current).forEach((id) => {
             if (runnersRef.current[id]) runnersRef.current[id].stop = true
           })
@@ -2709,7 +2716,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               finalizeSpinsRemaining = 1
               houseBetFirstTargetSignal = true
               log(
-                `ZIEL ERREICHT! Best-Multi ${best.toFixed(2)}× (Ziel: ${targetM.toFixed(2)}×) — houseBets/State · noch ein Spin zur Runden-/Challenge-Absicherung`
+                `TARGET HIT! Best multi ${best.toFixed(2)}x (target: ${targetM.toFixed(2)}x) — houseBets/state · one extra spin for round/challenge finalization`
               )
               if (!challengeHitPersisted) {
                 persistChallengeHitRecord({
@@ -2722,7 +2729,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                   currency: tCurr,
                 })
                 challengeHitPersisted = true
-                log('Treffer gespeichert (houseBets/State; Round-ID folgt ggf. nach HTTP-Spin).')
+                log('Hit saved (houseBets/state; round ID may follow HTTP spin).')
               }
             }
           }
@@ -2794,7 +2801,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           const runSeenRounds = (seenRoundKeysByRunRef.current[runId] ||= new Set())
           const dedupKey = roundIdForDedup ? `round:${roundIdForDedup}` : `spin:${spinSeq}`
           if (runSeenRounds.has(dedupKey)) {
-            log(`Doppelten Spin-Eintrag ignoriert (${gName || gSlug} · ${dedupKey}).`)
+            log(`Duplicate spin row ignored (${gName || gSlug} · ${dedupKey}).`)
             await new Promise((r) => setTimeout(r, HUNTER_SPIN_DELAY_MS))
             continue
           }
@@ -2928,7 +2935,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               if (r?.saved) {
                 const parts = [r.path, r.csvPath, r.slotCsvPath].filter(Boolean)
                 log(
-                  `Erster Gewinn gespeichert: ${gName || gSlug}${parts.length ? ` → ${parts.join(' | ')}` : ''}`
+                  `First win saved: ${gName || gSlug}${parts.length ? ` → ${parts.join(' | ')}` : ''}`
                 )
               }
             })
@@ -2979,7 +2986,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               targetHit = true
               finalizeSpinsRemaining = 1
               targetDetectedThisLoop = true
-              log(`ZIEL ERREICHT! Multi: ${multi.toFixed(2)}× (Ziel: ${targetM.toFixed(2)}×) — noch ein Spin zur Runden-/Challenge-Absicherung`)
+              log(`TARGET HIT! Multi: ${multi.toFixed(2)}x (target: ${targetM.toFixed(2)}x) — one extra spin for round/challenge finalization`)
             }
             const rawR = data?._stakeEngine?.raw?.round
             const roundId =
@@ -2993,7 +3000,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                       ? String(rawR.betId)
                       : null
             log(
-              'Ziel erreicht — Bet-ID für Share-Link nur aus houseBets (WebSocket); „Copy ID“ auf der Run-Karte'
+              'Target hit — bet ID for share link comes from houseBets (WebSocket); use Copy ID on the run card'
             )
             if (!challengeHitPersisted) {
               persistChallengeHitRecord({
@@ -3006,7 +3013,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 currency: tCurr,
               })
               challengeHitPersisted = true
-              log(`Treffer gespeichert (Bet-Historie + Liste): Round ${roundId ?? '—'}`)
+              log(`Hit saved (bet history + list): round ${roundId ?? '—'}`)
             }
           }
 
@@ -3049,18 +3056,18 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 for (let seedAttempt = 0; seedAttempt < STAKE_RGS_SEED_RESET_SWITCH_ATTEMPTS; seedAttempt++) {
                   try {
                     if (seedAttempt === 0) {
-                      log(`Stake-RGS Seed Reset nach ${stakeRgsSpinsSinceSeedReset} Spin(s) — ${gName || gSlug}`)
+                      log(`Stake RGS seed reset after ${stakeRgsSpinsSinceSeedReset} spin(s) — ${gName || gSlug}`)
                       await new Promise((r) => setTimeout(r, STAKE_RGS_FAIRNESS_AFTER_SPIN_MS))
                     } else {
                       const backoffMs = SESSION_PROBE_DELAY_MS * seedAttempt + STAKE_RGS_FAIRNESS_AFTER_SPIN_MS
                       log(
-                        `Stake-RGS Seed Reset Wiederholung ${seedAttempt + 1}/${STAKE_RGS_SEED_RESET_SWITCH_ATTEMPTS} (nach ${backoffMs} ms) — ${gName || gSlug}`
+                        `Stake RGS seed reset retry ${seedAttempt + 1}/${STAKE_RGS_SEED_RESET_SWITCH_ATTEMPTS} (after ${backoffMs} ms) — ${gName || gSlug}`
                       )
                       await new Promise((r) => setTimeout(r, backoffMs))
                     }
                     if (!stakeGameIdForFairness) {
                       throw new Error(
-                        'Keine Stake-Spiel-UUID (gameId) — Slots bitte mit „Refresh“ laden, oder Challenge liefert game.id.'
+                        'No Stake game UUID (gameId) — refresh slots, or the challenge must provide game.id.'
                       )
                     }
                     let fairnessReferer
@@ -3087,10 +3094,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     })
                     if (!rotated?.ok) {
                       const rotMsg = seedSwitchErrText(rotated?.error)
-                      throw new Error(rotMsg || 'rotateSeed ohne activeSeed')
+                      throw new Error(rotMsg || 'rotateSeed without activeSeed')
                     }
                     const freshRate = getRateForCurrency(ratesRef.current || rates || {}, tCurr) || rate
-                    if (!freshRate) throw new Error(`Kein Kurs für ${String(tCurr).toUpperCase()}`)
+                    if (!freshRate) throw new Error(`No rate for ${String(tCurr).toUpperCase()}`)
                     rate = freshRate
                     await new Promise((r) => setTimeout(r, SESSION_PROBE_DELAY_MS))
                     session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
@@ -3106,20 +3113,20 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                       },
                     }))
                     log(
-                      `Seed rotiert (RGS game ${stakeGameIdForFairness} · Client ${rotated.seed ?? '—'}) · Session neu · ${String(tCurr).toUpperCase()} · Einsatz ${formatAmount(betAmount, tCurr)}`
+                      `Seed rotated (RGS game ${stakeGameIdForFairness} · client ${rotated.seed ?? '—'}) · new session · ${String(tCurr).toUpperCase()} · stake ${formatAmount(betAmount, tCurr)}`
                     )
                     seedSwitchOk = true
                     break
                   } catch (seedErr) {
                     lastSeedSwitchErr = seedSwitchErrText(seedErr)
                     log(
-                      `Stake-RGS Seed Reset Versuch ${seedAttempt + 1}/${STAKE_RGS_SEED_RESET_SWITCH_ATTEMPTS} fehlgeschlagen: ${lastSeedSwitchErr}`
+                      `Stake RGS seed reset attempt ${seedAttempt + 1}/${STAKE_RGS_SEED_RESET_SWITCH_ATTEMPTS} failed: ${lastSeedSwitchErr}`
                     )
                   }
                 }
                 if (!seedSwitchOk) {
                   log(
-                    `Stake-RGS Seed Reset nach ${STAKE_RGS_SEED_RESET_SWITCH_ATTEMPTS} Versuchen abgebrochen: ${lastSeedSwitchErr || 'unbekannt'}`
+                    `Stake RGS seed reset aborted after ${STAKE_RGS_SEED_RESET_SWITCH_ATTEMPTS} attempts: ${lastSeedSwitchErr || 'unknown'}`
                   )
                 }
                 stakeRgsSpinsSinceSeedReset = 0
@@ -3131,7 +3138,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             if (houseBetFirstTargetSignal || !targetDetectedThisLoop) {
               finalizeSpinsRemaining -= 1
               if (finalizeSpinsRemaining === 0) {
-                log('Abschluss-Spin nach Ziel abgeschlossen (RGS end-round / Challenge-State).')
+                log('Final spin after target finished (RGS end-round / challenge state).')
               }
             }
           }
@@ -3140,7 +3147,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
         } catch (e) {
           const msg = String(e?.message || '')
-          log(`Spin Fehler: ${msg}`)
+          log(`Spin error: ${msg}`)
           const msgLower = msg.toLowerCase()
           const insufficientFundsMsg =
             e?.insufficientBalance ||
@@ -3150,7 +3157,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             /\bcode\s*[=:]?\s*10\b/.test(msgLower) ||
             (msgLower.includes('unable to create bet') && msgLower.includes('balance'))
           if (insufficientFundsMsg) {
-            log('Guthaben reicht nicht – alle Hunter-Läufe und Auto-Start werden gestoppt.')
+            log('Insufficient balance — stopping all hunter runs and auto-start.')
             Object.keys(runnersRef.current).forEach((id) => {
               if (runnersRef.current[id]) runnersRef.current[id].stop = true
             })
@@ -3172,13 +3179,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           if (isSessionTimeout && sessionTimeoutRecoveryAttempts < SESSION_TIMEOUT_RECOVERY_MAX) {
             sessionTimeoutRecoveryAttempts += 1
             log(
-              `Session/Timeout — Neuaufbau ${sessionTimeoutRecoveryAttempts}/${SESSION_TIMEOUT_RECOVERY_MAX} (Warte ${SESSION_TIMEOUT_RECOVERY_DELAY_MS / 1000}s)…`
+              `Session/timeout — rebuild ${sessionTimeoutRecoveryAttempts}/${SESSION_TIMEOUT_RECOVERY_MAX} (waiting ${SESSION_TIMEOUT_RECOVERY_DELAY_MS / 1000}s)…`
             )
             await new Promise((r) => setTimeout(r, SESSION_TIMEOUT_RECOVERY_DELAY_MS))
             try {
               const freshRate = getRateForCurrency(rates, tCurr) || rate
               if (!freshRate) {
-                log(`Kein Kurs für ${String(tCurr).toUpperCase()} — Session-Recovery abgebrochen.`)
+                log(`No rate for ${String(tCurr).toUpperCase()} — session recovery aborted.`)
               } else {
                 rate = freshRate
                 session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
@@ -3194,13 +3201,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                   },
                 }))
                 log(
-                  `Session neu gestartet · ${String(tCurr).toUpperCase()} · Einsatz ${formatAmount(betAmount, tCurr)} (≈ $${computed.usdAt.toFixed(2)} USD)`
+                  `Session restarted · ${String(tCurr).toUpperCase()} · stake ${formatAmount(betAmount, tCurr)} (≈ $${computed.usdAt.toFixed(2)} USD)`
                 )
                 await new Promise((r) => setTimeout(r, SESSION_PROBE_DELAY_MS))
                 continue
               }
             } catch (recoveryErr) {
-              log(`Session-Neuaufbau fehlgeschlagen: ${String(recoveryErr?.message || recoveryErr)}`)
+              log(`Session rebuild failed: ${String(recoveryErr?.message || recoveryErr)}`)
             }
           }
           const providerKey = String(providerId || '').toLowerCase()
@@ -3217,7 +3224,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           if (isPragmaticFamily && isSystemError && pragmaticRecoveryAttempts < 2) {
             pragmaticRecoveryAttempts += 1
             try {
-              log(`Pragmatic recovery #${pragmaticRecoveryAttempts}: starte Session neu (${sCurr.toUpperCase()} → ${tCurr.toUpperCase()}).`)
+              log(`Pragmatic recovery #${pragmaticRecoveryAttempts}: restarting session (${sCurr.toUpperCase()} → ${tCurr.toUpperCase()}).`)
               session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
               noteSessionFairnessId(session)
               const computed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
@@ -3233,14 +3240,14 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               await new Promise((r) => setTimeout(r, 350))
               continue
             } catch (recoveryErr) {
-              log(`Pragmatic recovery fehlgeschlagen: ${String(recoveryErr?.message || recoveryErr)}`)
+              log(`Pragmatic recovery failed: ${String(recoveryErr?.message || recoveryErr)}`)
             }
           }
           await new Promise((r) => setTimeout(r, HUNTER_SPIN_ERROR_RETRY_MS))
         }
       }
       
-      log('Challenge beendet.')
+      log('Challenge finished.')
       const status = challenge.completedAt ? 'completed' : targetHit ? 'target_hit' : (stopReason || 'stopped')
       setActiveRuns((prev) => ({
         ...prev,
@@ -3248,7 +3255,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       }))
 
     } catch (e) {
-      log(`Fehler bei Challenge Start: ${e.message}`)
+      log(`Challenge start error: ${e.message}`)
       setActiveRuns((prev) => ({
         ...prev,
         [runId]: { ...prev[runId], status: 'failed' },
@@ -3293,7 +3300,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     processedIdsRef.current.clear()
     dismissedChallengeIdsRef.current.clear()
     clearHunterState()
-    log('Alles gestoppt: aktive Spins, Scan, Auto-Start, Warteschlange geleert.')
+    log('All stopped: active spins, scan, auto-start off, queue cleared.')
   }
 
   const resetSession = () => {
@@ -3345,17 +3352,17 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   /** Einen Lauf aus der Warteschlange starten — ohne Scan & ohne Auto-Start (reine Handsteuerung). */
   const startNextQueuedManually = () => {
     if (queue.length === 0) {
-      log('Warteschlange ist leer.')
+      log('Queue is empty.')
       return
     }
     if (runningCount >= maxParallelClamped) {
-      log(`Bereits ${maxParallelClamped} Läufe parallel — freien Slot abwarten oder einen Run stoppen.`)
+      log(`Already ${maxParallelClamped} runs in parallel — wait for a free slot or stop a run.`)
       return
     }
     const nextId = queue[0]
     setQueue((q) => q.slice(1))
     startChallengeRun(nextId)
-    log('Nächste Challenge aus der Queue gestartet (manuell).')
+    log('Next challenge from queue started (manual).')
   }
 
   /** Ein laufender Run: Flag setzen — Schleife bricht nach dem aktuell laufenden Spin ab (nicht mitten in placeBet). */
@@ -3378,9 +3385,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         }
       }
       if (runs.length === 1) {
-        log('Nach aktuellem Spin stoppen: 1 Lauf dieser Challenge.')
+        log('Stop after current spin: 1 parallel run of this challenge.')
       } else if (runs.length > 1) {
-        log(`Nach aktuellem Spin stoppen: ${runs.length} parallele Läufe dieser Challenge.`)
+        log(`Stop after current spin: ${runs.length} parallel runs of this challenge.`)
       }
     },
     [log]
@@ -3416,11 +3423,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
       if (runningCount < maxParallelClamped) {
         void startChallengeRun(nextQueueItem)
-        log(`Run erneut gestartet: ${run.slotName || run.challengeId}`)
+        log(`Run restarted: ${run.slotName || run.challengeId}`)
         return
       }
       setQueue((q) => [...q, nextQueueItem])
-      log(`Run erneut eingereiht: ${run.slotName || run.challengeId}`)
+      log(`Run re-queued: ${run.slotName || run.challengeId}`)
     },
     [log, maxParallelClamped, runningCount]
   )
@@ -3463,18 +3470,18 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     const filterEligible = meta.eligible
     const badges = []
     if (showReasons) {
-      if (!meta.isSlotOk) badges.push('Nicht verfügbar')
-      if (!meta.isMinBetOk) badges.push('MinBet Filter')
-      if (!meta.isPrizeOk) badges.push('Preis Filter')
-      if (c.completedAt || c.active === false) badges.push('Stake: beendet')
-      if (inQueueLocal) badges.push(`Warteschlange${queueCountForC > 1 ? ` (${queueCountForC})` : ''}`)
-      if (isRunning) badges.push(runningCountForC > 1 ? `Läuft (${runningCountForC})` : 'Läuft')
-      else if (hasFinishedRun) badges.push('Run beendet')
+      if (!meta.isSlotOk) badges.push('Unavailable')
+      if (!meta.isMinBetOk) badges.push('Min bet filter')
+      if (!meta.isPrizeOk) badges.push('Prize filter')
+      if (c.completedAt || c.active === false) badges.push('Stake: closed')
+      if (inQueueLocal) badges.push(`Queued${queueCountForC > 1 ? ` (${queueCountForC})` : ''}`)
+      if (isRunning) badges.push(runningCountForC > 1 ? `Running (${runningCountForC})` : 'Running')
+      else if (hasFinishedRun) badges.push('Run finished')
     }
 
     const qMeta = queueItem ? normalizeQueueItem(queueItem) : null
     const copyHint =
-      qMeta && qMeta.currencySlotIndex > 0 ? ` → Ziel #${qMeta.currencySlotIndex + 1}` : ''
+      qMeta && qMeta.currencySlotIndex > 0 ? ` → Target #${qMeta.currencySlotIndex + 1}` : ''
 
     return (
       <div 
@@ -3488,10 +3495,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         title={
           canQueue
             ? filterEligible
-              ? 'Klick: In die Warteschlange (mehrfach = nächste Zielwährung bei Auto-Optimal)'
-              : 'Klick: In die Warteschlange (Filter Min/Preis passt nicht — trotzdem möglich)'
+              ? 'Click to queue (multiple clicks = next target currency with auto target)'
+              : 'Click to queue (fails min/prize filters but still allowed)'
             : stakeClosed
-              ? 'Challenge auf Stake beendet'
+              ? 'Challenge closed on Stake'
               : ''
         }
         onClick={() => {
@@ -3511,11 +3518,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           ) : null}
         </div>
         <div style={STYLES.statRow}>
-          <span style={{ color: 'var(--text-muted)' }}>Ziel-Multi</span>
+          <span style={{ color: 'var(--text-muted)' }}>Target Multi</span>
           <span style={{ fontWeight: 600 }}>{c.targetMultiplier}×</span>
         </div>
         <div style={STYLES.statRow}>
-          <span style={{ color: 'var(--text-muted)' }}>Zu gewinnen</span>
+          <span style={{ color: 'var(--text-muted)' }}>Potential Prize</span>
           <span style={{ textAlign: 'right' }}>
             <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{prizeMain}</span>
             {prizeHint ? (
@@ -3528,14 +3535,14 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         <div style={STYLES.statRow}>
           <span
             style={{ color: 'var(--text-muted)' }}
-            title="Mindesteinsatz der Challenge bei Stake in USD (nicht der Umrechnungswert deines Einsatzes in INR/PKR/…)"
+            title="Challenge minimum stake on Stake in USD (not your converted local stake)"
           >
             Challenge-Min: ${c.minBetUsd}
           </span>
-          {!meta.isSlotOk && <span style={{color: 'var(--error)'}}>Nicht verfügbar</span>}
-          {isRunning && <span style={{color: 'var(--accent)'}}>Läuft …</span>}
+          {!meta.isSlotOk && <span style={{color: 'var(--error)'}}>Unavailable</span>}
+          {isRunning && <span style={{color: 'var(--accent)'}}>Running ...</span>}
           {hasFinishedRun && !isRunning && (
-            <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Run fertig</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Run done</span>
           )}
         </div>
         {!inQueue && (
@@ -3553,7 +3560,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 marginBottom: '0.12rem',
               }}
             >
-              Ziel (Spiel)
+              Target (slot)
             </label>
             <select
               value={manualTargetCurrencyByChallengeId[c.id] ?? ''}
@@ -3572,7 +3579,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 color: 'var(--text)',
               }}
             >
-              <option value="">Auto (Sortierung / Probes)</option>
+              <option value="">Auto (ranked/probed)</option>
               {hunterTargetCurrencyOptions.map((cc) => (
                 <option key={cc} value={cc}>
                   {cc.toUpperCase()}
@@ -3596,7 +3603,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 marginBottom: '0.12rem',
               }}
             >
-              Ziel
+              Target
             </label>
             <select
               value={qMeta.forcedTargetCurrency || ''}
@@ -3656,7 +3663,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                       color: 'var(--text-muted)',
                     }}
                   >
-                    <span>alle</span>
+                    <span>every</span>
                     <input
                       type="number"
                       min="0"
@@ -3692,7 +3699,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                         fontSize: '0.72rem',
                         textAlign: 'right',
                       }}
-                      title="0 = aus. Wert wird beim Start des Laufs übernommen (onChange, kein Enter)."
+                      title="0 = off. Value is applied when run starts (onChange, no Enter required)."
                     />
                     <span>Spins</span>
                   </div>
@@ -3707,7 +3714,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           if (rec == null || rec <= 0) return null
           return (
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-              Bisher max. Multi: <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{rec.toFixed(2)}×</span>
+              Best multi so far: <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{rec.toFixed(2)}×</span>
             </div>
           )
         })()}
@@ -3718,7 +3725,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         )}
         {canQueue && !filterEligible && showReasons && (
           <div style={{ fontSize: '0.68rem', color: '#fbbf24', marginTop: '0.2rem' }}>
-            Filter (Min/Preis) — trotzdem queue-fähig
+            Filter mismatch (min/prize) — still queueable
           </div>
         )}
         {isRunning && (
@@ -3735,9 +3742,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 e.stopPropagation()
                 stopRunsForChallenge(c.id)
               }}
-              title="Kein weiterer Spin nach dem gerade laufenden (HTTP) — pro parallelem Lauf dieser Challenge"
+              title="Stop after current spin for each parallel run of this challenge"
             >
-              Nach Spin stoppen
+              Stop after spin
             </Button>
           </div>
         )}
@@ -3754,7 +3761,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               })
             }}
           >
-            Entfernen
+            Remove
           </Button>
         )}
         {!inQueue && inQueueLocal && (
@@ -3769,7 +3776,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               })
             }}
           >
-            Queue leeren
+            Clear queue
           </Button>
         )}
       </div>
@@ -3910,6 +3917,18 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     }
     return list
   }, [visibleChallenges, challengeSort])
+  const localChallengeSlotOptions = useMemo(() => {
+    const q = String(localChallengeSlotSearch || '').trim().toLowerCase()
+    return (webSlots || [])
+      .filter((s) => {
+        if (!q) return true
+        const name = String(s?.name || '').toLowerCase()
+        const slug = String(s?.slug || '').toLowerCase()
+        return name.includes(q) || slug.includes(q)
+      })
+      .slice()
+      .sort((a, b) => String(a?.name || a?.slug || '').localeCompare(String(b?.name || b?.slug || '')))
+  }, [webSlots, localChallengeSlotSearch])
   const foundRowVirtualizer = useVirtualizer({
     count: sortedFoundChallenges.length,
     getScrollElement: () => foundScrollRef.current,
@@ -3923,33 +3942,33 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         <div className="hunter-title">Casino Challenge Ops</div>
         <div className="hunter-controls">
            <div className="hunter-meta" style={{ marginRight: '1rem' }}>
-             {lastRefresh ? `Update: ${new Date(lastRefresh).toLocaleTimeString()}` : ''}
+             {lastRefresh ? `Updated: ${new Date(lastRefresh).toLocaleTimeString()}` : ''}
            </div>
-           <Button onClick={clearLogs}>Clear logs</Button>
+           <Button onClick={clearLogs} variant="outline">Clear</Button>
            <Button
              onClick={resetSession}
-             variant="secondary"
-             title="Queue, Statistik und Scan zurücksetzen (wie neu starten)"
+             variant="outline"
+             title="Reset queue, session stats, and scan state"
            >
-             Reset all
+             Reset
            </Button>
-           <Button onClick={refreshChallenges} disabled={!accessToken} title="Challenges jetzt neu laden">
+           <Button onClick={refreshChallenges} variant="primary" disabled={!accessToken} title="Reload challenge list now">
              Refresh
            </Button>
            <Button
-             variant={huntEnabled ? 'primary' : 'outline'}
+             variant={huntEnabled ? 'secondary' : 'outline'}
              onClick={() => setHuntEnabled(!huntEnabled)}
-             title={huntEnabled ? 'Challenge-Liste nicht mehr automatisch aktualisieren' : 'Regelmäßig Challenges von Stake laden'}
+             title={huntEnabled ? 'Stop automatic challenge scanning' : 'Enable automatic challenge scanning'}
            >
-             {huntEnabled ? 'Scan: on' : 'Scan: off'}
+             {huntEnabled ? 'Scan On' : 'Scan Off'}
            </Button>
            {huntEnabled && (
              <Button
-               variant={autoStart ? 'success' : 'outline'}
+               variant={autoStart ? 'secondary' : 'outline'}
                onClick={() => setAutoStart(!autoStart)}
-               title={autoStart ? 'Keine neuen Runs aus der Warteschlange starten' : 'Warteschlange automatisch abarbeiten, sobald ein Slot frei ist'}
+               title={autoStart ? 'Pause queue auto-start' : 'Process queue automatically when a slot is free'}
              >
-               Auto-Start: {autoStart ? 'on' : 'off'}
+               {autoStart ? 'Auto On' : 'Auto Off'}
              </Button>
            )}
            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
@@ -3960,324 +3979,352 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
       <div className="hunter-grid">
         <div className="hunter-sidebar">
-          <div className="hunter-card">
-            <h3 className="hunter-section-title" style={{ marginBottom: '0.5rem' }}>Einstellungen</h3>
-            <div style={{ marginBottom: '0.5rem' }}>
-              <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.35rem', lineHeight: 1.35 }}>
-                Filter und Währungen werden automatisch auf diesem Gerät gespeichert.
+          <div className="hunter-ops-surface">
+          <div className="hunter-card hunter-ops-panel">
+            <div className="hunter-ops-shell-head">
+              <h3 className="hunter-section-title" style={{ marginBottom: '0.35rem' }}>Settings</h3>
+              <p className="hunter-ops-shell-copy">
+                Local settings are saved on this device.
               </p>
-              <div style={STYLES.inputGroup}>
-                <label style={STYLES.label}>Vorlagen</label>
-                <select
-                  value={presetSelectValue}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setPresetSelectValue(v)
-                    if (v) loadPresetById(v)
-                  }}
-                  style={{ ...STYLES.input, width: '100%' }}
-                >
-                  <option value="">— Vorlage wählen —</option>
-                  {userPresets.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-                <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.25rem', lineHeight: 1.3 }}>
-                  Vorlagen werden nur lokal gespeichert.
-                </p>
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center', marginBottom: '0.35rem' }}>
-                <input
-                  type="text"
-                  placeholder="Name für Vorlage"
-                  value={presetNameDraft}
-                  onChange={(e) => setPresetNameDraft(e.target.value)}
-                  style={{ ...STYLES.input, flex: '1 1 120px', minWidth: 0, fontSize: '0.8rem' }}
-                />
+            </div>
+            <div className="hunter-ops-accordion">
+              <section className="hunter-ops-section">
                 <button
                   type="button"
-                  onClick={saveCurrentPreset}
-                  style={{
-                    fontSize: '0.7rem',
-                    padding: '0.25rem 0.5rem',
-                    background: 'var(--bg-deep)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: 'var(--text)',
-                    cursor: 'pointer',
-                  }}
+                  className="hunter-ops-section-head"
+                  onClick={() => setOpsSectionsOpen((prev) => ({ ...prev, presets: !prev.presets }))}
                 >
-                  Speichern
+                  <span>Presets & Filters</span>
+                  <span>{opsSectionsOpen.presets ? '−' : '+'}</span>
                 </button>
+                {opsSectionsOpen.presets ? (
+                  <div className="hunter-ops-section-body">
+                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.35rem', lineHeight: 1.35 }}>
+                      Filters and currency preferences are stored locally on this device.
+                    </p>
+                    <div style={STYLES.inputGroup}>
+                      <label style={STYLES.label}>Presets</label>
+                      <select
+                        value={presetSelectValue}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setPresetSelectValue(v)
+                          if (v) loadPresetById(v)
+                        }}
+                        style={{ ...STYLES.input, width: '100%' }}
+                      >
+                        <option value="">— Select preset —</option>
+                        {userPresets.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.25rem', lineHeight: 1.3 }}>
+                        Presets are stored locally.
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center', marginBottom: '0.35rem' }}>
+                      <input
+                        type="text"
+                        placeholder="Preset name"
+                        value={presetNameDraft}
+                        onChange={(e) => setPresetNameDraft(e.target.value)}
+                        style={{ ...STYLES.input, flex: '1 1 120px', minWidth: 0, fontSize: '0.8rem' }}
+                      />
+                      <button type="button" onClick={saveCurrentPreset} className="hunter-ops-mini-btn">
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={deleteSelectedUserPreset}
+                        disabled={!userPresets.some((p) => p.id === presetSelectValue)}
+                        title="Delete selected preset"
+                        className="hunter-ops-mini-btn"
+                        style={{ opacity: userPresets.some((p) => p.id === presetSelectValue) ? 1 : 0.5 }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                    <button type="button" onClick={restoreDefaultFilters} className="hunter-ops-mini-btn">
+                      Restore defaults
+                    </button>
+                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
+                      <label style={STYLES.label}>Min Bet Range ($)</label>
+                      <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem'}}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="Min"
+                          value={minMinBet}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value)
+                            setMinMinBet(Number.isNaN(v) ? 0 : v)
+                          }}
+                          style={{...STYLES.input, width: '100%'}}
+                        />
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="Max"
+                          value={maxMinBet}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value)
+                            setMaxMinBet(Number.isNaN(v) ? 0 : v)
+                          }}
+                          style={{...STYLES.input, width: '100%'}}
+                        />
+                      </div>
+                    </div>
+                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
+                      <label style={STYLES.label}>Min Prize ($)</label>
+                      <input
+                        type="number"
+                        step="1"
+                        value={minPrizeUsd}
+                        onChange={e => {
+                          const v = parseFloat(e.target.value)
+                          setMinPrizeUsd(Number.isNaN(v) ? 0 : v)
+                        }}
+                        style={STYLES.input}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="hunter-ops-section">
                 <button
                   type="button"
-                  onClick={deleteSelectedUserPreset}
-                  disabled={!userPresets.some((p) => p.id === presetSelectValue)}
-                  title="Ausgewählte Vorlage löschen"
-                  style={{
-                    fontSize: '0.7rem',
-                    padding: '0.25rem 0.5rem',
-                    background: 'transparent',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: 'var(--text-muted)',
-                    cursor: userPresets.some((p) => p.id === presetSelectValue) ? 'pointer' : 'not-allowed',
-                    opacity: userPresets.some((p) => p.id === presetSelectValue) ? 1 : 0.5,
-                  }}
+                  className="hunter-ops-section-head"
+                  onClick={() => setOpsSectionsOpen((prev) => ({ ...prev, local: !prev.local }))}
                 >
-                  Löschen
+                  <span>Local Challenge</span>
+                  <span>{opsSectionsOpen.local ? '−' : '+'}</span>
                 </button>
-              </div>
-              <button
-                type="button"
-                onClick={restoreDefaultFilters}
-                style={{
-                  fontSize: '0.7rem',
-                  padding: '0.2rem 0.5rem',
-                  background: 'transparent',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                }}
-              >
-                Standard-Filter laden
-              </button>
-            </div>
-            <div style={STYLES.inputGroup}>
-              <label style={STYLES.label}>Create Local Challenge</label>
-              <div style={{ display: 'grid', gap: '0.4rem' }}>
-                <select
-                  value={localChallengeSlotSlug}
-                  onChange={(e) => setLocalChallengeSlotSlug(e.target.value)}
-                  style={{ ...STYLES.input, width: '100%' }}
+                {opsSectionsOpen.local ? (
+                  <div className="hunter-ops-section-body">
+                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                        <label style={STYLES.label}>Create Local Challenge</label>
+                        <button
+                          type="button"
+                          onClick={() => setLocalChallengeExpanded((prev) => !prev)}
+                          className="hunter-ops-mini-btn"
+                        >
+                          {localChallengeExpanded ? 'Collapse' : 'Expand'}
+                        </button>
+                      </div>
+                      {localChallengeExpanded ? (
+                        <div style={{ display: 'grid', gap: '0.4rem' }}>
+                          <input
+                            type="text"
+                            value={localChallengeSlotSearch}
+                            onChange={(e) => setLocalChallengeSlotSearch(e.target.value)}
+                            placeholder="Search slot (name/slug)"
+                            style={{ ...STYLES.input, width: '100%' }}
+                          />
+                          <select
+                            value={localChallengeSlotSlug}
+                            onChange={(e) => setLocalChallengeSlotSlug(e.target.value)}
+                            style={{ ...STYLES.input, width: '100%' }}
+                          >
+                            <option value="">— Select slot —</option>
+                            {localChallengeSlotOptions.map((s) => (
+                              <option key={s.slug} value={s.slug}>
+                                {s.name || s.slug}
+                              </option>
+                            ))}
+                          </select>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                            <div>
+                              <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Target Multiplier (x)</label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                min="1.1"
+                                value={localChallengeTargetMulti}
+                                onChange={(e) => setLocalChallengeTargetMulti(e.target.value)}
+                                style={{ ...STYLES.input, width: '100%' }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Min Bet ($)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                value={localChallengeMinBetUsd}
+                                onChange={(e) => setLocalChallengeMinBetUsd(e.target.value)}
+                                style={{ ...STYLES.input, width: '100%' }}
+                              />
+                            </div>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.4rem', alignItems: 'center' }}>
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                              Win amount is not required for local challenges.
+                            </div>
+                            <Button
+                              size="small"
+                              onClick={createLocalChallenge}
+                              title="Create a local challenge card and add it directly to queue"
+                            >
+                              Create
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="hunter-ops-section">
+                <button
+                  type="button"
+                  className="hunter-ops-section-head"
+                  onClick={() => setOpsSectionsOpen((prev) => ({ ...prev, runtime: !prev.runtime }))}
                 >
-                  <option value="">— Spiel wählen —</option>
-                  {(webSlots || [])
-                    .slice()
-                    .sort((a, b) => String(a?.name || a?.slug || '').localeCompare(String(b?.name || b?.slug || '')))
-                    .map((s) => (
-                      <option key={s.slug} value={s.slug}>
-                        {s.name || s.slug}
-                      </option>
-                    ))}
-                </select>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
-                  <div>
-                    <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Target Multi (x)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="1.1"
-                      value={localChallengeTargetMulti}
-                      onChange={(e) => setLocalChallengeTargetMulti(e.target.value)}
-                      style={{ ...STYLES.input, width: '100%' }}
-                    />
+                  <span>Runtime & Limits</span>
+                  <span>{opsSectionsOpen.runtime ? '−' : '+'}</span>
+                </button>
+                {opsSectionsOpen.runtime ? (
+                  <div className="hunter-ops-section-body">
+                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
+                      <label style={STYLES.label}>Allowed Currencies</label>
+                      <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
+                        <div>
+                          <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Source (Crypto)</label>
+                          <select
+                            value={sourceCurrency}
+                            onChange={e => setSourceCurrency(e.target.value)}
+                            style={STYLES.input}
+                          >
+                            {cryptoOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Target (Fiat/Display)</label>
+                          <select
+                            value={targetCurrency}
+                            onChange={e => setTargetCurrency(e.target.value)}
+                            style={STYLES.input}
+                          >
+                            {fiatOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                            <option disabled>--- Crypto ---</option>
+                            {cryptoOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                          </select>
+                        </div>
+                        <label
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '0.4rem',
+                            fontSize: '0.75rem',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            marginTop: '0.25rem',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={autoOptimalTargetCurrency}
+                            onChange={(e) => setAutoOptimalTargetCurrency(e.target.checked)}
+                            style={{ marginTop: '0.1rem' }}
+                          />
+                          <span>Auto target currency</span>
+                        </label>
+                      </div>
+                    </div>
+                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
+                      <label style={STYLES.label}>Max Parallel Slots ({CHALLENGE_SLIDER_MAX} max)</label>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                        <input
+                          type="range"
+                          min={1}
+                          max={CHALLENGE_SLIDER_MAX}
+                          step={1}
+                          value={maxParallelClamped}
+                          onChange={(e) =>
+                            setMaxParallel(Math.min(CHALLENGE_SLIDER_MAX, Math.max(1, parseInt(e.target.value, 10) || 1)))
+                          }
+                          style={{ flex: 1 }}
+                        />
+                        <span style={{ fontSize: '0.8rem', minWidth: 28, textAlign: 'right' }}>
+                          {maxParallelClamped}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
+                      <label style={STYLES.label}>Pages to Load ({CHALLENGE_SLIDER_MAX} max)</label>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                        <input
+                          type="range"
+                          min={1}
+                          max={CHALLENGE_SLIDER_MAX}
+                          step={1}
+                          value={pagesToLoadClamped}
+                          onChange={(e) =>
+                            setPagesToLoad(Math.min(CHALLENGE_SLIDER_MAX, Math.max(1, parseInt(e.target.value, 10) || 1)))
+                          }
+                          style={{ flex: 1 }}
+                        />
+                        <span style={{ fontSize: '0.8rem', minWidth: 28, textAlign: 'right' }}>
+                          {pagesToLoadClamped}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
+                      <label style={STYLES.label}>Stop Loss (USD)</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        placeholder="0 = off"
+                        value={stopLossStr}
+                        onChange={(e) => {
+                          const raw = e.target.value
+                          if (!isUsdLimitInputCharsOk(raw)) return
+                          setStopLossStr(raw)
+                          setStopLoss(parseUsdLimitInput(raw))
+                        }}
+                        onBlur={() => {
+                          const v = parseUsdLimitInput(stopLossStr)
+                          setStopLoss(v)
+                          setStopLossStr(usdLimitToInputStr(v))
+                        }}
+                        style={STYLES.input}
+                      />
+                    </div>
+                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
+                      <label style={STYLES.label}>Stop Profit (USD)</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        placeholder="0 = off"
+                        value={stopProfitStr}
+                        onChange={(e) => {
+                          const raw = e.target.value
+                          if (!isUsdLimitInputCharsOk(raw)) return
+                          setStopProfitStr(raw)
+                          setStopProfit(parseUsdLimitInput(raw))
+                        }}
+                        onBlur={() => {
+                          const v = parseUsdLimitInput(stopProfitStr)
+                          setStopProfit(v)
+                          setStopProfitStr(usdLimitToInputStr(v))
+                        }}
+                        style={STYLES.input}
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Min Einsatz ($)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      value={localChallengeMinBetUsd}
-                      onChange={(e) => setLocalChallengeMinBetUsd(e.target.value)}
-                      style={{ ...STYLES.input, width: '100%' }}
-                    />
-                  </div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.4rem', alignItems: 'center' }}>
-                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                    Gewinn wird für lokale Challenges nicht benötigt.
-                  </div>
-                  <Button
-                    size="small"
-                    onClick={createLocalChallenge}
-                    title="Lokale Challenge-Card erzeugen und direkt in die Queue legen"
-                  >
-                    Create
-                  </Button>
-                </div>
-              </div>
-            </div>
-            <div style={STYLES.inputGroup}>
-              <label style={STYLES.label}>MinBet Bereich ($)</label>
-              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem'}}>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  placeholder="Min"
-                  value={minMinBet} 
-                  onChange={e => {
-                    const v = parseFloat(e.target.value)
-                    setMinMinBet(Number.isNaN(v) ? 0 : v)
-                  }}
-                  style={{...STYLES.input, width: '100%'}} 
-                />
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  placeholder="Max"
-                  value={maxMinBet} 
-                  onChange={e => {
-                    const v = parseFloat(e.target.value)
-                    setMaxMinBet(Number.isNaN(v) ? 0 : v)
-                  }}
-                  style={{...STYLES.input, width: '100%'}} 
-                />
-              </div>
-            </div>
-            <div style={STYLES.inputGroup}>
-              <label style={STYLES.label}>Min Preis ($)</label>
-              <input 
-                type="number" 
-                step="1" 
-                value={minPrizeUsd} 
-                onChange={e => {
-                  const v = parseFloat(e.target.value)
-                  setMinPrizeUsd(Number.isNaN(v) ? 0 : v)
-                }}
-                style={STYLES.input} 
-              />
-            </div>
-            <div style={STYLES.inputGroup}>
-              <label style={STYLES.label}>Erlaubte Währungen</label>
-              <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
-                <div>
-                  <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Quelle (Crypto)</label>
-                  <select 
-                    value={sourceCurrency} 
-                    onChange={e => setSourceCurrency(e.target.value)}
-                    style={STYLES.input}
-                  >
-                    {cryptoOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Ziel (Fiat/Display)</label>
-                  <select 
-                    value={targetCurrency} 
-                    onChange={e => setTargetCurrency(e.target.value)}
-                    style={STYLES.input}
-                  >
-                    {fiatOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                    <option disabled>--- Crypto ---</option>
-                    {cryptoOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  </select>
-                </div>
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '0.4rem',
-                    fontSize: '0.75rem',
-                    color: 'var(--text-muted)',
-                    cursor: 'pointer',
-                    marginTop: '0.25rem',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={autoOptimalTargetCurrency}
-                    onChange={(e) => setAutoOptimalTargetCurrency(e.target.checked)}
-                    style={{ marginTop: '0.1rem' }}
-                  />
-                  <span>
-                    Zielwährung automatisch: alle vom Slot unterstützten klassischen Fiat (ohne USDC/USDT); Crypto nur wenn kein
-                    Fiat verfügbar. Fehlende Wechselkurse werden vor den Proben nachgeladen. Jede Fiat-Währung = eigene
-                    Session-Probe (mit Pause); 1. Lauf = günstigster USD-Bet; Kopien = 2./3./… Kandidat der Sortierung)
-                  </span>
-                </label>
-              </div>
-            </div>
-            <div style={STYLES.inputGroup}>
-              <label style={STYLES.label}>Max Slots gleichzeitig (max. {CHALLENGE_SLIDER_MAX})</label>
-              <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                <input
-                  type="range"
-                  min={1}
-                  max={CHALLENGE_SLIDER_MAX}
-                  step={1}
-                  value={maxParallelClamped}
-                  onChange={(e) =>
-                    setMaxParallel(Math.min(CHALLENGE_SLIDER_MAX, Math.max(1, parseInt(e.target.value, 10) || 1)))
-                  }
-                  style={{ flex: 1 }}
-                />
-                <span style={{ fontSize: '0.8rem', minWidth: 28, textAlign: 'right' }}>
-                  {maxParallelClamped}
-                </span>
-              </div>
-            </div>
-            <div style={STYLES.inputGroup}>
-              <label style={STYLES.label}>Seiten laden (max. {CHALLENGE_SLIDER_MAX})</label>
-              <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                <input
-                  type="range"
-                  min={1}
-                  max={CHALLENGE_SLIDER_MAX}
-                  step={1}
-                  value={pagesToLoadClamped}
-                  onChange={(e) =>
-                    setPagesToLoad(Math.min(CHALLENGE_SLIDER_MAX, Math.max(1, parseInt(e.target.value, 10) || 1)))
-                  }
-                  style={{ flex: 1 }}
-                />
-                <span style={{ fontSize: '0.8rem', minWidth: 28, textAlign: 'right' }}>
-                  {pagesToLoadClamped}
-                </span>
-              </div>
-            </div>
-            <div style={STYLES.inputGroup}>
-              <label style={STYLES.label}>Stop Loss (USD)</label>
-              <input
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                placeholder="0 = aus"
-                value={stopLossStr}
-                onChange={(e) => {
-                  const raw = e.target.value
-                  if (!isUsdLimitInputCharsOk(raw)) return
-                  setStopLossStr(raw)
-                  setStopLoss(parseUsdLimitInput(raw))
-                }}
-                onBlur={() => {
-                  const v = parseUsdLimitInput(stopLossStr)
-                  setStopLoss(v)
-                  setStopLossStr(usdLimitToInputStr(v))
-                }}
-                style={STYLES.input}
-              />
-            </div>
-            <div style={STYLES.inputGroup}>
-              <label style={STYLES.label}>Stop Profit (USD)</label>
-              <input
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                placeholder="0 = aus"
-                value={stopProfitStr}
-                onChange={(e) => {
-                  const raw = e.target.value
-                  if (!isUsdLimitInputCharsOk(raw)) return
-                  setStopProfitStr(raw)
-                  setStopProfit(parseUsdLimitInput(raw))
-                }}
-                onBlur={() => {
-                  const v = parseUsdLimitInput(stopProfitStr)
-                  setStopProfit(v)
-                  setStopProfitStr(usdLimitToInputStr(v))
-                }}
-                style={STYLES.input}
-              />
+                ) : null}
+              </section>
             </div>
           </div>
-
-          <div className="hunter-card" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            <h3 className="hunter-section-title" style={{ marginBottom: '0.5rem' }}>Warteschlange ({queue.length})</h3>
+          <div className="hunter-card hunter-ops-queue" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <h3 className="hunter-section-title" style={{ marginBottom: '0.5rem' }}>Queue ({queue.length})</h3>
             <div style={{overflowY: 'auto', flex: 1}}>
               {queue.map((item) => {
                 const q = normalizeQueueItem(item)
@@ -4287,14 +4334,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               {queue.length === 0 && <div style={{color: 'var(--text-muted)', fontSize: '0.8rem'}}>Empty</div>}
             </div>
           </div>
+          </div>
         </div>
 
         <div className="hunter-main">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
             <div className="hunter-help-bar">
-              <strong>Refresh</strong> = fetch challenge list · set <strong>Target</strong> and <strong>click</strong> to queue ·{' '}
-              <strong>Start Next</strong> = manual single run · <strong>Scan</strong> = keep list synced ·{' '}
-              <strong>Auto-Start</strong> = process queue automatically · <strong>Stop All</strong> = stop runs and clear queue
+              Refresh list · queue target runs · Start Next for one run · Auto Hunt for continuous queue processing.
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
               <div className="hunter-meta" style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
@@ -4305,16 +4351,16 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                   onClick={startNextQueuedManually}
                   variant="primary"
                   disabled={queue.length === 0 || runningCount >= maxParallelClamped}
-                  title="Startet genau einen Lauf aus der Warteschlange — ohne Scan und ohne Auto-Start"
+                  title="Start exactly one queued run (without scan or auto mode)"
                 >
                   Start Next
                 </Button>
                 <Button
                   onClick={startAllRunners}
-                  variant="secondary"
-                  title="Scan + Auto-Start einschalten und ggf. sofort Challenges neu laden (Auto-Hunt)"
+                  variant="primary"
+                  title="Enable scan + auto-start and reload challenges when needed"
                 >
-                  Start Auto Hunt
+                  Auto Hunt
                 </Button>
                 <Button
                   onClick={stopAllRunners}
@@ -4322,8 +4368,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                   disabled={!hasAnythingToStop}
                   title={
                     hasAnythingToStop
-                      ? 'Aktive Spins stoppen, Scan & Auto-Start ausschalten, Warteschlange leeren'
-                      : 'Nichts aktiv (keine Läufe, Scan aus, Queue leer)'
+                      ? 'Stop active spins, disable scan/auto, and clear queue'
+                      : 'Nothing is active'
                   }
                 >
                   Stop All
@@ -4331,16 +4377,16 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               </div>
             </div>
           </div>
-          <div className="hunter-kpi-strip">
-            <div className="hunter-kpi-card">
+          <div className="hunter-kpi-segments">
+            <div className="hunter-kpi-segment">
               <div className="hunter-kpi-label">Wagered (USD)</div>
               <div className="hunter-kpi-value">${totalSessionStats.wagered.toFixed(2)}</div>
             </div>
-            <div className="hunter-kpi-card">
+            <div className="hunter-kpi-segment">
               <div className="hunter-kpi-label">Payout (USD)</div>
               <div className="hunter-kpi-value">${totalSessionStats.payout.toFixed(2)}</div>
             </div>
-            <div className="hunter-kpi-card">
+            <div className="hunter-kpi-segment">
               <div className="hunter-kpi-label">Profit (USD)</div>
               <div className="hunter-kpi-value" style={{ color: totalSessionStats.profit >= 0 ? 'var(--success)' : 'var(--error)' }}>
                 ${totalSessionStats.profit.toFixed(2)}
@@ -4361,11 +4407,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.25rem' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Profit trend (session)</div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }} title="Kompletter Session-Verlauf im Speicher; Chart wird fuer die Darstellung intern gesampelt">
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }} title="Full session trend in memory; chart is sampled for rendering only">
                   {Math.max(0, sessionNetSpinCount)} Spins
                 </div>
               </div>
-              <div style={{ width: '100%' }} title={`Netto jetzt: $${netUsd.toFixed(2)}`} data-series-version={sessionNetSeriesVersion}>
+              <div style={{ width: '100%' }} title={`Current net: $${netUsd.toFixed(2)}`} data-series-version={sessionNetSeriesVersion}>
                 <SvgCumulativeProfitLineChart
                   profits={sessionNetSeriesSnapshot}
                   height={188}
@@ -4377,7 +4423,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
           <div className="hunter-status-bar">
             <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem'}}>
-              <span style={{color: 'var(--text-muted)'}}>Laufen</span>
+              <span style={{color: 'var(--text-muted)'}}>Running</span>
               <span className="hunter-meta">{runningCount} / {maxParallelClamped}</span>
             </div>
             <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem'}}>
@@ -4443,7 +4489,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     {run.currencySlotIndex > 0 ? (
                       <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.75rem' }}>
                         {' '}
-                        (Kopie #{run.currencySlotIndex + 1}
+                        (Copy #{run.currencySlotIndex + 1}
                         {run.runCurrency ? ` · ${String(run.runCurrency).toUpperCase()}` : ''})
                       </span>
                     ) : run.runCurrency ? (
@@ -4455,9 +4501,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     {run.forcedTargetCurrency ? (
                       <span
                         style={{ fontWeight: 500, color: 'var(--accent)', fontSize: '0.68rem', marginLeft: '0.25rem' }}
-                        title="Zielwährung manuell auf der Karte gewählt"
+                        title="Manual target currency selected for this run"
                       >
-                        manuell
+                        manual
                       </span>
                     ) : null}
                   </div>
@@ -4466,8 +4512,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
                       {run.status === 'running' ? (
                         <span
-                          title="Läuft"
-                          aria-label="Läuft"
+                          title="Running"
+                          aria-label="Running"
                           style={{
                             display: 'inline-block',
                             width: 10,
@@ -4495,8 +4541,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     </span>
                   </div>
                   <div style={STYLES.statRow}>
-                    <span title="Kumuliertes Netto pro Spin in USD (Gewinn − Einsatz), wie die Session-Netto-Zeile">
-                      Netto (USD)
+                    <span title="Cumulative per-spin net in USD (win minus stake)">
+                      Net (USD)
                     </span>
                     <span>
                       $
@@ -4514,7 +4560,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     <div style={STYLES.statRow}>
                       <span style={{ color: 'var(--text-muted)' }}>Seed Reset</span>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'flex-end' }}>
-                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>alle</span>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>every</span>
                         <input
                           type="number"
                           min="0"
@@ -4538,22 +4584,22 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                             fontSize: '0.72rem',
                             textAlign: 'right',
                           }}
-                          title="0 = aus. Beim Start aus Warteschlange; hier während des Laufs anpassbar (Stake-RGS)."
+                          title="0 = off. Applied when queued run starts; adjustable while running (Stake RGS)."
                         />
                         <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Spins</span>
                       </span>
                     </div>
                   ) : null}
                   <div style={STYLES.statRow}>
-                    <span style={{ fontWeight: 600 }}>Ziel-Multi</span>
+                    <span style={{ fontWeight: 600 }}>Target Multi</span>
                     <span style={{ color: 'var(--accent)', fontWeight: 600 }}>
                       {run.targetMultiplier != null && Number.isFinite(Number(run.targetMultiplier))
-                        ? `${Number(run.targetMultiplier).toLocaleString('de-DE', { maximumFractionDigits: 2 })}×`
+                        ? `${Number(run.targetMultiplier).toLocaleString('en-US', { maximumFractionDigits: 2 })}×`
                         : '—'}
                     </span>
                   </div>
                   <div style={STYLES.statRow}>
-                    <span style={{ color: 'var(--text-muted)' }}>Zu gewinnen</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Potential Prize</span>
                     <span style={{ textAlign: 'right' }}>
                       <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{prizeLine.main}</span>
                       {prizeLine.hint ? (
@@ -4564,7 +4610,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     </span>
                   </div>
                   <div style={STYLES.statRow}>
-                    <span style={{ color: 'var(--text-muted)' }}>Max (dieser Run)</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Max (this run)</span>
                     <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.25rem', flexWrap: 'wrap' }}>
                       <span>{Number(displayRunMax).toFixed(2)}×</span>
                       <button
@@ -4575,7 +4621,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                           try {
                             if (navigator?.clipboard?.writeText) {
                               navigator.clipboard.writeText(copyBetIdRunFormatted).catch(() => {})
-                              log(`Bet-ID (dieser Run) kopiert — ${run.slotName}`)
+                              log(`Run bet id copied — ${run.slotName}`)
                             }
                           } catch (_) {}
                         }}
@@ -4591,8 +4637,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                         }}
                         title={
                           canCopyRunShare
-                            ? `Wie BetList: ${copyBetIdRunFormatted}`
-                            : 'Noch keine houseBets-Share-ID (weder Run-State noch BetList-Zeilen).'
+                            ? `Same format as BetList: ${copyBetIdRunFormatted}`
+                            : 'No houseBets share id yet (run state and feed rows are empty).'
                         }
                       >
                         Copy Run
@@ -4605,7 +4651,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                           try {
                             if (navigator?.clipboard?.writeText) {
                               navigator.clipboard.writeText(stakeBetLink).catch(() => {})
-                              log(`Stake Bet-Link kopiert (${run.slotName})`)
+                              log(`Stake bet link copied (${run.slotName})`)
                             }
                           } catch (_) {}
                         }}
@@ -4621,8 +4667,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                         }}
                         title={
                           stakeBetLink
-                            ? 'Voller Link wie Stake „Link teilen“ (?iid= exakt houseBets.iid, encodiert)'
-                            : 'Zuerst Bet-ID (Copy ID).'
+                            ? 'Full Stake share link (?iid is exact houseBets.iid, URL encoded)'
+                            : 'Copy a bet id first (Copy ID).'
                         }
                       >
                         Link
@@ -4635,7 +4681,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                           try {
                             if (navigator?.clipboard?.writeText) {
                               navigator.clipboard.writeText(previewBetId).catch(() => {})
-                              log(`Bet-Preview UUID kopiert (${run.slotName}) — für POST /bet/preview Body betId`)
+                              log(`Bet preview UUID copied (${run.slotName}) — for POST /bet/preview body betId`)
                             }
                           } catch (_) {}
                         }}
@@ -4651,8 +4697,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                         }}
                         title={
                           previewBetId
-                            ? 'Nur die UUID (ohne casino:-Prefix) für Stake REST Bet Preview: { "betId": "<uuid>" }'
-                            : 'Zuerst Bet-ID übernehmen (Copy ID).'
+                            ? 'UUID only (no casino: prefix) for Stake REST bet preview: { "betId": "<uuid>" }'
+                            : 'Copy bet ID first (Copy ID).'
                         }
                       >
                         Preview
@@ -4668,7 +4714,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     </span>
                   </div>
                   <div style={STYLES.statRow}>
-                    <span style={{ color: 'var(--text-muted)' }}>Bet-ID Rekord (Slot)</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Bet ID record (slot)</span>
                     <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.25rem', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '0.68rem', wordBreak: 'break-all', textAlign: 'right' }}>
                         {copyBetIdRecord || '—'}
@@ -4681,7 +4727,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                           try {
                             if (navigator?.clipboard?.writeText) {
                               navigator.clipboard.writeText(copyBetIdRecord).catch(() => {})
-                              log(`Bet-ID (Lifetime-Rekord Slot, houseBets) kopiert — ${run.slotName}`)
+                              log(`Bet ID (lifetime slot record, houseBets) copied — ${run.slotName}`)
                             }
                           } catch (_) {}
                         }}
@@ -4708,11 +4754,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                         disabled={run.status !== 'running'}
                         title={
                           run.status === 'running'
-                            ? 'Kein weiterer Spin nach dem gerade laufenden — nur dieser parallele Lauf'
-                            : 'Kein aktiver Spin'
+                            ? 'No further spin after the current one — this parallel run only'
+                            : 'No active spin'
                         }
                       >
-                        Nach Spin stoppen
+                        Stop after spin
                       </Button>
                       <Button
                         onClick={() => restartRunByRunId(run.id)}
@@ -4720,13 +4766,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                         disabled={run.status === 'running' || run.status === 'completed'}
                         title={
                           run.status === 'running'
-                            ? 'Erst nach dem Stop möglich'
+                            ? 'Only possible after stop'
                             : run.status === 'completed'
-                              ? 'Stake-Challenge abgeschlossen'
-                              : 'Diesen Run erneut starten'
+                              ? 'Stake challenge completed'
+                              : 'Start this run again'
                         }
                       >
-                        Erneut starten
+                        Restart
                       </Button>
                       <Button
                         onClick={() => removeRun(run.id)}

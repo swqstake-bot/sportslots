@@ -1,5 +1,5 @@
 /**
- * Forum-Challenge zum Prüfen/Verifizieren – Forum-Thread-URL eingeben, Bets laden (wie SSP).
+ * Forum challenge for verification — paste a forum thread URL and load bets (SSP-style).
  */
 import { useState, useCallback, useMemo } from 'react'
 import { scrapeForumBets } from '../api/forumScraper'
@@ -102,15 +102,15 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
   const handleScrape = useCallback(async () => {
     const url = (forumUrl || '').trim()
     if (!url) {
-      setError('Bitte Forum-Thread-URL eingeben.')
+      setError('Please enter a forum thread URL.')
       return
     }
     if (!url.includes('stakecommunity.com/topic/')) {
-      setError('URL muss von stakecommunity.com/topic/... sein.')
+      setError('URL must be from stakecommunity.com/topic/...')
       return
     }
     if (!accessToken) {
-      setError('Nicht eingeloggt. Bitte Stake-Token setzen.')
+      setError('Not logged in. Please set a Stake token.')
       return
     }
     setError('')
@@ -127,7 +127,7 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
       setTotalScraped(result.totalScraped)
       setTotalPages(result.totalPages || 0)
     } catch (e) {
-      setError(e?.message || 'Fehler beim Laden')
+      setError(e?.message || 'Failed to load')
       setBets([])
     } finally {
       setLoading(false)
@@ -185,7 +185,7 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
 
   const handleCopyIid = useCallback((iid) => {
     navigator.clipboard?.writeText(iid).then(() => {
-      setCopyFeedback('IID kopiert')
+      setCopyFeedback('IID copied')
       setTimeout(() => setCopyFeedback(''), 1500)
     })
   }, [])
@@ -207,14 +207,14 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
 
   return (
     <div style={STYLES.container}>
-      <h2 style={STYLES.title}>Forum-Challenge (Prüfen)</h2>
+      <h2 style={STYLES.title}>Forum challenge (verify)</h2>
       <p style={STYLES.help}>
-        Forum-Thread-URL einfügen, um alle Casino-Bets aus dem Thread zu laden und zu prüfen. Die Bets werden über die Stake-API abgefragt.
+        Paste a forum thread URL to load and verify all casino bets from the thread. Bets are fetched via the Stake API.
       </p>
 
       <div style={STYLES.form}>
         <div style={{ flex: 1, minWidth: 260 }}>
-          <label style={STYLES.label}>Forum-Thread-URL</label>
+          <label style={STYLES.label}>Forum thread URL</label>
           <input
             type="text"
             placeholder="https://stakecommunity.com/topic/..."
@@ -231,7 +231,7 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
           disabled={loading || !forumUrl.trim()}
           style={{ ...STYLES.btn, ...(loading || !forumUrl.trim() ? STYLES.btnDisabled : {}) }}
         >
-          {loading ? (progress.label || (progress.total ? `${progress.done}/${progress.total}` : 'Lädt…')) : 'Laden'}
+          {loading ? (progress.label || (progress.total ? `${progress.done}/${progress.total}` : 'Loading…')) : 'Load'}
         </button>
       </div>
 
@@ -246,7 +246,7 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
           {/* Leaderboard: Höchster Multi */}
           {topMulti && (
             <div style={STYLES.leaderboardCard}>
-              <div style={STYLES.leaderboardTitle}>🏆 Höchster Multi im Thread</div>
+              <div style={STYLES.leaderboardTitle}>🏆 Highest multiplier in thread</div>
               <div style={{ ...STYLES.leaderboardRow, fontSize: '1.1rem', marginBottom: 0 }}>
                 <span style={{ ...STYLES.rankBadge, background: 'var(--accent)', color: 'var(--bg-deep)' }}>1</span>
                 <span style={{ fontWeight: 700, color: 'var(--text)' }}>{topMulti.userName}</span>
@@ -271,7 +271,7 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
             <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>
-              {bets.length} Bets{totalScraped > bets.length ? ` (von ${totalScraped} gefunden)` : ''}{totalPages > 1 ? ` · ${totalPages} Seiten` : ''} · sortiert nach Multi
+              {bets.length} bets{totalScraped > bets.length ? ` (${totalScraped} found)` : ''}{totalPages > 1 ? ` · ${totalPages} pages` : ''} · sorted by multiplier
             </span>
             {challengeGame && (
               <>
@@ -280,7 +280,7 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
                 </span>
                 {onSelectChallenge && (
                   <button type="button" onClick={handleApplyFromBet} style={STYLES.btnSecondary}>
-                    Übernehmen & Spielen
+                    Apply & play
                   </button>
                 )}
               </>
@@ -299,10 +299,10 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
                 <button
                   type="button"
                   onClick={() => handleCopyIid(bet.iid)}
-                  title="Bet-IID kopieren"
+                  title="Copy bet IID"
                   style={STYLES.btnSecondary}
                 >
-                  {copyFeedback ? '✓ Kopiert' : 'IID kopieren'}
+                  {copyFeedback ? '✓ Copied' : 'Copy IID'}
                 </button>
               </div>
             ))}
@@ -312,21 +312,21 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
 
       <div style={{ marginTop: 'var(--space-4)' }}>
         <button type="button" onClick={() => setManualOpen(!manualOpen)} style={STYLES.toggle}>
-          {manualOpen ? '▼' : '▶'} Oder manuell eingeben (Spiel, Währung, Min. Einsatz)
+          {manualOpen ? '▼' : '▶'} Or enter manually (game, currency, min. bet)
         </button>
         {manualOpen && (
           <div style={{ ...STYLES.form, marginTop: 'var(--space-2)' }}>
             <div>
-              <label style={STYLES.label}>Spiel (Slug)</label>
+              <label style={STYLES.label}>Game (slug)</label>
               <select value={forumSlug} onChange={(e) => setForumSlug(e.target.value)} style={STYLES.input}>
-                <option value="">— wählen —</option>
+                <option value="">— select —</option>
                 {webSlots.map((s) => (
                   <option key={s.slug} value={s.slug}>{s.name}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label style={STYLES.label}>Währung</label>
+              <label style={STYLES.label}>Currency</label>
               <select value={forumCurrency} onChange={(e) => setForumCurrency(e.target.value)} style={STYLES.input}>
                 <option value="usdc">USDC</option>
                 <option value="eur">EUR</option>
@@ -335,10 +335,10 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
               </select>
             </div>
             <div>
-              <label style={STYLES.label}>Min. Einsatz (USD)</label>
+              <label style={STYLES.label}>Min. bet (USD)</label>
               <input
                 type="text"
-                placeholder="z.B. 0.20"
+                placeholder="e.g. 0.20"
                 value={forumMinBet}
                 onChange={(e) => setForumMinBet(e.target.value)}
                 style={{ ...STYLES.input, width: 90 }}
@@ -350,7 +350,7 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
               disabled={!forumSlug}
               style={{ ...STYLES.btn, ...(!forumSlug ? STYLES.btnDisabled : {}) }}
             >
-              Übernehmen
+              Apply
             </button>
           </div>
         )}

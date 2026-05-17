@@ -285,7 +285,7 @@ export default function WalletView({ accessToken, compact = false, hideTitle = f
     return (
       <div style={STYLES.wrapper}>
         {!hideTitle && <div style={STYLES.title}>Wallet</div>}
-        <div style={STYLES.loading}>Keine Guthaben</div>
+        <div style={STYLES.loading}>No balances</div>
       </div>
     )
   }

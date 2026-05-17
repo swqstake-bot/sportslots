@@ -89,7 +89,7 @@ export default function OriginalsScriptView() {
         })
       },
       onStopped: () => setRunning(false),
-      onSeedReset: (tier: number, newBet: number) => addLog(`Block ${tier} · neuer Einsatz: $${newBet.toFixed(2)} USD`),
+      onSeedReset: (tier: number, newBet: number) => addLog(`Block ${tier} · new bet size: $${newBet.toFixed(2)} USD`),
     }
     if (profileJson) {
       const stop = runProfileJson(profileJson, currency, callbacks, usdRates)
@@ -98,7 +98,7 @@ export default function OriginalsScriptView() {
         setChartData([])
         setBetList([])
         setRunning(true)
-        addLog('Profil gestartet. Einsatz = USD.')
+        addLog('Profile started. Bet size = USD.')
       }
     } else if (scriptCode) {
       const looksLikeJson = scriptCode.startsWith('{') && (scriptCode.includes('"game"') || scriptCode.includes('"options"'))
@@ -110,7 +110,7 @@ export default function OriginalsScriptView() {
         setChartData([])
         setBetList([])
         setRunning(true)
-        addLog(looksLikeJson ? 'Profil (JSON) gestartet. Einsatz = USD.' : 'Script-Konfig extrahiert, Session gestartet. Einsatz = USD.')
+        addLog(looksLikeJson ? 'Profile (JSON) started. Bet size = USD.' : 'Script config extracted, session started. Bet size = USD.')
       }
     }
   }, [profileContent, scriptContent, currency, addLog])
@@ -120,7 +120,7 @@ export default function OriginalsScriptView() {
       stopRef.current()
       stopRef.current = null
       setRunning(false)
-      addLog('Gestoppt.')
+      addLog('Stopped.')
     }
   }, [addLog])
 
@@ -136,9 +136,9 @@ export default function OriginalsScriptView() {
       <h3 className="casino-card-header text-base flex items-center justify-between gap-2">
         <span className="flex items-center gap-2">
           <span className="casino-card-header-accent" />
-          Script-Mode
+          Script mode
         </span>
-        <span className="text-xs font-mono text-[var(--text-muted)]" title="App-Version (vom Main-Prozess, korrekt nach Auto-Update)">
+        <span className="text-xs font-mono text-[var(--text-muted)]" title="App version (from main process, correct after auto-update)">
           v{appVersion}
         </span>
       </h3>
@@ -150,7 +150,7 @@ export default function OriginalsScriptView() {
           size="sm"
           onClick={() => setSubTab('run')}
         >
-          Script ausführen
+          Run script
         </Button>
         <Button
           type="button"
@@ -167,7 +167,7 @@ export default function OriginalsScriptView() {
             Paste a <strong>profile (.json)</strong> and press Start - or paste a <strong>script (.js)</strong>, then the config (game, stake, ...) is extracted and executed as a session. <strong>Stake is always in USD</strong> (e.g. 0.01 = $0.01); with another currency it is converted on start.
           </p>
           <div className="flex gap-2 items-center">
-            <label className="text-xs text-[var(--text-muted)]">Währung</label>
+            <label className="text-xs text-[var(--text-muted)]">Currency</label>
             <select
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
@@ -180,12 +180,12 @@ export default function OriginalsScriptView() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs text-[var(--text-muted)] mb-1">Script (.js) – Inhalt</label>
+              <label className="block text-xs text-[var(--text-muted)] mb-1">Script (.js) — contents</label>
               <input
                 type="text"
                 value={scriptPath}
                 onChange={(e) => setScriptPath(e.target.value)}
-                placeholder="Optional: Pfad"
+                placeholder="Optional: path"
                 className="w-full bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm mb-2"
               />
               <textarea
@@ -197,12 +197,12 @@ export default function OriginalsScriptView() {
               />
             </div>
             <div>
-              <label className="block text-xs text-[var(--text-muted)] mb-1">Profil (.json) – Inhalt</label>
+              <label className="block text-xs text-[var(--text-muted)] mb-1">Profile (.json) — contents</label>
               <input
                 type="text"
                 value={profilePath}
                 onChange={(e) => setProfilePath(e.target.value)}
-                placeholder="Optional: Pfad"
+                placeholder="Optional: path"
                 className="w-full bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm mb-2"
               />
               <textarea
@@ -224,13 +224,13 @@ export default function OriginalsScriptView() {
               </Button>
             )}
             <Button onClick={handleResetStats} variant="secondary" disabled={running}>
-              Reset Statistik
+              Reset stats
             </Button>
           </div>
 
           {(chartData.length > 0 || lastStats) && (
             <>
-              <div className="text-xs font-medium text-[var(--text-muted)] mb-1">Chart & Statistik</div>
+              <div className="text-xs font-medium text-[var(--text-muted)] mb-1">Chart & stats</div>
               {chartData.length > 0 && (
                 <div className="h-32 w-full">
                   <SvgCumulativeProfitLineChart profits={chartData.map((d) => d.profit)} height={128} stroke="var(--accent)" />
@@ -243,7 +243,7 @@ export default function OriginalsScriptView() {
                     <span className="font-medium text-[var(--text)]">{lastStats.bets}</span>
                   </div>
                   <div className="p-2 rounded-lg bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
-                    <span className="text-[var(--text-muted)] block text-xs">Gewagert</span>
+                    <span className="text-[var(--text-muted)] block text-xs">Wagered</span>
                     <span className="font-medium text-[var(--text)]">{(lastStats.totalWagered ?? 0).toFixed(2)}</span>
                   </div>
                   <div className="p-2 rounded-lg bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
@@ -265,7 +265,7 @@ export default function OriginalsScriptView() {
             </>
           )}
 
-          <div className="text-xs font-medium text-[var(--text-muted)] mb-1">Letzte 30 Bets</div>
+          <div className="text-xs font-medium text-[var(--text-muted)] mb-1">Last 30 bets</div>
           <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-deep)]/50">
             <div className="grid grid-cols-6 gap-2 px-2 py-2 text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--border-subtle)] sticky top-0 bg-[var(--bg-deep)]">
               <div>Game</div>
@@ -286,7 +286,7 @@ export default function OriginalsScriptView() {
               </div>
             ))}
             {betList.length === 0 && (
-              <div className="px-2 py-3 text-[var(--text-muted)] text-xs">Noch keine Bets.</div>
+              <div className="px-2 py-3 text-[var(--text-muted)] text-xs">No bets yet.</div>
             )}
           </div>
 

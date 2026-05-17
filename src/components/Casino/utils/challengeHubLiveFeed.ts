@@ -12,7 +12,7 @@ export interface ChallengeHubBetFeedEntry {
   sourceTag?: string
   addedAt?: number
   hubSettlement?: HubBetSettlement
-  /** `houseBets` | `http_deferred` — nur gesetzt wenn settled */
+  /** `houseBets` | `http_deferred` | `autorun` | `telegram` — nur gesetzt wenn settled */
   settlementSource?: string
   [key: string]: unknown
 }

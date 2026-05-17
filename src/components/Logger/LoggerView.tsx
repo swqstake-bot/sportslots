@@ -203,10 +203,10 @@ export default function LoggerView() {
       </div>
 
       <p className="logger-muted logger-archive-hint">
-        Lokales Bet-Archiv: Einträge aus HouseBets-Realtime + JSONL-Dateien (bis 5000 beim Laden). Filter wirken auf
-        Auswertung, CSV- und JSONL-Export — vergleichbar zur Idee von SSP{' '}
-        <span className="mono">bet-archive-list</span> / <span className="mono">analyze</span>, ohne separates
-        Download-Backend.
+        Local bet archive: rows from HouseBets realtime + JSONL files (up to 5000 on load). Filters affect analytics,
+        CSV and JSONL export — similar in spirit to SSP{' '}
+        <span className="mono">bet-archive-list</span> / <span className="mono">analyze</span>, without a separate
+        download backend.
       </p>
 
       {tab === 'casino' ? (

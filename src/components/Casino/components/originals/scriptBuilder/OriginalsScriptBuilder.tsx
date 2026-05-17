@@ -50,7 +50,7 @@ const GAMES: { id: OriginalsGame; label: string }[] = [
 ]
 
 export default function OriginalsScriptBuilder() {
-  const [name, setName] = useState('Mein Profil')
+  const [name, setName] = useState('My profile')
   const [opts, setOpts] = useState<ProfileOptions>({ ...DEFAULT_PROFILE_OPTIONS })
   const [exportSuccess, setExportSuccess] = useState(false)
 
@@ -88,17 +88,17 @@ export default function OriginalsScriptBuilder() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-[var(--text-muted)]">
-        Mechaniken auswählen und einstellen. Export erzeugt ein Antebot-kompatibles Profil (.json).
+        Select mechanics and tune values. Export produces an Antebot-compatible profile (.json).
       </p>
 
-      <AccordionSection title="Basis" defaultOpen={true}>
+      <AccordionSection title="Basics" defaultOpen={true}>
         <div className={sectionCls}>
           <div>
-            <label className={labelCls}>Profilname</label>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="Mein Profil" />
+            <label className={labelCls}>Profile name</label>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="My profile" />
           </div>
           <div>
-            <label className={labelCls}>Spiel</label>
+            <label className={labelCls}>Game</label>
             <select value={opts.game} onChange={(e) => updateOpt('game', e.target.value as OriginalsGame)} className={inputCls}>
               {GAMES.map((g) => (
                 <option key={g.id} value={g.id}>{g.label}</option>
@@ -108,37 +108,37 @@ export default function OriginalsScriptBuilder() {
         </div>
       </AccordionSection>
 
-      <AccordionSection title="Einsatz & Verhalten" defaultOpen={true}>
+      <AccordionSection title="Bet size & behavior" defaultOpen={true}>
         <div className={`${sectionCls} grid grid-cols-2 sm:grid-cols-4 gap-3`}>
           <div>
-            <label className={labelCls}>Einsatz (USD)</label>
-            <input type="number" min="0" step="any" value={opts.initialBetSize} onChange={(e) => { const v = Number(e.target.value); updateOpt('initialBetSize', v); updateOpt('betSize', v) }} className={inputCls} placeholder="0.01" title="Betrag in US-Dollar (z. B. 0.01 = $0.01)" />
+            <label className={labelCls}>Bet size (USD)</label>
+            <input type="number" min="0" step="any" value={opts.initialBetSize} onChange={(e) => { const v = Number(e.target.value); updateOpt('initialBetSize', v); updateOpt('betSize', v) }} className={inputCls} placeholder="0.01" title="Amount in US dollars (e.g. 0.01 = $0.01)" />
           </div>
           <div>
-            <label className={labelCls}>Bei Win</label>
-            <select value={opts.onWin} onChange={(e) => updateOpt('onWin', e.target.value as ProfileOptions['onWin'])} className={inputCls} title="B2B = Gewinn erneut setzen (Parlay). Stop B2B-Streak stoppt nach X Wins in Folge.">
-              <option value="reset">Reset (Starteinsatz)</option>
-              <option value="b2b">B2B (Gewinn setzen)</option>
+            <label className={labelCls}>On win</label>
+            <select value={opts.onWin} onChange={(e) => updateOpt('onWin', e.target.value as ProfileOptions['onWin'])} className={inputCls} title="B2B = reinvest win (parlay). Stop B2B streak stops after X wins in a row.">
+              <option value="reset">Reset (starting bet)</option>
+              <option value="b2b">B2B (bet win)</option>
               <option value="martingale">Martingale</option>
               <option value="increase">+ %</option>
-              <option value="none">Unverändert</option>
+              <option value="none">No change</option>
             </select>
           </div>
           <div>
-            <label className={labelCls}>Bei Loss</label>
+            <label className={labelCls}>On loss</label>
             <select value={opts.onLoss} onChange={(e) => updateOpt('onLoss', e.target.value as ProfileOptions['onLoss'])} className={inputCls}>
               <option value="reset">Reset</option>
               <option value="martingale">Martingale</option>
               <option value="increase">+ %</option>
-              <option value="none">Unverändert</option>
+              <option value="none">No change</option>
             </select>
           </div>
           <div>
-            <label className={labelCls} title="Nur wenn Bei Win = + %">+ on Win %</label>
+            <label className={labelCls} title="Only when On win = + %">+ on win %</label>
             <input type="number" min="0" value={opts.increaseOnWin} onChange={(e) => updateOpt('increaseOnWin', Number(e.target.value))} className={inputCls} />
           </div>
           <div>
-            <label className={labelCls} title="Nur wenn Bei Loss = + %">+ on Loss %</label>
+            <label className={labelCls} title="Only when On loss = + %">+ on loss %</label>
             <input type="number" min="0" value={opts.increaseOnLoss} onChange={(e) => updateOpt('increaseOnLoss', Number(e.target.value))} className={inputCls} />
           </div>
         </div>
@@ -171,44 +171,44 @@ export default function OriginalsScriptBuilder() {
           <div>
             <label className="flex items-center gap-2 mt-3">
               <input type="checkbox" checked={opts.isStopOnB2bStreak} onChange={(e) => updateOpt('isStopOnB2bStreak', e.target.checked)} className="rounded accent-[var(--accent)]" />
-              <span className="text-xs" title="Stopp nach X Wins in Folge. Sinnvoll mit Bei Win = B2B.">Stop nach B2B-Streak</span>
+              <span className="text-xs" title="Stop after X wins in a row. Makes sense with On win = B2B.">Stop after B2B streak</span>
             </label>
-            <input type="number" min="0" value={opts.stopOnB2bStreak} onChange={(e) => updateOpt('stopOnB2bStreak', Number(e.target.value))} className={inputCls} placeholder="z. B. 6" />
+            <input type="number" min="0" value={opts.stopOnB2bStreak} onChange={(e) => updateOpt('stopOnB2bStreak', Number(e.target.value))} className={inputCls} placeholder="e.g. 6" />
           </div>
         </div>
       </AccordionSection>
 
-      <AccordionSection title="Seed & Einsatz-Staffel" defaultOpen={false}>
+      <AccordionSection title="Seed & bet ladder" defaultOpen={false}>
         <div className={`${sectionCls} grid grid-cols-2 sm:grid-cols-4 gap-3`}>
           <div>
             <label className="flex items-center gap-2 mt-3">
               <input type="checkbox" checked={opts.isSeedChangeAfterRolls} onChange={(e) => updateOpt('isSeedChangeAfterRolls', e.target.checked)} className="rounded accent-[var(--accent)]" />
-              <span className="text-xs">Seed nach X Rolls</span>
+              <span className="text-xs">Seed after X rolls</span>
             </label>
-            <input type="number" min="0" value={opts.seedChangeAfterRolls} onChange={(e) => updateOpt('seedChangeAfterRolls', Number(e.target.value))} className={inputCls} placeholder="z. B. 25" />
+            <input type="number" min="0" value={opts.seedChangeAfterRolls} onChange={(e) => updateOpt('seedChangeAfterRolls', Number(e.target.value))} className={inputCls} placeholder="e.g. 25" />
           </div>
           <div>
-            <label className={labelCls} title="Nach jedem Block: Einsatz um diesen USD-Betrag erhöhen">Einsatz + pro Block (USD)</label>
+            <label className={labelCls} title="After each block: increase bet by this USD amount">Bet + per block (USD)</label>
             <input type="number" min="0" step="0.01" value={opts.increaseBetAfterSeedReset} onChange={(e) => updateOpt('increaseBetAfterSeedReset', Number(e.target.value))} className={inputCls} placeholder="0.01" />
           </div>
           <div>
-            <label className={labelCls} title="Nach X Verlusten in Folge: Seed rotieren (0 = aus)">Seed bei Loss-Streak (0=aus)</label>
+            <label className={labelCls} title="After X losses in a row: rotate seed (0 = off)">Seed on loss streak (0=off)</label>
             <input type="number" min="0" value={opts.seedResetOnLossStreak} onChange={(e) => updateOpt('seedResetOnLossStreak', Number(e.target.value))} className={inputCls} placeholder="0" />
           </div>
           <div>
-            <label className={labelCls} title="Session-Verlust ≥ Betrag (USD): Seed rotieren">Seed-Reset bei Verlust (USD, 0=aus)</label>
+            <label className={labelCls} title="Session loss ≥ amount (USD): rotate seed">Seed reset at loss (USD, 0=off)</label>
             <input type="number" min="0" step="0.01" value={opts.seedResetOnLossAmount ?? 0} onChange={(e) => updateOpt('seedResetOnLossAmount', Number(e.target.value))} className={inputCls} placeholder="0" />
           </div>
           <div className="flex items-end">
-            <label className="flex items-center gap-2 mt-3" title="Bei jedem Verlust: neuer Seed, Block startet von vorn">
+            <label className="flex items-center gap-2 mt-3" title="On each loss: new seed, block restarts from scratch">
               <input type="checkbox" checked={opts.resetSeedOnLoss ?? false} onChange={(e) => updateOpt('resetSeedOnLoss', e.target.checked)} className="rounded accent-[var(--accent)]" />
-              <span className="text-xs">Reset Seed bei Verlust</span>
+              <span className="text-xs">Reset seed on loss</span>
             </label>
           </div>
         </div>
         {opts.isSeedChangeAfterRolls && opts.seedChangeAfterRolls > 0 && (
           <p className="text-xs text-[var(--text-muted)]">
-            Alle {opts.seedChangeAfterRolls} Bets = neuer Block. Einsatz = Starteinsatz + (Block-Nr. × {opts.increaseBetAfterSeedReset || '0.01'}).
+            Every {opts.seedChangeAfterRolls} bets = new block. Bet = starting bet + (block no. × {opts.increaseBetAfterSeedReset || '0.01'}).
           </p>
         )}
       </AccordionSection>
@@ -226,21 +226,21 @@ export default function OriginalsScriptBuilder() {
               </select>
             </div>
             <div>
-              <label className={labelCls} title="Anzahl Picks zufällig zwischen von und bis">Random Picks von</label>
-              <input type="number" min="0" max="10" value={opts.randomNumbersFrom} onChange={(e) => updateOpt('randomNumbersFrom', Number(e.target.value))} className={inputCls} placeholder="0 = feste Numbers" />
+              <label className={labelCls} title="Random pick count between min and max">Random picks from</label>
+              <input type="number" min="0" max="10" value={opts.randomNumbersFrom} onChange={(e) => updateOpt('randomNumbersFrom', Number(e.target.value))} className={inputCls} placeholder="0 = fixed numbers" />
             </div>
             <div>
-              <label className={labelCls}>Random Picks bis</label>
+              <label className={labelCls}>Random picks to</label>
               <input type="number" min="0" max="10" value={opts.randomNumbersTo} onChange={(e) => updateOpt('randomNumbersTo', Number(e.target.value))} className={inputCls} />
             </div>
             <div>
               <label className="flex items-center gap-2 mt-3">
                 <input type="checkbox" checked={opts.useHeatmapHotNumbers} onChange={(e) => updateOpt('useHeatmapHotNumbers', e.target.checked)} className="rounded accent-[var(--accent)]" />
-                <span className="text-xs">Heatmap (Hot-Zone)</span>
+                <span className="text-xs">Heatmap (hot zone)</span>
               </label>
             </div>
             <div>
-              <label className={labelCls}>Heatmap Hot (Anzahl)</label>
+              <label className={labelCls}>Heatmap hot (count)</label>
               <input type="number" min="0" max="10" value={opts.heatmapHotNumbers} onChange={(e) => updateOpt('heatmapHotNumbers', Number(e.target.value))} className={inputCls} disabled={!opts.useHeatmapHotNumbers} />
             </div>
             <div>
@@ -255,19 +255,19 @@ export default function OriginalsScriptBuilder() {
         <AccordionSection title="Mines" defaultOpen={true}>
           <div className={`${sectionCls} grid grid-cols-2 sm:grid-cols-4 gap-3`}>
             <div>
-              <label className={labelCls}>Minen</label>
+              <label className={labelCls}>Mines</label>
               <input type="number" min={1} max={24} value={opts.mines} onChange={(e) => updateOpt('mines', Number(e.target.value))} className={inputCls} />
             </div>
             <div>
-              <label className={labelCls}>Diamanten (Gems)</label>
+              <label className={labelCls}>Diamonds (gems)</label>
               <input type="number" min="1" max="24" value={opts.diamonds} onChange={(e) => updateOpt('diamonds', Number(e.target.value))} className={inputCls} />
             </div>
             <div>
-              <label className={labelCls}>Random Minen von</label>
+              <label className={labelCls}>Random mines from</label>
               <input type="number" min="0" value={opts.randomMinesFrom} onChange={(e) => updateOpt('randomMinesFrom', Number(e.target.value))} className={inputCls} />
             </div>
             <div>
-              <label className={labelCls}>Random Minen bis</label>
+              <label className={labelCls}>Random mines to</label>
               <input type="number" min="0" value={opts.randomMinesTo} onChange={(e) => updateOpt('randomMinesTo', Number(e.target.value))} className={inputCls} />
             </div>
           </div>
@@ -295,7 +295,7 @@ export default function OriginalsScriptBuilder() {
         <AccordionSection title="Limbo" defaultOpen={true}>
           <div className={sectionCls}>
             <div>
-              <label className={labelCls}>Ziel-Multiplikator</label>
+              <label className={labelCls}>Target multiplier</label>
               <input type="number" min="1.01" step="0.01" value={opts.targetMultiplier} onChange={(e) => updateOpt('targetMultiplier', Number(e.target.value))} className={inputCls} />
             </div>
           </div>
@@ -306,7 +306,7 @@ export default function OriginalsScriptBuilder() {
         <AccordionSection title="Plinko" defaultOpen={true}>
           <div className={`${sectionCls} grid grid-cols-2 gap-3`}>
             <div>
-              <label className={labelCls}>Reihen</label>
+              <label className={labelCls}>Rows</label>
               <input type="number" min={8} max={16} value={opts.rows} onChange={(e) => updateOpt('rows', Number(e.target.value))} className={inputCls} />
             </div>
             <div>
@@ -323,12 +323,12 @@ export default function OriginalsScriptBuilder() {
 
       <div className="flex flex-wrap gap-2 pt-2">
         <button type="button" onClick={exportProfile} className="px-4 py-2 rounded-lg bg-[var(--accent)] text-[#0A0A0F] text-sm font-medium hover:opacity-90">
-          Als .json herunterladen
+          Download as .json
         </button>
         <button type="button" onClick={copyJson} className="px-4 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text)] text-sm hover:border-[var(--accent)]">
-          JSON kopieren
+          Copy JSON
         </button>
-        {exportSuccess && <span className="text-sm text-emerald-400 self-center">Erfolgreich.</span>}
+        {exportSuccess && <span className="text-sm text-emerald-400 self-center">Done.</span>}
       </div>
     </div>
   )

@@ -735,7 +735,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
 
   async function handleStartSession() {
     if (!provider?.startSession) {
-      setError('Provider nicht implementiert.')
+      setError('Provider is not implemented.')
       return
     }
     setLoading(true)
@@ -776,9 +776,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       triggerLogRefresh()
       return s
     } catch (err) {
-      const msg = err?.userMessage || err?.message || 'Session konnte nicht gestartet werden'
+      const msg = err?.userMessage || err?.message || 'Could not start session'
       setError(msg)
-      if (err?.retryable) setProviderWarning('Provider ist momentan instabil (Retry-Profil aktiv).')
+      if (err?.retryable) setProviderWarning('Provider is unstable right now (retry mode active).')
       logApiCall({ type: `${slot.providerId}/session`, endpoint: 'startSession', request: { slug: slot.slug, sourceCurrency: effectiveSource, targetCurrency: effectiveTarget }, response: null, error: msg, durationMs: null })
       triggerLogRefresh()
       return null
@@ -831,9 +831,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       if (parsed.isBonus) saveBonusSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, slotSlug: slot.slug }, response: data })
       triggerLogRefresh()
     } catch (err) {
-      const msg = err?.userMessage || err?.message || 'Spin fehlgeschlagen'
+      const msg = err?.userMessage || err?.message || 'Spin failed'
       setError(msg)
-      if (err?.retryable) setProviderWarning('Provider antwortet verzögert; Retry wurde ausgeführt.')
+      if (err?.retryable) setProviderWarning('Provider responded slowly; retry was attempted.')
       if (err?.sessionClosed) setSession(null)
       logApiCall({ type: `${slot.providerId}/spin`, endpoint: 'placeBet', request: { betAmount, extraBet }, response: null, error: msg, durationMs: null })
       triggerLogRefresh()
@@ -857,7 +857,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     }
 
     if (autospinCount < 0) {
-      setError('Anzahl Spins darf nicht negativ sein.')
+      setError('Spin count cannot be negative.')
       return
     }
     autospinCancelRef.current = false
@@ -1035,7 +1035,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       } catch (err) {
         const msg = err?.userMessage || err?.message || 'Spin failed'
         setError(`${msg} (nach ${spinsDone} Spins)`)
-        if (err?.retryable) setProviderWarning('Autospin lief in Retry-Modus wegen Provider-Latenz.')
+        if (err?.retryable) setProviderWarning('Autospin used retry mode due to provider latency.')
         if (err?.sessionClosed) setSession(null)
         logApiCall({ type: `${slot.providerId}/autospin`, endpoint: 'placeBet', request: { betAmount }, response: null, error: msg, durationMs: null })
         triggerLogRefresh()
@@ -1564,14 +1564,14 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       {!compact && (
       <details style={{ marginTop: '0.5rem' }}>
         <summary style={{ fontSize: '0.85rem', color: 'var(--text-muted)', cursor: 'pointer' }}>
-          API-Logs (für Coding / Debug)
+          API logs (coding / debug)
         </summary>
         <div style={{ marginTop: '0.5rem' }}>
           <LogViewer refreshKey={logRefreshKey} />
           {lastResult && (
             <details style={{ marginTop: '0.75rem' }}>
               <summary style={{ fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                Letzter Spin (Raw JSON)
+                Last spin (raw JSON)
               </summary>
               <pre style={{ ...STYLES.result, marginTop: '0.5rem', maxHeight: 150 }}>
                 {JSON.stringify(lastResult, null, 2)}

@@ -65,7 +65,7 @@ export function AppHeader({
               type="button"
               onClick={onSessionRevalidate}
               className="app-header-refresh-btn"
-              aria-label="Stake-Session neu validieren"
+              aria-label="Revalidate Stake session"
             >
               Session
             </button>

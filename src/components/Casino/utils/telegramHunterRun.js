@@ -19,6 +19,7 @@ import { notifyChallengeStart } from '../utils/notifications'
 import { effectiveSpinMultiplierFromParsed } from '../api/providers/stakeEngine'
 import { appendBet } from '../utils/betHistoryDb'
 import { formatStakeShareBetId } from '../utils/stakeBetShareId'
+import { publishChallengeHubBet } from '../utils/challengeHubLiveFeed'
 import {
   extractPacksBetFromStakeData,
   packsChallengeConditionMet,
@@ -440,6 +441,7 @@ export async function runTelegramChallengeSession(ctx) {
 
     let stopReason = null
     let targetHit = false
+    let spinSeq = 0
     while (!runnersRef.current[challengeId]?.stop) {
       const total = totalStatsRef.current
       const net = total.won - total.lost
@@ -555,9 +557,26 @@ export async function runTelegramChallengeSession(ctx) {
             bestMultiRun: Math.max(prev[challengeId].bestMultiRun ?? 0, safeMulti),
           },
         }))
+        spinSeq += 1
 
         const multi = safeMulti
         const resolvedRoundId = resolveTelegramBetRoundId(data, parsed.roundId)
+        publishChallengeHubBet({
+          id:
+            resolvedRoundId != null && String(resolvedRoundId).trim() !== ''
+              ? `telegram:${String(resolvedRoundId)}`
+              : `telegram:${challengeId}:${spinSeq}`,
+          slotSlug: gSlug,
+          slotName: gName,
+          betAmount,
+          winAmount: win,
+          currencyCode: String(parsed.currencyCode || tCurr || 'usd').toUpperCase(),
+          roundId: resolvedRoundId != null ? String(resolvedRoundId) : null,
+          sourceTag: `telegram:${gSlug}`,
+          hubSettlement: 'settled',
+          settlementSource: 'telegram',
+          multiplier: Number.isFinite(multi) ? multi : 0,
+        })
         const parityBetId = getBetIdForParityCheck(data, parsed.roundId)
         const packsBet = extractPacksBetFromStakeData(data)
         const packsMet =

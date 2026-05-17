@@ -6,20 +6,20 @@ interface CasinoTopNavProps {
 }
 
 const MODES: { id: CasinoMode; label: string; title: string }[] = [
-  { id: 'play', label: 'Play', title: 'Slots spielen, Challenges anlegen, Wheel' },
+  { id: 'play', label: 'Play', title: 'Play slots, challenges, wheel' },
   { id: 'originals', label: 'Originals', title: 'Stake Originals (Dice, Mines, …)' },
   {
     id: 'challengeHub',
     label: 'Challenge Hub',
-    title: 'Challenge-Betlisten, Autorun-Hunter, Telegram, Forum — nicht dasselbe wie Bonus Hunt',
+    title: 'Challenge bet feeds, autorun, Telegram, forum — not the same as Bonus Hunt',
   },
-  { id: 'bonushunt', label: 'Bonus Hunt', title: 'Manuelle Bonus-Jagd auf Slots (eigene Hunt-Logik)' },
-  { id: 'logs', label: 'Logs', title: 'Interne Casino-Logs / Diagnose' },
+  { id: 'bonushunt', label: 'Bonus Hunt', title: 'Manual bonus hunt on slots (hunt logic)' },
+  { id: 'logs', label: 'Logs', title: 'Internal casino logs / diagnostics' },
 ]
 
 export function CasinoTopNav({ mode, onChangeMode }: CasinoTopNavProps) {
   return (
-    <nav className="casino-topnav" aria-label="Casino Bereiche">
+    <nav className="casino-topnav" aria-label="Casino sections">
       {MODES.map((m) => (
         <button
           key={m.id}

@@ -115,6 +115,7 @@ export function BetArchiveTab({ accessToken }: BetArchiveTabProps) {
       <div className="challenge-hub-archive-toolbar">
         <div className="challenge-hub-archive-meta">
           Archive spins: <b>{view.rowCount}</b> ({archiveLimit > 0 ? `latest ${archiveLimit}` : 'all available'})
+          <span className="ml-1">· KPI source: persisted casino spins (USD snapshots)</span>
         </div>
         <div className="challenge-hub-archive-actions">
           <label className="challenge-hub-archive-limit-wrap">
@@ -144,10 +145,10 @@ export function BetArchiveTab({ accessToken }: BetArchiveTabProps) {
       {error ? <div className="challenge-hub-archive-error">{error}</div> : null}
 
       <div className="challenge-hub-archive-kpis">
-        <span className="challenge-hub-kpi">Wagered: {fmtUsdCents(view.snapshot.totalWagered)}</span>
-        <span className="challenge-hub-kpi">Won: {fmtUsdCents(view.snapshot.totalWon)}</span>
-        <span className="challenge-hub-kpi">Net: {fmtUsdCents(view.snapshot.totalWon - view.snapshot.totalWagered)}</span>
-        <span className="challenge-hub-kpi">Best Multi: {(Number(view.snapshot.biggestMultiplier) || 0).toFixed(2)}x</span>
+        <span className="challenge-hub-kpi">Archive Wagered (casino): {fmtUsdCents(view.snapshot.totalWagered)}</span>
+        <span className="challenge-hub-kpi">Archive Won (casino): {fmtUsdCents(view.snapshot.totalWon)}</span>
+        <span className="challenge-hub-kpi">Archive Net (casino): {fmtUsdCents(view.snapshot.totalWon - view.snapshot.totalWagered)}</span>
+        <span className="challenge-hub-kpi">Archive Best Multi (casino): {(Number(view.snapshot.biggestMultiplier) || 0).toFixed(2)}x</span>
       </div>
 
       <div className="challenge-hub-archive-card">

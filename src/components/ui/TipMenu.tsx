@@ -58,27 +58,27 @@ export function TipMenu() {
       const api = window.electronAPI;
       if (!api?.openStakeWithdrawPrefill) {
         handleCopy(wallet.address);
-        setStatus('Nur kopiert (Electron-API fehlt).');
+        setStatus('Copied only (Electron API missing).');
         return;
       }
       const res = await api.openStakeWithdrawPrefill({
         address: wallet.address,
         currency: wallet.currency,
         chain: wallet.chain,
-        locale: 'de',
+        locale: 'en',
       });
       if (!res?.ok) {
         if (res?.error === 'session_invalid') {
-          setStatus('Keine gültige Stake-Session — bitte in der App einloggen (Session), dann erneut.');
+          setStatus('No valid Stake session — log in from the app (Session), then try again.');
         } else {
-          setStatus(`Konnte Stake nicht öffnen (${String(res?.error || 'unknown')}).`);
+          setStatus(`Could not open Stake (${String(res?.error || 'unknown')}).`);
         }
         return;
       }
-      setStatus(res.filled ? 'Stake geöffnet — Adresse eingefügt.' : 'Stake geöffnet — Adresse bitte prüfen (Feld nicht gefunden).');
+      setStatus(res.filled ? 'Stake opened — address pasted.' : 'Stake opened — please verify the address (field not found).');
       setTimeout(() => setStatus(null), 6000);
     } catch (e) {
-      setStatus(`Fehler: ${e instanceof Error ? e.message : String(e)}`);
+      setStatus(`Error: ${e instanceof Error ? e.message : String(e)}`);
     }
     setIsOpen(false);
   };
@@ -88,7 +88,7 @@ export function TipMenu() {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 px-4 py-2 bg-transparent border border-[#ffd700] text-[#ffd700] rounded hover:bg-[#ffd700]/10 transition-colors text-sm font-medium"
-        title="Tip / Auszahlung"
+        title="Tip / withdrawal"
       >
         <span>Maxwin Hit? -&gt; Send Tip 💸</span>
         <span className="text-xs">{isOpen ? '▲' : '▼'}</span>
@@ -97,10 +97,10 @@ export function TipMenu() {
       {isOpen && (
         <div className="absolute top-full right-0 mt-2 min-w-[280px] bg-[#1a2c38] border border-[#2f4553] rounded-lg shadow-xl z-50 p-2 animate-in fade-in zoom-in-95 duration-100">
           <div className="px-2 py-1.5 text-xs font-bold text-[#b1bad3] uppercase tracking-wider mb-1">
-            Stake Auszahlung
+            Stake withdrawal
           </div>
           <p className="px-2 pb-2 text-[0.7rem] text-[#8a9aad] leading-snug">
-            Öffnet Wallet → Auszahlung mit passender Währung/Chain und trägt die Adresse ein. Rechts: nur kopieren.
+            Opens Wallet → Withdraw with the right currency/chain and fills the address. Right: copy only.
           </p>
 
           <div className="space-y-1">
@@ -116,7 +116,7 @@ export function TipMenu() {
                 </button>
                 <button
                   type="button"
-                  title="Nur Adresse kopieren"
+                  title="Copy address only"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleCopy(wallet.address);
@@ -132,7 +132,7 @@ export function TipMenu() {
 
           {copied && (
             <div className="mt-2 p-2 bg-[#00e701]/10 text-[#00e701] text-xs text-center rounded border border-[#00e701]/20 font-medium animate-in fade-in slide-in-from-top-1">
-              Adresse kopiert
+              Address copied
             </div>
           )}
           {status && (

@@ -194,14 +194,14 @@ export async function scrapeForumBets(forumUrl, accessToken, opts = {}) {
   const { onProgress, maxBets = 9999 } = opts
   const url = (forumUrl || '').trim()
   if (!url || !url.includes('stakecommunity.com/topic/')) {
-    throw new Error('Bitte eine gültige Stake-Community-Topic-URL eingeben (https://stakecommunity.com/topic/...)')
+    throw new Error('Please enter a valid Stake Community topic URL (https://stakecommunity.com/topic/...)')
   }
 
   const baseUrl = getTopicBaseUrl(url)
   const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
 
   if (!window.electronAPI?.proxyRequest) {
-    throw new Error('Electron Proxy nicht verfügbar.')
+    throw new Error('Electron proxy is not available.')
   }
 
   const allIds = new Set()
@@ -222,7 +222,7 @@ export async function scrapeForumBets(forumUrl, accessToken, opts = {}) {
       }
       const pageIds = extractBetIds(html)
       for (const id of pageIds) allIds.add(id)
-      if (onProgress) onProgress(0, 0, `Seite ${page}${totalPagesHint > 1 ? `/${totalPagesHint}` : ''}`)
+      if (onProgress) onProgress(0, 0, `Page ${page}${totalPagesHint > 1 ? `/${totalPagesHint}` : ''}`)
       if (page > 1 && pageIds.length === 0) break
       if (totalPagesHint > 1 && page >= totalPagesHint) break
       page++

@@ -429,7 +429,7 @@ export function OriginalsSettings({
               <div>
                 <label className={`${labelCls} flex items-center gap-1`}>
                   Kelly
-                  <span title="Kelly Criterion: mathematisch optimaler Einsatzanteil der Bankroll pro Wette. 0.25 = Quarter Kelly (konservativ), 1 = Full Kelly (höheres Risiko). Aus = feste Einsätze." className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[var(--text-muted)]/20 text-[var(--text-muted)] text-xs cursor-help">?</span>
+                  <span title="Kelly criterion: theoretically optimal fraction of bankroll per bet. 0.25 = quarter Kelly (conservative), 1 = full Kelly (higher risk). Off = fixed stakes." className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[var(--text-muted)]/20 text-[var(--text-muted)] text-xs cursor-help">?</span>
                 </label>
                 {sel(KELLY_OPTIONS, s.kellyFraction, (v) => update({ kellyFraction: Number(v) }))}
               </div>

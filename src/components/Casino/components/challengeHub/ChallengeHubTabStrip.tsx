@@ -5,17 +5,17 @@ export type HubTab = 'casino' | 'autorun' | 'telegram' | 'forum' | 'promotions' 
 const HUB_TABS: { id: HubTab; label: string; title: string }[] = [
   {
     id: 'casino',
-    label: 'Wetten & KPI',
-    title: 'Challenge-Betlisten und KPIs (manuell / Übersicht). Bonus Hunt für Slot-Jagd liegt unter Play → Bonus Hunt.',
+    label: 'Bets & KPI',
+    title: 'Challenge bet lists and KPIs (manual/overview). Bonus Hunt is available under Play → Bonus Hunt.',
   },
   {
     id: 'autorun',
     label: 'Autorun',
-    title: 'Automatischer Challenge-Hunter (Stake RGS). Warteschlange und laufende Spins sind Arbeitsspeicher; Filter & Presets bleiben in localStorage.',
+    title: 'Automatic challenge hunter (Stake RGS). Queue and active spins are memory-only; filters and presets stay in localStorage.',
   },
-  { id: 'telegram', label: 'Telegram', title: 'Challenges aus Telegram-Kanälen' },
-  { id: 'forum', label: 'Forum', title: 'Forum-Challenge-Ansicht' },
-  { id: 'promotions', label: 'Promotions', title: 'Stake-Promos & Aktionen' },
+  { id: 'telegram', label: 'Telegram', title: 'Challenges from Telegram channels' },
+  { id: 'forum', label: 'Forum', title: 'Forum challenge view' },
+  { id: 'promotions', label: 'Promotions', title: 'Stake promotions and campaigns' },
   { id: 'archive', label: 'Archive', title: 'Session review, trends, top games and exports from stored bet history' },
 ]
 

@@ -6,7 +6,7 @@ const MAX_ROWS = 80
 const BET_LIST_STATIC = {
   currencyCode: 'usd',
   showSlot: true,
-  showNet: false,
+  showNet: true,
   showContext: false,
   showCopyHouse: true,
   maxRows: MAX_ROWS,
@@ -15,26 +15,22 @@ const BET_LIST_STATIC = {
 } as const
 
 interface ChallengeHubBetListFeedProps {
-  lastUpdate: number
   recentBets: any[]
 }
 
 /**
  * Live bet rows + timestamp only; keeps SectionCard chrome from re-running when lifted as sibling.
  */
-export const ChallengeHubBetListFeed = memo(function ChallengeHubBetListFeed({ lastUpdate, recentBets }: ChallengeHubBetListFeedProps) {
+export const ChallengeHubBetListFeed = memo(function ChallengeHubBetListFeed({ recentBets }: ChallengeHubBetListFeedProps) {
   const n = recentBets?.length ?? 0
   return (
-    <>
-      <p className="text-[0.65rem] text-[var(--text-muted)] mb-2 tabular-nums">
-        Last update: {new Date(lastUpdate).toLocaleTimeString()}
-      </p>
+    <div className="challenge-hub-activity-feed">
       <BetList
         {...BET_LIST_STATIC}
         bets={recentBets}
         totalCount={n}
       />
-    </>
+    </div>
   )
 })
 

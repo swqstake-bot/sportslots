@@ -35,10 +35,10 @@ const THUNDERKICK_WEBVIEW_PROVIDER = {
         endpoint: cfgUrl || null,
         request: { slug, sourceCurrency: source, targetCurrency: target },
         response: null,
-        error: 'Webview-Bridge nicht verfügbar',
+        error: 'Webview bridge unavailable',
         durationMs: Math.round(performance.now() - t0),
       })
-      throw new Error('Webview-Bridge nicht verfügbar')
+      throw new Error('Webview bridge unavailable')
     }
     const res = await bridge.requestWebviewSession({
       providerId: 'thunderkick',
@@ -82,7 +82,7 @@ const THUNDERKICK_WEBVIEW_PROVIDER = {
   async placeBet(session, betAmount, extraBet, _autoplay = false) {
     const bridge = getWebviewBridge()
     if (!bridge || typeof bridge.requestWebviewSpin !== 'function') {
-      throw new Error('Webview-Bridge nicht verfügbar')
+      throw new Error('Webview bridge unavailable')
     }
     const effectiveBet = getEffectiveBetAmount(betAmount, extraBet)
     const t0 = performance.now()

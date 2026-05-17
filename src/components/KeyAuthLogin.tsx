@@ -35,7 +35,7 @@ export function KeyAuthLogin({ onSuccess }: KeyAuthLoginProps) {
           if (savedPass) setPassword(savedPass);
         }
       } catch (err: any) {
-        setError(err.message || 'Initialisierungsfehler');
+        setError(err.message || 'Initialization failed');
       } finally {
         setLoading(false);
       }
@@ -46,7 +46,7 @@ export function KeyAuthLogin({ onSuccess }: KeyAuthLoginProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) {
-      setError('Bitte Username und Passwort eingeben.');
+      setError('Please enter username and password.');
       return;
     }
 
@@ -66,7 +66,7 @@ export function KeyAuthLogin({ onSuccess }: KeyAuthLoginProps) {
       }
       onSuccess();
     } catch (err: any) {
-      setError(err.message || 'Login fehlgeschlagen');
+      setError(err.message || 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -119,7 +119,7 @@ export function KeyAuthLogin({ onSuccess }: KeyAuthLoginProps) {
 
           <div className="flex flex-col gap-2">
             <label className="text-xs font-medium uppercase tracking-widest" style={{ color: 'var(--app-text-muted, #8890a8)' }}>
-              Passwort
+              Password
             </label>
             <input
               type="password"
@@ -130,7 +130,7 @@ export function KeyAuthLogin({ onSuccess }: KeyAuthLoginProps) {
                 background: 'rgba(10, 10, 15, 0.8)',
                 border: '1px solid rgba(0, 240, 255, 0.15)',
               }}
-              placeholder="Passwort"
+              placeholder="Password"
               disabled={loading}
               autoComplete="current-password"
             />
@@ -145,7 +145,7 @@ export function KeyAuthLogin({ onSuccess }: KeyAuthLoginProps) {
               disabled={loading}
             />
             <span className="text-sm" style={{ color: 'var(--app-text-muted, #8890a8)' }}>
-              Anmeldedaten speichern
+              Remember credentials
             </span>
           </label>
 
@@ -171,10 +171,10 @@ export function KeyAuthLogin({ onSuccess }: KeyAuthLoginProps) {
             {loading ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                Wird geladen...
+                Loading…
               </span>
             ) : (
-              'Anmelden'
+              'Sign in'
             )}
           </button>
 

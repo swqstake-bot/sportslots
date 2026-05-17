@@ -6,6 +6,7 @@ import { parseBetResponse } from '../../utils/parseBetResponse'
 import { toMinor } from '../../utils/formatAmount'
 import { convertMinorToUsdMajor } from '../../utils/monetaryContract'
 import { notify } from '../../utils/notifications'
+import { publishChallengeHubBet } from '../../utils/challengeHubLiveFeed'
 import type { HubStatsPayload } from './hubTypes'
 import { computeBetFromMinBetAndSession } from './autorunBetSizing'
 import {
@@ -26,6 +27,7 @@ type ParsedBet = {
   winAmount?: number
   netResult: number
   multiplier?: number
+  roundId?: string | number | null
 }
 
 type SpinContext = {
@@ -141,13 +143,14 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
       try {
         kpiWorkerRef.current.terminate()
       } catch {
+        // worker may already be terminated
       }
       kpiWorkerRef.current = null
     }
   }, [applySessionTotals, postKpiWorker])
 
   const pushLog = useCallback((msg: string) => {
-    const line = `${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}  ${msg}`
+    const line = `${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}  ${msg}`
     setLogs((prev) => [...prev.slice(-(MAX_LOG_LINES - 1)), line])
   }, [])
 
@@ -161,7 +164,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
       spinContextRef.current = null
       ratesRef.current = null
       setRunStartedAt(null)
-      pushLog(`Gestoppt: ${reason}`)
+      pushLog(`Stopped: ${reason}`)
       notify('Autorun', reason)
       onHubStatsChange?.({
         source: 'autorun',
@@ -190,7 +193,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
       if (started != null && cfg.stops.maxRuntimeMinutes != null) {
         const mins = (Date.now() - started) / 60000
         if (mins >= cfg.stops.maxRuntimeMinutes) {
-          stopAll('Max. Laufzeit erreicht')
+          stopAll('Max runtime reached')
           return true
         }
       }
@@ -203,11 +206,11 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
         return true
       }
       if (cfg.stops.maxTotalSpins != null && totalSpinsRef.current >= cfg.stops.maxTotalSpins) {
-        stopAll('Maximale Gesamt-Spins erreicht')
+        stopAll('Max total spins reached')
         return true
       }
       if (cfg.stops.maxLosingStreak != null && losingStreakRef.current >= cfg.stops.maxLosingStreak) {
-        stopAll(`Max. Verlustserie (${cfg.stops.maxLosingStreak})`)
+        stopAll(`Max losing streak (${cfg.stops.maxLosingStreak})`)
         return true
       }
       return false
@@ -220,7 +223,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     const cfg = configRef.current
     const token = accessTokenRef.current
     if (!token) {
-      pushLog('Kein Access Token.')
+      pushLog('No access token.')
       spinContextRef.current = null
       return false
     }
@@ -229,12 +232,12 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     try {
       rates = await fetchCurrencyRates(token)
     } catch {
-      pushLog('Währungskurse: Abruf fehlgeschlagen — erneuter Versuch…')
+      pushLog('FX rates: fetch failed — retrying…')
       spinContextRef.current = null
       return false
     }
     if (!rates || typeof rates !== 'object') {
-      pushLog('Währungskurse ungültig.')
+      pushLog('Invalid FX rates.')
       spinContextRef.current = null
       return false
     }
@@ -249,7 +252,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     const sCurr = cfg.sourceCurrency
     const rate = getRateForCurrency(rates, tCurr)
     if (!rate || rate <= 0) {
-      pushLog(`Kein Kurs für Zielwährung ${tCurr}`)
+      pushLog(`No rate for target currency ${tCurr}`)
       spinContextRef.current = null
       return false
     }
@@ -266,7 +269,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
       const slug = String(rule.slotSlug || '').toLowerCase()
       const slot = webSlotsRef.current.find((s) => String(s.slug).toLowerCase() === slug)
       if (!slot) {
-        pushLog(`Unbekannter Slot: "${rule.slotSlug}"`)
+        pushLog(`Unknown slot: "${rule.slotSlug}"`)
         continue
       }
 
@@ -297,7 +300,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
         rule.betUsd
       )
       if (balanceUsd + 1e-6 < usdAt) {
-        pushLog(`Zu wenig Balance für ~$${usdAt.toFixed(3)} auf ${slug} — nächste Regel`)
+        pushLog(`Not enough balance for ~$${usdAt.toFixed(3)} on ${slug} — trying next rule`)
         continue
       }
       chosen = {
@@ -313,7 +316,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
 
     if (!chosen) {
       spinContextRef.current = null
-      setActiveRuleLabel('Keine passende Regel')
+      setActiveRuleLabel('No matching rule')
       setActiveSlotLabel('—')
       setActiveBetLabel('—')
       return false
@@ -422,7 +425,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
           setSpinsToday((prev) => prev + 1)
 
           if (!parsed.success) {
-            pushLog(`Spin-Fehler: ${parsed.error || 'unknown'}`)
+            pushLog(`Spin error: ${parsed.error || 'unknown'}`)
             spinContextRef.current = null
             await sleep(2000)
             continue
@@ -449,6 +452,21 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
                 : sessionKpiRef.current.bestMulti,
             })
           }
+          const autorunFeedId = parsed.roundId != null && String(parsed.roundId).trim() !== ''
+            ? `autorun:${String(parsed.roundId)}`
+            : `autorun:${ctx.slot.slug}:${totalSpinsRef.current}:${Date.now()}`
+          publishChallengeHubBet({
+            id: autorunFeedId,
+            slotSlug: ctx.slot.slug,
+            slotName: ctx.slotName,
+            betAmount: ctx.betAmount,
+            winAmount: parsed.winAmount ?? 0,
+            currencyCode: cfg.targetCurrency.toUpperCase(),
+            roundId: parsed.roundId != null ? String(parsed.roundId) : null,
+            sourceTag: `autorun:${ctx.slot.slug}`,
+            hubSettlement: 'settled',
+            settlementSource: 'autorun',
+          })
           onHubStatsChange?.({
             source: 'autorun',
             queued: 0,
@@ -467,11 +485,11 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
           pushLog(`${ctx.slotName}  net ${parsed.netResult}${mult}`)
 
           if (cfg.stops.maxTotalSpins != null && totalSpinsRef.current >= cfg.stops.maxTotalSpins) {
-            stopAll('Maximale Gesamt-Spins erreicht')
+            stopAll('Max total spins reached')
             return
           }
           if (cfg.stops.maxLosingStreak != null && losingStreakRef.current >= cfg.stops.maxLosingStreak) {
-            stopAll(`Max. Verlustserie (${cfg.stops.maxLosingStreak})`)
+            stopAll(`Max losing streak (${cfg.stops.maxLosingStreak})`)
             return
           }
         } catch (e) {
@@ -489,7 +507,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     return () => {
       cancelled = true
     }
-  }, [isRunning, runRuleScan, pushLog, stopAll, walletUsd, checkGlobalStops, applySessionTotals, postKpiWorker])
+  }, [isRunning, runRuleScan, pushLog, stopAll, walletUsd, checkGlobalStops, applySessionTotals, postKpiWorker, onHubStatsChange])
 
   useEffect(() => {
     const t = window.setTimeout(() => saveAutorunConfigToStorage(config), 400)
@@ -507,7 +525,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
   const sortedSlots = useMemo(() => {
     const q = slotFilter.trim().toLowerCase()
     const list = [...webSlots]
-    list.sort((a, b) => String(a.name || a.slug).localeCompare(String(b.name || b.slug), 'de'))
+    list.sort((a, b) => String(a.name || a.slug).localeCompare(String(b.name || b.slug), 'en'))
     if (!q) return list
     return list.filter(
       (s) => String(s.slug).toLowerCase().includes(q) || String(s.name || '').toLowerCase().includes(q)
@@ -516,16 +534,16 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
 
   const handleStart = () => {
     if (!accessToken) {
-      pushLog('Nicht angemeldet / kein Token.')
+      pushLog('Not signed in / no token.')
       return
     }
     if (!config.rules.length) {
-      pushLog('Mindestens eine Regel anlegen.')
+      pushLog('Add at least one rule.')
       return
     }
     const bad = config.rules.some((r) => !String(r.slotSlug || '').trim())
     if (bad) {
-      pushLog('Jede Regel braucht einen Slot.')
+      pushLog('Each rule needs a slot.')
       return
     }
     totalSpinsRef.current = 0
@@ -545,7 +563,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     runningRef.current = true
     setIsRunning(true)
     setSessionSpinCount(0)
-    pushLog('Autorun gestartet')
+    pushLog('Autorun started')
     onHubStatsChange?.({
       source: 'autorun',
       queued: 0,
@@ -561,7 +579,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     spinContextRef.current = null
     setIsRunning(false)
     setRunStartedAt(null)
-    pushLog('Autorun manuell gestoppt')
+    pushLog('Autorun stopped manually')
     onHubStatsChange?.({
       source: 'autorun',
       queued: 0,
@@ -618,7 +636,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
 
   const testBalanceScan = async () => {
     if (!accessToken) {
-      pushLog('Kein Token für Kurs-Scan.')
+      pushLog('No token for rate scan.')
       return
     }
     try {
@@ -629,9 +647,9 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
       const conv = convertMinorToUsdMajor(minor, balCur, rates)
       const usd = conv.usd != null && Number.isFinite(conv.usd) ? conv.usd : 0
       setLiveBalanceUsd(usd)
-      pushLog(`Test: ${balCur.toUpperCase()} → ~$${usd.toFixed(4)} (Kurs ok)`)
+      pushLog(`Test: ${balCur.toUpperCase()} → ~$${usd.toFixed(4)} (rate ok)`)
     } catch (e) {
-      pushLog(`Test fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`)
+      pushLog(`Test failed: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
 
@@ -643,7 +661,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     a.download = 'autorun-config.json'
     a.click()
     URL.revokeObjectURL(url)
-    pushLog('Config exportiert.')
+    pushLog('Config exported.')
   }
 
   const onPickJsonFile = (ev: ChangeEvent<HTMLInputElement>) => {
@@ -655,9 +673,9 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
       try {
         const parsed = JSON.parse(String(reader.result || '{}'))
         setConfig(normalizeAutorunConfig(parsed))
-        pushLog(`Config geladen: ${file.name}`)
+        pushLog(`Config loaded: ${file.name}`)
       } catch {
-        pushLog('JSON konnte nicht gelesen werden.')
+        pushLog('Could not parse JSON.')
       }
     }
     reader.readAsText(file)
@@ -665,7 +683,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
 
   const resetToDemo = () => {
     setConfig(createDefaultAutorunConfig())
-    pushLog('Demo-Config wiederhergestellt.')
+    pushLog('Demo config restored.')
   }
 
   const chip = 'challenge-hub-kpi text-[11px] font-semibold tabular-nums'
@@ -677,12 +695,12 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
         style={{ borderColor: 'var(--border-subtle)', background: 'color-mix(in srgb, var(--bg-deep) 88%, var(--accent) 4%)' }}
       >
         <span className={chip}>Balance ~${liveBalanceUsd != null ? liveBalanceUsd.toFixed(2) : '—'}</span>
-        <span className={chip}>Regel: {activeRuleLabel}</span>
+        <span className={chip}>Rule: {activeRuleLabel}</span>
         <span className={chip}>Slot: {activeSlotLabel}</span>
-        <span className={chip}>Einsatz: {activeBetLabel}</span>
-        <span className={chip}>Laufzeit: {runtimeLabel}</span>
-        <span className={chip}>Spins (heute): {spinsToday}</span>
-        <span className={chip}>Gesamt (Lauf): {isRunning ? sessionSpinCount : 0}</span>
+        <span className={chip}>Stake: {activeBetLabel}</span>
+        <span className={chip}>Runtime: {runtimeLabel}</span>
+        <span className={chip}>Spins (today): {spinsToday}</span>
+        <span className={chip}>Total (run): {isRunning ? sessionSpinCount : 0}</span>
         <span className={chip}>Wagered: ${sessionWageredUsd.toFixed(2)}</span>
         <span className={chip}>Payout: ${sessionPayoutUsd.toFixed(2)}</span>
         <span className={chip} style={{ color: sessionProfitUsd >= 0 ? 'var(--success)' : 'var(--error)' }}>
@@ -693,13 +711,13 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
 
       <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/80 p-3 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Regeln (Reihenfolge = Priorität bei gleichem Match)</h3>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Rules (order = priority when multiple match)</h3>
           <button type="button" className="challenge-hub-action" onClick={addRule} disabled={isRunning}>
-            + Regel
+            + Rule
           </button>
         </div>
         <p className="text-[11px] text-[var(--text-muted)]">
-          Höchster passender Schwellenwert gewinnt. Per Drag &amp; Drop sortieren. Unbekannte Slugs werden übersprungen.
+          Highest matching threshold wins. Drag rows to reorder. Unknown slugs are skipped.
         </p>
 
         <div className="space-y-2">
@@ -716,7 +734,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
                 style={{ opacity: dragId === rule.id ? 0.55 : 1 }}
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="cursor-grab text-[var(--text-muted)] select-none" title="Ziehen zum Sortieren">
+                  <span className="cursor-grab text-[var(--text-muted)] select-none" title="Drag to reorder">
                     ⋮⋮
                   </span>
                   <span className="text-[10px] font-mono text-[var(--text-muted)]">#{index + 1}</span>
@@ -732,17 +750,17 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
                       ↓
                     </button>
                     <button type="button" className="challenge-hub-action" onClick={() => setEditingId(expanded ? null : rule.id)}>
-                      {expanded ? 'Fertig' : 'Bearbeiten'}
+                      {expanded ? 'Done' : 'Edit'}
                     </button>
                     <button type="button" className="challenge-hub-action" disabled={isRunning} onClick={() => deleteRule(rule.id)}>
-                      Löschen
+                      Delete
                     </button>
                   </div>
                 </div>
                 {expanded && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-[var(--border-subtle)]">
                     <label className="text-[11px] text-[var(--text-muted)]">
-                      Schwellenwert (USD)
+                      Threshold (USD)
                       <input
                         type="number"
                         step="0.01"
@@ -754,7 +772,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
                       />
                     </label>
                     <label className="text-[11px] text-[var(--text-muted)]">
-                      Einsatz (USD, Ziel)
+                      Stake (USD, target)
                       <input
                         type="number"
                         step="0.01"
@@ -766,14 +784,14 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
                       />
                     </label>
                     <label className="text-[11px] text-[var(--text-muted)] sm:col-span-2">
-                      Slot (Katalog)
+                      Slot (catalog)
                       <select
                         className="mt-0.5 w-full rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1 text-sm"
                         value={sortedSlots.some((s) => String(s.slug).toLowerCase() === rule.slotSlug) ? rule.slotSlug : ''}
                         onChange={(e) => updateRule(rule.id, { slotSlug: e.target.value.toLowerCase() })}
                         disabled={isRunning}
                       >
-                        <option value="">— wählen —</option>
+                        <option value="">— Select —</option>
                         {sortedSlots.map((s) => (
                           <option key={s.slug} value={String(s.slug).toLowerCase()}>
                             {s.name || s.slug}
@@ -782,29 +800,29 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
                       </select>
                     </label>
                     <label className="text-[11px] text-[var(--text-muted)] sm:col-span-2">
-                      Slug (manuell, z. B. wenn nicht in der Liste)
+                      Slug (manual, e.g. if not in list)
                       <input
                         type="text"
                         className="mt-0.5 w-full rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1 text-sm font-mono"
                         value={rule.slotSlug}
                         onChange={(e) => updateRule(rule.id, { slotSlug: e.target.value.toLowerCase().replace(/\s+/g, '-') })}
                         disabled={isRunning}
-                        placeholder="z. B. sweet-bonanza"
+                        placeholder="e.g. sweet-bonanza"
                       />
                     </label>
                     <label className="text-[11px] text-[var(--text-muted)] sm:col-span-2">
-                      Slot-Suche (Filter Liste)
+                      Slot search (filter list)
                       <input
                         type="search"
                         className="mt-0.5 w-full rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1 text-sm"
                         value={slotFilter}
                         onChange={(e) => setSlotFilter(e.target.value)}
-                        placeholder="Name oder Slug…"
+                        placeholder="Name or slug…"
                         disabled={isRunning}
                       />
                     </label>
                     <label className="text-[11px] text-[var(--text-muted)]">
-                      Max Spins in dieser Regel (leer = ∞)
+                      Max spins for this rule (empty = ∞)
                       <input
                         type="number"
                         min={0}
@@ -828,9 +846,9 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
 
       <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/80 p-3 grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="space-y-2">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Globale Stops</h3>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Global stops</h3>
           <label className="text-[11px] text-[var(--text-muted)] block">
-            Stop-Loss: Balance &lt; USD (leer = aus)
+            Stop-loss: balance &lt; USD (empty = off)
             <input
               type="number"
               step="0.01"
@@ -844,7 +862,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
             />
           </label>
           <label className="text-[11px] text-[var(--text-muted)] block">
-            Take-Profit: Balance ≥ USD (leer = aus)
+            Take-profit: balance ≥ USD (empty = off)
             <input
               type="number"
               step="0.01"
@@ -858,7 +876,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
             />
           </label>
           <label className="text-[11px] text-[var(--text-muted)] block">
-            Max. Gesamt-Spins (leer = aus)
+            Max total spins (empty = off)
             <input
               type="number"
               min={0}
@@ -872,7 +890,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
             />
           </label>
           <label className="text-[11px] text-[var(--text-muted)] block">
-            Max. Laufzeit (Minuten, leer = aus)
+            Max runtime (minutes, empty = off)
             <input
               type="number"
               min={0}
@@ -887,7 +905,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
             />
           </label>
           <label className="text-[11px] text-[var(--text-muted)] block">
-            Stop nach X Verlust-Spins in Folge (leer = aus)
+            Stop after X losing spins in a row (empty = off)
             <input
               type="number"
               min={1}
@@ -902,9 +920,9 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
           </label>
         </div>
         <div className="space-y-2">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Session &amp; Timing</h3>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Session &amp; timing</h3>
           <label className="text-[11px] text-[var(--text-muted)] block">
-            Source-Währung (Wallet)
+            Source currency (wallet)
             <input
               className="mt-0.5 w-full rounded-md border border-[var(--border)] bg-[var(--bg-deep)] px-2 py-1 text-sm"
               value={config.sourceCurrency}
@@ -913,7 +931,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
             />
           </label>
           <label className="text-[11px] text-[var(--text-muted)] block">
-            Ziel-Währung (Slot)
+            Target currency (slot)
             <input
               className="mt-0.5 w-full rounded-md border border-[var(--border)] bg-[var(--bg-deep)] px-2 py-1 text-sm"
               value={config.targetCurrency}
@@ -922,7 +940,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
             />
           </label>
           <label className="text-[11px] text-[var(--text-muted)] block">
-            Regel-Check alle {config.scanIntervalSec}s (2–120)
+            Rule check every {config.scanIntervalSec}s (2–120)
             <input
               type="range"
               min={2}
@@ -934,8 +952,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
             />
           </label>
           <p className="text-[10px] text-[var(--text-muted)] leading-snug m-0">
-            Dazwischen wird durchgehend gesponnen (kurze Pause zwischen Spins). Der Intervall steuert nur Slot-/Regelwechsel und
-            frische Kurse.
+            Spins continue between checks (short pause between spins). The interval only controls slot/rule switching and refreshed FX rates.
           </p>
         </div>
       </div>
@@ -973,21 +990,21 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
           Test Balance Scan
         </button>
         <button type="button" className="challenge-hub-action" onClick={saveJsonFile}>
-          Config speichern (JSON)
+          Save config (JSON)
         </button>
         <button type="button" className="challenge-hub-action" onClick={() => fileInputRef.current?.click()}>
-          Config laden (JSON)
+          Load config (JSON)
         </button>
         <input ref={fileInputRef} type="file" accept="application/json,.json" className="hidden" onChange={onPickJsonFile} />
         <button type="button" className="challenge-hub-action" onClick={resetToDemo} disabled={isRunning}>
-          Demo-Defaults
+          Demo defaults
         </button>
       </div>
 
       <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-deep)] p-3">
-        <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">Live-Log (letzte {MAX_LOG_LINES})</div>
+        <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">Live log (last {MAX_LOG_LINES})</div>
         <pre className="text-[11px] font-mono text-[var(--text)] whitespace-pre-wrap max-h-48 overflow-y-auto m-0">
-          {logs.length ? logs.join('\n') : 'Noch keine Einträge.'}
+          {logs.length ? logs.join('\n') : 'No entries yet.'}
         </pre>
       </div>
     </div>

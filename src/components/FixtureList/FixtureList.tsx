@@ -32,7 +32,7 @@ export function FixtureList({ sportSlug }: FixtureListProps) {
       <div className="flex-1 min-h-0 p-8 flex items-center justify-center" style={{ background: 'var(--app-bg-deep)' }}>
         <div className="flex flex-col items-center gap-5" style={{ color: 'var(--app-text-muted)' }}>
           <div className="w-10 h-10 rounded-full animate-spin border-2" style={{ borderColor: 'var(--app-accent)', borderTopColor: 'transparent', boxShadow: '0 0 12px var(--app-accent-glow)' }} />
-          <span className="text-sm font-semibold tracking-wide">Lade {displayTitle}…</span>
+          <span className="text-sm font-semibold tracking-wide">Loading {displayTitle}…</span>
         </div>
       </div>
     );

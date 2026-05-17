@@ -531,8 +531,8 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
       <div className="hunter-header">
         <div className="hunter-title">Telegram Challenge Hunter</div>
         <p className="hunter-meta" style={{ maxWidth: '56rem', lineHeight: 1.45 }}>
-          Läuft <strong>eigenständig</strong> wie der Auto-Hunter: Warteschlange, parallele Runs, Ziel-Multi –{' '}
-          <strong>ohne</strong> Wechsel zum Play-Tab. Telegram liefert neue Challenges (Live oder Text in die Queue).
+          Runs <strong>standalone</strong> like the auto-hunter: queue, parallel runs, target multiplier —{' '}
+          <strong>without</strong> switching to the Play tab. Telegram supplies new challenges (live or paste text into the queue).
         </p>
       </div>
 
@@ -545,26 +545,26 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
             <input
               value={apiIdStr}
               onChange={(e) => setApiIdStr(e.target.value)}
-              placeholder="API-ID"
+              placeholder="API ID"
               style={{ padding: '0.45rem', background: 'var(--bg-deep)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }}
             />
             <input
               type="password"
               value={apiHashStr}
               onChange={(e) => setApiHashStr(e.target.value)}
-              placeholder="API-Hash"
+              placeholder="API hash"
               style={{ padding: '0.45rem', background: 'var(--bg-deep)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }}
             />
             <input
               value={phoneStr}
               onChange={(e) => setPhoneStr(e.target.value)}
-              placeholder="Telefon E.164"
+              placeholder="Phone (E.164)"
               style={{ padding: '0.45rem', background: 'var(--bg-deep)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }}
             />
             <input
               value={channelStr}
               onChange={(e) => setChannelStr(e.target.value)}
-              placeholder="@kanal"
+              placeholder="@channel"
               style={{ padding: '0.45rem', background: 'var(--bg-deep)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)' }}
             />
           </div>
@@ -581,7 +581,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
                 else setLoginError('')
               }}
             >
-              API speichern
+              Save API
             </Button>
             <Button
               type="button"
@@ -596,7 +596,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
                     apiId: parseInt(apiIdStr, 10),
                     apiHash: apiHashStr.trim(),
                   })
-                  if (!r?.ok) setLoginError(r?.error || 'Login fehlgeschlagen')
+                  if (!r?.ok) setLoginError(r?.error || 'Login failed')
                   await refreshTgStatus()
                 } finally {
                   setLoginBusy(false)
@@ -623,7 +623,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
                 }
               }}
             >
-              Live lauschen
+              Listen live
             </Button>
             <Button
               type="button"
@@ -634,7 +634,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
                 setListening(false)
               }}
             >
-              Live stoppen
+              Stop live
             </Button>
           </div>
           {loginError && <p style={{ color: 'var(--error)', fontSize: '0.8rem' }}>{loginError}</p>}
@@ -666,9 +666,9 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
 
       <div className="hunter-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) 1fr', gap: '1rem', alignItems: 'start' }}>
         <div className="hunter-card" style={{ padding: '1rem' }}>
-          <h3 className="hunter-section-title">Einstellungen (Run)</h3>
+          <h3 className="hunter-section-title">Run settings</h3>
           <div style={{ marginBottom: '0.5rem' }}>
-            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Quelle (Crypto)</label>
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Source (crypto)</label>
             <select
               value={sourceCurrency}
               onChange={(e) => setSourceCurrency(e.target.value)}
@@ -682,7 +682,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
             </select>
           </div>
           <div style={{ marginBottom: '0.5rem' }}>
-            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Ziel</label>
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Target</label>
             <select
               value={targetCurrency}
               onChange={(e) => setTargetCurrency(e.target.value)}
@@ -707,7 +707,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
               checked={autoOptimalTargetCurrency}
               onChange={(e) => setAutoOptimalTargetCurrency(e.target.checked)}
             />
-            Zielwährung automatisch (wie Hunter)
+            Auto-pick target currency (like hunter)
           </label>
           <div
             style={{
@@ -719,10 +719,10 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
             }}
           >
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
-              Packs / Cases (GraphQL <code style={{ fontSize: '0.7rem' }}>casesBet</code>): Pflichtfelder{' '}
+              Packs / Cases (GraphQL <code style={{ fontSize: '0.7rem' }}>casesBet</code>): required fields{' '}
               <code style={{ fontSize: '0.65rem' }}>amount, currency, identifier, difficulty</code>.{' '}
-              <code style={{ fontSize: '0.7rem' }}>state</code> nur als{' '}
-              <code style={{ fontSize: '0.65rem' }}>... on CasinoGamePacks</code> (Karten).
+              <code style={{ fontSize: '0.7rem' }}>state</code> only as{' '}
+              <code style={{ fontSize: '0.65rem' }}>... on CasinoGamePacks</code> (cards).
             </div>
             <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem' }}>
               difficulty (CasesDifficultyEnum)
@@ -750,7 +750,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
             <input
               value={casesBetIdentifierStr}
               onChange={(e) => setCasesBetIdentifierStr(e.target.value)}
-              placeholder='identifier, z. B. "fzaf3vK72t9KR__-KKvtG"'
+              placeholder='identifier, e.g. "fzaf3vK72t9KR__-KKvtG"'
               autoComplete="off"
               spellCheck={false}
               style={{
@@ -771,10 +771,10 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
                 checked={chainCasesBetIdentifier}
                 onChange={(e) => setChainCasesBetIdentifier(e.target.checked)}
               />
-              Nächsten Spin mit Bet-<code style={{ fontSize: '0.68rem' }}>id</code> aus der Antwort (Kette)
+              Chain next spin using <code style={{ fontSize: '0.68rem' }}>id</code> from response
             </label>
           </div>
-          <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Parallel max.</label>
+          <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Max parallel</label>
           <input
             type="range"
             min={1}
@@ -793,7 +793,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
                 type="text"
                 inputMode="decimal"
                 autoComplete="off"
-                placeholder="0 = aus"
+                placeholder="0 = off"
                 value={stopLossStr}
                 onChange={(e) => {
                   const raw = e.target.value
@@ -815,7 +815,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
                 type="text"
                 inputMode="decimal"
                 autoComplete="off"
-                placeholder="0 = aus"
+                placeholder="0 = off"
                 value={stopProfitStr}
                 onChange={(e) => {
                   const raw = e.target.value
@@ -834,20 +834,20 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
             <Button variant={autoStart ? 'success' : 'outline'} onClick={() => setAutoStart((a) => !a)}>
-              Auto-Start: {autoStart ? 'an' : 'aus'}
+              Auto-start: {autoStart ? 'on' : 'off'}
             </Button>
             <Button variant="danger" onClick={stopAllRunners}>
-              Alle stoppen
+              Stop all
             </Button>
             <Button variant="secondary" onClick={resetTelegramHunter}>
-              Zurücksetzen
+              Reset
             </Button>
           </div>
         </div>
 
         <div className="hunter-main" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <div className="hunter-card" style={{ padding: '1rem' }}>
-            <div className="hunter-section-title">Text → Warteschlange</div>
+            <div className="hunter-section-title">Text → queue</div>
             <textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -864,14 +864,14 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
               }}
             />
             <Button style={{ marginTop: '0.5rem' }} onClick={handleManualQueue} disabled={!parsed.games.length}>
-              Erkannte Spiele in die Warteschlange
+              Queue detected games
             </Button>
             <p className="hunter-meta" style={{ marginTop: '0.35rem', fontSize: '0.72rem' }}>
-              Erkannt: {parsed.games.length} Spiel(e), Min. ${parsed.minBetUsd?.toFixed(2) ?? '—'},{' '}
+              Detected: {parsed.games.length} game(s), min. ${parsed.minBetUsd?.toFixed(2) ?? '—'},{' '}
               {shouldUseOriginalsOpenEnded(parsed) ? (
-                <>Originals (kein Multi-Ziel im Text – Spin bis Limit/Stop)</>
+                <>Originals (no multiplier target in text — spin until limit/stop)</>
               ) : (
-                <>Ziel-Multi ~{pickPrimaryTargetMultiplier(parsed)}×</>
+                <>Target multiplier ~{pickPrimaryTargetMultiplier(parsed)}×</>
               )}
               {parsed.isOriginalsChallenge && (
                 <span style={{ display: 'block', marginTop: '0.2rem', opacity: 0.9 }}>
@@ -888,13 +888,13 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
               <div className="hunter-kpi-value">{queue.length}</div>
             </div>
             <div className="hunter-kpi-card" style={{ padding: '0.65rem 1rem' }}>
-              <div className="hunter-kpi-label">Läuft</div>
+              <div className="hunter-kpi-label">Running</div>
               <div className="hunter-kpi-value">
                 {runningCount}/{maxParallelClamped}
               </div>
             </div>
             <div className="hunter-kpi-card" style={{ padding: '0.65rem 1rem' }}>
-              <div className="hunter-kpi-label">Netto USD</div>
+              <div className="hunter-kpi-label">Net USD</div>
               <div className="hunter-kpi-value" style={{ color: netUsd >= 0 ? 'var(--success)' : 'var(--error)' }}>
                 ${netUsd.toFixed(2)}
               </div>
@@ -902,7 +902,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
           </div>
 
           {activeRunList.length === 0 ? (
-            <div className="hunter-empty">Keine aktiven Telegram-Runs. Queue füllen oder Live einschalten.</div>
+            <div className="hunter-empty">No active Telegram runs. Fill the queue or turn on live listening.</div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
               {activeRunList.map((run) => {
@@ -920,17 +920,17 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
                         <span>{run.spins}</span>
                       </div>
                       <div style={STYLES.statRow}>
-                        <span>Ziel-Multi</span>
+                        <span>Target ×</span>
                         <span
                           style={{ color: 'var(--accent)', fontWeight: 600, textAlign: 'right', maxWidth: '65%' }}
                           title={run.originalsObjective || ''}
                         >
-                          {run.originalsOpenEnded ? 'Originals (offen)' : `${run.targetMultiplier}×`}
+                          {run.originalsOpenEnded ? 'Originals (open-ended)' : `${run.targetMultiplier}×`}
                         </span>
                       </div>
                       {run.originalsObjective ? (
                         <div style={{ ...STYLES.statRow, fontSize: '0.72rem', opacity: 0.9 }}>
-                          <span>Aufgabe</span>
+                          <span>Objective</span>
                           <span style={{ textAlign: 'right', maxWidth: '70%' }}>{run.originalsObjective}</span>
                         </div>
                       ) : null}
@@ -939,7 +939,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
                         <span>{(run.bestMultiRun ?? 0).toFixed(2)}×</span>
                       </div>
                       <div style={STYLES.statRow}>
-                        <span>Rekord Slot</span>
+                        <span>Slot record</span>
                         <span>
                           {run.slotSlug && bestMultiBySlot[run.slotSlug] != null
                             ? `${bestMultiBySlot[run.slotSlug].toFixed(2)}×`
@@ -947,7 +947,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
                         </span>
                       </div>
                       <div style={STYLES.statRow}>
-                        <span>Preis (TG)</span>
+                        <span>Prize (TG)</span>
                         <span>{prizeLine.main}</span>
                       </div>
                       <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem' }}>
@@ -955,7 +955,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
                           Stop
                         </Button>
                         <Button variant="outline" onClick={() => removeRun(run.id)}>
-                          Entfernen
+                          Remove
                         </Button>
                       </div>
                     </div>

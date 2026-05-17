@@ -10,10 +10,10 @@ import { formatBetLabel, formatChallengeAmountWithSymbol } from '../utils/format
 import { SkeletonChallenges } from './SkeletonLoader'
 
 const SORT_OPTIONS = [
-  { value: 'einsatz-asc', label: 'Einsatz: wenig → viel' },
-  { value: 'einsatz-desc', label: 'Einsatz: viel → wenig' },
-  { value: 'preis-asc', label: 'Preis: wenig → viel' },
-  { value: 'preis-desc', label: 'Preis: viel → wenig' },
+  { value: 'einsatz-asc', label: 'Min bet: low → high' },
+  { value: 'einsatz-desc', label: 'Min bet: high → low' },
+  { value: 'preis-asc', label: 'Prize: low → high' },
+  { value: 'preis-desc', label: 'Prize: high → low' },
 ]
 
 const STYLES = {
@@ -249,7 +249,7 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
       <div style={STYLES.container}>
         <h2 style={STYLES.title}>Challenges</h2>
         <p style={STYLES.help}>
-          Bitte mit Stake verbinden, um deine aktiven Challenges anzuzeigen.
+          Connect to Stake to see your active challenges.
         </p>
       </div>
     )
@@ -265,15 +265,15 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
         <h2 style={STYLES.title}>Challenges</h2>
         <div style={{ ...STYLES.sortRow, marginBottom: 'var(--space-3)' }}>
           <button type="button" onClick={() => setTab(TAB_ACTIVE)} style={{ padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: tab === TAB_ACTIVE ? 'var(--accent)' : 'var(--bg-elevated)', color: tab === TAB_ACTIVE ? 'var(--bg-deep)' : 'var(--text)', cursor: 'pointer', fontSize: '0.8rem' }}>
-            Aktiv
+            Active
           </button>
           <button type="button" onClick={() => setTab(TAB_COMPLETED)} style={{ padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: tab === TAB_COMPLETED ? 'var(--accent)' : 'var(--bg-elevated)', color: tab === TAB_COMPLETED ? 'var(--bg-deep)' : 'var(--text)', cursor: 'pointer', fontSize: '0.8rem', marginLeft: '0.25rem' }}>
-            Abgeschlossen
+            Completed
           </button>
         </div>
         <div style={{ ...STYLES.sortRow, marginBottom: 'var(--space-3)' }}>
           <button type="button" onClick={() => setSegment(SEGMENT_ALL)} style={{ padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: segment === SEGMENT_ALL ? 'var(--accent)' : 'var(--bg-elevated)', color: segment === SEGMENT_ALL ? 'var(--bg-deep)' : 'var(--text)', cursor: 'pointer', fontSize: '0.8rem' }}>
-            Alle
+            All
           </button>
           <button type="button" onClick={() => setSegment(SEGMENT_WEEKLY)} style={{ padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: segment === SEGMENT_WEEKLY ? 'var(--accent)' : 'var(--bg-elevated)', color: segment === SEGMENT_WEEKLY ? 'var(--bg-deep)' : 'var(--text)', cursor: 'pointer', fontSize: '0.8rem', marginLeft: '0.25rem' }}>
             Weekly
@@ -290,20 +290,20 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
         <h2 style={STYLES.title}>Challenges</h2>
         <p style={STYLES.help}>
           {tab === TAB_COMPLETED
-            ? 'Abgeschlossene Challenges von Stake.'
-            : 'Zeigt deine aktiven Stake-Challenges (Casino/Slots).'}
+            ? 'Completed challenges from Stake.'
+            : 'Shows your active Stake challenges (casino/slots).'}
         </p>
         <div style={{ ...STYLES.sortRow, marginBottom: 'var(--space-3)' }}>
           <button type="button" onClick={() => setTab(TAB_ACTIVE)} style={{ padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: tab === TAB_ACTIVE ? 'var(--accent)' : 'var(--bg-elevated)', color: tab === TAB_ACTIVE ? 'var(--bg-deep)' : 'var(--text)', cursor: 'pointer', fontSize: '0.8rem' }}>
-            Aktiv
+            Active
           </button>
           <button type="button" onClick={() => setTab(TAB_COMPLETED)} style={{ padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: tab === TAB_COMPLETED ? 'var(--accent)' : 'var(--bg-elevated)', color: tab === TAB_COMPLETED ? 'var(--bg-deep)' : 'var(--text)', cursor: 'pointer', fontSize: '0.8rem', marginLeft: '0.25rem' }}>
-            Abgeschlossen
+            Completed
           </button>
         </div>
         <div style={{ ...STYLES.sortRow, marginBottom: 'var(--space-3)' }}>
           <button type="button" onClick={() => setSegment(SEGMENT_ALL)} style={{ padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: segment === SEGMENT_ALL ? 'var(--accent)' : 'var(--bg-elevated)', color: segment === SEGMENT_ALL ? 'var(--bg-deep)' : 'var(--text)', cursor: 'pointer', fontSize: '0.8rem' }}>
-            Alle
+            All
           </button>
           <button type="button" onClick={() => setSegment(SEGMENT_WEEKLY)} style={{ padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: segment === SEGMENT_WEEKLY ? 'var(--accent)' : 'var(--bg-elevated)', color: segment === SEGMENT_WEEKLY ? 'var(--bg-deep)' : 'var(--text)', cursor: 'pointer', fontSize: '0.8rem', marginLeft: '0.25rem' }}>
             Weekly
@@ -328,7 +328,7 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
     <div style={STYLES.container}>
       <h2 style={STYLES.title}>Challenges</h2>
       <p style={STYLES.help}>
-        Klicke auf eine Challenge, um zu „Spielen“ zu wechseln und das Spiel mit dem Mindesteinsatz vorzuwählen.
+        Click a challenge to switch to Play and preselect the game with its minimum bet.
       </p>
       <div style={{ ...STYLES.sortRow, marginBottom: 'var(--space-2)' }}>
         <div style={{ display: 'flex', gap: '0.25rem' }}>
@@ -345,7 +345,7 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
               fontSize: '0.8rem',
             }}
           >
-            Aktiv
+            Active
           </button>
           <button
             type="button"
@@ -360,7 +360,7 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
               fontSize: '0.8rem',
             }}
           >
-            Abgeschlossen
+            Completed
           </button>
         </div>
         <div style={{ display: 'flex', gap: '0.25rem' }}>
@@ -377,7 +377,7 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
               fontSize: '0.8rem',
             }}
           >
-            Alle
+            All
           </button>
           <button
             type="button"
@@ -399,7 +399,7 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
           style={STYLES.sortSelect}
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
-          aria-label="Sortierung der Challenges"
+          aria-label="Sort challenges"
         >
           {SORT_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -411,15 +411,15 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
           type="search"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Slot suchen (Name oder Slug)..."
-          aria-label="Challenge Slot suchen"
+          placeholder="Search slot (name or slug)…"
+          aria-label="Search challenge slot"
           style={STYLES.searchInput}
         />
       </div>
       <div style={STYLES.list}>
         {filteredChallenges.length === 0 && (
           <div style={STYLES.empty}>
-            Keine Challenge passt zu "{searchTerm}".
+            {`No challenge matches "${searchTerm}".`}
           </div>
         )}
         {filteredChallenges.map((c) => {
@@ -452,7 +452,7 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
                   <button
                     type="button"
                     onClick={(e) => handleMarkCompleted(e, c)}
-                    title="Als erledigt markieren"
+                    title="Mark as completed"
                     style={{
                       padding: '0.15rem 0.4rem',
                       fontSize: '0.65rem',
@@ -463,7 +463,7 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
                       color: 'var(--text-muted)',
                     }}
                   >
-                    ✓ Markieren
+                    ✓ Mark done
                   </button>
                 )}
                 <span style={STYLES.itemMulti}>{c.targetMultiplier}×</span>

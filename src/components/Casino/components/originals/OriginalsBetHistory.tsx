@@ -55,7 +55,7 @@ export default function OriginalsBetHistory({
     <div className="casino-card space-y-4">
       <h3 className="casino-card-header text-base">
         <span className="casino-card-header-accent" />
-        Chart & Statistik
+        Chart & stats
       </h3>
 
       {chartData.length > 0 && (
@@ -86,16 +86,16 @@ export default function OriginalsBetHistory({
       </div>
 
       <div>
-        <div className="text-xs font-medium text-[var(--text-muted)] mb-1.5">Letzte Wetten (max. {maxBets})</div>
+        <div className="text-xs font-medium text-[var(--text-muted)] mb-1.5">Recent bets (max. {maxBets})</div>
         <ul className="max-h-40 overflow-y-auto rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-deep)]/50 divide-y divide-[var(--border-subtle)]">
           {[...limited].reverse().map((b, i) => (
             <li key={i} className="px-2 py-1.5 flex justify-between text-xs">
-              <span>Einsatz: {b.amount.toFixed(4)} → Payout: {(b.payout ?? 0).toFixed(4)}</span>
+              <span>Stake: {b.amount.toFixed(4)} → Payout: {(b.payout ?? 0).toFixed(4)}</span>
               <span className={b.win ? 'text-emerald-400' : 'text-red-400'}>{b.win ? 'Win' : 'Loss'}</span>
             </li>
           ))}
           {limited.length === 0 && (
-            <li className="px-2 py-3 text-[var(--text-muted)] text-xs">Noch keine Wetten.</li>
+            <li className="px-2 py-3 text-[var(--text-muted)] text-xs">No bets yet.</li>
           )}
         </ul>
       </div>
@@ -103,7 +103,7 @@ export default function OriginalsBetHistory({
       {onAutoBetDelayChange && (
         <div className="flex flex-wrap gap-4 items-center">
           <div className="flex items-center gap-2">
-            <label className="text-xs text-[var(--text-muted)]" title="0 = max. Tempo (5–15 Bets/Sek.)">Verzögerung zwischen Wetten (ms)</label>
+            <label className="text-xs text-[var(--text-muted)]" title="0 = maximum speed (about 5–15 bets/s)">Delay between bets (ms)</label>
             <input
               type="number"
               min="0"

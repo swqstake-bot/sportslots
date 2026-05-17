@@ -28,7 +28,7 @@ function getConfig() {
   const appName = import.meta.env.VITE_KEYAUTH_APP_NAME || 'Test1111';
   const version = import.meta.env.VITE_KEYAUTH_VERSION || '1.0.0';
   if (!ownerId || !appName) {
-    throw new Error('KeyAuth ist nicht konfiguriert (VITE_KEYAUTH_OWNER_ID, VITE_KEYAUTH_APP_NAME fehlen).');
+    throw new Error('KeyAuth is not configured (missing VITE_KEYAUTH_OWNER_ID, VITE_KEYAUTH_APP_NAME).');
   }
   return { ownerId, appName, version };
 }
@@ -71,24 +71,24 @@ export async function keyAuthInit(): Promise<KeyAuthInitResponse> {
   });
 
   if (data === 'KeyAuth_Invalid') {
-    throw new Error('KeyAuth: Diese Anwendung existiert nicht.');
+    throw new Error('KeyAuth: This application does not exist.');
   }
   
   if (typeof data === 'object') {
       if (data.message === 'invalidver' && data.download) {
-        throw new Error('KeyAuth: App veraltet. Bitte aktualisieren.');
+        throw new Error('KeyAuth: App is outdated. Please update.');
       }
       if (data.success === false) {
-        throw new Error(data.message || 'KeyAuth Init fehlgeschlagen.');
+        throw new Error(data.message || 'KeyAuth init failed.');
       }
       if (!data.sessionid) {
-        throw new Error('KeyAuth: Keine Session-ID erhalten.');
+        throw new Error('KeyAuth: No session ID received.');
       }
       cachedSessionId = data.sessionid;
       return { sessionid: data.sessionid };
   }
   
-  throw new Error('KeyAuth: Unerwartetes Antwortformat.');
+  throw new Error('KeyAuth: Unexpected response format.');
 }
 
 /**
@@ -135,11 +135,11 @@ export async function keyAuthLogin(username: string, password: string, hwid = ''
   const data = await doRequest(body);
   
   if (typeof data === 'string') {
-      throw new Error('KeyAuth: Unerwartete String-Antwort beim Login.');
+      throw new Error('KeyAuth: Unexpected string response on login.');
   }
 
   if (data.success === false) {
-    throw new Error(data.message || 'Login fehlgeschlagen');
+    throw new Error(data.message || 'Login failed');
   }
   return data;
 }

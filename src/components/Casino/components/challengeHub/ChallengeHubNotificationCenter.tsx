@@ -13,11 +13,12 @@ export const ChallengeHubNotificationCenter = memo(function ChallengeHubNotifica
     <div className="challenge-hub-inbox">
       <button
         type="button"
-        className="challenge-hub-action"
+        className={`challenge-hub-action challenge-hub-inbox-trigger ${unreadCount > 0 ? 'has-unread' : ''}`.trim()}
         onClick={() => setOpen((v) => !v)}
         title="Open notification center"
       >
-        Inbox {unreadCount > 0 ? `(${unreadCount})` : ''}
+        <span className="challenge-hub-inbox-trigger-label">Inbox</span>
+        {unreadCount > 0 ? <span className="challenge-hub-inbox-trigger-count">{unreadCount}</span> : null}
       </button>
       {open && (
         <div className="challenge-hub-inbox-panel">

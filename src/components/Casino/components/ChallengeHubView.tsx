@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ChallengeHubBetListPanel } from './challengeHub/ChallengeHubBetListPanel'
 import { ChallengeHubBetListProvider } from './challengeHub/ChallengeHubBetListContext'
-import { ChallengeHubHeroBar } from './challengeHub/ChallengeHubHeroBar'
+import { ChallengeHubNotificationCenter } from './challengeHub/ChallengeHubNotificationCenter'
 import { ChallengeHubTabStrip, type HubTab } from './challengeHub/ChallengeHubTabStrip'
 import { ChallengeHubTabContent } from './challengeHub/ChallengeHubTabContent'
 import type { HubStatsPayload } from './challengeHub/hubTypes'
@@ -27,7 +27,7 @@ export function ChallengeHubView({
   onHubStatsChange,
 }: ChallengeHubViewProps) {
   const [tab, setTab] = useState<HubTab>('casino')
-  const [hubStatsBySource, setHubStatsBySource] = useState<Record<string, HubStatsPayload>>({})
+  const [, setHubStatsBySource] = useState<Record<string, HubStatsPayload>>({})
   const [telegramEnabled, setTelegramEnabled] = useState<boolean>(() => {
     try {
       return localStorage.getItem(TELEGRAM_GATE_KEY) === '1'
@@ -86,25 +86,6 @@ export function ChallengeHubView({
     return () => window.removeEventListener('challenge-hub-open-tab', onExternalOpenTab as EventListener)
   }, [])
 
-  const aggregated = useMemo(() => {
-    const values = Object.values(hubStatsBySource)
-    if (values.length === 0) return { queued: 0, running: 0, completed: 0, bestMulti: 0 }
-    const latest = values.reduce((best, item) => {
-      if (!best) return item
-      return Number(item?.ts || 0) >= Number(best?.ts || 0) ? item : best
-    }, values[0])
-    const bestMulti = values.reduce((m, item) => Math.max(m, Number(item.bestMulti) || 0), 0)
-    const lastUpdateTs = Number(latest?.ts) || 0
-    return {
-      queued: Number(latest?.queued) || 0,
-      running: Number(latest?.running) || 0,
-      completed: Number(latest?.completed) || 0,
-      bestMulti,
-      sourceCount: values.length,
-      lastUpdateTs,
-    }
-  }, [hubStatsBySource])
-
   const handleHubStatsChange = useCallback((payload: HubStatsPayload) => {
     if (!payload?.source) return
     setHubStatsBySource((prev) => {
@@ -129,28 +110,35 @@ export function ChallengeHubView({
   }, [onHubStatsChange])
 
   return (
-    <div className="challenge-hub-root space-y-4">
-      <ChallengeHubHeroBar aggregated={aggregated} />
-
-      <ChallengeHubTabStrip tab={tab} onTabChange={handleTabChange} />
+    <div className="challenge-hub-root flex flex-col gap-2.5">
+      <div className="challenge-hub-topbar">
+        <ChallengeHubTabStrip tab={tab} onTabChange={handleTabChange} />
+        <div className="challenge-hub-topbar-inbox">
+          <ChallengeHubNotificationCenter />
+        </div>
+      </div>
 
       <ChallengeHubBetListProvider>
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-4 items-start">
-          <div className="space-y-4 min-w-0">
-            <ChallengeHubTabContent
-              tab={tab}
-              accessToken={accessToken}
-              webSlots={webSlots}
-              onDiscoveredSlots={onDiscoveredSlots}
-              onSelectChallenge={onSelectChallenge}
-              onHubStatsChange={handleHubStatsChange}
-              telegramEnabled={telegramEnabled}
-              setTelegramEnabled={setTelegramEnabled}
-              telegramUsage={telegramUsage}
-            />
-          </div>
+        <div className="challenge-hub-canvas">
+          <div className="challenge-hub-workbench">
+            <div className="min-w-0">
+              <ChallengeHubTabContent
+                tab={tab}
+                accessToken={accessToken}
+                webSlots={webSlots}
+                onDiscoveredSlots={onDiscoveredSlots}
+                onSelectChallenge={onSelectChallenge}
+                onHubStatsChange={handleHubStatsChange}
+                telegramEnabled={telegramEnabled}
+                setTelegramEnabled={setTelegramEnabled}
+                telegramUsage={telegramUsage}
+              />
+            </div>
 
-          <ChallengeHubBetListPanel />
+            <div className="challenge-hub-side-column">
+              <ChallengeHubBetListPanel />
+            </div>
+          </div>
         </div>
       </ChallengeHubBetListProvider>
     </div>

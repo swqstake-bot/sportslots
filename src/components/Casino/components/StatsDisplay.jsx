@@ -98,10 +98,10 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
 
   return (
     <div style={cardStyle}>
-      <div style={titleStyle}>Statistik</div>
+      <div style={titleStyle}>Stats</div>
       <div style={{ fontSize: minimal ? '0.5rem' : (compact ? '0.58rem' : '0.65rem'), color: 'var(--text-muted)', marginBottom: compact ? '0.2rem' : '0.35rem' }}>
-        Einsatz/Gewinn/Netto/Kontostand: USD (präzise akkumuliert, Anzeige in Cent)
-        {currencyCode ? ` · Spiel: ${String(currencyCode).toUpperCase()}` : ''}
+        Stake / win / net / balance: USD (precisely accumulated, displayed in cents)
+        {currencyCode ? ` · Game: ${String(currencyCode).toUpperCase()}` : ''}
       </div>
       <div style={{ ...STYLES.grid, gap: minimal ? '0.12rem 0.4rem' : (compact ? '0.2rem 0.6rem' : '0.5rem 1.5rem') }}>
         <div style={STYLES.item}>
@@ -109,15 +109,15 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
           <span style={valueStyle}>{displayStats.spins}</span>
         </div>
         <div style={STYLES.item}>
-          <span style={STYLES.label}>Gesamteinsatz</span>
+          <span style={STYLES.label}>Total wagered</span>
           <span style={valueStyle}>{formatUsdCentsLine(displayStats.totalWagered)}</span>
         </div>
         <div style={STYLES.item}>
-          <span style={STYLES.label}>Gewinne gesamt</span>
+          <span style={STYLES.label}>Total won</span>
           <span style={valueStyle}>{formatUsdCentsLine(displayStats.totalWon)}</span>
         </div>
         <div style={STYLES.item}>
-          <span style={STYLES.label}>Netto</span>
+          <span style={STYLES.label}>Net</span>
           <span
             style={{
               ...valueStyle,
@@ -128,19 +128,19 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
           </span>
         </div>
         <div style={STYLES.item}>
-          <span style={STYLES.label}>Gewinne / Verluste / Even</span>
+          <span style={STYLES.label}>Wins / losses / even</span>
           <span style={valueStyle}>
             {displayStats.winCount} / {displayStats.lossCount} / {displayStats.breakEvenCount}
           </span>
         </div>
         {(displayStats.fxMissingCount > 0) && (
         <div style={STYLES.item}>
-          <span style={STYLES.label}>FX nicht bewertet</span>
+          <span style={STYLES.label}>FX not valued</span>
           <span style={valueStyle}>{displayStats.fxMissingCount} Spin(s)</span>
         </div>
         )}
         <div style={STYLES.item}>
-          <span style={STYLES.label}>FX bewertet</span>
+          <span style={STYLES.label}>FX valued</span>
           <span style={valueStyle}>{displayStats.fxValuatedCount} Spin(s)</span>
         </div>
         <div style={STYLES.item}>
@@ -150,21 +150,21 @@ export default function StatsDisplay({ stats, currencyCode, compact = false, min
           </span>
         </div>
         <div style={STYLES.item}>
-          <span style={STYLES.label}>Größter Gewinn</span>
+          <span style={STYLES.label}>Biggest win</span>
           <span style={{ ...valueStyle, ...STYLES.valuePositive }}>
             {formatUsdCentsLine(displayStats.biggestWin)}
           </span>
         </div>
         {(displayStats.biggestMultiplier > 0) && (
         <div style={STYLES.item}>
-          <span style={STYLES.label}>Höchster Multi</span>
+          <span style={STYLES.label}>Highest multi</span>
           <span style={{ ...valueStyle, ...STYLES.valuePositive }}>
             {displayStats.biggestMultiplier.toFixed(1)}×
           </span>
         </div>
         )}
         <div style={STYLES.item}>
-          <span style={STYLES.label}>Kontostand</span>
+          <span style={STYLES.label}>Balance</span>
           <span style={valueStyle}>
             {formatBalanceLine(displayStats.currentBalanceRaw, displayStats.currentBalanceCurrency || currencyCode)}
           </span>

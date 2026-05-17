@@ -185,7 +185,7 @@ export default function SlotWheel({ slots = [], disabled, openedSlugs = [], onWi
           opacity: disabled || spinning || slots.length < 2 || availableCount < 1 ? 0.6 : 1,
         }}
       >
-        {spinning ? 'Dreht…' : availableCount < 1 ? 'Alle geöffnet' : '🎡 Drehen'}
+        {spinning ? 'Spinning…' : availableCount < 1 ? 'All opened' : '🎡 Spin'}
       </button>
       {winner && <div style={STYLES.result}>→ {winner}</div>}
     </div>
