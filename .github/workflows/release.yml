@@ -61,8 +61,14 @@ jobs:
           npm run lint
           npm run qa:gate
 
+      # electron-builder downloads NSIS/winCodeSign from GitHub Releases; 502s are transient.
       - name: Build and Publish
+        uses: nick-fields/retry@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run build:publish
+        with:
+          timeout_minutes: 45
+          max_attempts: 3
+          retry_wait_seconds: 60
+          command: npm run build:publish
