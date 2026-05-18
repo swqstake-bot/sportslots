@@ -28,7 +28,7 @@ export function parseStoredTopEntries(): TopEntry[] {
     const raw = localStorage.getItem(TOP_DOMAIN_STORAGE_KEY)
     const parsed = raw ? JSON.parse(raw) : []
     if (!Array.isArray(parsed)) return []
-    return parsed
+    const rows = parsed
       .map((x) => ({
         key: String(x?.key || ''),
         id: String(x?.id || ''),
@@ -40,7 +40,7 @@ export function parseStoredTopEntries(): TopEntry[] {
         addedAt: Number(x?.addedAt) || 0,
       }))
       .filter((x) => x.key && Number.isFinite(x.multiplier) && x.multiplier > 0)
-      .slice(0, TOP_DOMAIN_STORAGE_MAX)
+    return dedupeTopEntries(rows)
   } catch {
     return []
   }
@@ -74,39 +74,91 @@ export function toTopEntry(row: any): TopEntry | null {
   }
 }
 
+function normalizeSlotNameKey(name: string): string {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+}
+
+function roundMultiplierKey(multiplier: number): number {
+  return Math.round(multiplier * 100) / 100
+}
+
+/** Same spin from hub feed + logger often carries different ids until shareId is known. */
+function sameTopEntryFingerprint(a: TopEntry, b: TopEntry): boolean {
+  if (!a || !b) return false
+  if (normalizeSlotNameKey(a.slotName) !== normalizeSlotNameKey(b.slotName)) return false
+  if (a.winAmount !== b.winAmount || a.winAmount <= 0) return false
+  return roundMultiplierKey(a.multiplier) === roundMultiplierKey(b.multiplier) && roundMultiplierKey(a.multiplier) > 0
+}
+
 function sameTopEntryIdentity(a: TopEntry, b: TopEntry): boolean {
   if (!a || !b) return false
   if (a.key && b.key && a.key === b.key) return true
   if (a.id && b.id && a.id === b.id) return true
   if (a.shareId && b.shareId && a.shareId === b.shareId) return true
-  return false
+  return sameTopEntryFingerprint(a, b)
+}
+
+function topEntryRichnessScore(entry: TopEntry): number {
+  let score = 0
+  if (entry.shareId) score += 8
+  if (entry.id && !entry.id.includes(':')) score += 4
+  if (entry.id) score += 2
+  if (entry.key && entry.key === entry.shareId) score += 1
+  return score
+}
+
+function pickPreferredTopEntry(a: TopEntry, b: TopEntry): TopEntry {
+  const primary = topEntryRichnessScore(a) >= topEntryRichnessScore(b) ? a : b
+  const secondary = primary === a ? b : a
+  const shareId = primary.shareId || secondary.shareId
+  const id = primary.id || secondary.id
+  const key = shareId || id || primary.key || secondary.key
+  const multiplier = Math.max(primary.multiplier, secondary.multiplier)
+  const winAmount = Math.max(primary.winAmount, secondary.winAmount)
+  return {
+    ...secondary,
+    ...primary,
+    key,
+    id,
+    shareId,
+    multiplier,
+    winAmount,
+    addedAt: Math.max(primary.addedAt, secondary.addedAt),
+    slotName: primary.slotName || secondary.slotName,
+    currencyCode: primary.currencyCode || secondary.currencyCode,
+  }
+}
+
+function upsertTopEntryList(list: TopEntry[], next: TopEntry): TopEntry[] {
+  const idx = list.findIndex((existing) => sameTopEntryIdentity(existing, next))
+  if (idx < 0) return [...list, next]
+  const out = list.slice()
+  out[idx] = pickPreferredTopEntry(list[idx], next)
+  return out
+}
+
+export function dedupeTopEntries(entries: TopEntry[]): TopEntry[] {
+  let list: TopEntry[] = []
+  for (const entry of entries || []) {
+    if (!entry?.key) continue
+    list = upsertTopEntryList(list, entry)
+  }
+  return list
+    .sort((a, b) => (b.multiplier - a.multiplier) || (b.winAmount - a.winAmount) || (b.addedAt - a.addedAt))
+    .slice(0, TOP_DOMAIN_STORAGE_MAX)
 }
 
 export function mergeTopEntries(prev: TopEntry[], rows: any[]): TopEntry[] {
-  const map = new Map<string, TopEntry>()
-  for (const item of prev || []) {
-    if (!item?.key) continue
-    map.set(item.key, item)
-  }
+  let list = dedupeTopEntries(prev || [])
   for (const row of rows || []) {
     const next = toTopEntry(row)
     if (!next) continue
-    let matchedKey: string | null = null
-    let cur: TopEntry | undefined
-    for (const [k, existing] of map.entries()) {
-      if (!existing) continue
-      if (sameTopEntryIdentity(existing, next)) {
-        matchedKey = k
-        cur = existing
-        break
-      }
-    }
-    if (!cur || next.multiplier > cur.multiplier || (next.multiplier === cur.multiplier && next.winAmount > cur.winAmount)) {
-      if (matchedKey && matchedKey !== next.key) map.delete(matchedKey)
-      map.set(next.key, next)
-    }
+    list = upsertTopEntryList(list, next)
   }
-  return Array.from(map.values())
+  return list
     .sort((a, b) => (b.multiplier - a.multiplier) || (b.winAmount - a.winAmount) || (b.addedAt - a.addedAt))
     .slice(0, TOP_DOMAIN_STORAGE_MAX)
 }

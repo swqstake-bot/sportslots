@@ -7,6 +7,7 @@ import { useChallengeHubBetListOptional } from './ChallengeHubBetListContext'
 import { formatAmount } from '../../utils/formatAmount'
 import {
   parseStoredTopEntries,
+  dedupeTopEntries,
   mergeTopEntries,
   loggerBetToTopCandidate,
   persistTopEntries,
@@ -27,6 +28,10 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
   const [highlightsOpen, setHighlightsOpen] = useState(true)
   const [highlightMode, setHighlightMode] = useState<'multis' | 'wins' | 'slots'>('multis')
   const [topMultisAll, setTopMultisAll] = useState<TopEntry[]>(() => parseStoredTopEntries())
+
+  useEffect(() => {
+    setTopMultisAll((prev) => dedupeTopEntries(prev))
+  }, [])
 
   useEffect(() => {
     let cancelled = false
