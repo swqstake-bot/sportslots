@@ -165,23 +165,140 @@ async function fetchBetDetails(accessToken, betIdentifier) {
   return fetchBetPreviewRest(variants[0] || betIdentifier, sessionToken)
 }
 
-/** Basis-URL ohne /page/N/ – für Paginierung */
+/** Basis-URL ohne /page/N/ und ohne ?page= – für Paginierung */
 function getTopicBaseUrl(url) {
-  return url.replace(/\/page\/\d+\/?(\#.*)?$/i, '').replace(/\/?$/, '')
+  try {
+    const u = new URL(url.trim())
+    u.hash = ''
+    u.search = ''
+    let path = u.pathname.replace(/\/page\/\d+\/?$/i, '')
+    if (path.endsWith('/')) path = path.slice(0, -1)
+    u.pathname = path || '/'
+    return u.toString().replace(/\/$/, '')
+  } catch {
+    return url.replace(/\/page\/\d+\/?(\#.*)?$/i, '').replace(/\/?$/, '').split('?')[0].split('#')[0].trim()
+  }
+}
+
+/** Nächste Seite aus <link rel="next"> / <a rel="next"> (IPS / Stake Community zuverlässiger als blind /page/N/) */
+function extractRelNextHref(html) {
+  if (!html || typeof html !== 'string') return null
+  const patterns = [
+    /<link[^>]*\brel=["']next["'][^>]*\bhref=["']([^"']+)["'][^>]*>/i,
+    /<link[^>]*\bhref=["']([^"']+)["'][^>]*\brel=["']next["'][^>]*>/i,
+    /<a[^>]*\brel=["']next["'][^>]*\bhref=["']([^"']+)["'][^>]*>/i,
+    /<a[^>]*\bhref=["']([^"']+)["'][^>]*\brel=["']next["'][^>]*>/i,
+  ]
+  for (const re of patterns) {
+    const m = html.match(re)
+    if (m?.[1]) return m[1].replace(/&amp;/g, '&').trim()
+  }
+  return null
+}
+
+function absolutizeForumUrl(href, baseHref) {
+  if (!href) return null
+  try {
+    return new URL(href, baseHref).href
+  } catch {
+    return null
+  }
 }
 
 /** Liest Gesamtseitenanzahl aus Forum-HTML (Invision/Stake Community) */
 function parseTotalPages(html) {
-  const m = html.match(/page\s+1\s+of\s+(\d+)/i)
-    || html.match(/data-ipspages="(\d+)"/)
-    || html.match(/\/page\/(\d+)\/[^>]*>.*?last/i)
-  if (m) return parseInt(m[1], 10)
+  if (!html || typeof html !== 'string') return null
+  const m =
+    html.match(/page\s+1\s+of\s+(\d+)/i)
+    || html.match(/\bPage\s+1\s+of\s+(\d+)/i)
+    || html.match(/data-ipspages=["'](\d+)["']/i)
+    || html.match(/data-pages=["'](\d+)["']/i)
+    || html.match(/class="[^"]*ipsPagination[^"]*"[^>]*data-pages=["'](\d+)["']/i)
+    || html.match(/\/page\/(\d+)\/[^>]*>[\s\S]*?\blast\b/i)
+  if (m) {
+    const n = parseInt(m[1], 10)
+    return Number.isFinite(n) && n > 0 ? n : null
+  }
+  const topicPageMatches = html.match(/\/topic\/[^"'\s]*\/page\/(\d+)\//gi)
+  if (topicPageMatches) {
+    const nums = topicPageMatches
+      .map((s) => {
+        const x = /\/page\/(\d+)\//i.exec(s)
+        return x ? parseInt(x[1], 10) : 0
+      })
+      .filter((n) => n > 0)
+    if (nums.length) return Math.max(...nums)
+  }
   const pageRefs = html.match(/\/page\/(\d+)\//g)
   if (pageRefs) {
-    const nums = pageRefs.map((s) => parseInt(s.replace(/\D/g, ''), 10)).filter((n) => n > 0)
+    const nums = pageRefs
+      .map((s) => parseInt(s.replace(/\D/g, ''), 10))
+      .filter((n) => n > 0 && n <= 5000)
     return nums.length ? Math.max(...nums) : null
   }
   return null
+}
+
+function buildForumBrowserHeaders(referer) {
+  const ref = referer && referer.startsWith('http') ? referer : 'https://stakecommunity.com/'
+  return {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9,de;q=0.8',
+    Referer: ref,
+    Origin: 'https://stakecommunity.com',
+    DNT: '1',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'same-origin',
+  }
+}
+
+async function fetchForumPageViaSession(pageUrl, referer) {
+  if (!window.electronAPI?.forumFetchTopicHtml) return null
+  const r = await window.electronAPI.forumFetchTopicHtml({ url: pageUrl, referer })
+  if (!r.ok || r.skipped) return null
+  return {
+    status: r.status,
+    statusText: r.statusText || '',
+    headers: {},
+    data: r.data,
+    finalUrl: r.finalUrl || pageUrl,
+  }
+}
+
+/**
+ * GET forum HTML; bei 404 auf /topic/slug/page/N/ alternativ ?page=N versuchen (IPS-Konfigurationen).
+ */
+async function fetchForumPage(proxyRequest, pageUrl, headers) {
+  let res = await proxyRequest({ url: pageUrl, method: 'GET', headers })
+  if (res.status === 404 && /\/page\/\d+\/?(\?.*)?$/.test(pageUrl)) {
+    const alt = pageUrl.replace(/\/page\/(\d+)\/?(\?.*)?$/i, (_, n) => `/?page=${n}`)
+    const res2 = await proxyRequest({ url: alt, method: 'GET', headers })
+    if (res2.status === 200) return { ...res2, finalUrl: res2.finalUrl || alt }
+  }
+  return res
+}
+
+async function tryForumPageSessionThen404Fallback(pageUrl, referer) {
+  let res = await fetchForumPageViaSession(pageUrl, referer)
+  if (res && res.status === 404 && /\/page\/\d+\/?(\?.*)?$/.test(pageUrl)) {
+    const alt = pageUrl.replace(/\/page\/(\d+)\/?(\?.*)?$/i, (_, n) => `/?page=${n}`)
+    const res2 = await fetchForumPageViaSession(alt, referer)
+    if (res2 && res2.status === 200) return { ...res2, finalUrl: res2.finalUrl || alt }
+  }
+  return res
+}
+
+async function fetchForumPageSmart(proxyRequest, pageUrl, referer, useForumSession) {
+  if (useForumSession) {
+    const res = await tryForumPageSessionThen404Fallback(pageUrl, referer)
+    if (res && res.status === 200) return res
+  }
+  const headers = buildForumBrowserHeaders(referer)
+  return fetchForumPage(proxyRequest, pageUrl, headers)
 }
 
 /**
@@ -198,40 +315,120 @@ export async function scrapeForumBets(forumUrl, accessToken, opts = {}) {
   }
 
   const baseUrl = getTopicBaseUrl(url)
-  const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
 
   if (!window.electronAPI?.proxyRequest) {
     throw new Error('Electron proxy is not available.')
   }
 
+  const proxyRequest = (opts) => window.electronAPI.proxyRequest(opts)
+
+  let forumUseSession = false
+  try {
+    if (window.electronAPI?.forumSessionStatus) {
+      const st = await window.electronAPI.forumSessionStatus()
+      forumUseSession = Boolean(st?.hasCookies)
+    }
+  } catch (_) {}
+
+  let referer = 'https://stakecommunity.com/'
+
   const allIds = new Set()
   let totalPagesHint = 1
-  let page = 1
+  let page = 0
+  let currentUrl = `${baseUrl.replace(/\/$/, '')}/`
+  const visited = new Set()
   const maxPages = 100
   const startedAt = Date.now()
+  let forum403Logged = false
 
-  while (page <= maxPages) {
-    const pageUrl = page === 1 ? baseUrl + '/' : `${baseUrl}/page/${page}/`
+  while (page < maxPages && currentUrl) {
+    if (visited.has(currentUrl)) break
+    visited.add(currentUrl)
+    page += 1
+
     try {
-      const res = await window.electronAPI.proxyRequest({ url: pageUrl, method: 'GET', headers })
-      if (res.status === 404 || res.status >= 500) break
-      const html = res.data
+      const res = await fetchForumPageSmart(proxyRequest, currentUrl, referer, forumUseSession)
+      if (res.status === 404 || res.status >= 500) {
+        logApiCall({
+          type: 'forum/scrape/page',
+          endpoint: currentUrl,
+          request: { page, totalPagesHint },
+          response: { status: res.status, statusText: res.statusText || '', finalUrl: res.finalUrl || '' },
+          error: `Forum page HTTP ${res.status} — pagination stopped`,
+          durationMs: null,
+        })
+        break
+      }
+
+      if (res.status === 403 && !forum403Logged) {
+        forum403Logged = true
+        logApiCall({
+          type: 'forum/scrape/page',
+          endpoint: currentUrl,
+          request: { page, totalPagesHint },
+          response: {
+            status: res.status,
+            finalUrl: res.finalUrl || '',
+            htmlPreview: (typeof res.data === 'string' ? res.data : '').slice(0, 400),
+          },
+          error: 'Forum page HTTP 403 (blocked / Cloudflare / login wall?)',
+          durationMs: null,
+        })
+      }
+
+      const html = typeof res.data === 'string' ? res.data : String(res.data ?? '')
+      const resolvedBase = res.finalUrl || currentUrl
+      referer = resolvedBase
+
       if (page === 1) {
         const parsed = parseTotalPages(html)
         if (parsed) totalPagesHint = Math.min(parsed, maxPages)
       }
+
       const pageIds = extractBetIds(html)
       for (const id of pageIds) allIds.add(id)
-      if (onProgress) onProgress(0, 0, `Page ${page}${totalPagesHint > 1 ? `/${totalPagesHint}` : ''}`)
-      if (page > 1 && pageIds.length === 0) break
-      if (totalPagesHint > 1 && page >= totalPagesHint) break
-      page++
-      await new Promise((r) => setTimeout(r, 150))
+
+      if (onProgress) {
+        onProgress(0, 0, `Page ${page}${totalPagesHint > 1 ? `/${totalPagesHint}` : ''}`)
+      }
+
+      const relNextRaw = extractRelNextHref(html)
+      const relNext = relNextRaw ? absolutizeForumUrl(relNextRaw, resolvedBase) : null
+
+      if (page > 1 && pageIds.length === 0 && !relNext) {
+        if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
+          console.warn('[forum/scrape] Stopping: no bet IDs on page', page, currentUrl)
+        }
+        logApiCall({
+          type: 'forum/scrape/page',
+          endpoint: currentUrl,
+          request: { page, totalPagesHint, reason: 'pagination_end_empty_page' },
+          response: { idsOnPage: 0 },
+          error: null,
+          level: 'info',
+          durationMs: null,
+        })
+        break
+      }
+
+      let nextUrl = null
+      if (relNext && relNext !== currentUrl) {
+        nextUrl = relNext
+      } else if (totalPagesHint > 1 && page >= totalPagesHint) {
+        nextUrl = null
+      } else {
+        const nextNum = page + 1
+        if (nextNum > maxPages) nextUrl = null
+        else nextUrl = `${baseUrl.replace(/\/$/, '')}/page/${nextNum}/`
+      }
+
+      currentUrl = nextUrl
+      if (currentUrl) await new Promise((r) => setTimeout(r, 150))
     } catch (e) {
-      console.error('Forum page fetch failed', page, e)
+      console.error('Forum page fetch failed', page, currentUrl, e)
       logApiCall({
         type: 'forum/scrape/page',
-        endpoint: pageUrl,
+        endpoint: currentUrl,
         request: { page, totalPagesHint },
         response: null,
         error: e?.message || String(e),

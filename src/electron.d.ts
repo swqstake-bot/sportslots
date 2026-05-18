@@ -46,6 +46,18 @@ export interface ElectronAPI {
   }>;
   onSlotPopupClosed: (callback: (payload: { popupId: string; slug: string; closedAt: string }) => void) => () => void;
   proxyRequest: (options: { url: string; method?: string; headers?: Record<string, string>; body?: any }) => Promise<{ status: number; statusText: string; headers: any; data: string; finalUrl: string }>;
+  /** Open stakecommunity.com login in an isolated Electron profile (persist:stakecommunity-forum). */
+  forumOpenLogin: () => Promise<{ ok: boolean }>;
+  forumSessionStatus: () => Promise<{ hasCookies: boolean; hasCf: boolean; cookieCount: number }>;
+  forumFetchTopicHtml: (payload: { url: string; referer?: string }) => Promise<{
+    ok: boolean;
+    skipped: boolean;
+    status: number;
+    statusText: string;
+    data: string;
+    finalUrl: string;
+    error?: string;
+  }>;
   saveSlotSpinSample: (payload: { slotSlug: string; slotName?: string; providerId?: string; request: any; response: any }) => Promise<void>;
   getSlotSpinSamples: () => Promise<Record<string, any[]>>;
   getSpinSamplesDir: () => Promise<string>;

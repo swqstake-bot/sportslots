@@ -61,15 +61,11 @@ export function logApiCall({ type, endpoint, request, response, error, durationM
   logs.push(entry)
   saveLogs(logs)
 
-  // Console logging on hot-path is expensive; keep it opt-in.
-  if (window?.__SLOTBOT_VERBOSE_LOGS__ === true) {
-    const logFn = error ? console.error : console.log
-    const prefix = `[${type}]`
-    if (error) {
-      logFn(prefix, error, { request: entry.request, response: entry.response, durationMs })
-    } else {
-      logFn(prefix, { request: entry.request, response: entry.response, durationMs })
-    }
+  // Errors always go to the console (DevTools / terminal) so they are visible without verbose mode.
+  if (error) {
+    console.error('[slotbot-api]', type, endpoint || '', String(error), durationMs != null ? `${durationMs}ms` : '')
+  } else if (typeof import.meta !== 'undefined' && import.meta.env?.DEV && window?.__SLOTBOT_VERBOSE_LOGS__ === true) {
+    console.log('[slotbot-api]', type, endpoint || '', { request: entry.request, response: entry.response, durationMs })
   }
 }
 

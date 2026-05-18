@@ -60,6 +60,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return () => ipcRenderer.removeListener('slot-popup-closed', handler);
     },
     proxyRequest: (options: any) => ipcRenderer.invoke('proxy-request', options),
+    /** Stake Community forum: isolated session (cf_clearance, login) — same idea as Appeals Monitor. */
+    forumOpenLogin: () => ipcRenderer.invoke('forum-open-login') as Promise<{ ok: boolean }>,
+    forumSessionStatus: () =>
+        ipcRenderer.invoke('forum-session-status') as Promise<{ hasCookies: boolean; hasCf: boolean; cookieCount: number }>,
+    forumFetchTopicHtml: (payload: { url: string; referer?: string }) =>
+        ipcRenderer.invoke('forum-fetch-topic-html', payload) as Promise<{
+            ok: boolean;
+            skipped: boolean;
+            status: number;
+            statusText: string;
+            data: string;
+            finalUrl: string;
+            error?: string;
+        }>,
     extractClawbusterSecret: (configUrl: string) => ipcRenderer.invoke('clawbuster-extract-secret', configUrl),
     // Slot Spin Samples – automatisches Lernen in Ordner
     saveSlotSpinSample: (payload: { slotSlug: string; slotName?: string; providerId?: string; request: any; response: any }) =>

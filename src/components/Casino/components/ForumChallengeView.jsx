@@ -1,7 +1,7 @@
 /**
  * Forum challenge for verification — paste a forum thread URL and load bets (SSP-style).
  */
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { scrapeForumBets } from '../api/forumScraper'
 const FORUM_URL_STORAGE_KEY = 'slotbot_forum_last_url'
 
@@ -98,6 +98,27 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
   const [forumCurrency, setForumCurrency] = useState('usdc')
   const [forumMinBet, setForumMinBet] = useState('')
   const [copyFeedback, setCopyFeedback] = useState('')
+  const [forumSession, setForumSession] = useState({ hasCookies: false, hasCf: false, cookieCount: 0 })
+
+  const refreshForumSession = useCallback(async () => {
+    if (!window.electronAPI?.forumSessionStatus) return
+    try {
+      const st = await window.electronAPI.forumSessionStatus()
+      setForumSession(st)
+    } catch {
+      setForumSession({ hasCookies: false, hasCf: false, cookieCount: 0 })
+    }
+  }, [])
+
+  useEffect(() => {
+    refreshForumSession()
+  }, [refreshForumSession])
+
+  const handleForumLogin = useCallback(async () => {
+    if (!window.electronAPI?.forumOpenLogin) return
+    await window.electronAPI.forumOpenLogin()
+    setTimeout(() => refreshForumSession(), 2500)
+  }, [refreshForumSession])
 
   const handleScrape = useCallback(async () => {
     const url = (forumUrl || '').trim()
@@ -132,8 +153,9 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
     } finally {
       setLoading(false)
       setProgress({ done: 0, total: 0, label: '' })
+      refreshForumSession()
     }
-  }, [forumUrl, accessToken])
+  }, [forumUrl, accessToken, refreshForumSession])
 
   const challengeGame = useMemo(() => {
     if (bets.length === 0) return null
@@ -210,7 +232,26 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
       <h2 style={STYLES.title}>Forum challenge (verify)</h2>
       <p style={STYLES.help}>
         Paste a forum thread URL to load and verify all casino bets from the thread. Bets are fetched via the Stake API.
+        {' '}
+        HTTP 403 on page 2+ usually means Cloudflare or login: use <strong>Stake Community login</strong> below (same idea
+        as the Appeals Monitor — isolated profile with real cookies), then <strong>Load</strong> again.
       </p>
+
+      {typeof window !== 'undefined' && window.electronAPI?.forumOpenLogin ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.65rem', marginBottom: 'var(--space-2)' }}>
+          <button type="button" onClick={handleForumLogin} style={STYLES.btnSecondary}>
+            Stake Community login…
+          </button>
+          {forumSession.hasCookies ? (
+            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--accent)' }} title="Forum HTML is loaded via Chromium session.fetch with these cookies">
+              Forum cookies: {forumSession.cookieCount}
+              {forumSession.hasCf ? ' · cf' : ''}
+            </span>
+          ) : (
+            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>No forum cookies yet — open login if scans return 403.</span>
+          )}
+        </div>
+      ) : null}
 
       <div style={STYLES.form}>
         <div style={{ flex: 1, minWidth: 260 }}>

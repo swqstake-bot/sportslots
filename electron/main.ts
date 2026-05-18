@@ -70,7 +70,29 @@ let win: BrowserWindow | null;
 let loginWin: BrowserWindow | null;
 let stakeBridgeWin: BrowserWindow | null = null;
 let withdrawPrefillWin: BrowserWindow | null = null;
+let forumLoginWin: BrowserWindow | null = null;
 let slotPopupSeq = 0;
+
+/** Stake Community forum (IPS) – same pattern as Appeals Monitor: isolated partition + session.fetch. */
+const FORUM_ORIGIN = 'https://stakecommunity.com';
+const FORUM_SESSION_PARTITION = 'persist:stakecommunity-forum';
+
+function forumDefaultFetchHeaders(referer: string): Record<string, string> {
+  const ref = referer && referer.startsWith('http') ? referer : `${FORUM_ORIGIN}/`;
+  return {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9,de;q=0.8',
+    Referer: ref,
+    Origin: FORUM_ORIGIN,
+    DNT: '1',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'same-origin',
+  };
+}
 
 function isSafeExternalUrl(url: string): boolean {
   try {
@@ -1658,6 +1680,95 @@ ipcMain.handle('clawbuster-extract-secret', async (_event, configUrl: string) =>
   });
 });
 
+ipcMain.handle('forum-open-login', () => {
+  if (forumLoginWin && !forumLoginWin.isDestroyed()) {
+    forumLoginWin.focus();
+    return { ok: true as const };
+  }
+  forumLoginWin = new BrowserWindow({
+    width: 480,
+    height: 720,
+    title: 'Stake Community – sign in',
+    webPreferences: {
+      partition: FORUM_SESSION_PARTITION,
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+  forumLoginWin.loadURL(`${FORUM_ORIGIN}/login/`);
+  forumLoginWin.on('closed', () => {
+    forumLoginWin = null;
+  });
+  return { ok: true as const };
+});
+
+ipcMain.handle('forum-session-status', async () => {
+  const ses = session.fromPartition(FORUM_SESSION_PARTITION);
+  const cookies = await ses.cookies.get({ url: FORUM_ORIGIN });
+  const hasCookies = cookies.some((c) => c.value && c.name);
+  const hasCf = cookies.some((c) => c.name.startsWith('cf_') || c.name === '__cf_bm');
+  return { hasCookies, hasCf, cookieCount: cookies.length };
+});
+
+ipcMain.handle(
+  'forum-fetch-topic-html',
+  async (_event, payload: { url: string; referer?: string }) => {
+    const url = String(payload?.url || '').trim();
+    if (!url.includes('stakecommunity.com/topic/')) {
+      return {
+        ok: false as const,
+        skipped: false as const,
+        error: 'invalid_url',
+        status: 0,
+        statusText: '',
+        data: '',
+        finalUrl: '',
+      };
+    }
+    const ses = session.fromPartition(FORUM_SESSION_PARTITION);
+    const cookies = await ses.cookies.get({ url: FORUM_ORIGIN });
+    if (!cookies.length) {
+      return {
+        ok: false as const,
+        skipped: true as const,
+        error: 'no_forum_session',
+        status: 0,
+        statusText: '',
+        data: '',
+        finalUrl: '',
+      };
+    }
+    const referer =
+      typeof payload?.referer === 'string' && payload.referer.startsWith('http') ? payload.referer : `${FORUM_ORIGIN}/`;
+    try {
+      const res = await ses.fetch(url, {
+        method: 'GET',
+        headers: forumDefaultFetchHeaders(referer),
+      });
+      const data = await res.text();
+      return {
+        ok: true as const,
+        skipped: false as const,
+        status: res.status,
+        statusText: res.statusText || '',
+        data,
+        finalUrl: res.url || url,
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false as const,
+        skipped: false as const,
+        error: msg,
+        status: 0,
+        statusText: '',
+        data: '',
+        finalUrl: '',
+      };
+    }
+  }
+);
+
 ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = {}, body = null }) => {
     const stakeOrigin = await resolveStakeOrigin();
     return new Promise((resolve, reject) => {
@@ -1776,9 +1887,13 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                 console.error('Pragmatic URL parse error', e);
             }
         } else if (type === 'forum') {
-            requestHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36';
-            requestHeaders['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
-            requestHeaders['Accept-Language'] = 'en-US,en;q=0.9';
+            const ref = requestHeaders['Referer'] && requestHeaders['Referer'].startsWith('http')
+              ? requestHeaders['Referer']
+              : `${FORUM_ORIGIN}/`;
+            const forumHdrs = forumDefaultFetchHeaders(ref);
+            for (const [k, v] of Object.entries(forumHdrs)) {
+              if (!requestHeaders[k]) requestHeaders[k] = v;
+            }
         } else if (type === 'hacksaw') {
             const urlObj = new URL(url);
             const origin = `${urlObj.protocol}//${urlObj.host}`;
