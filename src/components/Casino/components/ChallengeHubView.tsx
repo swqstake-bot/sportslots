@@ -136,7 +136,7 @@ export function ChallengeHubView({
             </div>
 
             <div className="challenge-hub-side-column">
-              <ChallengeHubBetListPanel />
+              <ChallengeHubBetListPanel accessToken={accessToken} />
             </div>
           </div>
         </div>

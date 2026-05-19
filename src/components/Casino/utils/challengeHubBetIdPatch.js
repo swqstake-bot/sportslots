@@ -2,7 +2,12 @@
  * Challenge-Hub: houseBets / Logger → shareIid auf Feed-Zeilen (BetList + Highlights).
  */
 import { getChallengeHubRecentBets, publishChallengeHubBet } from './challengeHubLiveFeed'
-import { formatStakeShareBetId, pickStakeHouseBetShareRawId } from './stakeBetShareId'
+import { toMinor } from './formatAmount'
+import {
+  formatStakeShareBetId,
+  normalizedStakeShareIdCore,
+  pickStakeHouseBetShareRawId,
+} from './stakeBetShareId'
 import { houseBetSlugMatchesSessionSlug, normalizeBetSlugForHouseMatch } from './slotSlugMatching'
 
 function hubRowMultiplier(row) {
@@ -72,26 +77,78 @@ function pickHubRowForRun(bets, runId, bItem, spinSeq) {
   )
 }
 
+function betMinorClose(a, b) {
+  const x = Number(a)
+  const y = Number(b)
+  if (!Number.isFinite(x) || !Number.isFinite(y) || x <= 0 || y <= 0) return true
+  const rel = Math.abs(x - y) / Math.max(x, y, 1)
+  return rel <= 0.06
+}
+
+/** Ältestes Pending ohne ID (FIFO) — wie SSP: ein houseBet → eine Zeile. */
 function pickHubRowForHouseBet(bets, bItem) {
   const payloadSlug = normalizeBetSlugForHouseMatch(bItem?.gameSlug)
   const hbMult = Number(bItem?.payoutMultiplier)
-  let best = null
-  let bestScore = -1
+  const curr = (bItem?.currency || 'usd').toLowerCase()
+  const betMajor = Number(bItem?.amountMajor ?? bItem?.amount) || 0
+  const betMinor = Number.isFinite(Number(bItem?.amountMinor))
+    ? Number(bItem.amountMinor)
+    : toMinor(betMajor, curr)
+
+  let pendingBest = null
+  let pendingAt = Infinity
+  let fallbackBest = null
+  let fallbackAt = Infinity
+
   for (const row of bets || []) {
     if (hubRowHasShareId(row)) continue
     const rowSlug = normalizeBetSlugForHouseMatch(row?.slotSlug)
     if (payloadSlug && rowSlug && !houseBetSlugMatchesSessionSlug(payloadSlug, rowSlug)) continue
+    const rowBet = Number(row.betAmount) || 0
+    if (betMinor > 0 && rowBet > 0 && !betMinorClose(rowBet, betMinor)) continue
     const rm = hubRowMultiplier(row)
-    if (Number.isFinite(hbMult) && hbMult >= 0) {
-      if (!multiClose(rm, hbMult)) continue
-    }
-    const score = rm * 1000 + (Number(row?.addedAt) || 0) / 1e6
-    if (score > bestScore) {
-      bestScore = score
-      best = row
+    if (Number.isFinite(hbMult) && hbMult > 0 && rm > 0 && !multiClose(rm, hbMult)) continue
+    const at = Number(row.addedAt) || 0
+    if (row.hubSettlement === 'pending' && at < pendingAt) {
+      pendingAt = at
+      pendingBest = row
+    } else if (at < fallbackAt) {
+      fallbackAt = at
+      fallbackBest = row
     }
   }
-  return best
+  return pendingBest || fallbackBest
+}
+
+function hubRowFromHouseBet(bItem, feedEntryId, extra = {}) {
+  const curr = (bItem?.currency || 'usd').toLowerCase()
+  const betMajor = Number(bItem?.amountMajor ?? bItem?.amount) || 0
+  const payoutMajor = Number(bItem?.payoutMajor ?? bItem?.payout) || 0
+  const betMinor = Number.isFinite(Number(bItem?.amountMinor))
+    ? Number(bItem.amountMinor)
+    : toMinor(betMajor, curr)
+  let winMinor = Number.isFinite(Number(bItem?.payoutMinor))
+    ? Number(bItem.payoutMinor)
+    : toMinor(payoutMajor, curr)
+  const mult = Number(bItem?.payoutMultiplier)
+  const multiplier =
+    Number.isFinite(mult) && mult >= 0 ? mult : betMinor > 0 && winMinor >= 0 ? winMinor / betMinor : 0
+  const slug = String(bItem?.gameSlug || '').trim()
+  return {
+    ...buildHubPatchFromHouseBet(feedEntryId, bItem, {
+      slotSlug: slug,
+      slotName: bItem?.gameName || slug || 'Unknown Slot',
+      betAmount: betMinor,
+      winAmount: winMinor,
+      multiplier,
+      currencyCode: (bItem?.currency || 'USD').toUpperCase(),
+      sourceTag: slug ? `casino:${slug}` : undefined,
+      hubSettlement: 'settled',
+      settlementSource: 'houseBets',
+      addedAt: Date.now(),
+      ...extra,
+    }),
+  }
 }
 
 /**
@@ -138,10 +195,39 @@ export function patchHubFeedRunFromHouseBet(runId, bItem, opts = {}) {
 }
 
 export function patchHubFeedFromHouseBetBestEffort(bItem) {
+  return applyHouseBetToHubFeed(bItem)
+}
+
+/**
+ * SSP-style: houseBets WebSocket ist die einzige Share-ID-Quelle für den Hub-Feed.
+ * Verknüpft FIFO mit pending-Zeilen vom Hunter oder legt eine neue Zeile an.
+ */
+export function applyHouseBetToHubFeed(bItem) {
+  if (!bItem) return false
+  const shareIid = formatStakeShareBetId(
+    pickStakeHouseBetShareRawId({
+      shareIid: bItem?.shareIid ?? bItem?.iid ?? null,
+      houseTopId: bItem?.houseTopId ?? null,
+      id: bItem?.houseId ?? bItem?.id ?? null,
+    })
+  )
+  if (!shareIid) return false
+
   const bets = getChallengeHubRecentBets()
-  const row = pickHubRowForHouseBet(bets, bItem)
-  if (!row?.id) return false
-  return patchHubFeedEntryFromHouseBet(String(row.id), bItem)
+  const existing = bets.find((row) => {
+    const sid = formatStakeShareBetId(row?.shareIid ?? row?.iid ?? null)
+    return sid && sid === shareIid
+  })
+  if (existing?.id != null) {
+    publishChallengeHubBet(hubRowFromHouseBet(bItem, String(existing.id)))
+    return true
+  }
+
+  const target = pickHubRowForHouseBet(bets, bItem)
+  const core = normalizedStakeShareIdCore(shareIid) || shareIid.replace(/^[^:]+:/, '')
+  const feedId = target?.id != null ? String(target.id) : `hb:${core}`
+  publishChallengeHubBet(hubRowFromHouseBet(bItem, feedId))
+  return true
 }
 
 export function patchHubFeedRunShareId(runId, shareIid, opts = {}) {

@@ -1,11 +1,8 @@
-import { memo, useEffect, useMemo, useState } from 'react'
+﻿import { memo, useEffect, useMemo, useState } from 'react'
+import { subscribeToHouseBets } from '../../api/stakeRealtimeFacade'
 import { SectionCard } from '../ui/SectionCard'
-import { loadRecentBets } from '../../utils/betHistoryDb'
 import { getChallengeHubRecentBets, subscribeChallengeHubBetFeed } from '../../utils/challengeHubLiveFeed'
-import {
-  backfillRecentBetsShareFromLogger,
-  patchHubFeedFromHouseBetBestEffort,
-} from '../../utils/challengeHubBetIdPatch'
+import { applyHouseBetToHubFeed, backfillRecentBetsShareFromLogger } from '../../utils/challengeHubBetIdPatch'
 import { ChallengeHubBetListFeed, CHALLENGE_HUB_BET_LIST_MAX_ROWS } from './ChallengeHubBetListFeed'
 import { useChallengeHubBetListOptional } from './ChallengeHubBetListContext'
 import { formatAmount } from '../../utils/formatAmount'
@@ -22,7 +19,17 @@ import {
   type TopEntry,
 } from '../../utils/topDomain'
 
-export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel() {
+type ChallengeHubBetListPanelProps = {
+  accessToken: string
+}
+
+/**
+ * Hub feed: live rows from Challenge Hunter (amounts/pending).
+ * Bet share IDs: single source = houseBets WebSocket (SSP-style), not IndexedDB.
+ */
+export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
+  accessToken,
+}: ChallengeHubBetListPanelProps) {
   const hubList = useChallengeHubBetListOptional()
   if (!hubList) {
     throw new Error('ChallengeHubBetListPanel must be used inside ChallengeHubBetListProvider')
@@ -42,68 +49,15 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
     let cancelled = false
     const max = CHALLENGE_HUB_BET_LIST_MAX_ROWS
 
-    const hasHubSourceTag = (rows: any[]) =>
-      (rows || []).some((x) => {
-        const tag = String(x?.sourceTag || '').toLowerCase()
-        return tag.startsWith('casino:') || tag.startsWith('autorun:') || tag.startsWith('telegram:')
-      })
-
-    const hydrate = async () => {
-      const fast = filterRowsForHighlightsMerge(getChallengeHubRecentBets())
+    const hydrateFromHubMemory = () => {
+      const fast = getChallengeHubRecentBets()
       if (fast.length > 0) {
-        setRecentBets(fast.slice(0, max) as typeof recentBets)
-        setTopMultisAll((prev) => mergeTopEntries(prev, fast))
-      }
-      try {
-        const dbRaw = await loadRecentBets(max)
-        const db = filterRowsForHighlightsMerge(dbRaw || [])
-        if (cancelled) return
-        if (db?.length) {
-          setRecentBets((prev) => {
-            if (hasHubSourceTag(prev) || hasHubSourceTag(getChallengeHubRecentBets())) {
-              const hubRows = filterRowsForHighlightsMerge(getChallengeHubRecentBets())
-              if (hubRows.length) {
-                return hubRows.slice(0, max) as typeof recentBets
-              }
-              return prev
-            }
-            return db as typeof recentBets
-          })
-          setTopMultisAll((prev) => mergeTopEntries(prev, db))
-        }
-      } catch {
-        // keep panel resilient on db read failures
+        setRecentBets(fast.slice(0, max))
       }
     }
 
-    const fallbackRefresh = async () => {
-      try {
-        const dbRaw = await loadRecentBets(max)
-        const db = filterRowsForHighlightsMerge(dbRaw || [])
-        if (cancelled || !db?.length) return
-        setRecentBets((prev) => {
-          if (hasHubSourceTag(prev)) return prev
-          const prevFirst = prev?.[0]?.id ?? null
-          const dbFirst = (db as { id?: unknown }[])?.[0]?.id ?? null
-          if (prevFirst === dbFirst && prev.length === db.length) return prev
-          return db as typeof recentBets
-        })
-        setTopMultisAll((prev) => mergeTopEntries(prev, db))
-      } catch {
-        // optional fallback refresh may fail
-      }
-    }
+    hydrateFromHubMemory()
 
-    const dbRefresh = async () => {
-      try {
-        await fallbackRefresh()
-      } catch {
-        // fallback failure is non-fatal
-      }
-    }
-
-    hydrate()
-    const dbIntervalId = window.setInterval(dbRefresh, 15_000)
     const unsubscribe = subscribeChallengeHubBetFeed((entry) => {
       if (cancelled) return
       setRecentBets((prev) => {
@@ -117,55 +71,78 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
         }
         return [entry, ...prev].slice(0, max)
       })
-      setTopMultisAll((prev) => mergeTopEntries(prev, [entry]))
+      if (entry?.hubSettlement !== 'pending' || entry?.shareIid) {
+        setTopMultisAll((prev) => mergeTopEntries(prev, [entry]))
+      }
     })
+
     return () => {
       cancelled = true
-      window.clearInterval(dbIntervalId)
       unsubscribe()
     }
   }, [setRecentBets])
 
+  /** SSP-style: houseBets = einzige ID-Quelle fÃ¼r den Feed. */
+  useEffect(() => {
+    if (!accessToken?.trim()) return
+    let cancelled = false
+    let sub: { disconnect?: () => void } | null = null
+
+    subscribeToHouseBets(accessToken, (bItem) => {
+      if (cancelled) return
+      applyHouseBetToHubFeed(bItem)
+    }).then((s) => {
+      if (cancelled) {
+        try {
+          s?.disconnect?.()
+        } catch {
+          // ignore
+        }
+        return
+      }
+      sub = s
+    })
+
+    return () => {
+      cancelled = true
+      try {
+        sub?.disconnect?.()
+      } catch {
+        // ignore
+      }
+    }
+  }, [accessToken])
+
+  /** Logger nur zum Nachziehen fehlender shareIid (kein Bulk-Merge in Highlights). */
   useEffect(() => {
     let cancelled = false
-    const syncLogger = async () => {
+    const syncLoggerIds = async () => {
       const loader = window.electronAPI?.loadLoggerBetLogs
       if (typeof loader !== 'function') return
       try {
-        const rows = await loader({ limit: 5000 })
+        const rows = await loader({ limit: 800 })
         if (cancelled || !Array.isArray(rows) || rows.length === 0) return
+        setRecentBets((prev) => {
+          const filled = backfillRecentBetsShareFromLogger(prev, rows)
+          return filled === prev ? prev : filled
+        })
         const mapped = filterRowsForHighlightsMerge(rows)
           .map((row) => loggerBetToTopCandidate(row))
           .filter(Boolean)
         if (mapped.length) {
           setTopMultisAll((prev) => mergeTopEntries(prev, mapped))
         }
-        setRecentBets((prev) => {
-          const filled = backfillRecentBetsShareFromLogger(prev, rows)
-          return filled === prev ? prev : filled
-        })
       } catch {
-        // optional logger enrichment
+        // optional
       }
     }
-    syncLogger()
-    const id = window.setInterval(syncLogger, 12_000)
+    syncLoggerIds()
+    const id = window.setInterval(syncLoggerIds, 15_000)
     return () => {
       cancelled = true
       window.clearInterval(id)
     }
   }, [setRecentBets])
-
-  useEffect(() => {
-    const onRealtime = (ev: Event) => {
-      const detail = (ev as CustomEvent)?.detail
-      const payload = detail?.payload
-      if (!payload || payload.source !== 'houseBets') return
-      patchHubFeedFromHouseBetBestEffort(payload)
-    }
-    window.addEventListener('sportslots-realtime-event', onRealtime)
-    return () => window.removeEventListener('sportslots-realtime-event', onRealtime)
-  }, [])
 
   useEffect(() => {
     persistTopEntries(topMultisAll)
@@ -200,7 +177,7 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
       return topSlots.map((row, idx) => ({
         key: `slot:${row.slotName}`,
         title: row.slotName,
-        subtitle: `${row.spins} hits · best win ${formatAmount(row.bestWinAmount, row.currencyCode)}`,
+        subtitle: `${row.spins} hits Â· best win ${formatAmount(row.bestWinAmount, row.currencyCode)}`,
         value: `${row.bestMulti.toFixed(2)}x`,
         rank: idx + 1,
         shareId: null,
