@@ -2,6 +2,10 @@ import { memo, useEffect, useMemo, useState } from 'react'
 import { SectionCard } from '../ui/SectionCard'
 import { loadRecentBets } from '../../utils/betHistoryDb'
 import { getChallengeHubRecentBets, subscribeChallengeHubBetFeed } from '../../utils/challengeHubLiveFeed'
+import {
+  backfillRecentBetsShareFromLogger,
+  patchHubFeedFromHouseBetBestEffort,
+} from '../../utils/challengeHubBetIdPatch'
 import { ChallengeHubBetListFeed, CHALLENGE_HUB_BET_LIST_MAX_ROWS } from './ChallengeHubBetListFeed'
 import { useChallengeHubBetListOptional } from './ChallengeHubBetListContext'
 import { formatAmount } from '../../utils/formatAmount'
@@ -120,7 +124,7 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
 
   useEffect(() => {
     let cancelled = false
-    const loadLoggerTopRows = async () => {
+    const syncLogger = async () => {
       const loader = window.electronAPI?.loadLoggerBetLogs
       if (typeof loader !== 'function') return
       try {
@@ -129,14 +133,34 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
         const mapped = rows
           .map((row) => loggerBetToTopCandidate(row))
           .filter(Boolean)
-        if (!mapped.length) return
-        setTopMultisAll((prev) => mergeTopEntries(prev, mapped))
+        if (mapped.length) {
+          setTopMultisAll((prev) => mergeTopEntries(prev, mapped))
+        }
+        setRecentBets((prev) => {
+          const filled = backfillRecentBetsShareFromLogger(prev, rows)
+          return filled === prev ? prev : filled
+        })
       } catch {
         // optional logger enrichment
       }
     }
-    loadLoggerTopRows()
-    return () => { cancelled = true }
+    syncLogger()
+    const id = window.setInterval(syncLogger, 12_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [setRecentBets])
+
+  useEffect(() => {
+    const onRealtime = (ev: Event) => {
+      const detail = (ev as CustomEvent)?.detail
+      const payload = detail?.payload
+      if (!payload || payload.source !== 'houseBets') return
+      patchHubFeedFromHouseBetBestEffort(payload)
+    }
+    window.addEventListener('sportslots-realtime-event', onRealtime)
+    return () => window.removeEventListener('sportslots-realtime-event', onRealtime)
   }, [])
 
   useEffect(() => {

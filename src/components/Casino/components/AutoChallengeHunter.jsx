@@ -31,6 +31,12 @@ import {
 import { saveFirstSlotWinIfNeeded } from '../utils/slotFirstWin'
 import { getHunterState, saveHunterState, clearHunterState } from '../utils/challengeCompletion'
 import { getChallengeHubRecentBets, publishChallengeHubBet } from '../utils/challengeHubLiveFeed'
+import {
+  clearPendingHouseBetsForRun,
+  patchHubFeedEntryFromHouseBet,
+  patchHubFeedRunFromHouseBet,
+  patchHubFeedRunShareId,
+} from '../utils/challengeHubBetIdPatch'
 import { convertMinorToUsdCents } from '../utils/monetaryContract'
 import { buildUsdSpinDelta } from '../utils/casinoStatsEngine'
 import { buildStakeCasinoFairnessReferer, rotateStakeRgsGameSeed } from '../api/stakeFairness'
@@ -1294,6 +1300,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           [rid]: { ...r, bestBetId: loggerShare },
         }
       })
+      patchHubFeedRunShareId(rid, loggerShare, {
+        multiplier: targetMulti,
+        settlementSource: 'logger_reconcile',
+      })
     })()
   }, [])
 
@@ -1320,6 +1330,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     for (const [rid, run] of Object.entries(runs)) {
       if (run?.status !== 'running') {
         delete prevMap[rid]
+        clearPendingHouseBetsForRun(pendingHouseBetMatchRef.current, rid)
         continue
       }
       const cur = Number(run.bestMultiRun) || 0
@@ -1699,39 +1710,24 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               }
             }
             if (p.feedEntryId) {
-              const rawShare =
-                bItem?.shareIid != null && String(bItem.shareIid).trim() !== ''
-                  ? String(bItem.shareIid).trim()
-                  : bItem?.iid != null && String(bItem.iid).trim() !== ''
-                    ? String(bItem.iid).trim()
-                    : null
-              const shareIidForRow = rawShare ? formatStakeShareBetId(rawShare) : shareId
-              const hubPatch = {
-                id: p.feedEntryId,
-                houseTopId: bItem?.houseTopId != null && String(bItem.houseTopId).trim() !== '' ? String(bItem.houseTopId).trim() : null,
-                houseId: bItem?.houseId != null ? String(bItem.houseId) : null,
-                iid: bItem?.iid != null && String(bItem.iid).trim() !== '' ? String(bItem.iid).trim() : rawShare,
-              }
-              if (shareIidForRow) hubPatch.shareIid = shareIidForRow
-              if (Number.isFinite(stakeMajor) && stakeMajor > 0 && Number.isFinite(houseBetRate) && houseBetRate > 0) {
-                const wageredUsd = stakeMajor * houseBetRate
-                const payoutUsd = stakeMajor * Math.max(0, effectiveMulti) * houseBetRate
-                hubPatch.betAmount = Math.round(wageredUsd * 100)
-                hubPatch.winAmount = Math.round(payoutUsd * 100)
-                hubPatch.multiplier = Math.max(0, Number(effectiveMulti) || 0)
-                hubPatch.currencyCode = 'USD'
-                hubPatch.hubSettlement = 'settled'
-                hubPatch.settlementSource = 'houseBets'
-                if (p.spinSeq != null) {
-                  const mk = `${runId}:${p.spinSeq}`
-                  const tid = houseBetDeferredUiTimersRef.current.get(mk)
-                  if (tid != null) {
-                    clearTimeout(tid)
-                    houseBetDeferredUiTimersRef.current.delete(mk)
-                  }
+              const amountPatch =
+                Number.isFinite(stakeMajor) && stakeMajor > 0 && Number.isFinite(houseBetRate) && houseBetRate > 0
+                  ? {
+                      betAmount: Math.round(stakeMajor * houseBetRate * 100),
+                      winAmount: Math.round(stakeMajor * Math.max(0, effectiveMulti) * houseBetRate * 100),
+                      multiplier: Math.max(0, Number(effectiveMulti) || 0),
+                      currencyCode: 'USD',
+                    }
+                  : {}
+              patchHubFeedEntryFromHouseBet(p.feedEntryId, bItem, amountPatch)
+              if (p.spinSeq != null) {
+                const mk = `${runId}:${p.spinSeq}`
+                const tid = houseBetDeferredUiTimersRef.current.get(mk)
+                if (tid != null) {
+                  clearTimeout(tid)
+                  houseBetDeferredUiTimersRef.current.delete(mk)
                 }
               }
-              publishChallengeHubBet(hubPatch)
             }
           }
 
@@ -1767,6 +1763,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                       spinSeq: null,
                     }
                   }
+                }
+                if (targetRunId) {
+                  patchHubFeedRunFromHouseBet(targetRunId, bItem)
                 }
               }
             }

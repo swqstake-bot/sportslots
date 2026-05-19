@@ -43,7 +43,7 @@ export function isPersistableStakeHouseBetShareId(s) {
   if (s == null || typeof s !== 'string') return false
   const t = s.trim()
   if (!t) return false
-  if (/^house:[0-9]{10,}$/.test(t)) return true
+  if (/^house:[0-9]{9,}$/.test(t)) return true
   if (/^casino:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t)) return true
   return false
 }
