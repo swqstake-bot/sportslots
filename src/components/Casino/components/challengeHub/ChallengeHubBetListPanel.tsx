@@ -12,6 +12,7 @@ import { formatAmount } from '../../utils/formatAmount'
 import {
   parseStoredTopEntries,
   dedupeTopEntries,
+  filterRowsForHighlightsMerge,
   mergeTopEntries,
   loggerBetToTopCandidate,
   persistTopEntries,
@@ -48,23 +49,25 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
       })
 
     const hydrate = async () => {
-      const fast = getChallengeHubRecentBets()
+      const fast = filterRowsForHighlightsMerge(getChallengeHubRecentBets())
       if (fast.length > 0) {
-        setRecentBets(fast.slice(0, max))
+        setRecentBets(fast.slice(0, max) as typeof recentBets)
         setTopMultisAll((prev) => mergeTopEntries(prev, fast))
       }
       try {
-        const db = await loadRecentBets(max)
+        const dbRaw = await loadRecentBets(max)
+        const db = filterRowsForHighlightsMerge(dbRaw || [])
         if (cancelled) return
         if (db?.length) {
           setRecentBets((prev) => {
             if (hasHubSourceTag(prev) || hasHubSourceTag(getChallengeHubRecentBets())) {
-              if (getChallengeHubRecentBets().length) {
-                return getChallengeHubRecentBets().slice(0, max)
+              const hubRows = filterRowsForHighlightsMerge(getChallengeHubRecentBets())
+              if (hubRows.length) {
+                return hubRows.slice(0, max) as typeof recentBets
               }
               return prev
             }
-            return db
+            return db as typeof recentBets
           })
           setTopMultisAll((prev) => mergeTopEntries(prev, db))
         }
@@ -75,14 +78,15 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
 
     const fallbackRefresh = async () => {
       try {
-        const db = await loadRecentBets(max)
+        const dbRaw = await loadRecentBets(max)
+        const db = filterRowsForHighlightsMerge(dbRaw || [])
         if (cancelled || !db?.length) return
         setRecentBets((prev) => {
           if (hasHubSourceTag(prev)) return prev
           const prevFirst = prev?.[0]?.id ?? null
-          const dbFirst = db?.[0]?.id ?? null
+          const dbFirst = (db as { id?: unknown }[])?.[0]?.id ?? null
           if (prevFirst === dbFirst && prev.length === db.length) return prev
-          return db
+          return db as typeof recentBets
         })
         setTopMultisAll((prev) => mergeTopEntries(prev, db))
       } catch {
@@ -130,7 +134,7 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel()
       try {
         const rows = await loader({ limit: 5000 })
         if (cancelled || !Array.isArray(rows) || rows.length === 0) return
-        const mapped = rows
+        const mapped = filterRowsForHighlightsMerge(rows)
           .map((row) => loggerBetToTopCandidate(row))
           .filter(Boolean)
         if (mapped.length) {

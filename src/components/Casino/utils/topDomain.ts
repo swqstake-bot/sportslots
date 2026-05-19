@@ -2,6 +2,8 @@ import { toMinor } from './formatAmount'
 import { formatStakeShareBetId, pickStakeHouseBetShareRawId } from './stakeBetShareId'
 
 export const TOP_DOMAIN_STORAGE_KEY = 'slotbot_challenge_hub_top_multis_v1'
+/** Nach „Clear“ in Highlights: ältere Logger/DB-Zeilen nicht wieder einmergen. */
+export const HIGHLIGHTS_CLEAR_FLOOR_KEY = 'slotbot_challenge_hub_highlights_cleared_at_v1'
 export const TOP_DOMAIN_STORAGE_MAX = 600
 
 export type TopEntry = {
@@ -23,11 +25,50 @@ export type TopSlotEntry = {
   currencyCode: string
 }
 
+export function getHighlightsClearFloorMs(): number {
+  try {
+    const v = Number(localStorage.getItem(HIGHLIGHTS_CLEAR_FLOOR_KEY))
+    return Number.isFinite(v) && v > 0 ? v : 0
+  } catch {
+    return 0
+  }
+}
+
+export function markHighlightsCleared(now = Date.now()) {
+  try {
+    localStorage.setItem(HIGHLIGHTS_CLEAR_FLOOR_KEY, String(now))
+  } catch {
+    // ignore
+  }
+}
+
+export function rowTimestampMs(row: unknown): number {
+  if (!row || typeof row !== 'object') return 0
+  const r = row as Record<string, unknown>
+  const added = Number(r.addedAt)
+  if (Number.isFinite(added) && added > 0) return added
+  const received = Date.parse(String(r.receivedAt || ''))
+  if (Number.isFinite(received) && received > 0) return received
+  return 0
+}
+
+/** Bulk-Quellen (Logger, IndexedDB, Hydrate) — Live-Feed-Events nicht filtern. */
+export function filterRowsForHighlightsMerge(rows: unknown[]): unknown[] {
+  const floor = getHighlightsClearFloorMs()
+  if (!floor || !rows?.length) return rows || []
+  return rows.filter((row) => {
+    const ts = rowTimestampMs(row)
+    if (!ts) return false
+    return ts >= floor - 250
+  })
+}
+
 export function parseStoredTopEntries(): TopEntry[] {
   try {
     const raw = localStorage.getItem(TOP_DOMAIN_STORAGE_KEY)
     const parsed = raw ? JSON.parse(raw) : []
     if (!Array.isArray(parsed)) return []
+    const floor = getHighlightsClearFloorMs()
     const rows = parsed
       .map((x) => ({
         key: String(x?.key || ''),
@@ -40,6 +81,7 @@ export function parseStoredTopEntries(): TopEntry[] {
         addedAt: Number(x?.addedAt) || 0,
       }))
       .filter((x) => x.key && Number.isFinite(x.multiplier) && x.multiplier > 0)
+      .filter((x) => !floor || x.addedAt >= floor - 250)
     return dedupeTopEntries(rows)
   } catch {
     return []
@@ -236,8 +278,10 @@ export function persistTopEntries(entries: TopEntry[]) {
 }
 
 export function clearTopEntries() {
+  markHighlightsCleared()
   try {
     localStorage.removeItem(TOP_DOMAIN_STORAGE_KEY)
   } catch {
+    // ignore
   }
 }
