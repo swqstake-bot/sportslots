@@ -189,10 +189,16 @@ export function SvgCumulativeProfitLineChart({
   profits,
   height = 128,
   stroke = 'var(--accent)',
+  betIndexStart,
+  betIndexEnd,
 }: {
   profits: number[]
   height?: number
   stroke?: string
+  /** X-axis: first bet index (default 1). */
+  betIndexStart?: number
+  /** X-axis: last bet index (default profits.length without baseline). */
+  betIndexEnd?: number
 }) {
   const pts = useMemo(() => uniformSampleNumbers(profits, 160), [profits])
   const last = profits.length ? profits[profits.length - 1]! : 0
@@ -242,6 +248,9 @@ export function SvgCumulativeProfitLineChart({
   }, [pts])
 
   const { pathD, zeroGy, plotL, plotR, plotT, plotB, ph, yLabels } = geom
+  const dataPoints = Math.max(0, profits.length > 0 ? profits.length - 1 : 0)
+  const xStart = betIndexStart ?? 1
+  const xEnd = betIndexEnd ?? (dataPoints > 0 ? dataPoints : xStart)
 
   return (
     <svg
@@ -284,13 +293,13 @@ export function SvgCumulativeProfitLineChart({
           {row.text}
         </text>
       ))}
-      {profits.length > 0 && (
+      {dataPoints > 0 && (
         <>
           <text x={plotL} y={PROFIT_VIEW_H - 4} fontSize={9} fill="var(--text-muted)">
-            Bet #1
+            Bet #{xStart}
           </text>
           <text x={plotR} y={PROFIT_VIEW_H - 4} fontSize={9} fill="var(--text-muted)" textAnchor="end">
-            Bet #{profits.length}
+            Bet #{xEnd}
           </text>
         </>
       )}

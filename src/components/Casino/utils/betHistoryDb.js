@@ -156,8 +156,40 @@ export async function loadRecentBets(limit = 30) {
 }
 
 /**
+ * Älteste Einträge eines Slots löschen, nur die neuesten `keep` behalten.
  * @param {string} slotSlug
+ * @param {number} [keep]
  */
+export async function pruneSlotBetHistory(slotSlug, keep = 2000) {
+  const slug = String(slotSlug || '').trim()
+  if (!slug) return
+  const keepN = Math.max(50, Number(keep) || 2000)
+  const database = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(STORE_NAME, 'readwrite')
+    const store = tx.objectStore(STORE_NAME)
+    const index = store.index('slotAdded')
+    const range = IDBKeyRange.bound([slug, 0], [slug, Number.MAX_SAFE_INTEGER])
+    let kept = 0
+    const req = index.openCursor(range, 'prev')
+    req.onsuccess = () => {
+      const cursor = req.result
+      if (!cursor) {
+        resolve()
+        return
+      }
+      if (kept < keepN) {
+        kept += 1
+        cursor.continue()
+        return
+      }
+      cursor.delete()
+      cursor.continue()
+    }
+    req.onerror = () => reject(req.error)
+  })
+}
+
 export async function clearSlotHistory(slotSlug) {
   const database = await openDb()
   return new Promise((resolve, reject) => {

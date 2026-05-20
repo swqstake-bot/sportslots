@@ -141,7 +141,7 @@ function hubRowFromHouseBet(bItem, feedEntryId, extra = {}) {
       betAmount: betMinor,
       winAmount: winMinor,
       multiplier,
-      currencyCode: (bItem?.currency || 'USD').toUpperCase(),
+      currencyCode: curr.toUpperCase(),
       sourceTag: slug ? `casino:${slug}` : undefined,
       hubSettlement: 'settled',
       settlementSource: 'houseBets',
