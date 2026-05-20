@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CasinoLoggerTab from './tabs/CasinoLoggerTab';
 import SportsLoggerTab from './tabs/SportsLoggerTab';
+import {
+  LOGGER_BET_SAVED_EVENT,
+  mergeLoggerBetIntoList,
+  normalizeLoggerBetEntry,
+} from './loggerBetRealtime';
 import { loggerBetsIdentity } from './loggerListIdentity';
 import { inferLoggerCategory } from './loggerUtils';
 import type { LoggerBetEntry } from './loggerUtils';
+
+const LOGGER_POLL_FALLBACK_MS = 30_000;
 import './logger.css';
 
 type LoggerTab = 'casino' | 'sports';
@@ -58,6 +65,28 @@ export default function LoggerView() {
     } finally {
       currencyRefreshInFlightRef.current = false;
     }
+  }, []);
+
+  const applyIncrementalBet = useCallback((raw: unknown) => {
+    const entry = normalizeLoggerBetEntry(raw);
+    if (!entry) return;
+    if (entry.category === 'sports') {
+      setSportsBets((prev) => {
+        const next = mergeLoggerBetIntoList(prev, entry);
+        const nextId = loggerBetsIdentity(next);
+        if (nextId === lastSportsIdentityRef.current) return prev;
+        lastSportsIdentityRef.current = nextId;
+        return next;
+      });
+      return;
+    }
+    setCasinoBets((prev) => {
+      const next = mergeLoggerBetIntoList(prev, entry);
+      const nextId = loggerBetsIdentity(next);
+      if (nextId === lastCasinoIdentityRef.current) return prev;
+      lastCasinoIdentityRef.current = nextId;
+      return next;
+    });
   }, []);
 
   const loadLoggerLogs = useCallback(async (options?: { foreground?: boolean }) => {
@@ -138,13 +167,27 @@ export default function LoggerView() {
   }, [refreshCurrencyRates]);
 
   useEffect(() => {
+    const onBetSaved = (event: Event) => {
+      applyIncrementalBet((event as CustomEvent).detail);
+    };
+    window.addEventListener(LOGGER_BET_SAVED_EVENT, onBetSaved as EventListener);
+    return () => window.removeEventListener(LOGGER_BET_SAVED_EVENT, onBetSaved as EventListener);
+  }, [applyIncrementalBet]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadLoggerLogs();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [loadLoggerLogs]);
+
+  useEffect(() => {
     const t = setInterval(() => {
       if (document.visibilityState === 'hidden') return;
       loadLoggerLogs();
-    }, 3000);
-    return () => {
-      clearInterval(t);
-    };
+    }, LOGGER_POLL_FALLBACK_MS);
+    return () => clearInterval(t);
   }, [loadLoggerLogs]);
 
   useEffect(() => {

@@ -18,10 +18,22 @@ export interface ChallengeHubBetFeedEntry {
 }
 
 type FeedListener = (entry: ChallengeHubBetFeedEntry) => void
+type FeedSnapshotListener = () => void
 
 const MAX_FEED_ITEMS = 120
 const listeners = new Set<FeedListener>()
+const snapshotListeners = new Set<FeedSnapshotListener>()
 let recentFeed: ChallengeHubBetFeedEntry[] = []
+
+function notifySnapshotListeners() {
+  for (const listener of snapshotListeners) {
+    try {
+      listener()
+    } catch {
+      // keep feed resilient even if a listener fails
+    }
+  }
+}
 
 function normalizeEntry(entry: ChallengeHubBetFeedEntry): ChallengeHubBetFeedEntry {
   return {
@@ -58,6 +70,15 @@ export function publishChallengeHubBet(entry: ChallengeHubBetFeedEntry) {
     } catch {
       // keep feed resilient even if a listener fails
     }
+  }
+  notifySnapshotListeners()
+}
+
+/** Subscribe to full feed snapshot changes (for useSyncExternalStore). */
+export function subscribeChallengeHubFeed(listener: FeedSnapshotListener) {
+  snapshotListeners.add(listener)
+  return () => {
+    snapshotListeners.delete(listener)
   }
 }
 

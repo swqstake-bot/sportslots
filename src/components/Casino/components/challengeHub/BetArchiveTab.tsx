@@ -18,9 +18,16 @@ const ARCHIVE_LIMITS = [
   { value: 50_000, label: '50k' },
   { value: 250_000, label: '250k' },
   { value: 1_000_000, label: '1m' },
-  { value: 0, label: 'ALL' },
 ]
 const ARCHIVE_LIMIT_STORAGE_KEY = 'slotbot_archive_limit_v1'
+const DEFAULT_ARCHIVE_LIMIT = 50_000
+
+function normalizeArchiveLimit(raw: unknown) {
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_ARCHIVE_LIMIT
+  const allowed = ARCHIVE_LIMITS.map((opt) => opt.value)
+  return allowed.includes(n) ? n : DEFAULT_ARCHIVE_LIMIT
+}
 
 function fmtUsdCents(cents: number) {
   const n = Number(cents || 0) / 100
@@ -34,10 +41,9 @@ export function BetArchiveTab({ accessToken }: BetArchiveTabProps) {
   const [error, setError] = useState<string | null>(null)
   const [archiveLimit, setArchiveLimit] = useState<number>(() => {
     try {
-      const stored = Number(localStorage.getItem(ARCHIVE_LIMIT_STORAGE_KEY) || 50_000)
-      return Number.isFinite(stored) ? stored : 50_000
+      return normalizeArchiveLimit(localStorage.getItem(ARCHIVE_LIMIT_STORAGE_KEY))
     } catch {
-      return 50_000
+      return DEFAULT_ARCHIVE_LIMIT
     }
   })
 
@@ -114,7 +120,7 @@ export function BetArchiveTab({ accessToken }: BetArchiveTabProps) {
     <div className="challenge-hub-archive">
       <div className="challenge-hub-archive-toolbar">
         <div className="challenge-hub-archive-meta">
-          Archive spins: <b>{view.rowCount}</b> ({archiveLimit > 0 ? `latest ${archiveLimit}` : 'all available'})
+          Archive spins: <b>{view.rowCount}</b> (latest {archiveLimit.toLocaleString()})
           <span className="ml-1">· KPI source: persisted casino spins (USD snapshots)</span>
         </div>
         <div className="challenge-hub-archive-actions">

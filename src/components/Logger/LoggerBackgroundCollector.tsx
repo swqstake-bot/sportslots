@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { subscribeToHouseBets } from '../Casino/api/stakeRealtimeFacade';
 import { Queries } from '../../api/queries';
 import { createEventEnvelope } from '../../utils/eventEnvelope';
+import { dispatchLoggerBetSaved, normalizeLoggerBetEntry } from './loggerBetRealtime';
 import { inferLoggerCategory } from './loggerUtils';
 
 function publishLoggerStatus(status: 'connecting' | 'connected' | 'error' | 'idle', error = '') {
@@ -93,9 +94,14 @@ export default function LoggerBackgroundCollector() {
       const sub = await subscribeToHouseBets(token, (b: any) => {
         const entry = mapLoggerEntry(b);
         const envelope = createEventEnvelope('logger.houseBet.persist', entry);
+        const persistAndNotify = (payload: typeof entry) =>
+          window.electronAPI.saveLoggerBet({ ...payload, eventEnvelope: envelope }).then(() => {
+            const normalized = normalizeLoggerBetEntry(payload);
+            if (normalized) dispatchLoggerBetSaved(normalized);
+          });
         enrichSportsBetFromIid(entry)
-          .then((enriched) => window.electronAPI.saveLoggerBet({ ...enriched, eventEnvelope: envelope }))
-          .catch(() => window.electronAPI.saveLoggerBet({ ...entry, eventEnvelope: envelope }))
+          .then((enriched) => persistAndNotify(enriched))
+          .catch(() => persistAndNotify(entry))
           .catch(() => {});
       });
       if (cancelled) {

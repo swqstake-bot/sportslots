@@ -4,7 +4,7 @@ import { SectionCard } from '../ui/SectionCard'
 import { getChallengeHubRecentBets, subscribeChallengeHubBetFeed } from '../../utils/challengeHubLiveFeed'
 import { applyHouseBetToHubFeed, backfillRecentBetsShareFromLogger } from '../../utils/challengeHubBetIdPatch'
 import { ChallengeHubBetListFeed, CHALLENGE_HUB_BET_LIST_MAX_ROWS } from './ChallengeHubBetListFeed'
-import { useChallengeHubBetListOptional } from './ChallengeHubBetListContext'
+import { useChallengeHubRecentBets } from './ChallengeHubBetListContext'
 import { formatAmount } from '../../utils/formatAmount'
 import {
   parseStoredTopEntries,
@@ -30,11 +30,11 @@ type ChallengeHubBetListPanelProps = {
 export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
   accessToken,
 }: ChallengeHubBetListPanelProps) {
-  const hubList = useChallengeHubBetListOptional()
-  if (!hubList) {
-    throw new Error('ChallengeHubBetListPanel must be used inside ChallengeHubBetListProvider')
-  }
-  const { recentBets, setRecentBets } = hubList
+  const feedSnapshot = useChallengeHubRecentBets()
+  const recentBets = useMemo(
+    () => feedSnapshot.slice(0, CHALLENGE_HUB_BET_LIST_MAX_ROWS),
+    [feedSnapshot]
+  )
   const [topMultisLimit, setTopMultisLimit] = useState<number>(10)
   const [feedOpen, setFeedOpen] = useState(true)
   const [highlightsOpen, setHighlightsOpen] = useState(true)
@@ -47,30 +47,8 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
 
   useEffect(() => {
     let cancelled = false
-    const max = CHALLENGE_HUB_BET_LIST_MAX_ROWS
-
-    const hydrateFromHubMemory = () => {
-      const fast = getChallengeHubRecentBets()
-      if (fast.length > 0) {
-        setRecentBets(fast.slice(0, max))
-      }
-    }
-
-    hydrateFromHubMemory()
-
     const unsubscribe = subscribeChallengeHubBetFeed((entry) => {
       if (cancelled) return
-      setRecentBets((prev) => {
-        const id = entry?.id != null ? String(entry.id) : ''
-        if (!id) return [entry, ...prev].slice(0, max)
-        const idx = prev.findIndex((x) => String(x?.id ?? '') === id)
-        if (idx >= 0) {
-          const next = prev.slice()
-          next[idx] = { ...next[idx], ...entry }
-          return next
-        }
-        return [entry, ...prev].slice(0, max)
-      })
       if (entry?.hubSettlement !== 'pending' || entry?.shareIid) {
         setTopMultisAll((prev) => mergeTopEntries(prev, [entry]))
       }
@@ -80,7 +58,7 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
       cancelled = true
       unsubscribe()
     }
-  }, [setRecentBets])
+  }, [])
 
   /** SSP-style: houseBets = einzige ID-Quelle fÃ¼r den Feed. */
   useEffect(() => {
@@ -88,7 +66,7 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
     let cancelled = false
     let sub: { disconnect?: () => void } | null = null
 
-    subscribeToHouseBets(accessToken, (bItem) => {
+    subscribeToHouseBets(accessToken, (bItem: unknown) => {
       if (cancelled) return
       applyHouseBetToHubFeed(bItem)
     }).then((s) => {
@@ -122,10 +100,7 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
       try {
         const rows = await loader({ limit: 800 })
         if (cancelled || !Array.isArray(rows) || rows.length === 0) return
-        setRecentBets((prev) => {
-          const filled = backfillRecentBetsShareFromLogger(prev, rows)
-          return filled === prev ? prev : filled
-        })
+        backfillRecentBetsShareFromLogger(getChallengeHubRecentBets(), rows)
         const mapped = filterRowsForHighlightsMerge(rows)
           .map((row) => loggerBetToTopCandidate(row))
           .filter(Boolean)
@@ -142,7 +117,7 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
       cancelled = true
       window.clearInterval(id)
     }
-  }, [setRecentBets])
+  }, [])
 
   useEffect(() => {
     persistTopEntries(topMultisAll)

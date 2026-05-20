@@ -12,9 +12,9 @@ import type { SportBet } from '../store/userStore';
 import { extractSportBetFromPreviewResponse, logPreviewCashoutDebug } from '../utils/previewCashoutResponse';
 
 /** Pause zwischen Batches paralleler PreviewCashout-Calls (Rate limits). */
-const BATCH_DELAY_MS = 350;
+export const BATCH_DELAY_MS = 350;
 /** Wie viele Previews parallel (pro Batch). */
-const PARALLEL_BATCH_SIZE = 6;
+export const PARALLEL_BATCH_SIZE = 6;
 
 function hasLiveLeg(bet: SportBet): boolean {
   return (bet.outcomes ?? []).some((o: any) => {
@@ -50,7 +50,7 @@ export interface UseCashoutOffersOptions {
  * Führt für eine einzelne Wette einen Cashout-Preview-Request aus
  * und gibt die aktualisierte Wette zurück.
  */
-async function processSingleBet(
+export async function processSingleBet(
   bet: SportBet
 ): Promise<SportBet> {
   if (bet?.customBet || isCashoutDisabledByCustomPrices(bet)) {

@@ -11,11 +11,11 @@ import { formatBetLabel, formatAmount, toUnits, toMinor } from '../utils/formatA
 import { convertMinorToUsdMajor } from '../utils/monetaryContract'
 import {
   createEmptyCasinoAggregate,
-  applyCasinoSpinToAggregate,
   recomputeCasinoAggregate,
   aggregateToStatsSnapshot,
-  entryStableKey,
 } from '../utils/casinoStatsEngine'
+
+const SLOT_STATS_WORKER_ENABLED = true
 import StatsDisplay from './StatsDisplay'
 import BetList from './BetList'
 import LogViewer from './LogViewer'
@@ -214,6 +214,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const lastBalanceRef = useRef(null)
   const slotHasFullSamplesRef = useRef(false)
   const openedBonusPopupsRef = useRef(new Map())
+  const statsWorkerRef = useRef(null)
+  const statsWorkerReqIdRef = useRef(0)
+  const statsAggSessionStartRef = useRef(null)
   sessionRef.current = session
   slotHasFullSamplesRef.current = slotHasFullSamples
   const [supportedCurrencies, setSupportedCurrencies] = useState(ALL_CURRENCIES)
@@ -306,47 +309,66 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     [betHistory, sessionStartAt]
   )
   const [statsAgg, setStatsAgg] = useState(() => createEmptyCasinoAggregate())
-  const statsAggCountRef = useRef(0)
-  const statsAggLastKeyRef = useRef('')
-  const statsAggSessionStartRef = useRef(null)
-  const statsAggRatesSigRef = useRef('')
 
   useEffect(() => {
-    const sessionChanged = statsAggSessionStartRef.current !== sessionStartAt
     const list = sessionBets || []
-    const prevCount = statsAggCountRef.current
-    const nextRatesSig = JSON.stringify(
-      Object.keys(currencyRates || {})
-        .sort()
-        .map((k) => [k, Number(currencyRates?.[k]) || 0])
-    )
-    const ratesChanged = statsAggRatesSigRef.current !== nextRatesSig
-    const canAppend = !sessionChanged && list.length >= prevCount
-    const prevKeyExpected = prevCount > 0 ? entryStableKey(list[prevCount - 1]) : ''
-    const orderStable = prevCount === 0 || prevKeyExpected === statsAggLastKeyRef.current
+    const sessionChanged = statsAggSessionStartRef.current !== sessionStartAt
+    statsAggSessionStartRef.current = sessionStartAt
 
-    if (!canAppend || !orderStable || ratesChanged) {
-      const full = recomputeCasinoAggregate(list, currencyRates)
-      setStatsAgg(full)
-      statsAggCountRef.current = list.length
-      statsAggLastKeyRef.current = list.length ? entryStableKey(list[list.length - 1]) : ''
-      statsAggSessionStartRef.current = sessionStartAt
-      statsAggRatesSigRef.current = nextRatesSig
+    if (sessionChanged && statsWorkerRef.current) {
+      try {
+        statsWorkerRef.current.terminate()
+      } catch {
+      }
+      statsWorkerRef.current = null
+    }
+
+    if (!SLOT_STATS_WORKER_ENABLED || typeof Worker === 'undefined') {
+      setStatsAgg(recomputeCasinoAggregate(list, currencyRates))
       return
     }
 
-    if (list.length === prevCount) return
-
-    let next = statsAgg
-    for (let i = prevCount; i < list.length; i++) {
-      next = applyCasinoSpinToAggregate(next, list[i], currencyRates)
+    if (!statsWorkerRef.current) {
+      try {
+        const worker = new Worker(new URL('../workers/casinoStatsAggregate.worker.js', import.meta.url), { type: 'module' })
+        worker.onmessage = (ev) => {
+          const payload = ev?.data || {}
+          if ((Number(payload?.reqId) || 0) !== statsWorkerReqIdRef.current) return
+          if (payload?.agg) {
+            setStatsAgg(payload.agg)
+            return
+          }
+          setStatsAgg(recomputeCasinoAggregate(list, currencyRates))
+        }
+        worker.onerror = () => {
+          setStatsAgg(recomputeCasinoAggregate(list, currencyRates))
+        }
+        statsWorkerRef.current = worker
+      } catch {
+        setStatsAgg(recomputeCasinoAggregate(list, currencyRates))
+        return
+      }
     }
-    setStatsAgg(next)
-    statsAggCountRef.current = list.length
-    statsAggLastKeyRef.current = list.length ? entryStableKey(list[list.length - 1]) : ''
-    statsAggSessionStartRef.current = sessionStartAt
-    statsAggRatesSigRef.current = nextRatesSig
-  }, [sessionBets, sessionStartAt, currencyRates, statsAgg])
+
+    statsWorkerReqIdRef.current += 1
+    const reqId = statsWorkerReqIdRef.current
+    try {
+      statsWorkerRef.current.postMessage({ reqId, betHistory: list, currencyRates })
+    } catch {
+      setStatsAgg(recomputeCasinoAggregate(list, currencyRates))
+    }
+  }, [sessionBets, sessionStartAt, currencyRates])
+
+  useEffect(() => {
+    return () => {
+      if (!statsWorkerRef.current) return
+      try {
+        statsWorkerRef.current.terminate()
+      } catch {
+      }
+      statsWorkerRef.current = null
+    }
+  }, [])
 
   const stats = useMemo(() => {
     return aggregateToStatsSnapshot(statsAgg, {

@@ -422,9 +422,9 @@ function getBetLogPathForDate(isoDateStr?: string): string {
   return path.join(getBetLogsDir(), `bets-${dateStr}.jsonl`);
 }
 
-function appendBetLog(entry: unknown): string {
+async function appendBetLog(entry: unknown): Promise<string> {
   const filePath = getBetLogPathForDate();
-  fs.appendFileSync(filePath, JSON.stringify(entry) + '\n', 'utf8');
+  await fs.promises.appendFile(filePath, JSON.stringify(entry) + '\n', 'utf8');
   return filePath;
 }
 
@@ -905,7 +905,7 @@ ipcMain.handle('logger-fetch-currency-rates', async () => {
     }
 });
 
-ipcMain.handle('logger-save-bet', (_event, entry: any) => {
+ipcMain.handle('logger-save-bet', async (_event, entry: any) => {
     if (!entry || (entry.houseId == null && entry.iid == null && entry.betId == null && entry.receivedAt == null)) return null;
     return appendBetLog(entry);
 });

@@ -47,7 +47,7 @@ import { buildStakeCasinoFairnessReferer, rotateStakeRgsGameSeed } from '../api/
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { usePrefersReducedMotion } from '../../../hooks/usePrefersReducedMotion'
 import { TipMenu } from '../../ui/TipMenu'
-import { useChallengeHubBetListOptional } from './challengeHub/ChallengeHubBetListContext'
+import { useChallengeHubRecentBets } from './challengeHub/ChallengeHubBetListContext'
 import { SvgCumulativeProfitLineChart } from '../../charts/SvgCumulativeCharts'
 
 /** Challenge-Liste: alle Einträge wie von Stake; Provider aus Slug/WebSlots (`inferProviderId`), nicht blind stakeEngine. */
@@ -1075,8 +1075,7 @@ const STYLES = {
 }
 
 export default function AutoChallengeHunter({ accessToken, webSlots = [], onDiscoveredSlots, onHubStatsChange }) {
-  const hubBetListCtx = useChallengeHubBetListOptional()
-  const hubRecentBets = hubBetListCtx?.recentBets
+  const hubRecentBets = useChallengeHubRecentBets()
   const [minMinBet, setMinMinBet] = useState(hunterFiltersInitial.minMinBet)
   const [maxMinBet, setMaxMinBet] = useState(hunterFiltersInitial.maxMinBet)
   const [minPrizeUsd, setMinPrizeUsd] = useState(hunterFiltersInitial.minPrizeUsd)

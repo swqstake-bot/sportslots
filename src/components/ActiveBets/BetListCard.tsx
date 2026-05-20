@@ -113,7 +113,7 @@ export function BetListCard({
                 }}
                 className="h-7 w-7 rounded-md transition-colors hover:opacity-90"
                 style={{ background: 'var(--app-border)', color: 'var(--app-text-muted)' }}
-                title="Copy link"
+                title="Copy bet ID (sport:…)"
               >
                 {copiedId === bet.id ? (
                   <span className="text-xs" style={{ color: 'var(--app-accent)' }}>✓</span>

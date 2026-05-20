@@ -83,6 +83,7 @@ function App() {
     setSportFilterType,
     fixtureSearchQuery,
     setFixtureSearchQuery,
+    isActiveBetsModalOpen,
   } = useUiStore();
 
   const accentInlineStyle = useAccentInlineStyle();
@@ -189,12 +190,39 @@ function App() {
     }
   };
 
-  const fetchData = useCallback(async () => {
+  const fetchActiveSportBets = useCallback(async (userName: string) => {
+    const merged: SportBet[] = [];
+    const seen = new Set<string>();
+    for (let offset = 0; offset < ACTIVE_SPORT_BETS_MAX_TOTAL; offset += ACTIVE_SPORT_BETS_PAGE_SIZE) {
+      const betsRes = await StakeApi.query<{
+        user?: { activeSportBets?: SportBet[] };
+      }>(Queries.FetchActiveSportBets, {
+        limit: ACTIVE_SPORT_BETS_PAGE_SIZE,
+        offset,
+        name: userName,
+      });
+      const batch = betsRes.data?.user?.activeSportBets ?? [];
+      for (const b of batch) {
+        if (b?.id && !seen.has(b.id)) {
+          seen.add(b.id);
+          merged.push(b);
+        }
+      }
+      if (batch.length < ACTIVE_SPORT_BETS_PAGE_SIZE) break;
+    }
+    setActiveBets(merged);
+  }, [setActiveBets]);
+
+  const shouldFetchActiveSportBets = useCallback(() => {
+    const ui = useUiStore.getState();
+    return ui.currentView === 'sports' || ui.isActiveBetsModalOpen;
+  }, []);
+
+  const fetchData = useCallback(async (options?: { withActiveBets?: boolean }) => {
     if (!isAuthenticated) return;
     setIsLoading(true);
     setError(null);
     try {
-      // 1. Fetch User Details
       const userRes = await StakeApi.query(Queries.UserDetails);
       if (!userRes.data?.user) {
         throw new Error('User not found. Please login.');
@@ -202,7 +230,6 @@ function App() {
       const userData = userRes.data.user;
       setUser(userData);
 
-      // 2. Balances + aktive Wetten (Wetten in Seiten à max. ACTIVE_SPORT_BETS_PAGE_SIZE — sonst number_less_equal)
       try {
         const balanceRes = await StakeApi.query(Queries.FetchBalances);
 
@@ -210,29 +237,12 @@ function App() {
           setBalancesFromApi(balanceRes.data.user.balances);
         } else {
             console.warn('Balances not found in response', balanceRes);
-            // Don't set dummy balances, let store handle empty state
         }
 
-        const merged: SportBet[] = [];
-        const seen = new Set<string>();
-        for (let offset = 0; offset < ACTIVE_SPORT_BETS_MAX_TOTAL; offset += ACTIVE_SPORT_BETS_PAGE_SIZE) {
-          const betsRes = await StakeApi.query<{
-            user?: { activeSportBets?: SportBet[] };
-          }>(Queries.FetchActiveSportBets, {
-            limit: ACTIVE_SPORT_BETS_PAGE_SIZE,
-            offset,
-            name: userData.name,
-          });
-          const batch = betsRes.data?.user?.activeSportBets ?? [];
-          for (const b of batch) {
-            if (b?.id && !seen.has(b.id)) {
-              seen.add(b.id);
-              merged.push(b);
-            }
-          }
-          if (batch.length < ACTIVE_SPORT_BETS_PAGE_SIZE) break;
+        const withActiveBets = options?.withActiveBets ?? shouldFetchActiveSportBets();
+        if (withActiveBets && userData.name) {
+          await fetchActiveSportBets(userData.name);
         }
-        setActiveBets(merged);
       } catch (innerErr) {
           console.error("Error fetching balances/bets", innerErr);
       }
@@ -241,31 +251,34 @@ function App() {
       console.error(`Error: ${err.message}`);
       setError(err.message);
       if (err.message.includes('401') || err.message.includes('login')) {
-        // useUserStore.getState().logout(); // Can't access getState inside component easily, but setUser(null) works
-        // But we already have setUser from hook
-        // setUser(null); // Type mismatch in store? No, setUser expects User | null
-        // Actually setUser expects User object. Logout sets it to null.
-        // Let's ignore logout for now or handle it better.
       }
     } finally {
       setIsLoading(false);
     }
-  }, [setUser, setBalancesFromApi, setActiveBets, isAuthenticated]);
+  }, [setUser, setBalancesFromApi, fetchActiveSportBets, shouldFetchActiveSportBets, isAuthenticated]);
 
-  // Initial load & Polling
+  const needsActiveSportBets = currentView === 'sports' || isActiveBetsModalOpen;
+
+  // Initial load & polling (balances always; active sport bets only when sports UI needs them)
   useEffect(() => {
-    fetchData();
-    // Poll for updates every 10 seconds to keep match tracker live
+    fetchData({ withActiveBets: needsActiveSportBets });
     const interval = setInterval(() => {
         const currentUser = useUserStore.getState().user;
         if (currentUser) {
-            fetchData();
+            fetchData({ withActiveBets: shouldFetchActiveSportBets() });
         }
     }, 10000);
     
     console.log('MainApp mounted - StakeSports UI should be visible');
     return () => clearInterval(interval);
-  }, [fetchData, isAuthenticated]);
+  }, [fetchData, isAuthenticated, needsActiveSportBets, shouldFetchActiveSportBets]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !needsActiveSportBets) return;
+    const currentUser = useUserStore.getState().user;
+    if (!currentUser?.name) return;
+    void fetchActiveSportBets(currentUser.name);
+  }, [fetchActiveSportBets, isAuthenticated, needsActiveSportBets]);
 
   useEffect(() => {
     const handler = (event: Event) => {

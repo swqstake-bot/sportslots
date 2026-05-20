@@ -4,6 +4,7 @@ import { StakeApi } from '../api/client';
 import { Queries } from '../api/queries';
 import { useUserStore, type SportBet } from '../store/userStore';
 import { setShieldOdds } from '../store/shieldOddsCache';
+import { useSportsFxRates, loadSportsFxRates } from './useSportsFxRates';
 
 const BATCH_LIMIT = 50;
 const MAX_BETS_LIMIT = 500;
@@ -50,7 +51,7 @@ export function useBetHistory({
   const [finishedBets, setFinishedBets] = useState<SportBet[]>([]);
   const [isLoadingActive, setIsLoadingActive] = useState(false);
   const [isLoadingFinished, setIsLoadingFinished] = useState(false);
-  const [usdRates, setUsdRates] = useState<Record<string, number>>({});
+  const { usdRates, refreshRates: fetchUsdRates } = useSportsFxRates();
   const onActiveFetchedRef = useRef(onActiveFetched);
   onActiveFetchedRef.current = onActiveFetched;
   const loadingActiveRef = useRef(false);
@@ -68,22 +69,6 @@ export function useBetHistory({
     },
     [setStoreActiveBets]
   );
-
-  const fetchUsdRates = useCallback(async () => {
-    try {
-      const res = await StakeApi.query<{ info?: { currencies?: Array<{ name?: string; usd?: number }> } }>(Queries.CurrencyConfiguration, {});
-      const list = res?.data?.info?.currencies ?? [];
-      const map: Record<string, number> = {};
-      for (const c of list) {
-        const name = String(c?.name ?? '').toLowerCase();
-        const usd = Number(c?.usd ?? 0);
-        if (name) map[name] = usd;
-      }
-      setUsdRates(map);
-    } catch {
-      setUsdRates({});
-    }
-  }, []);
 
   const fetchActiveBets = useCallback(async () => {
     if (!userName) return;
@@ -159,8 +144,8 @@ export function useBetHistory({
     if (!userName) return;
     fetchActiveBets();
     fetchFinishedBets();
-    fetchUsdRates();
-  }, [userName, fetchActiveBets, fetchFinishedBets, fetchUsdRates]);
+    void loadSportsFxRates();
+  }, [userName, fetchActiveBets, fetchFinishedBets]);
 
   useEffect(() => {
     if (!userName || refreshIntervalMs <= 0) return;

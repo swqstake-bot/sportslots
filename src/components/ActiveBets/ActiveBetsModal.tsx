@@ -18,6 +18,7 @@ import { CollapsibleSection } from './CollapsibleSection';
 import { BetListCard } from './BetListCard';
 import { extractSportBetFromPreviewResponse, logPreviewCashoutDebug } from '../../utils/previewCashoutResponse';
 import { toUsd } from '../Logger/loggerUtils';
+import { formatSportBetShareIdForCopy } from '../../utils/stakeSportsUrl';
 
 function hasLiveLeg(bet: SportBet): boolean {
   return (bet.outcomes ?? []).some((o: any) => {
@@ -225,23 +226,16 @@ export function ActiveBetsModal({ onClose, initialPreviewBetId = null }: ActiveB
   }, [initialPreviewBetId, activeBets, finishedBets, handlePreviewBet]);
 
   const copyLink = (betId: string, iid?: string) => {
-    // Construct URL based on old tool behavior
-    // If iid (ShareIdentifier) exists, use the stake slip sharing URL
-    // Otherwise fallback to my-bets URL with bet ID
-    let url;
-    if (iid) {
-        const safeIid = encodeURIComponent(iid);
-        url = `https://stake.com/sports/home?operation=withdraw&iid=${safeIid}&modal=bet`;
-    } else {
-        url = `https://stake.com/sports/my-bets/${betId}?modal=bet`;
-    }
-    
-    navigator.clipboard.writeText(url).then(() => {
+    const shareId = formatSportBetShareIdForCopy(iid)
+    const text =
+      shareId ?? `https://stake.com/sports/my-bets/${betId}?modal=bet`
+
+    navigator.clipboard.writeText(text).then(() => {
       setCopiedId(betId);
       setTimeout(() => setCopiedId(null), 2000);
-      showToast('Link copied', 'success');
+      showToast(shareId ? 'Bet ID copied' : 'Link copied', 'success');
     }).catch((err) => {
-      console.error('Failed to copy link', err);
+      console.error('Failed to copy bet reference', err);
       showToast('Copy failed', 'error');
     });
   };

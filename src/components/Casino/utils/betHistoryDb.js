@@ -128,10 +128,14 @@ export async function appendBet(slotSlug, entry, slotName) {
  * @param {number} [limit]
  * @returns {Promise<Array<{ id: number, slotSlug: string, betAmount: number, winAmount: number, isBonus: boolean, balance?: number, roundId?: string, addedAt: number }>>}
  */
+const MAX_LOAD_RECENT_BETS = 1_000_000
+const FALLBACK_RECENT_BETS = 5_000
+
 export async function loadRecentBets(limit = 30) {
   const database = await openDb()
   const parsedLimit = Number(limit)
-  const unlimited = !Number.isFinite(parsedLimit) || parsedLimit <= 0
+  let effectiveLimit = !Number.isFinite(parsedLimit) || parsedLimit <= 0 ? FALLBACK_RECENT_BETS : parsedLimit
+  if (effectiveLimit > MAX_LOAD_RECENT_BETS) effectiveLimit = MAX_LOAD_RECENT_BETS
   return new Promise((resolve, reject) => {
     const tx = database.transaction(STORE_NAME, 'readonly')
     const store = tx.objectStore(STORE_NAME)
@@ -140,7 +144,7 @@ export async function loadRecentBets(limit = 30) {
     const results = []
     req.onsuccess = () => {
       const cursor = req.result
-      if (!cursor || (!unlimited && results.length >= parsedLimit)) {
+      if (!cursor || results.length >= effectiveLimit) {
         resolve(results)
         return
       }

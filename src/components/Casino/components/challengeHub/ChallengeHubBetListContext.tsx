@@ -1,28 +1,22 @@
 /* eslint-disable react-refresh/only-export-components */
+import { useSyncExternalStore, type ReactNode } from 'react'
 import {
-  createContext,
-  useContext,
-  useMemo,
-  useState,
-  type Dispatch,
-  type ReactNode,
-  type SetStateAction,
-} from 'react'
+  getChallengeHubRecentBets,
+  subscribeChallengeHubFeed,
+  type ChallengeHubBetFeedEntry,
+} from '../../utils/challengeHubLiveFeed'
 
-export type ChallengeHubBetListState = {
-  recentBets: any[]
-  setRecentBets: Dispatch<SetStateAction<any[]>>
-}
-
-const ChallengeHubBetListContext = createContext<ChallengeHubBetListState | null>(null)
-
+/** Structural shell marker — feed state lives in challengeHubLiveFeed, not React context. */
 export function ChallengeHubBetListProvider({ children }: { children: ReactNode }) {
-  const [recentBets, setRecentBets] = useState<any[]>([])
-  const value = useMemo(() => ({ recentBets, setRecentBets }), [recentBets])
-  return <ChallengeHubBetListContext.Provider value={value}>{children}</ChallengeHubBetListContext.Provider>
+  return children
 }
 
-/** Null when AutoChallengeHunter (or other) is rendered outside the Challenge Hub shell. */
-export function useChallengeHubBetListOptional(): ChallengeHubBetListState | null {
-  return useContext(ChallengeHubBetListContext)
+export function useChallengeHubRecentBets(): ChallengeHubBetFeedEntry[] {
+  return useSyncExternalStore(subscribeChallengeHubFeed, getChallengeHubRecentBets, getChallengeHubRecentBets)
+}
+
+/** @deprecated Use useChallengeHubRecentBets — kept for gradual migration. */
+export function useChallengeHubBetListOptional(): { recentBets: ChallengeHubBetFeedEntry[] } | null {
+  const recentBets = useChallengeHubRecentBets()
+  return { recentBets }
 }
