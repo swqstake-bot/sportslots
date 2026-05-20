@@ -1,4 +1,5 @@
-import { useMemo } from 'react'
+import { memo, useMemo, useRef } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import clsx from 'clsx'
 import { formatAmount } from '../utils/formatAmount'
 import { formatStakeShareBetId } from '../utils/stakeBetShareId'
@@ -17,6 +18,164 @@ function multiplierTone(multiplier) {
   if (multiplier >= 2) return 'terminal-multi-pill--nice'
   return ''
 }
+
+const BET_LIST_ROW_ESTIMATE_PX = { minimal: 18, compact: 22, default: 28 }
+
+const BetListRow = memo(function BetListRow({
+  b,
+  rowNum,
+  defaultCurrency,
+  compact,
+  showSlot,
+  showNet,
+  showContext,
+  showCopyHouse,
+  onOpenSlot,
+  style,
+}) {
+  const bet = b.betAmount ?? 0
+  const win = b.winAmount ?? 0
+  const net = win - bet
+  const isBonus = b.isBonus
+  const isHubPending = b.hubSettlement === 'pending'
+  const rowCurrency = String(b.currencyCode || defaultCurrency || '').toUpperCase()
+  const rowSuffix = rowCurrency ? ` ${rowCurrency}` : ''
+  const shareRaw = b.shareIid || b.houseTopId || b.houseId || b.iid || null
+  const shareId = formatStakeShareBetId(shareRaw)
+  const canCopyShare = typeof shareId === 'string' && shareId.trim() !== ''
+  const sharePreview = canCopyShare && shareId.length > 22 ? `${shareId.slice(0, 22)}…` : shareId || ''
+  const showWin = !(isBonus && b.stoppedBonus)
+  const multiplierNum = bet > 0 ? win / bet : 0
+  const multiplier = Number.isFinite(multiplierNum) ? multiplierNum.toFixed(2) : '0.00'
+  const multiplierToneClass = multiplierTone(multiplierNum)
+  const scatterCount =
+    b.scatterCount != null && Number.isFinite(Number(b.scatterCount)) ? Number(b.scatterCount) : null
+  const canOpenSlot = !showWin && typeof onOpenSlot === 'function' && typeof b.slotSlug === 'string' && b.slotSlug.length > 0
+
+  return (
+    <tr
+      className={clsx(isBonus && 'terminal-row--bonus', compact && 'terminal-tr--compact')}
+      style={style}
+    >
+      <td className="terminal-td terminal-td--num">{rowNum}</td>
+      {showSlot && (
+        <td className="terminal-td" title={b.slotName || b.slotSlug}>
+          {b.slotName || b.slotSlug || '–'}
+        </td>
+      )}
+      <td className="terminal-td">
+        {fmt(bet, rowCurrency)}
+        {rowSuffix}
+      </td>
+      <td
+        className={clsx(
+          'terminal-td',
+          !isHubPending && win > 0 && 'terminal-td--win',
+          isHubPending && 'terminal-td--pending'
+        )}
+      >
+        {!showWin ? (
+          <span className="terminal-inline">
+            <span>{`Bonus${scatterCount != null ? ` (${scatterCount}S)` : ''}`}</span>
+            {canOpenSlot ? (
+              <button
+                type="button"
+                className="terminal-copy-btn"
+                onClick={() => onOpenSlot(b)}
+                title={`Open ${b.slotName || b.slotSlug}`}
+              >
+                Open
+              </button>
+            ) : null}
+          </span>
+        ) : isHubPending ? (
+          '…'
+        ) : (
+          `${fmt(win, rowCurrency)}${rowSuffix}`
+        )}
+      </td>
+      {showNet && (
+        <td
+          className={clsx(
+            'terminal-td',
+            !isHubPending && net > 0 && 'terminal-td--win',
+            !isHubPending && net < 0 && 'terminal-td--loss',
+            !isHubPending && net === 0 && 'terminal-td--even',
+            isHubPending && 'terminal-td--pending'
+          )}
+        >
+          {!showWin ? '–' : isHubPending ? '…' : `${net >= 0 ? '+' : ''}${fmt(net, rowCurrency)}${rowSuffix}`}
+        </td>
+      )}
+      {showContext && (
+        <td className="terminal-td">
+          <span className="terminal-context">
+            {(() => {
+              const contextRaw = String(b.sourceTag || b.roundId || b.slotSlug || '—')
+              const contextMasked = /^house:/i.test(contextRaw) ? 'bet id' : contextRaw
+              return (
+                <span className="terminal-context-clip" title={contextMasked}>
+                  {contextMasked}
+                </span>
+              )
+            })()}
+            {canCopyShare ? (
+              <button
+                type="button"
+                className="terminal-copy-btn"
+                title={shareId}
+                onClick={() => {
+                  try {
+                    navigator?.clipboard?.writeText(shareId).catch(() => {})
+                  } catch (_) {}
+                }}
+              >
+                Copy
+              </button>
+            ) : null}
+          </span>
+        </td>
+      )}
+      {showCopyHouse && (
+        <td className="terminal-td">
+          {canCopyShare ? (
+            <span className="terminal-inline">
+              <span className="terminal-id-preview" title={shareId}>
+                {sharePreview}
+              </span>
+              <button
+                type="button"
+                className="terminal-copy-btn"
+                title={`Copy bet id (${shareId})`}
+                onClick={() => {
+                  try {
+                    navigator?.clipboard?.writeText(shareId).catch(() => {})
+                  } catch (_) {}
+                }}
+              >
+                Copy
+              </button>
+            </span>
+          ) : (
+            <span className="terminal-id-preview">—</span>
+          )}
+        </td>
+      )}
+      <td
+        className={clsx('terminal-td', isHubPending && 'terminal-td--pending')}
+        title={!isHubPending && showWin ? `${multiplier}× stake` : undefined}
+      >
+        {!showWin ? (
+          '–'
+        ) : isHubPending ? (
+          '…'
+        ) : (
+          <span className={clsx('terminal-multi-pill', multiplierToneClass)}>{multiplier}×</span>
+        )}
+      </td>
+    </tr>
+  )
+})
 
 export default function BetList({
   bets,
@@ -44,6 +203,22 @@ export default function BetList({
     return Number.isFinite(Number(maxRows)) && Number(maxRows) > 0 ? sorted.slice(0, Number(maxRows)) : sorted
   }, [bets, maxRows])
 
+  const scrollRef = useRef(null)
+  const rowEstimatePx = minimal
+    ? BET_LIST_ROW_ESTIMATE_PX.minimal
+    : compact
+      ? BET_LIST_ROW_ESTIMATE_PX.compact
+      : BET_LIST_ROW_ESTIMATE_PX.default
+
+  // eslint-disable-next-line react-hooks/incompatible-library -- windowed bet rows
+  const rowVirtualizer = useVirtualizer({
+    count: displayBets.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => rowEstimatePx,
+    overscan: 10,
+    getItemKey: (index) => String(displayBets[index]?.id ?? index),
+  })
+
   const panelClass = clsx('terminal-panel', minimal && 'terminal-panel--minimal', compact && 'terminal-panel--compact')
   const scrollClass = clsx(
     'terminal-scroll',
@@ -65,17 +240,16 @@ export default function BetList({
   }
 
   const defaultCurrency = (currencyCode || '').toUpperCase()
+  const virtualRows = rowVirtualizer.getVirtualItems()
 
   return (
     <div className={panelClass}>
       <div className="terminal-panel__head">
         <span className="terminal-panel__title">{title}</span>
-        <span className="terminal-panel__count">
-          {totalCount != null ? totalCount : bets.length} entries
-        </span>
+        <span className="terminal-panel__count">{totalCount != null ? totalCount : bets.length} entries</span>
       </div>
-      <div className={scrollClass}>
-        <table className="terminal-table">
+      <div ref={scrollRef} className={scrollClass}>
+        <table className="terminal-table terminal-table--virtual">
           <thead>
             <tr>
               <th className="terminal-th" style={{ width: '2.2rem' }}>
@@ -108,143 +282,35 @@ export default function BetList({
               </th>
             </tr>
           </thead>
-          <tbody>
-            {displayBets.map((b, i) => {
-              const bet = b.betAmount ?? 0
-              const win = b.winAmount ?? 0
-              const net = win - bet
-              const isBonus = b.isBonus
-              const isHubPending = b.hubSettlement === 'pending'
-              const rowCurrency = String(b.currencyCode || defaultCurrency || '').toUpperCase()
-              const rowSuffix = rowCurrency ? ` ${rowCurrency}` : ''
-              const shareRaw = b.shareIid || b.houseTopId || b.houseId || b.iid || null
-              const shareId = formatStakeShareBetId(shareRaw)
-              const canCopyShare = typeof shareId === 'string' && shareId.trim() !== ''
-              const sharePreview =
-                canCopyShare && shareId.length > 22 ? `${shareId.slice(0, 22)}…` : shareId || ''
-              const showWin = !(isBonus && b.stoppedBonus)
-              const multiplierNum = bet > 0 ? (win / bet) : 0
-              const multiplier = Number.isFinite(multiplierNum) ? multiplierNum.toFixed(2) : '0.00'
-              const multiplierToneClass = multiplierTone(multiplierNum)
-              const scatterCount =
-                b.scatterCount != null && Number.isFinite(Number(b.scatterCount))
-                  ? Number(b.scatterCount)
-                  : null
-              const canOpenSlot = !showWin && typeof onOpenSlot === 'function' && typeof b.slotSlug === 'string' && b.slotSlug.length > 0
-
+          <tbody
+            className="terminal-tbody--virtual"
+            style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}
+          >
+            {virtualRows.map((vRow) => {
+              const b = displayBets[vRow.index]
+              if (!b) return null
               return (
-                <tr
-                  key={b.id ?? i}
-                  className={clsx(isBonus && 'terminal-row--bonus', compact && 'terminal-tr--compact')}
-                >
-                  <td className="terminal-td terminal-td--num">{i + 1}</td>
-                  {showSlot && (
-                    <td className="terminal-td" title={b.slotName || b.slotSlug}>
-                      {b.slotName || b.slotSlug || '–'}
-                    </td>
-                  )}
-                  <td className="terminal-td">
-                    {fmt(bet, rowCurrency)}
-                    {rowSuffix}
-                  </td>
-                  <td
-                    className={clsx(
-                      'terminal-td',
-                      !isHubPending && win > 0 && 'terminal-td--win',
-                      isHubPending && 'terminal-td--pending'
-                    )}
-                  >
-                    {!showWin ? (
-                      <span className="terminal-inline">
-                        <span>{`Bonus${scatterCount != null ? ` (${scatterCount}S)` : ''}`}</span>
-                        {canOpenSlot ? (
-                          <button
-                            type="button"
-                            className="terminal-copy-btn"
-                            onClick={() => onOpenSlot(b)}
-                            title={`Open ${b.slotName || b.slotSlug}`}
-                          >
-                            Open
-                          </button>
-                        ) : null}
-                      </span>
-                    ) : isHubPending ? '…' : `${fmt(win, rowCurrency)}${rowSuffix}`}
-                  </td>
-                  {showNet && (
-                    <td
-                      className={clsx(
-                        'terminal-td',
-                        !isHubPending && net > 0 && 'terminal-td--win',
-                        !isHubPending && net < 0 && 'terminal-td--loss',
-                        !isHubPending && net === 0 && 'terminal-td--even',
-                        isHubPending && 'terminal-td--pending'
-                      )}
-                    >
-                      {!showWin ? '–' : isHubPending ? '…' : `${net >= 0 ? '+' : ''}${fmt(net, rowCurrency)}${rowSuffix}`}
-                    </td>
-                  )}
-                  {showContext && (
-                    <td className="terminal-td">
-                      <span className="terminal-context">
-                        {(() => {
-                          const contextRaw = String(b.sourceTag || b.roundId || b.slotSlug || '—')
-                          const contextMasked = /^house:/i.test(contextRaw) ? 'bet id' : contextRaw
-                          return (
-                            <span className="terminal-context-clip" title={contextMasked}>
-                              {contextMasked}
-                            </span>
-                          )
-                        })()}
-                        {canCopyShare ? (
-                          <button
-                            type="button"
-                            className="terminal-copy-btn"
-                            title={shareId}
-                            onClick={() => {
-                              try {
-                                navigator?.clipboard?.writeText(shareId).catch(() => {})
-                              } catch (_) {}
-                            }}
-                          >
-                            Copy
-                          </button>
-                        ) : null}
-                      </span>
-                    </td>
-                  )}
-                  {showCopyHouse && (
-                    <td className="terminal-td">
-                      {canCopyShare ? (
-                        <span className="terminal-inline">
-                          <span className="terminal-id-preview" title={shareId}>
-                            {sharePreview}
-                          </span>
-                          <button
-                            type="button"
-                            className="terminal-copy-btn"
-                            title={`Copy bet id (${shareId})`}
-                            onClick={() => {
-                              try {
-                                navigator?.clipboard?.writeText(shareId).catch(() => {})
-                              } catch (_) {}
-                            }}
-                          >
-                            Copy
-                          </button>
-                        </span>
-                      ) : (
-                        <span className="terminal-id-preview">—</span>
-                      )}
-                    </td>
-                  )}
-                  <td className={clsx('terminal-td', isHubPending && 'terminal-td--pending')} title={!isHubPending && showWin ? `${multiplier}× stake` : undefined}>
-                    {!showWin ? '–' : isHubPending ? '…' : (
-                      <span className={clsx('terminal-multi-pill', multiplierToneClass)}>
-                        {multiplier}×
-                      </span>
-                    )}
-                  </td>
-                </tr>
+                <BetListRow
+                  key={vRow.key}
+                  b={b}
+                  rowNum={vRow.index + 1}
+                  defaultCurrency={defaultCurrency}
+                  compact={compact}
+                  showSlot={showSlot}
+                  showNet={showNet}
+                  showContext={showContext}
+                  showCopyHouse={showCopyHouse}
+                  onOpenSlot={onOpenSlot}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    display: 'table',
+                    tableLayout: 'fixed',
+                    transform: `translateY(${vRow.start}px)`,
+                  }}
+                />
               )
             })}
           </tbody>
