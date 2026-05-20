@@ -1,7 +1,11 @@
 /**
  * Challenge-Hub: houseBets / Logger → shareIid auf Feed-Zeilen (BetList + Highlights).
  */
-import { getChallengeHubRecentBets, publishChallengeHubBet } from './challengeHubLiveFeed'
+import {
+  getChallengeHubRecentBets,
+  notifyChallengeHubFeedSnapshot,
+  publishChallengeHubBet,
+} from './challengeHubLiveFeed'
 import { toMinor } from './formatAmount'
 import {
   formatStakeShareBetId,
@@ -312,16 +316,20 @@ export function backfillRecentBetsShareFromLogger(recentBets, loggerRows, { publ
       settlementSource: row.settlementSource || 'logger_backfill',
     }
     if (publish && patched.id != null) {
-      publishChallengeHubBet({
-        id: patched.id,
-        shareIid: patched.shareIid,
-        iid: patched.iid,
-        houseId: patched.houseId,
-        hubSettlement: patched.hubSettlement,
-        settlementSource: patched.settlementSource,
-      })
+      publishChallengeHubBet(
+        {
+          id: patched.id,
+          shareIid: patched.shareIid,
+          iid: patched.iid,
+          houseId: patched.houseId,
+          hubSettlement: patched.hubSettlement,
+          settlementSource: patched.settlementSource,
+        },
+        { notifySnapshot: false }
+      )
     }
     return patched
   })
+  if (publish && changed) notifyChallengeHubFeedSnapshot()
   return changed ? next : recentBets
 }

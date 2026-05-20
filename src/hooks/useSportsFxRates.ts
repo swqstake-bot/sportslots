@@ -7,6 +7,8 @@ export type UsdRatesMap = Record<string, number>;
 let cachedRates: UsdRatesMap | null = null;
 let fetchPromise: Promise<UsdRatesMap> | null = null;
 const listeners = new Set<() => void>();
+/** Stable empty snapshot — `?? {}` in getSnapshot would create a new object every read → React #185 loop. */
+const EMPTY_RATES: UsdRatesMap = Object.freeze({});
 
 function notifyListeners() {
   for (const listener of listeners) {
@@ -62,8 +64,8 @@ export function useSportsFxRates() {
     };
   }, []);
 
-  const getSnapshot = useCallback(() => cachedRates ?? {}, []);
-  const getServerSnapshot = useCallback(() => ({} as UsdRatesMap), []);
+  const getSnapshot = useCallback(() => cachedRates ?? EMPTY_RATES, []);
+  const getServerSnapshot = useCallback(() => EMPTY_RATES, []);
 
   useEffect(() => {
     void loadSportsFxRates();

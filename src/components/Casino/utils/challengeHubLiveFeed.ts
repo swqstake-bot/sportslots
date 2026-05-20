@@ -43,35 +43,55 @@ function normalizeEntry(entry: ChallengeHubBetFeedEntry): ChallengeHubBetFeedEnt
   }
 }
 
-export function publishChallengeHubBet(entry: ChallengeHubBetFeedEntry) {
+function upsertChallengeHubFeedEntry(entry: ChallengeHubBetFeedEntry): ChallengeHubBetFeedEntry | null {
   const next = normalizeEntry(entry)
   const nextId = next.id != null ? String(next.id) : ''
   if (nextId) {
     const idx = recentFeed.findIndex((x) => String(x?.id ?? '') === nextId)
     if (idx >= 0) {
-      // Upsert-by-id: keep row position, enrich existing row (e.g. add houseBet shareIid later).
       const merged = { ...recentFeed[idx], ...next }
       const clone = recentFeed.slice()
       clone[idx] = merged
       recentFeed = clone
-    } else {
-      recentFeed = [next, ...recentFeed].slice(0, MAX_FEED_ITEMS)
+      return merged
     }
-  } else {
     recentFeed = [next, ...recentFeed].slice(0, MAX_FEED_ITEMS)
+    return next
   }
+  recentFeed = [next, ...recentFeed].slice(0, MAX_FEED_ITEMS)
+  return next
+}
+
+export type PublishChallengeHubBetOptions = {
+  /** When false, batch many upserts then call {@link notifyChallengeHubFeedSnapshot} once (avoids React #185). */
+  notifySnapshot?: boolean
+}
+
+export function notifyChallengeHubFeedSnapshot() {
+  notifySnapshotListeners()
+}
+
+export function publishChallengeHubBet(
+  entry: ChallengeHubBetFeedEntry,
+  options: PublishChallengeHubBetOptions = {}
+) {
+  const { notifySnapshot = true } = options
+  const nextId = entry.id != null ? String(entry.id) : ''
+  const out = upsertChallengeHubFeedEntry(entry)
+  if (!out) return
+
   for (const listener of listeners) {
     try {
-      const out =
+      const row =
         nextId && recentFeed.find((x) => String(x?.id ?? '') === nextId)
           ? recentFeed.find((x) => String(x?.id ?? '') === nextId)!
-          : next
-      listener(out)
+          : out
+      listener(row)
     } catch {
       // keep feed resilient even if a listener fails
     }
   }
-  notifySnapshotListeners()
+  if (notifySnapshot) notifySnapshotListeners()
 }
 
 /** Subscribe to full feed snapshot changes (for useSyncExternalStore). */
