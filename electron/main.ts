@@ -428,6 +428,24 @@ async function appendBetLog(entry: unknown): Promise<string> {
   return filePath;
 }
 
+/** Session-only logger: wipe JSONL house-bet logs when the app exits (export first if needed). */
+function clearAllBetLogs(): void {
+  try {
+    const dir = getBetLogsDir();
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
+    for (const file of files) {
+      try {
+        fs.unlinkSync(path.join(dir, file));
+      } catch {
+        // ignore per-file errors
+      }
+    }
+    logger.info('[Logger] Cleared session bet logs on quit');
+  } catch (e) {
+    logger.warn('[Logger] clearAllBetLogs failed:', e);
+  }
+}
+
 const LOGGER_CURRENCY_CONFIG_QUERY = `query CurrencyConfiguration($isAcp: Boolean!) {
   currencyConfiguration(isAcp: $isAcp) {
     baseRates { currency baseRate }
@@ -545,6 +563,8 @@ function createLoginWindow() {
 // --- Auto Updater (electron-updater / GitHub Releases + latest.yml) ---
 /** Muss zu package.json → build.publish und zu veröffentlichten Releases passieren. */
 const UPDATER_GITHUB = { owner: 'swqstake-bot', repo: 'sportslots' } as const;
+/** Keep in sync with src/config/sessionData.ts — logger JSONL cleared on start + quit. */
+const SESSION_ONLY_BET_LOGS = true;
 
 function configureGithubAutoUpdater(): void {
   if (!app.isPackaged) return;
@@ -2068,6 +2088,9 @@ app.on('before-quit', () => {
 });
 
 app.on('will-quit', () => {
+  if (SESSION_ONLY_BET_LOGS) {
+    clearAllBetLogs();
+  }
   globalShortcut.unregisterAll();
   destroyAuxiliaryBrowserWindows();
   for (const bw of BrowserWindow.getAllWindows()) {
@@ -2142,6 +2165,10 @@ app.whenReady().then(() => {
         callback({ requestHeaders: details.requestHeaders });
       }
     );
+
+    if (SESSION_ONLY_BET_LOGS) {
+      clearAllBetLogs();
+    }
 
     createWindow();
 

@@ -113,3 +113,19 @@ export function getChallengeHubRecentBets() {
   return recentFeed
 }
 
+/** New session: drop in-memory hub feed (no cross-run bet rows). */
+export function resetChallengeHubRecentBets() {
+  if (recentFeed.length === 0) return
+  recentFeed = []
+  notifySnapshotListeners()
+}
+
+let challengeHubSessionResetDone = false
+
+/** Once per app run: clear hub feed + houseBet buffer + stale local highlights. */
+export function ensureChallengeHubSessionReset(resetFn: () => void) {
+  if (challengeHubSessionResetDone) return
+  challengeHubSessionResetDone = true
+  resetFn()
+}
+

@@ -202,11 +202,21 @@ export function patchHubFeedFromHouseBetBestEffort(bItem) {
   return applyHouseBetToHubFeed(bItem)
 }
 
-/**
- * SSP-style: houseBets WebSocket ist die einzige Share-ID-Quelle für den Hub-Feed.
- * Verknüpft FIFO mit pending-Zeilen vom Hunter oder legt eine neue Zeile an.
- */
-export function applyHouseBetToHubFeed(bItem) {
+/** houseBets vor Hunter-pending: kurz puffern, dann erneut matchen (kein localStorage). */
+const HUB_HOUSEBET_BUFFER_MAX = 48
+const HUB_HOUSEBET_BUFFER_MAX_AGE_MS = 30_000
+const hubHouseBetRetryBuffer = []
+
+function pruneHubHouseBetRetryBuffer(now = Date.now()) {
+  while (hubHouseBetRetryBuffer.length > 0) {
+    const oldest = hubHouseBetRetryBuffer[0]
+    if (now - (oldest?.at || 0) < HUB_HOUSEBET_BUFFER_MAX_AGE_MS) break
+    hubHouseBetRetryBuffer.shift()
+  }
+  while (hubHouseBetRetryBuffer.length > HUB_HOUSEBET_BUFFER_MAX) hubHouseBetRetryBuffer.shift()
+}
+
+function patchHubFeedFromHouseBetItem(bItem) {
   if (!bItem) return false
   const shareIid = formatStakeShareBetId(
     pickStakeHouseBetShareRawId({
@@ -228,10 +238,62 @@ export function applyHouseBetToHubFeed(bItem) {
   }
 
   const target = pickHubRowForHouseBet(bets, bItem)
-  // Nur bestehende Hub-Zeilen (v. a. Hunter-pending) patchen — keine hb:-Orphans vor dem Spin-HTTP.
   if (!target?.id) return false
   publishChallengeHubBet(hubRowFromHouseBet(bItem, String(target.id)))
   return true
+}
+
+function tryApplyBufferedHouseBetToFeedRow(feedRow) {
+  if (!feedRow?.id || hubRowHasShareId(feedRow)) return false
+  pruneHubHouseBetRetryBuffer()
+  const payloadSlug = normalizeBetSlugForHouseMatch(feedRow?.slotSlug)
+  let applied = false
+  const keep = []
+  for (const entry of hubHouseBetRetryBuffer) {
+    const ps = normalizeBetSlugForHouseMatch(entry?.bItem?.gameSlug)
+    if (!houseBetSlugMatchesSessionSlug(ps, payloadSlug)) {
+      keep.push(entry)
+      continue
+    }
+    if (patchHubFeedFromHouseBetItem(entry.bItem)) {
+      applied = true
+    } else {
+      keep.push(entry)
+    }
+  }
+  hubHouseBetRetryBuffer.length = 0
+  hubHouseBetRetryBuffer.push(...keep)
+  return applied
+}
+
+/** Nach neuem Hunter-pending: gepufferte houseBets gegen diese Zeile matchen. */
+export function flushHubHouseBetBufferForFeedEntry(feedEntry) {
+  if (!feedEntry?.id) return false
+  return tryApplyBufferedHouseBetToFeedRow(feedEntry)
+}
+
+export function clearHubHouseBetRetryBuffer() {
+  hubHouseBetRetryBuffer.length = 0
+}
+
+/**
+ * SSP-style: houseBets WebSocket ist die einzige Share-ID-Quelle für den Hub-Feed.
+ * Verknüpft FIFO mit pending-Zeilen vom Hunter oder legt eine neue Zeile an.
+ */
+export function applyHouseBetToHubFeed(bItem) {
+  if (patchHubFeedFromHouseBetItem(bItem)) return true
+  if (!bItem) return false
+  const shareIid = formatStakeShareBetId(
+    pickStakeHouseBetShareRawId({
+      shareIid: bItem?.shareIid ?? bItem?.iid ?? null,
+      houseTopId: bItem?.houseTopId ?? null,
+      id: bItem?.houseId ?? bItem?.id ?? null,
+    })
+  )
+  if (!shareIid) return false
+  pruneHubHouseBetRetryBuffer()
+  hubHouseBetRetryBuffer.push({ bItem, at: Date.now() })
+  return false
 }
 
 export function patchHubFeedRunShareId(runId, shareIid, opts = {}) {

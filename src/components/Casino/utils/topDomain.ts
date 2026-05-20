@@ -1,3 +1,4 @@
+import { SESSION_ONLY_HUB_AND_LOGGER } from '../../../config/sessionData'
 import { toMinor } from './formatAmount'
 import { formatStakeShareBetId, pickStakeHouseBetShareRawId } from './stakeBetShareId'
 
@@ -64,6 +65,7 @@ export function filterRowsForHighlightsMerge(rows: unknown[]): unknown[] {
 }
 
 export function parseStoredTopEntries(): TopEntry[] {
+  if (SESSION_ONLY_HUB_AND_LOGGER) return []
   try {
     const raw = localStorage.getItem(TOP_DOMAIN_STORAGE_KEY)
     const parsed = raw ? JSON.parse(raw) : []
@@ -271,6 +273,7 @@ export function loggerBetToTopCandidate(row: any): any | null {
 }
 
 export function persistTopEntries(entries: TopEntry[]) {
+  if (SESSION_ONLY_HUB_AND_LOGGER) return
   try {
     localStorage.setItem(TOP_DOMAIN_STORAGE_KEY, JSON.stringify(entries.slice(0, TOP_DOMAIN_STORAGE_MAX)))
   } catch {

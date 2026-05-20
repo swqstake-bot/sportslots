@@ -50,6 +50,7 @@ import { getHunterState, saveHunterState, clearHunterState } from '../utils/chal
 import { getChallengeHubRecentBets, publishChallengeHubBet } from '../utils/challengeHubLiveFeed'
 import {
   clearPendingHouseBetsForRun,
+  flushHubHouseBetBufferForFeedEntry,
   patchHubFeedEntryFromHouseBet,
   patchHubFeedRunFromHouseBet,
   patchHubFeedRunShareId,
@@ -2784,8 +2785,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             },
             gName
           )
+          const pendingFeedId = `${runId}:${spinSeq}`
           publishChallengeHubBet({
-            id: `${runId}:${spinSeq}`,
+            id: pendingFeedId,
             slotSlug: gSlug,
             slotName: gName,
             betAmount: hubListBet,
@@ -2793,6 +2795,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             currencyCode: hubListCc,
             roundId: resolvedRoundId ?? null,
             sourceTag: `casino:${gSlug}`,
+            hubSettlement: 'pending',
+          })
+          flushHubHouseBetBufferForFeedEntry({
+            id: pendingFeedId,
+            slotSlug: gSlug,
             hubSettlement: 'pending',
           })
 

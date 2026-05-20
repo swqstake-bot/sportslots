@@ -1,17 +1,16 @@
 ﻿import { memo, useEffect, useMemo, useState } from 'react'
 import { subscribeToHouseBets } from '../../api/stakeRealtimeFacade'
 import { SectionCard } from '../ui/SectionCard'
-import { getChallengeHubRecentBets, subscribeChallengeHubBetFeed } from '../../utils/challengeHubLiveFeed'
-import { applyHouseBetToHubFeed, backfillRecentBetsShareFromLogger } from '../../utils/challengeHubBetIdPatch'
+import { subscribeChallengeHubBetFeed } from '../../utils/challengeHubLiveFeed'
+import { SESSION_ONLY_HUB_AND_LOGGER } from '../../../../config/sessionData'
+import { applyHouseBetToHubFeed, flushHubHouseBetBufferForFeedEntry } from '../../utils/challengeHubBetIdPatch'
 import { ChallengeHubBetListFeed, CHALLENGE_HUB_BET_LIST_MAX_ROWS } from './ChallengeHubBetListFeed'
 import { useChallengeHubRecentBets } from './ChallengeHubBetListContext'
 import { formatAmount } from '../../utils/formatAmount'
 import {
   parseStoredTopEntries,
   dedupeTopEntries,
-  filterRowsForHighlightsMerge,
   mergeTopEntries,
-  loggerBetToTopCandidate,
   persistTopEntries,
   clearTopEntries,
   deriveTopWins,
@@ -39,16 +38,23 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
   const [feedOpen, setFeedOpen] = useState(true)
   const [highlightsOpen, setHighlightsOpen] = useState(true)
   const [highlightMode, setHighlightMode] = useState<'multis' | 'wins' | 'slots'>('multis')
-  const [topMultisAll, setTopMultisAll] = useState<TopEntry[]>(() => parseStoredTopEntries())
+  const [topMultisAll, setTopMultisAll] = useState<TopEntry[]>(() =>
+    SESSION_ONLY_HUB_AND_LOGGER ? [] : parseStoredTopEntries()
+  )
 
   useEffect(() => {
-    setTopMultisAll((prev) => dedupeTopEntries(prev))
+    if (!SESSION_ONLY_HUB_AND_LOGGER) {
+      setTopMultisAll((prev) => dedupeTopEntries(prev))
+    }
   }, [])
 
   useEffect(() => {
     let cancelled = false
     const unsubscribe = subscribeChallengeHubBetFeed((entry) => {
       if (cancelled) return
+      if (entry?.hubSettlement === 'pending' && entry?.id != null) {
+        flushHubHouseBetBufferForFeedEntry(entry)
+      }
       if (entry?.hubSettlement !== 'pending' || entry?.shareIid) {
         setTopMultisAll((prev) => mergeTopEntries(prev, [entry]))
       }
@@ -91,35 +97,8 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
     }
   }, [accessToken])
 
-  /** Logger nur zum Nachziehen fehlender shareIid (kein Bulk-Merge in Highlights). */
   useEffect(() => {
-    let cancelled = false
-    const syncLoggerIds = async () => {
-      const loader = window.electronAPI?.loadLoggerBetLogs
-      if (typeof loader !== 'function') return
-      try {
-        const rows = await loader({ limit: 800 })
-        if (cancelled || !Array.isArray(rows) || rows.length === 0) return
-        backfillRecentBetsShareFromLogger(getChallengeHubRecentBets(), rows)
-        const mapped = filterRowsForHighlightsMerge(rows)
-          .map((row) => loggerBetToTopCandidate(row))
-          .filter(Boolean)
-        if (mapped.length) {
-          setTopMultisAll((prev) => mergeTopEntries(prev, mapped))
-        }
-      } catch {
-        // optional
-      }
-    }
-    syncLoggerIds()
-    const id = window.setInterval(syncLoggerIds, 15_000)
-    return () => {
-      cancelled = true
-      window.clearInterval(id)
-    }
-  }, [])
-
-  useEffect(() => {
+    if (SESSION_ONLY_HUB_AND_LOGGER) return
     persistTopEntries(topMultisAll)
   }, [topMultisAll])
 

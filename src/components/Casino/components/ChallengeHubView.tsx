@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
+import { SESSION_ONLY_HUB_AND_LOGGER } from '../../../config/sessionData'
+import { ensureChallengeHubSessionReset, resetChallengeHubRecentBets } from '../utils/challengeHubLiveFeed'
+import { clearHubHouseBetRetryBuffer } from '../utils/challengeHubBetIdPatch'
+import { clearTopEntries } from '../utils/topDomain'
 import { ChallengeHubBetListPanel } from './challengeHub/ChallengeHubBetListPanel'
 import { ChallengeHubBetListProvider } from './challengeHub/ChallengeHubBetListContext'
 import { ChallengeHubNotificationCenter } from './challengeHub/ChallengeHubNotificationCenter'
@@ -35,6 +39,15 @@ export function ChallengeHubView({
       return false
     }
   })
+  useEffect(() => {
+    if (!SESSION_ONLY_HUB_AND_LOGGER) return
+    ensureChallengeHubSessionReset(() => {
+      resetChallengeHubRecentBets()
+      clearHubHouseBetRetryBuffer()
+      clearTopEntries()
+    })
+  }, [])
+
   const [telegramUsage, setTelegramUsage] = useState<number>(() => {
     try {
       const n = Number(localStorage.getItem(TELEGRAM_USAGE_KEY) || 0)
