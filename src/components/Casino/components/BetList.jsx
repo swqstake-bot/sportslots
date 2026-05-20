@@ -21,6 +21,21 @@ function multiplierTone(multiplier) {
 
 const BET_LIST_ROW_ESTIMATE_PX = { minimal: 18, compact: 22, default: 28 }
 
+function BetListColGroup({ showSlot, showNet, showContext, showCopyHouse }) {
+  return (
+    <colgroup>
+      <col style={{ width: '2.2rem' }} />
+      {showSlot ? <col style={{ width: '28%' }} /> : null}
+      <col style={{ width: showSlot ? '14%' : '22%' }} />
+      <col style={{ width: showSlot ? '14%' : '22%' }} />
+      {showNet ? <col style={{ width: '10%' }} /> : null}
+      {showContext ? <col style={{ width: '18%' }} /> : null}
+      {showCopyHouse ? <col style={{ width: '12rem' }} /> : null}
+      <col style={{ width: '3.1rem' }} />
+    </colgroup>
+  )
+}
+
 const BetListRow = memo(function BetListRow({
   b,
   rowNum,
@@ -250,6 +265,12 @@ export default function BetList({
       </div>
       <div ref={scrollRef} className={scrollClass}>
         <table className="terminal-table terminal-table--virtual">
+          <BetListColGroup
+            showSlot={showSlot}
+            showNet={showNet}
+            showContext={showContext}
+            showCopyHouse={showCopyHouse}
+          />
           <thead>
             <tr>
               <th className="terminal-th" style={{ width: '2.2rem' }}>

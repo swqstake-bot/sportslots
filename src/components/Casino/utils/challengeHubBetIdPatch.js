@@ -224,9 +224,9 @@ export function applyHouseBetToHubFeed(bItem) {
   }
 
   const target = pickHubRowForHouseBet(bets, bItem)
-  const core = normalizedStakeShareIdCore(shareIid) || shareIid.replace(/^[^:]+:/, '')
-  const feedId = target?.id != null ? String(target.id) : `hb:${core}`
-  publishChallengeHubBet(hubRowFromHouseBet(bItem, feedId))
+  // Nur bestehende Hub-Zeilen (v. a. Hunter-pending) patchen — keine hb:-Orphans vor dem Spin-HTTP.
+  if (!target?.id) return false
+  publishChallengeHubBet(hubRowFromHouseBet(bItem, String(target.id)))
   return true
 }
 
