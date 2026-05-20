@@ -110,32 +110,6 @@
   table-layout: auto;
 }
 
-.casino-root .terminal-table--virtual {
-  width: 100%;
-  table-layout: fixed;
-}
-
-.casino-root .terminal-table--virtual thead {
-  display: table;
-  width: 100%;
-  table-layout: fixed;
-}
-
-.casino-root .terminal-tbody--virtual {
-  display: block;
-  width: 100%;
-}
-
-.casino-root .terminal-table--virtual-row {
-  border-collapse: separate;
-  border-spacing: 0;
-}
-
-.casino-root .challenge-hub-activity-feed .terminal-table--virtual {
-  width: 100%;
-  min-width: 36rem;
-}
-
 .casino-root .terminal-th,
 .casino-root .terminal-td {
   text-align: left;
