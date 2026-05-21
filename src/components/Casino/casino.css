@@ -1455,7 +1455,7 @@ html[data-theme='light'] .casino-root {
 
 .casino-root .hunter-kpi-segments {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   border: 1px solid color-mix(in srgb, var(--surface-border) 82%, transparent);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--bg-card) 94%, transparent);

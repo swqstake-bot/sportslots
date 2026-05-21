@@ -1,20 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CasinoLoggerTab from './tabs/CasinoLoggerTab';
 import SportsLoggerTab from './tabs/SportsLoggerTab';
-import {
-  LOGGER_BET_SAVED_EVENT,
-  mergeLoggerBetIntoList,
-  normalizeLoggerBetEntry,
-} from './loggerBetRealtime';
 import { loggerBetsIdentity } from './loggerListIdentity';
 import { inferLoggerCategory } from './loggerUtils';
 import type { LoggerBetEntry } from './loggerUtils';
 
-const LOGGER_POLL_FALLBACK_MS = 30_000;
 import './logger.css';
 
 type LoggerTab = 'casino' | 'sports';
-type LoggerSubscriptionStatus = 'idle' | 'connecting' | 'connected' | 'error';
 
 function loadCachedCurrencyRates(): Record<string, number> {
   try {
@@ -35,15 +28,18 @@ function loadCachedCurrencyRates(): Record<string, number> {
   }
 }
 
+function splitLoggerBets(normalized: LoggerBetEntry[]) {
+  const casinoNorm = normalized.filter((b) => b.category !== 'sports');
+  const sportsNorm = normalized.filter((b) => b.category === 'sports');
+  return { casinoNorm, sportsNorm };
+}
+
 export default function LoggerView() {
   const [tab, setTab] = useState<LoggerTab>('casino');
   const [casinoBets, setCasinoBets] = useState<LoggerBetEntry[]>([]);
   const [sportsBets, setSportsBets] = useState<LoggerBetEntry[]>([]);
   const [currencyRates, setCurrencyRates] = useState<Record<string, number>>({});
   const [statusMessage, setStatusMessage] = useState('');
-  const [subscriptionStatus, setSubscriptionStatus] = useState<LoggerSubscriptionStatus>('idle');
-  const [subscriptionError, setSubscriptionError] = useState('');
-  const [manualReloading, setManualReloading] = useState(false);
   const currencyRefreshInFlightRef = useRef(false);
   const lastCasinoIdentityRef = useRef<string>('');
   const lastSportsIdentityRef = useRef<string>('');
@@ -67,54 +63,16 @@ export default function LoggerView() {
     }
   }, []);
 
-  const applyIncrementalBet = useCallback((raw: unknown) => {
-    const entry = normalizeLoggerBetEntry(raw);
-    if (!entry) return;
-    if (entry.category === 'sports') {
-      setSportsBets((prev) => {
-        const next = mergeLoggerBetIntoList(prev, entry);
-        const nextId = loggerBetsIdentity(next);
-        if (nextId === lastSportsIdentityRef.current) return prev;
-        lastSportsIdentityRef.current = nextId;
-        return next;
-      });
-      return;
-    }
-    setCasinoBets((prev) => {
-      const next = mergeLoggerBetIntoList(prev, entry);
-      const nextId = loggerBetsIdentity(next);
-      if (nextId === lastCasinoIdentityRef.current) return prev;
-      lastCasinoIdentityRef.current = nextId;
-      return next;
-    });
-  }, []);
-
-  const loadLoggerLogs = useCallback(async (options?: { foreground?: boolean }) => {
-    const foreground = options?.foreground === true;
-    if (foreground) setManualReloading(true);
-    try {
-      const list = await window.electronAPI.loadLoggerBetLogs({ limit: 5000 });
-      const normalized = (Array.isArray(list) ? list : []).map((b: any) => ({
-        ...b,
-        category: inferLoggerCategory(b),
-      }));
-      const casinoNorm = normalized.filter((b: LoggerBetEntry) => b.category !== 'sports');
-      const sportsNorm = normalized.filter((b: LoggerBetEntry) => b.category === 'sports');
-      const nextCasinoId = loggerBetsIdentity(casinoNorm);
-      const nextSportsId = loggerBetsIdentity(sportsNorm);
-      if (nextCasinoId !== lastCasinoIdentityRef.current) {
-        lastCasinoIdentityRef.current = nextCasinoId;
-        setCasinoBets(casinoNorm);
-      }
-      if (nextSportsId !== lastSportsIdentityRef.current) {
-        lastSportsIdentityRef.current = nextSportsId;
-        setSportsBets(sportsNorm);
-      }
-    } catch {
-      // ignore
-    } finally {
-      if (foreground) setManualReloading(false);
-    }
+  const applyImportedBets = useCallback((list: unknown[]) => {
+    const normalized = (Array.isArray(list) ? list : []).map((b: any) => ({
+      ...b,
+      category: inferLoggerCategory(b),
+    })) as LoggerBetEntry[];
+    const { casinoNorm, sportsNorm } = splitLoggerBets(normalized);
+    lastCasinoIdentityRef.current = loggerBetsIdentity(casinoNorm);
+    lastSportsIdentityRef.current = loggerBetsIdentity(sportsNorm);
+    setCasinoBets(casinoNorm);
+    setSportsBets(sportsNorm);
   }, []);
 
   const handleImport = useCallback(async () => {
@@ -125,9 +83,9 @@ export default function LoggerView() {
       setStatusMessage(r?.error || 'Import fehlgeschlagen');
       return;
     }
-    await loadLoggerLogs();
-    setStatusMessage(`${r.bets?.length ?? 0} bets imported.`);
-  }, [loadLoggerLogs]);
+    applyImportedBets(r.bets || []);
+    setStatusMessage(`${r.bets?.length ?? 0} bets loaded (in-memory only).`);
+  }, [applyImportedBets]);
 
   const handleExport = useCallback(async (bets: LoggerBetEntry[]) => {
     setStatusMessage('');
@@ -142,74 +100,28 @@ export default function LoggerView() {
   }, []);
 
   const handleDeleteAll = useCallback(async () => {
-    const confirmed = window.confirm('Delete everything? This removes casino logs and clears sports stats.');
+    const confirmed = window.confirm('Clear imported bets from this view? (Does not affect Challenge Hub live feed.)');
     if (!confirmed) return;
-    const r = await window.electronAPI.deleteAllLoggerBetLogs();
-    if (!r?.ok) {
-      setStatusMessage(r?.error || 'Delete failed');
-      return;
-    }
     setCasinoBets([]);
     setSportsBets([]);
     lastCasinoIdentityRef.current = loggerBetsIdentity([]);
     lastSportsIdentityRef.current = loggerBetsIdentity([]);
-    setStatusMessage(`Deleted all: ${r.deleted ?? 0} log file(s) removed.`);
+    try {
+      await window.electronAPI.deleteAllLoggerBetLogs();
+    } catch {
+      // ignore legacy disk cleanup errors
+    }
+    setStatusMessage('Cleared imported bets.');
   }, []);
 
   useEffect(() => {
-    loadLoggerLogs();
     refreshCurrencyRates();
-  }, [loadLoggerLogs, refreshCurrencyRates]);
+  }, [refreshCurrencyRates]);
 
   useEffect(() => {
     const t = setInterval(() => refreshCurrencyRates(), 60 * 1000);
     return () => clearInterval(t);
   }, [refreshCurrencyRates]);
-
-  useEffect(() => {
-    const onBetSaved = (event: Event) => {
-      applyIncrementalBet((event as CustomEvent).detail);
-    };
-    window.addEventListener(LOGGER_BET_SAVED_EVENT, onBetSaved as EventListener);
-    return () => window.removeEventListener(LOGGER_BET_SAVED_EVENT, onBetSaved as EventListener);
-  }, [applyIncrementalBet]);
-
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') loadLoggerLogs();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [loadLoggerLogs]);
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      if (document.visibilityState === 'hidden') return;
-      loadLoggerLogs();
-    }, LOGGER_POLL_FALLBACK_MS);
-    return () => clearInterval(t);
-  }, [loadLoggerLogs]);
-
-  useEffect(() => {
-    const applyStatus = (detail: any) => {
-      const next = detail?.status;
-      if (next === 'idle' || next === 'connecting' || next === 'connected' || next === 'error') {
-        setSubscriptionStatus(next);
-        setSubscriptionError(String(detail?.error || ''));
-      }
-    };
-    try {
-      const raw = localStorage.getItem('logger_subscription_status');
-      if (raw) applyStatus(JSON.parse(raw));
-    } catch {
-      // ignore corrupt cached status
-    }
-    const handler = (event: Event) => {
-      applyStatus((event as CustomEvent).detail);
-    };
-    window.addEventListener('logger-subscription-status', handler as EventListener);
-    return () => window.removeEventListener('logger-subscription-status', handler as EventListener);
-  }, []);
 
   const sortedCasinoBets = useMemo(
     () => [...casinoBets].sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()),
@@ -241,15 +153,14 @@ export default function LoggerView() {
           </button>
         </div>
         <button type="button" className="logger-danger-btn" onClick={handleDeleteAll}>
-          Delete all
+          Clear view
         </button>
       </div>
 
       <p className="logger-muted logger-archive-hint">
-        Local bet archive: rows from HouseBets realtime + JSONL files (up to 5000 on load). Filters affect analytics,
-        CSV and JSONL export — similar in spirit to SSP{' '}
-        <span className="mono">bet-archive-list</span> / <span className="mono">analyze</span>, without a separate
-        download backend.
+        Import-only: no background recording. Export a session from Challenge Hub (Export session), then use{' '}
+        <span className="mono">Import (JSONL)</span> here to review, filter, and export CSV. Data stays in memory until
+        you close the app or clear the view.
       </p>
 
       {tab === 'casino' ? (
@@ -257,8 +168,6 @@ export default function LoggerView() {
           bets={sortedCasinoBets}
           currencyRates={currencyRates}
           statusMessage={statusMessage}
-          loading={manualReloading}
-          onReload={() => loadLoggerLogs({ foreground: true })}
           onExport={handleExport}
           onImport={handleImport}
         />
@@ -266,8 +175,8 @@ export default function LoggerView() {
         <SportsLoggerTab
           bets={sortedSportsBets}
           currencyRates={currencyRates}
-          subscriptionStatus={subscriptionStatus}
-          subscriptionError={subscriptionError}
+          subscriptionStatus="idle"
+          subscriptionError=""
         />
       )}
     </div>

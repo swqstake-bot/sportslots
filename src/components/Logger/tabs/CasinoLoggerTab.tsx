@@ -98,8 +98,6 @@ interface CasinoLoggerTabProps {
   bets: LoggerBetEntry[];
   currencyRates: Record<string, number>;
   statusMessage: string;
-  loading: boolean;
-  onReload: () => Promise<void> | void;
   onExport: (bets: LoggerBetEntry[]) => Promise<void> | void;
   onImport: () => Promise<void> | void;
 }
@@ -108,8 +106,6 @@ export default function CasinoLoggerTab({
   bets,
   currencyRates,
   statusMessage,
-  loading,
-  onReload,
   onExport,
   onImport,
 }: CasinoLoggerTabProps) {
@@ -397,12 +393,11 @@ export default function CasinoLoggerTab({
             </select>
           </label>
           <label className="logger-check"><input type="checkbox" checked={sortDesc} onChange={(e) => setSortDesc(e.target.checked)} />Descending</label>
-          <button type="button" className="logger-action-btn" onClick={() => onReload()} disabled={loading}>{loading ? 'Loading...' : 'Reload logs'}</button>
+          <button type="button" className="logger-action-btn" onClick={() => onImport()}>Import (JSONL)</button>
           <button type="button" className="logger-action-btn" onClick={() => onExport(filteredBets.length > 0 ? filteredBets : bets)} disabled={bets.length === 0}>Export (JSONL)</button>
           <button type="button" className="logger-action-btn" onClick={handleExportCsv} disabled={bets.length === 0}>
             Export (CSV)
           </button>
-          <button type="button" className="logger-action-btn" onClick={() => onImport()}>Import (JSONL)</button>
         </div>
         {statusMessage ? <p className="logger-status">{statusMessage}</p> : null}
       </div>

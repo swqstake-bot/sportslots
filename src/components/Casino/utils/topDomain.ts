@@ -277,6 +277,7 @@ export function persistTopEntries(entries: TopEntry[]) {
   try {
     localStorage.setItem(TOP_DOMAIN_STORAGE_KEY, JSON.stringify(entries.slice(0, TOP_DOMAIN_STORAGE_MAX)))
   } catch {
+    /* ignore quota / private mode */
   }
 }
 

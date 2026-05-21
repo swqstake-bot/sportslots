@@ -1,5 +1,5 @@
 /**
- * Hub feed, highlights, and logger house-bet logs are session-only.
- * Data is cleared on app quit; use Export in Logger when you need to keep bets.
+ * Hub feed and highlights are session-only (in-memory).
+ * Logger no longer records in the background — export hub session JSONL and import in Logger tab if needed.
  */
 export const SESSION_ONLY_HUB_AND_LOGGER = true

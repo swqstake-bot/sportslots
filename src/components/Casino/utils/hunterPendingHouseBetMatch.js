@@ -103,6 +103,23 @@ function pickPendingClosestToHouseBetTime(entries, bItem) {
   return best
 }
 
+function trySpliceSinglePendingHouseBet(pendingMap, payloadSlug, payloadCurr, bItem, currencyStrict) {
+  const candidates = collectPendingHouseBetCandidates(
+    pendingMap,
+    payloadSlug,
+    payloadCurr,
+    currencyStrict
+  )
+  if (candidates.length !== 1) return null
+  const chosen = candidates[0]
+  if (!houseBetStakeMajorMatchesPending(chosen.p.betAmountMajor, bItem)) return null
+  const q = pendingMap[chosen.runId]
+  if (!Array.isArray(q) || chosen.idx < 0 || chosen.idx >= q.length) return null
+  const [removed] = q.splice(chosen.idx, 1)
+  if (q.length === 0) delete pendingMap[chosen.runId]
+  return removed
+}
+
 function selectPendingEntryForHouseBet(candidates, bItem) {
   if (!candidates.length) return null
   if (candidates.length === 1) return candidates[0]
@@ -146,6 +163,14 @@ function selectPendingEntryForHouseBet(candidates, bItem) {
 export function splicePendingHouseBetMatch(pendingMap, payloadSlug, payloadCurr, bItem) {
   if (!pendingMap || typeof pendingMap !== 'object' || bItem == null) return null
   const trySplice = (currencyStrict) => {
+    const fast = trySpliceSinglePendingHouseBet(
+      pendingMap,
+      payloadSlug,
+      payloadCurr,
+      bItem,
+      currencyStrict
+    )
+    if (fast) return fast
     const candidates = collectPendingHouseBetCandidates(pendingMap, payloadSlug, payloadCurr, currencyStrict)
     const chosen = selectPendingEntryForHouseBet(candidates, bItem)
     if (!chosen) return null
@@ -186,6 +211,32 @@ export function splicePendingHouseBetByProviderBetId(pendingMap, payloadSlug, pr
 export function splicePendingHouseBetMatchWithoutSlug(pendingMap, payloadCurr, bItem) {
   if (!pendingMap || typeof pendingMap !== 'object' || bItem == null) return null
   const trySplice = (currencyStrict) => {
+    const sluglessCandidates = []
+    for (const runId of Object.keys(pendingMap)) {
+      const q = pendingMap[runId]
+      if (!Array.isArray(q)) continue
+      for (let i = 0; i < q.length; i++) {
+        const p = q[i]
+        if (p == null || p.multi == null) continue
+        if (currencyStrict) {
+          if (!payloadCurr || String(p.currency || '').toLowerCase() !== String(payloadCurr).toLowerCase()) {
+            continue
+          }
+        }
+        sluglessCandidates.push({ runId, idx: i, p, at: Number(p.at) || 0 })
+      }
+    }
+    if (sluglessCandidates.length === 1) {
+      const chosen = sluglessCandidates[0]
+      if (houseBetStakeMajorMatchesPending(chosen.p.betAmountMajor, bItem)) {
+        const q = pendingMap[chosen.runId]
+        if (Array.isArray(q) && chosen.idx >= 0 && chosen.idx < q.length) {
+          const [removed] = q.splice(chosen.idx, 1)
+          if (q.length === 0) delete pendingMap[chosen.runId]
+          return removed
+        }
+      }
+    }
     const candidates = []
     for (const runId of Object.keys(pendingMap)) {
       const q = pendingMap[runId]

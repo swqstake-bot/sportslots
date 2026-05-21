@@ -563,7 +563,7 @@ function createLoginWindow() {
 // --- Auto Updater (electron-updater / GitHub Releases + latest.yml) ---
 /** Muss zu package.json → build.publish und zu veröffentlichten Releases passieren. */
 const UPDATER_GITHUB = { owner: 'swqstake-bot', repo: 'sportslots' } as const;
-/** Keep in sync with src/config/sessionData.ts — logger JSONL cleared on start + quit. */
+/** Keep in sync with src/config/sessionData.ts — legacy JSONL cleared on start + quit. */
 const SESSION_ONLY_BET_LOGS = true;
 
 function configureGithubAutoUpdater(): void {
@@ -925,9 +925,9 @@ ipcMain.handle('logger-fetch-currency-rates', async () => {
     }
 });
 
-ipcMain.handle('logger-save-bet', async (_event, entry: any) => {
-    if (!entry || (entry.houseId == null && entry.iid == null && entry.betId == null && entry.receivedAt == null)) return null;
-    return appendBetLog(entry);
+ipcMain.handle('logger-save-bet', async () => {
+    /** Background houseBet logging disabled — use Challenge Hub export + Logger import. */
+    return null;
 });
 
 ipcMain.handle('logger-load-bet-logs', async (_event, options: { limit?: number; fromDate?: string; toDate?: string } = {}) => {
@@ -991,11 +991,7 @@ ipcMain.handle('logger-import-bet-logs', async () => {
         }
     }
     if (bets.length === 0) return { ok: true, bets: [], saved: false };
-    for (const entry of bets) {
-        const filePath = getBetLogPathForDate(entry.receivedAt);
-        fs.appendFileSync(filePath, JSON.stringify(entry) + '\n', 'utf8');
-    }
-    return { ok: true, bets, saved: true };
+    return { ok: true, bets, saved: false };
 });
 
 ipcMain.handle('logger-delete-all-bet-logs', async () => {

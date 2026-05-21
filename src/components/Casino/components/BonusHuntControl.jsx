@@ -449,65 +449,6 @@ export default function BonusHuntControl({
     return null
   }, [slotMatchesGame, slotNameBySlug, sourceCurrency, targetCurrency])
 
-  const findResolvedBonusFromPersistedLogger = useCallback(async (slotSlug, openingMeta = null) => {
-    if (!slotSlug || !window.electronAPI?.loadLoggerBetLogs) return null
-    try {
-      const openedTs = Date.parse(String(openingMeta?.openedAt || ''))
-      const closedTs = Date.parse(String(openingMeta?.closedAt || ''))
-      const now = Date.now()
-      const fromTs = Number.isFinite(openedTs) ? openedTs - 15000 : now - 20 * 60 * 1000
-      const toTs = Number.isFinite(closedTs) ? closedTs + 240000 : now + 240000
-      const slotName = String(openingMeta?.slotName || slotNameBySlug.get(slotSlug) || slotSlug)
-      const slotNameNorm = normalizeNameToken(slotName)
-
-      const rows = await window.electronAPI.loadLoggerBetLogs({ limit: 1000 })
-      if (!Array.isArray(rows) || rows.length === 0) return null
-
-      const candidates = rows
-        .map((row) => {
-          const ts = Date.parse(String(row?.receivedAt || row?.createdAt || row?.timestamp || ''))
-          return { row, ts: Number.isFinite(ts) ? ts : 0 }
-        })
-        .filter(({ row, ts }) => {
-          if (ts > 0 && (ts < fromTs || ts > toTs)) return false
-          const rowSlug = row?.gameSlug
-          if (slotMatchesGame(slotSlug, rowSlug)) return true
-          const gameNameNorm = normalizeNameToken(row?.gameName || row?.slotName || '')
-          if (!slotNameNorm || !gameNameNorm) return false
-          return (
-            gameNameNorm === slotNameNorm ||
-            gameNameNorm.includes(slotNameNorm) ||
-            slotNameNorm.includes(gameNameNorm)
-          )
-        })
-        .map(({ row, ts }) => {
-          const curr = String(row?.currency || targetCurrency || sourceCurrency || 'usdc').toLowerCase()
-          const amountMajor = Number(row?.amount || 0)
-          const payoutMajor = Number(row?.payout || 0)
-          const payoutMultiplier = Number(row?.payoutMultiplier || 0)
-          const wagerMinor = amountMajor > 0 ? toMinor(amountMajor, curr) : 0
-          let payoutMinor = payoutMajor > 0 ? toMinor(payoutMajor, curr) : 0
-          if (payoutMinor <= 0 && wagerMinor > 0 && Number.isFinite(payoutMultiplier) && payoutMultiplier > 0) {
-            payoutMinor = Math.round(wagerMinor * payoutMultiplier)
-          }
-          const multiplier = wagerMinor > 0
-            ? (Number.isFinite(payoutMultiplier) && payoutMultiplier > 0 ? payoutMultiplier : payoutMinor / wagerMinor)
-            : 0
-          return { payoutMinor, wagerMinor, multiplier, ts }
-        })
-        .filter((c) => Number(c.payoutMinor) > 0)
-        .sort((a, b) => {
-          const byTs = (Number(b.ts) || 0) - (Number(a.ts) || 0)
-          if (byTs !== 0) return byTs
-          return Number(b.payoutMinor || 0) - Number(a.payoutMinor || 0)
-        })
-      if (candidates.length === 0) return null
-      return candidates[0]
-    } catch (_) {
-      return null
-    }
-  }, [slotMatchesGame, slotNameBySlug, sourceCurrency, targetCurrency])
-
   const applyResolvedOpening = useCallback((slotSlug, resolved) => {
     if (!slotSlug || !resolved) return false
     clearResolveTimer(slotSlug)
@@ -534,10 +475,6 @@ export default function BonusHuntControl({
     if (resolved) {
       return applyResolvedOpening(slotSlug, resolved)
     }
-    if (retry === 0 || retry % 3 === 0) {
-      const persisted = await findResolvedBonusFromPersistedLogger(slotSlug, openingMeta)
-      if (persisted) return applyResolvedOpening(slotSlug, persisted)
-    }
     if (retry >= maxRetry) return false
     clearResolveTimer(slotSlug)
     const timeout = setTimeout(() => {
@@ -545,7 +482,7 @@ export default function BonusHuntControl({
     }, 900)
     bonusResolveTimersRef.current.set(slotSlug, timeout)
     return false
-  }, [applyResolvedOpening, clearResolveTimer, findResolvedBonusForSlot, findResolvedBonusFromPersistedLogger])
+  }, [applyResolvedOpening, clearResolveTimer, findResolvedBonusForSlot])
 
   const openBonusGamePopup = useCallback(async (slot, trigger = 'manual') => {
     if (!slot?.slug) return

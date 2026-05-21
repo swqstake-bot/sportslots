@@ -19,27 +19,21 @@ import {
 } from '../utils/hunterBetHistoryBuffer'
 import {
   formatStakeShareBetId,
-  areStakeShareIdsEquivalent,
   isPersistableStakeHouseBetShareId,
-  pickStakeHouseBetShareRawId,
-  stakeBetIdForPreviewApi,
-  stakeBetModalShareUrl,
 } from '../utils/stakeBetShareId'
-import { normalizeBetSlugForHouseMatch, houseBetSlugMatchesSessionSlug } from '../utils/slotSlugMatching'
+import { normalizeBetSlugForHouseMatch } from '../utils/slotSlugMatching'
 import {
   HOUSEBET_RETRY_BUFFER_MAX_MS,
   HOUSEBET_RETRY_BUFFER_MAX,
   normalizeHunterMultiByProvider,
-  prunePendingHouseBetMap,
-  splicePendingHouseBetMatch,
-  splicePendingHouseBetByProviderBetId,
-  splicePendingHouseBetMatchWithoutSlug,
   trimPendingQueues,
-  hasPendingHouseBetForPayloadSlug,
   flushHouseBetRetryBufferForSlug,
 } from '../utils/hunterPendingHouseBetMatch'
 import { setHunterSlotTargets } from '../utils/hunterSlotTargetsBridge'
-import { subscribeToHouseBets } from '../api/stakeRealtimeFacade'
+import { attachHunterHouseBetCoordinator } from '../utils/hunterHouseBetCoordinator'
+import {
+  getHouseShareIdLookup,
+} from '../utils/hunterHouseBetShareIdMap'
 import {
   usdLimitToInputStr,
   parseUsdLimitInput,
@@ -48,20 +42,19 @@ import {
 import { saveFirstSlotWinIfNeeded } from '../utils/slotFirstWin'
 import { getHunterState, saveHunterState, clearHunterState } from '../utils/challengeCompletion'
 import { getChallengeHubRecentBets, publishChallengeHubBet } from '../utils/challengeHubLiveFeed'
+import { hubFeedToLoggerExportRows } from '../utils/hubSessionExport'
 import {
   clearPendingHouseBetsForRun,
   flushHubHouseBetBufferForFeedEntry,
   patchHubFeedEntryFromHouseBet,
-  patchHubFeedRunFromHouseBet,
-  patchHubFeedRunShareId,
 } from '../utils/challengeHubBetIdPatch'
 import { buildUsdSpinDelta } from '../utils/casinoStatsEngine'
 import { buildStakeCasinoFairnessReferer, rotateStakeRgsGameSeed } from '../api/stakeFairness'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { usePrefersReducedMotion } from '../../../hooks/usePrefersReducedMotion'
 import { TipMenu } from '../../ui/TipMenu'
-import { useChallengeHubRecentBets } from './challengeHub/ChallengeHubBetListContext'
 import { SvgCumulativeProfitLineChart } from '../../charts/SvgCumulativeCharts'
+import { HunterRunCard } from './HunterRunCard'
 
 /** Challenge-Liste: alle Einträge wie von Stake; Provider aus Slug/WebSlots (`inferProviderId`), nicht blind stakeEngine. */
 
@@ -81,74 +74,11 @@ const HOUSEBET_DEFERRED_UI_MULTI_MS = 5000
 /** Dedup-Set pro Run: ohne Obergrenze wächst der Speicher bei 200k+ Spins linear → UI/GC-Probleme. */
 const HUNTER_SEEN_ROUND_DEDUP_MAX = 8000
 const PROFIT_CHART_CAPACITY = 1000
-const HOUSEBET_EVENT_QUEUE_MAX = 500
 const HUNTER_ACTIVE_RUNS_UI_FLUSH_MS = 400
 const HUNTER_ACTIVE_RUNS_UI_FLUSH_EVERY_SPINS = 6
-/** Nach neuem Run-Rekord-Multi: Logger kurz prüfen und `bestBetId` bei ID-Mismatch korrigieren. */
-const LOGGER_BET_ID_RECONCILE_DELAY_MS = 1000
-const LOGGER_BET_ID_RECONCILE_ROW_LIMIT = 600
 const PAGE_SIZE = 20 // sichere Challenge-Page-Size (Stake number_less_equal Schutz)
 /** UI-Obergrenze für parallele Läufe & Anzahl Challenge-Listen-Seiten (Slider). */
 const CHALLENGE_SLIDER_MAX = 100
-
-function pickLoggerRowHouseShareRaw(row) {
-  if (!row || typeof row !== 'object') return null
-  return pickStakeHouseBetShareRawId({
-    shareIid: row.iid,
-    houseTopId: row.houseId,
-    id: row.betId,
-  })
-}
-
-function getLoggerRowPayoutMultiplier(row) {
-  const pm = Number(row?.payoutMultiplier)
-  if (Number.isFinite(pm) && pm > 0) return pm
-  const amt = Number(row?.amount)
-  const pay = Number(row?.payout)
-  if (Number.isFinite(amt) && amt > 0 && Number.isFinite(pay) && pay > 0) return pay / amt
-  return 0
-}
-
-function loggerMultiMatchesRunMulti(rowMulti, runMulti) {
-  const t = Number(runMulti) || 0
-  const m = Number(rowMulti) || 0
-  if (t <= 0 || m <= 0) return false
-  if (Math.abs(m - t) <= 0.051) return true
-  const rel = Math.abs(m - t) / t
-  return rel <= 0.025
-}
-
-function findLoggerRowForHunterBestMulti(rows, run, targetMulti, minTs, runBetMajor = null) {
-  const runSlugNorm = normalizeBetSlugForHouseMatch(run?.slotSlug || '')
-  const runCurr = String(run?.runCurrency || '').trim().toLowerCase()
-  const stakeMajor = Number(runBetMajor)
-  const useStakeFilter = Number.isFinite(stakeMajor) && stakeMajor > 0
-  const scored = []
-  for (const row of rows || []) {
-    if (!row || typeof row !== 'object') continue
-    if (String(row?.category || 'casino').toLowerCase() === 'sports') continue
-    const rowSlug = normalizeBetSlugForHouseMatch(row?.gameSlug || '')
-    if (!houseBetSlugMatchesSessionSlug(rowSlug, runSlugNorm)) continue
-    if (runCurr) {
-      const rc = String(row?.currency || '').trim().toLowerCase()
-      if (rc && rc !== runCurr) continue
-    }
-    if (useStakeFilter) {
-      const ram = Number(row?.amount)
-      if (!Number.isFinite(ram) || ram <= 0) continue
-      const rel = Math.abs(ram - stakeMajor) / Math.max(ram, stakeMajor, 1e-12)
-      if (rel > 0.04 && Math.abs(ram - stakeMajor) > 1e-8) continue
-    }
-    const ts = Date.parse(String(row?.receivedAt || row?.createdAt || row?.timestamp || ''))
-    const tsN = Number.isFinite(ts) ? ts : 0
-    if (minTs > 0 && tsN > 0 && tsN < minTs) continue
-    const m = getLoggerRowPayoutMultiplier(row)
-    if (!loggerMultiMatchesRunMulti(m, targetMulti)) continue
-    scored.push({ row, ts: tsN })
-  }
-  scored.sort((a, b) => (b.ts || 0) - (a.ts || 0))
-  return scored[0]?.row ?? null
-}
 
 const HUNTER_TARGET_CANDIDATES = [
   ...CURRENCY_GROUPS.fiat.map((c) => c.value),
@@ -215,73 +145,6 @@ function getRateForCurrency(rates, tCurr) {
  */
 function hunterSpinKpiUsdDeltas(betMinor, winMinor, tCurr, rates) {
   return buildUsdSpinDelta(betMinor, winMinor ?? 0, tCurr || 'usd', rates || {})
-}
-
-/** Ohne Flag: ältere Zeilen gelten als settled (DB / vor Migration). */
-function hubRowSettlementPending(row) {
-  return row && typeof row === 'object' && row.hubSettlement === 'pending'
-}
-
-/** Win/Bet aus Challenge-Hub-BetList (gleiche Einheiten, z. B. USD-Cent). */
-function hubBetListRowMultiplier(row) {
-  if (hubRowSettlementPending(row)) return 0
-  const bet = Number(row?.betAmount) || 0
-  const win = Number(row?.winAmount) || 0
-  if (bet <= 0) return 0
-  return win / bet
-}
-
-/** Zeilen mit id `${runId}:…` — gleiche Zuordnung wie publishChallengeHubBet. */
-function hunterHubListMaxForRun(bets, runId) {
-  const rid = String(runId || '')
-  if (!bets?.length || !rid) return { max: 0, has: false }
-  const prefix = `${rid}:`
-  let m = 0
-  let has = false
-  for (const b of bets) {
-    const id = String(b?.id ?? '')
-    if (!id.startsWith(prefix)) continue
-    has = true
-    m = Math.max(m, hubBetListRowMultiplier(b))
-  }
-  return { max: m, has }
-}
-
-function hunterHubListMaxForSlot(bets, slotSlug) {
-  const slug = String(slotSlug || '').toLowerCase()
-  if (!bets?.length || !slug) return { max: 0, has: false }
-  let m = 0
-  let has = false
-  for (const b of bets) {
-    const s = String(b?.slotSlug ?? '').toLowerCase()
-    if (s !== slug) continue
-    has = true
-    m = Math.max(m, hubBetListRowMultiplier(b))
-  }
-  return { max: m, has }
-}
-
-/** Wie BetList: Share-Roh-ID aus der Zeile mit höchstem Multi (gleicher Run wie `${runId}:…`). */
-function hubPickShareRawFromBetList(bets, runId) {
-  const p = `${String(runId)}:`
-  let bestRaw = null
-  let bestM = -1
-  let fallbackPendingRaw = null
-  for (const b of bets || []) {
-    if (!String(b?.id ?? '').startsWith(p)) continue
-    const raw = b.shareIid || b.houseTopId || b.houseId || b.iid
-    if (raw == null || String(raw).trim() === '') continue
-    if (hubRowSettlementPending(b)) {
-      if (fallbackPendingRaw == null) fallbackPendingRaw = raw
-      continue
-    }
-    const m = hubBetListRowMultiplier(b)
-    if (m > bestM) {
-      bestM = m
-      bestRaw = raw
-    }
-  }
-  return bestRaw ?? fallbackPendingRaw
 }
 
 /** Minor units → USD (wie im Spin-Loop: toUnits * Kurs) */
@@ -619,13 +482,6 @@ function shouldPersistOverallBetId(slug, storageSlug, spinMulti, bestMultiBySlot
   return Number(spinMulti) + tol >= best
 }
 
-function loadOverallBetIdForSlug(slug) {
-  if (!slug) return null
-  const m = loadBestBetIdMap()
-  const v = m[slug]
-  return v && isPersistableStakeHouseBetShareId(String(v)) ? String(v).trim() : null
-}
-
 /**
  * Rekord-Multi (State), Lifetime-Bet-ID (Storage), Run-Best× + Run-Bet-ID (activeRuns).
  */
@@ -814,7 +670,6 @@ const STYLES = {
 }
 
 export default function AutoChallengeHunter({ accessToken, webSlots = [], onDiscoveredSlots, onHubStatsChange }) {
-  const hubRecentBets = useChallengeHubRecentBets()
   const [minMinBet, setMinMinBet] = useState(hunterFiltersInitial.minMinBet)
   const [maxMinBet, setMaxMinBet] = useState(hunterFiltersInitial.maxMinBet)
   const [minPrizeUsd, setMinPrizeUsd] = useState(hunterFiltersInitial.minPrizeUsd)
@@ -887,6 +742,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const ENABLE_SESSION_NET_CHART = true
   const sessionNetBufferRef = useRef(new ProfitCircularBuffer(PROFIT_CHART_CAPACITY))
   const sessionNetTotalSpinsRef = useRef(0)
+  const sessionSpinStartMsRef = useRef(null)
+  const [sessionBetsPerSec, setSessionBetsPerSec] = useState(0)
   const [sessionNetSeriesVersion, setSessionNetSeriesVersion] = useState(0)
   const [sessionNetSpinCount, setSessionNetSpinCount] = useState(0)
   const sessionNetChartFlushTimerRef = useRef(null)
@@ -1009,6 +866,14 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     if (sessionStatsUiDirtyRef.current) {
       sessionStatsUiDirtyRef.current = false
       setTotalSessionStats({ ...totalSessionStatsRef.current })
+      const spins = sessionNetTotalSpinsRef.current
+      const startMs = sessionSpinStartMsRef.current
+      if (spins > 0 && startMs != null) {
+        const elapsedSec = Math.max(0.001, (Date.now() - startMs) / 1000)
+        setSessionBetsPerSec(spins / elapsedSec)
+      } else {
+        setSessionBetsPerSec(0)
+      }
       didFlush = true
     }
     if (!didFlush) return
@@ -1037,115 +902,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     activeRunsRef.current = { ...ar, [rid]: { ...run, ...patch } }
     activeRunsUiDirtyRef.current = true
   }, [])
-  const loggerBetIdReconcileTimersRef = useRef({})
-  const prevBestMultiForLoggerRef = useRef(null)
-
-  const runLoggerBetIdReconcile = useCallback((runId) => {
-    const rid = String(runId || '')
-    if (!rid) return
-    void (async () => {
-      const run = activeRunsRef.current?.[rid]
-      if (!run || run.status !== 'running') return
-      const api = typeof window !== 'undefined' ? window.electronAPI : null
-      if (!api?.loadLoggerBetLogs) return
-
-      const targetMulti = Number(run.bestMultiRun) || 0
-      if (targetMulti <= 0) return
-
-      let rows
-      try {
-        rows = await api.loadLoggerBetLogs({ limit: LOGGER_BET_ID_RECONCILE_ROW_LIMIT })
-      } catch (_) {
-        return
-      }
-      if (!Array.isArray(rows) || rows.length === 0) return
-
-      const st = run.startTime
-      const startMs =
-        typeof st === 'number' && Number.isFinite(st)
-          ? st
-          : Date.parse(String(st || run.createdAt || ''))
-      const minTs =
-        Number.isFinite(startMs) && startMs > 0 ? startMs - 15000 : Date.now() - 8 * 60 * 1000
-
-      const runBetMajor =
-        run.currentBet != null && run.runCurrency
-          ? toUnits(Number(run.currentBet), String(run.runCurrency).toLowerCase())
-          : null
-      const row = findLoggerRowForHunterBestMulti(rows, run, targetMulti, minTs, runBetMajor)
-      if (!row) return
-
-      const raw = pickLoggerRowHouseShareRaw(row)
-      const loggerShare = formatStakeShareBetId(raw)
-      if (!loggerShare || !isPersistableStakeHouseBetShareId(loggerShare)) return
-
-      if (areStakeShareIdsEquivalent(run.bestBetId, loggerShare)) return
-
-      setActiveRuns((prev) => {
-        const r = prev[rid]
-        if (!r || r.status !== 'running') return prev
-        if (areStakeShareIdsEquivalent(r.bestBetId, loggerShare)) return prev
-        return {
-          ...prev,
-          [rid]: { ...r, bestBetId: loggerShare },
-        }
-      })
-      patchHubFeedRunShareId(rid, loggerShare, {
-        multiplier: targetMulti,
-        settlementSource: 'logger_reconcile',
-      })
-    })()
-  }, [])
-
-  useEffect(() => {
-    const runs = activeRuns || {}
-    const prevMap = prevBestMultiForLoggerRef.current
-    if (prevMap == null) {
-      const seed = {}
-      for (const [rid, run] of Object.entries(runs)) {
-        if (run?.status === 'running') seed[rid] = Number(run.bestMultiRun) || 0
-      }
-      prevBestMultiForLoggerRef.current = seed
-      return
-    }
-
-    for (const rid of Object.keys(loggerBetIdReconcileTimersRef.current)) {
-      if (!runs[rid] || runs[rid]?.status !== 'running') {
-        const t = loggerBetIdReconcileTimersRef.current[rid]
-        if (t) clearTimeout(t)
-        delete loggerBetIdReconcileTimersRef.current[rid]
-      }
-    }
-
-    for (const [rid, run] of Object.entries(runs)) {
-      if (run?.status !== 'running') {
-        delete prevMap[rid]
-        clearPendingHouseBetsForRun(pendingHouseBetMatchRef.current, rid)
-        continue
-      }
-      const cur = Number(run.bestMultiRun) || 0
-      const was = prevMap[rid] ?? 0
-      if (cur > was + 1e-12) {
-        prevMap[rid] = cur
-        const existing = loggerBetIdReconcileTimersRef.current[rid]
-        if (existing) clearTimeout(existing)
-        loggerBetIdReconcileTimersRef.current[rid] = setTimeout(() => {
-          delete loggerBetIdReconcileTimersRef.current[rid]
-          runLoggerBetIdReconcile(rid)
-        }, LOGGER_BET_ID_RECONCILE_DELAY_MS)
-      }
-    }
-  }, [activeRuns, runLoggerBetIdReconcile])
-
-  useEffect(() => {
-    return () => {
-      for (const t of Object.values(loggerBetIdReconcileTimersRef.current)) {
-        if (t) clearTimeout(t)
-      }
-      loggerBetIdReconcileTimersRef.current = {}
-    }
-  }, [])
-
   const resolveChallengeSlugById = useCallback(
     (challengeId) => {
       const row = (challenges || []).find((c) => String(c?.id || '') === String(challengeId || ''))
@@ -1274,7 +1030,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   /** Race WS vor HTTP: houseBet-Objekte kurz halten, nach Pending-Push erneut matchen. */
   const houseBetRetryBufferRef = useRef([]) // { key, bItem, at }[]
   const scheduleHouseBetWorkerRef = useRef(() => {})
-  const HOUSEBET_WORKER_MAX_EVENTS = 20
   const logBufferRef = useRef([])
   const logFlushTimerRef = useRef(null)
 
@@ -1395,326 +1150,31 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   }, [bestMultiBySlot, activeRuns, hunterStorageTick])
 
   useEffect(() => {
-    if (!accessToken) return
-
-    if (DEBUG_HUNTER_BETID_MATCH) {
-      console.warn('[AutoChallengeHunter] houseBets subscription init', {
-        hasAccessToken: !!accessToken,
-      })
-    }
-
-    let cancelled = false
-    let sub = null
-
-    const runWorkerTick = () => {
-      // Kein stakeHouseBetAmountToMajor / kein Betrag-Multi-Match — iid aus houseBets; Pending pro runId + ältestes `at` bei Konflikt.
-      houseBetWorkerScheduledRef.current = false
-
-      const rnow = Date.now()
-      houseBetRetryBufferRef.current = houseBetRetryBufferRef.current.filter(
-        (e) => rnow - e.at < HOUSEBET_RETRY_BUFFER_MAX_MS
-      )
-      if (houseBetRetryBufferRef.current.length > HOUSEBET_RETRY_BUFFER_MAX) {
-        houseBetRetryBufferRef.current = houseBetRetryBufferRef.current.slice(
-          -HOUSEBET_RETRY_BUFFER_MAX
-        )
-      }
-
-      const q = houseBetEventQueueRef.current
-      if (q.length === 0) return
-
-        // Time-slicing: nur wenige Events pro Tick, damit der Main-Thread nicht lange blockiert
-        const batch = q.splice(0, HOUSEBET_WORKER_MAX_EVENTS)
-        // Sammeln von Matches, damit wir React nur 1x pro Tick updaten
-        const bestBetByRunId = {}
-        const multiUiByRunId = {}
-        const betIdToPersistOverall = {}
-        /** Pro Run: max. Multi bereits in diesem Batch verarbeitet (für prevBest + korrekte Reihenfolge). */
-        const batchRunBestMulti = {}
-        for (const bItem of batch) {
-          const payloadSlug = normalizeBetSlugForHouseMatch(bItem?.gameSlug)
-          const payloadCurr = String(bItem?.currency || '').toLowerCase()
-
-          const active = activeRunsRef.current || {}
-          const runningSlugList = Object.values(active)
-            .filter((r) => r?.status === 'running' && r?.slotSlug)
-            .map((r) => normalizeBetSlugForHouseMatch(r.slotSlug))
-          const pendingMap = pendingHouseBetMatchRef.current
-          const hasRunningForHouseBet = payloadSlug
-            ? (
-              runningSlugList.some((s) => houseBetSlugMatchesSessionSlug(payloadSlug, s)) ||
-              hasPendingHouseBetForPayloadSlug(pendingMap, payloadSlug)
-            )
-            : (
-              Object.values(active).some((r) => r?.status === 'running') ||
-              Object.keys(pendingMap || {}).some((rid) => Array.isArray(pendingMap[rid]) && pendingMap[rid].length > 0)
-            )
-          if (!hasRunningForHouseBet) continue
-
-          const directProviderBetId = String(bItem?.betId || '').trim()
-          const p =
-            splicePendingHouseBetByProviderBetId(pendingMap, payloadSlug, directProviderBetId) ||
-            (payloadSlug
-              ? splicePendingHouseBetMatch(pendingMap, payloadSlug, payloadCurr, bItem)
-              : splicePendingHouseBetMatchWithoutSlug(pendingMap, payloadCurr, bItem))
-
-          if (p) {
-            const runId = p.runId
-            const rawId = pickStakeHouseBetShareRawId(bItem)
-            const shareId = rawId ? formatStakeShareBetId(rawId) : null
-
-            const spinM = Number(p.multi) || 0
-            const houseBetCurr = String(bItem?.currency || p.currency || '').toLowerCase()
-            const houseBetRate = getRateForCurrency(ratesRef.current || {}, houseBetCurr)
-            const stakeMajor = Number(bItem?.amountMajor ?? bItem?.amount ?? p.betAmountMajor ?? 0)
-            const houseBetMulti = Number(bItem?.payoutMultiplier)
-            const effectiveMulti =
-              Number.isFinite(houseBetMulti) && houseBetMulti >= 0 ? houseBetMulti : spinM
-            const trackMulti = Math.max(spinM, effectiveMulti)
-            const prevBest = Math.max(
-              activeRunsRef.current[runId]?.bestMultiRun ?? 0,
-              batchRunBestMulti[runId] ?? 0
-            )
-            batchRunBestMulti[runId] = Math.max(prevBest, trackMulti)
-
-            // UI: höchster Multi in diesem Batch gewinnt (nicht nur das letzte Event).
-            const prevUiM = multiUiByRunId[runId]?.multi ?? 0
-            if (trackMulti > prevUiM) {
-              multiUiByRunId[runId] = {
-                multi: trackMulti,
-                storageSlug: p.storageSlug,
-                slug: p.slug,
-                spinSeq: p.spinSeq,
-              }
-            } else if (!multiUiByRunId[runId]) {
-              multiUiByRunId[runId] = {
-                multi: trackMulti,
-                storageSlug: p.storageSlug,
-                slug: p.slug,
-                spinSeq: p.spinSeq,
-              }
-            }
-
-            if (shareId) {
-              if (directProviderBetId) {
-                houseShareIdByProviderBetIdRef.current.set(directProviderBetId, shareId)
-              }
-              bestBetByRunId[runId] = shareId
-              const key = p.storageSlug != null ? p.storageSlug : p.slug
-              if (
-                isPersistableStakeHouseBetShareId(shareId) &&
-                shouldPersistOverallBetId(p.slug, key, trackMulti, bestMultiBySlotRef.current)
-              ) {
-                betIdToPersistOverall[key] = shareId
-              }
-            }
-            if (p.feedEntryId) {
-              const patchCurr = String(
-                bItem?.currency || p.currency || houseBetCurr || 'usd'
-              ).toLowerCase()
-              const amountPatch =
-                Number.isFinite(stakeMajor) && stakeMajor > 0
-                  ? {
-                      betAmount: toMinor(stakeMajor, patchCurr),
-                      winAmount: toMinor(
-                        stakeMajor * Math.max(0, Number(effectiveMulti) || 0),
-                        patchCurr
-                      ),
-                      multiplier: Math.max(0, Number(effectiveMulti) || 0),
-                      currencyCode: patchCurr.toUpperCase(),
-                    }
-                  : { currencyCode: patchCurr.toUpperCase() }
-              patchHubFeedEntryFromHouseBet(p.feedEntryId, bItem, amountPatch)
-              if (p.spinSeq != null) {
-                const mk = `${runId}:${p.spinSeq}`
-                const tid = houseBetDeferredUiTimersRef.current.get(mk)
-                if (tid != null) {
-                  clearTimeout(tid)
-                  houseBetDeferredUiTimersRef.current.delete(mk)
-                }
-              }
-            }
-          }
-
-          if (!p && hasRunningForHouseBet) {
-            const rawShareFallback = pickStakeHouseBetShareRawId(bItem)
-            const shareIdFallback = rawShareFallback ? formatStakeShareBetId(rawShareFallback) : null
-            if (shareIdFallback) {
-              const candidateRuns = Object.values(active).filter((r) => {
-                if (!r || r.status !== 'running') return false
-                const runSlug = normalizeBetSlugForHouseMatch(r.slotSlug)
-                if (!houseBetSlugMatchesSessionSlug(payloadSlug, runSlug)) return false
-                if (!payloadCurr) return true
-                const runCurr = String(r.runCurrency || '').toLowerCase()
-                return !runCurr || runCurr === payloadCurr
-              })
-              if (candidateRuns.length === 1) {
-                const targetRun = candidateRuns[0]
-                const targetRunId = targetRun.id
-                if (
-                  targetRunId &&
-                  !areStakeShareIdsEquivalent(targetRun.bestBetId, shareIdFallback)
-                ) {
-                  bestBetByRunId[targetRunId] = shareIdFallback
-                }
-                const hbMultiFallback = Number(bItem?.payoutMultiplier)
-                if (targetRunId && Number.isFinite(hbMultiFallback) && hbMultiFallback > 0) {
-                  const prevUiM = multiUiByRunId[targetRunId]?.multi ?? 0
-                  if (hbMultiFallback > prevUiM) {
-                    multiUiByRunId[targetRunId] = {
-                      multi: hbMultiFallback,
-                      storageSlug: targetRun.slotSlug,
-                      slug: targetRun.slotSlug,
-                      spinSeq: null,
-                    }
-                  }
-                }
-                if (targetRunId) {
-                  patchHubFeedRunFromHouseBet(targetRunId, bItem)
-                }
-              }
-            }
-            // Ohne Pending (WS vor HTTP) oder mit Pending aber kein sicherer Match (z. B. Timing) — später erneut matchen.
-            const dedupeKey = pickStakeHouseBetShareRawId(bItem) || bItem?.id
-            if (dedupeKey) {
-              const buf = houseBetRetryBufferRef.current
-              if (!buf.some((e) => e.key === dedupeKey)) {
-                buf.push({ key: dedupeKey, bItem, at: Date.now() })
-                if (buf.length > HOUSEBET_RETRY_BUFFER_MAX) buf.shift()
-              }
-            }
-          }
-        }
-
-      // 1x React update + 1x localStorage persist pro Tick
-      const runIds = [
-        ...new Set([...Object.keys(bestBetByRunId), ...Object.keys(multiUiByRunId)]),
-      ]
-      if (runIds.length) {
-        for (const runId of runIds) {
-          const m = multiUiByRunId[runId]
-          if (m && m.multi != null && Number.isFinite(Number(m.multi))) {
-            const prevS = runBestMultiSyncRef.current[runId] ?? 0
-            runBestMultiSyncRef.current[runId] = Math.max(Number(prevS) || 0, Number(m.multi))
-          }
-        }
-
-        setActiveRuns((prev) => {
-          const next = { ...prev }
-          for (const runId of runIds) {
-            const run = next[runId]
-            if (!run || run.status !== 'running') continue
-            const refRun = activeRunsUiDirtyRef.current
-              ? activeRunsRef.current?.[runId]
-              : null
-            const baseRun = refRun ? { ...run, ...refRun } : run
-            const m = multiUiByRunId[runId]
-            const nextBest =
-              m && m.multi != null && Number.isFinite(Number(m.multi))
-                ? Math.max(baseRun.bestMultiRun ?? 0, Number(m.multi))
-                : baseRun.bestMultiRun
-            const bid = bestBetByRunId[runId]
-            next[runId] = {
-              ...baseRun,
-              bestBetId: bid != null ? bid : baseRun.bestBetId ?? null,
-              bestMultiRun: nextBest,
-            }
-          }
-          activeRunsRef.current = next
-          return next
-        })
-
-        for (const runId of runIds) {
-          const m = multiUiByRunId[runId]
-          if (!m || m.multi == null || !Number.isFinite(Number(m.multi))) continue
-          const slugKey = m.storageSlug != null ? m.storageSlug : m.slug
-          setBestMultiBySlotRef.current((prev) => {
-            const cur = prev[slugKey] ?? 0
-            const nm = Number(m.multi)
-            if (nm <= cur) return prev
-            const nmap = { ...prev, [slugKey]: nm }
-            persistBestMultiMap(nmap)
-            return nmap
-          })
-        }
-
-        try {
-          const keys = Object.keys(betIdToPersistOverall)
-          if (keys.length) {
-            const bestBetIdMap = loadBestBetIdMap()
-            const merged = { ...bestBetIdMap }
-            for (const k of keys) {
-              const v = betIdToPersistOverall[k]
-              if (v && isPersistableStakeHouseBetShareId(v)) merged[k] = v
-            }
-            persistBestBetIdMap(merged)
-            bumpHunterStorageRef.current?.()
-          }
-        } catch (_) {}
-
-        if (DEBUG_HUNTER_BETID_MATCH) {
-          log(`houseBets: Bet ID + best multi for ${runIds.length} run(s) (after houseBets).`)
-        }
-      }
-
-      // Wenn noch Events drin sind, direkt wieder planend
-      if (houseBetEventQueueRef.current.length > 0) {
-        houseBetWorkerScheduledRef.current = true
-        setTimeout(runWorkerTick, 0)
-      }
-    }
-
-    const scheduleHouseBetWorker = () => {
-      if (houseBetWorkerScheduledRef.current) return
-      houseBetWorkerScheduledRef.current = true
-      setTimeout(runWorkerTick, 0)
-    }
-    scheduleHouseBetWorkerRef.current = scheduleHouseBetWorker
-
-    const shouldEnqueueHouseBet = () => {
-      const ar = activeRunsRef.current || {}
-      if (Object.values(ar).some((r) => r?.status === 'running')) return true
-      if (houseBetRetryBufferRef.current.length > 0) return true
-      const pm = pendingHouseBetMatchRef.current
-      for (const rid of Object.keys(pm || {})) {
-        const v = pm[rid]
-        if (Array.isArray(v) && v.length) return true
-      }
-      return false
-    }
-
-    subscribeToHouseBets(accessToken, (b) => {
-      const betType = String(b?.betType || '')
-      if (/sport/i.test(betType)) return
-      if (!shouldEnqueueHouseBet()) return
-      const now = Date.now()
-      prunePendingHouseBetMap(pendingHouseBetMatchRef.current, now)
-      houseBetEventQueueRef.current.push(b)
-      if (houseBetEventQueueRef.current.length > HOUSEBET_EVENT_QUEUE_MAX) {
-        houseBetEventQueueRef.current.splice(
-          0,
-          houseBetEventQueueRef.current.length - HOUSEBET_EVENT_QUEUE_MAX
-        )
-      }
-      scheduleHouseBetWorker()
-    }).then((s) => {
-      if (cancelled) {
-        try {
-          s?.disconnect?.()
-        } catch (_) {}
-        return
-      }
-      sub = s
+    return attachHunterHouseBetCoordinator({
+      accessToken,
+      log,
+      debugBetIdMatch: DEBUG_HUNTER_BETID_MATCH,
+      refs: {
+        pendingHouseBetMatchRef,
+        houseBetEventQueueRef,
+        houseBetWorkerScheduledRef,
+        houseBetRetryBufferRef,
+        scheduleHouseBetWorkerRef,
+        activeRunsRef,
+        activeRunsUiDirtyRef,
+        runBestMultiSyncRef,
+        houseShareIdByProviderBetIdRef,
+        houseBetDeferredUiTimersRef,
+        bestMultiBySlotRef,
+        bumpHunterStorageRef,
+        setActiveRuns,
+        setBestMultiBySlotRef,
+      },
+      shouldPersistOverallBetId,
+      loadBestBetIdMap,
+      persistBestBetIdMap,
+      persistBestMultiMap,
     })
-
-    return () => {
-      cancelled = true
-      scheduleHouseBetWorkerRef.current = () => {}
-      houseBetRetryBufferRef.current = []
-      try {
-        sub?.disconnect?.()
-      } catch (_) {}
-    }
   }, [accessToken, log])
 
   const applyFilters = useCallback((partial) => {
@@ -2638,6 +2098,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             sessionStatsUiDirtyRef.current = true
             scheduleActiveRunsUiFlush()
             if (ENABLE_SESSION_NET_CHART) {
+              if (sessionSpinStartMsRef.current == null) {
+                sessionSpinStartMsRef.current = Date.now()
+              }
               sessionNetTotalSpinsRef.current += 1
               sessionNetBufferRef.current.push(totalSessionStatsRef.current.profit)
               scheduleSessionNetChartFlush()
@@ -2727,7 +2190,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           const resolvedRoundId = roundIdForDedup
           const mappedShareId =
             matchEntry.providerBetId &&
-            houseShareIdByProviderBetIdRef.current.get(matchEntry.providerBetId)
+            getHouseShareIdLookup(houseShareIdByProviderBetIdRef, matchEntry.providerBetId)
           const provisionalRunBetId =
             mappedShareId ||
             formatStakeShareBetId(matchEntry.providerBetId || resolvedRoundId || null)
@@ -3083,6 +2546,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       }))
     } finally {
       delete runnersRef.current[runId]
+      clearPendingHouseBetsForRun(pendingHouseBetMatchRef.current, runId)
       try {
         delete seenRoundKeysByRunRef.current[runId]
       } catch (_) {}
@@ -3152,6 +2616,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     if (ENABLE_SESSION_NET_CHART) {
       sessionNetBufferRef.current.reset()
       sessionNetTotalSpinsRef.current = 0
+      sessionSpinStartMsRef.current = null
+      setSessionBetsPerSec(0)
       setSessionNetSeriesVersion((v) => v + 1)
       setSessionNetSpinCount(0)
     }
@@ -3159,6 +2625,29 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     setHuntEnabled(false)
     setLastRefresh(null)
   }
+
+  const exportHubSession = useCallback(() => {
+    const rows = hubFeedToLoggerExportRows(getChallengeHubRecentBets())
+    if (!rows.length) {
+      log('Export: no hub feed rows yet.')
+      return
+    }
+    void (async () => {
+      try {
+        const api = typeof window !== 'undefined' ? window.electronAPI : null
+        if (!api?.exportLoggerBetLogs) {
+          log('Export unavailable (electron API missing).')
+          return
+        }
+        const r = await api.exportLoggerBetLogs(rows)
+        if (r?.cancelled) return
+        if (r?.ok) log(`Exported ${rows.length} bets → ${r.path || 'file'} (import in Logger tab)`)
+        else log(`Export failed: ${r?.error || 'unknown error'}`)
+      } catch (e) {
+        log(`Export failed: ${String(e?.message || e)}`)
+      }
+    })()
+  }, [log])
 
   const clearLogs = () => {
     logBufferRef.current = []
@@ -3783,6 +3272,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
            >
              Reset
            </Button>
+           <Button
+             onClick={exportHubSession}
+             variant="outline"
+             title="Export hub feed as JSONL — import in Logger tab to review or CSV export"
+           >
+             Export session
+           </Button>
            <Button onClick={refreshChallenges} variant="primary" disabled={!accessToken} title="Reload challenge list now">
              Refresh
            </Button>
@@ -4223,6 +3719,19 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 ${totalSessionStats.profit.toFixed(2)}
               </div>
             </div>
+            <div className="hunter-kpi-segment">
+              <div className="hunter-kpi-label">Bets / sec</div>
+              <div
+                className="hunter-kpi-value"
+                title={
+                  sessionNetSpinCount > 0
+                    ? `Session average · ${sessionNetSpinCount} bets since first spin`
+                    : 'Session average since first spin'
+                }
+              >
+                {sessionBetsPerSec > 0 ? sessionBetsPerSec.toFixed(2) : '—'}
+              </div>
+            </div>
           </div>
 
           {ENABLE_SESSION_NET_CHART && (
@@ -4298,336 +3807,26 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               {activeRunList.map((run) => {
                 const ch = challenges.find((x) => x.id === run.challengeId)
                 const prizeLine = ch ? formatChallengePrize(ch) : { main: run.prizeDisplay ?? '—', hint: run.prizeHint ?? null }
-                const shareRawForRun = run.bestBetId || hubPickShareRawFromBetList(hubRecentBets, run.id)
-                const copyBetIdRunFormatted = formatStakeShareBetId(shareRawForRun)
-                const canCopyRunShare =
-                  typeof copyBetIdRunFormatted === 'string' && String(copyBetIdRunFormatted).trim() !== ''
-                const copyBetIdRecord = loadOverallBetIdForSlug(run.slotSlug)
-                const copyBetId =
-                  (canCopyRunShare ? copyBetIdRunFormatted : null) ||
-                  (copyBetIdRecord ? formatStakeShareBetId(copyBetIdRecord) : null)
-                const previewBetId = copyBetId ? stakeBetIdForPreviewApi(copyBetId) : null
-                const stakeBetLink = copyBetId ? stakeBetModalShareUrl(copyBetId) : null
-                const runListMax = hubRecentBets?.length ? hunterHubListMaxForRun(hubRecentBets, run.id).max : 0
-                const displayRunMax = hubRecentBets?.length
-                  ? Math.max(Number(run.bestMultiRun) || 0, runListMax)
-                  : Number(run.bestMultiRun) || 0
-                const storedSlotNum =
-                  bestMultiBySlot[run.slotSlug] != null && Number.isFinite(Number(bestMultiBySlot[run.slotSlug]))
-                    ? Number(bestMultiBySlot[run.slotSlug])
-                    : null
-                const slotListMax =
-                  hubRecentBets?.length && run.slotSlug ? hunterHubListMaxForSlot(hubRecentBets, run.slotSlug).max : 0
-                const mergedSlotRec = Math.max(storedSlotNum ?? 0, slotListMax)
-                const displaySlotRec = hubRecentBets?.length
-                  ? mergedSlotRec > 0 || storedSlotNum != null
-                    ? mergedSlotRec
-                    : null
-                  : storedSlotNum
                 return (
-                <div key={run.id} className="hunter-run-card">
-                  <div className="hunter-run-card-inner">
-                  <div style={{ fontWeight: 600, marginBottom: '0.4rem' }}>
-                    {run.slotName}
-                    {run.currencySlotIndex > 0 ? (
-                      <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                        {' '}
-                        (Copy #{run.currencySlotIndex + 1}
-                        {run.runCurrency ? ` · ${String(run.runCurrency).toUpperCase()}` : ''})
-                      </span>
-                    ) : run.runCurrency ? (
-                      <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                        {' '}
-                        · {String(run.runCurrency).toUpperCase()}
-                      </span>
-                    ) : null}
-                    {run.forcedTargetCurrency ? (
-                      <span
-                        style={{ fontWeight: 500, color: 'var(--accent)', fontSize: '0.68rem', marginLeft: '0.25rem' }}
-                        title="Manual target currency selected for this run"
-                      >
-                        manual
-                      </span>
-                    ) : null}
-                  </div>
-                  <div style={STYLES.statRow}>
-                    <span>Status</span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-                      {run.status === 'running' ? (
-                        <span
-                          title="Running"
-                          aria-label="Running"
-                          style={{
-                            display: 'inline-block',
-                            width: 10,
-                            height: 10,
-                            borderRadius: '50%',
-                            background: 'radial-gradient(circle at 35% 35%, #86efac, #16a34a)',
-                            boxShadow: '0 0 6px 2px rgba(34, 197, 94, 0.9), 0 0 16px rgba(34, 197, 94, 0.5)',
-                          }}
-                        />
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)' }}>{run.status}</span>
-                      )}
-                    </span>
-                  </div>
-                  <div style={STYLES.statRow}><span>Spins</span><span>{run.spins}</span></div>
-                  <div style={STYLES.statRow}>
-                    <span>Wagered (USD)</span>
-                    <span>
-                      $
-                      {(
-                        run.wageredUsd != null
-                          ? run.wageredUsd
-                          : minorToUsd(run.wagered, run.runCurrency || targetCurrency, rates)
-                      ).toFixed(2)}
-                    </span>
-                  </div>
-                  <div style={STYLES.statRow}>
-                    <span title="Cumulative per-spin net in USD (win minus stake)">
-                      Net (USD)
-                    </span>
-                    <span>
-                      $
-                      {(run.wonUsd != null
-                        ? run.wonUsd
-                        : minorToUsd(run.won ?? 0, run.runCurrency || targetCurrency, rates)
-                      ).toFixed(2)}
-                    </span>
-                  </div>
-                  <div style={STYLES.statRow}>
-                    <span>Bet (USD)</span>
-                    <span>${minorToUsd(run.currentBet, run.runCurrency || targetCurrency, rates).toFixed(2)}</span>
-                  </div>
-                  {String(run.providerId || '').toLowerCase() === 'stakeengine' ? (
-                    <div style={STYLES.statRow}>
-                      <span style={{ color: 'var(--text-muted)' }}>Seed Reset</span>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'flex-end' }}>
-                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>every</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={Number(run.stakeRgsSeedResetEvery) || 0}
-                          onChange={(e) => {
-                            const n = Math.max(0, Math.min(100000, parseInt(e.target.value || '0', 10) || 0))
-                            setActiveRuns((prev) => {
-                              const cur = prev[run.id]
-                              if (!cur) return prev
-                              return { ...prev, [run.id]: { ...cur, stakeRgsSeedResetEvery: n } }
-                            })
-                          }}
-                          style={{
-                            width: '3.6rem',
-                            padding: '0.12rem 0.25rem',
-                            borderRadius: 'var(--radius-sm)',
-                            border: '1px solid var(--border)',
-                            background: 'var(--bg-deep)',
-                            color: 'var(--text)',
-                            fontSize: '0.72rem',
-                            textAlign: 'right',
-                          }}
-                          title="0 = off. Applied when queued run starts; adjustable while running (Stake RGS)."
-                        />
-                        <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Spins</span>
-                      </span>
-                    </div>
-                  ) : null}
-                  <div style={STYLES.statRow}>
-                    <span style={{ fontWeight: 600 }}>Target Multi</span>
-                    <span style={{ color: 'var(--accent)', fontWeight: 600 }}>
-                      {run.targetMultiplier != null && Number.isFinite(Number(run.targetMultiplier))
-                        ? `${Number(run.targetMultiplier).toLocaleString('en-US', { maximumFractionDigits: 2 })}×`
-                        : '—'}
-                    </span>
-                  </div>
-                  <div style={STYLES.statRow}>
-                    <span style={{ color: 'var(--text-muted)' }}>Potential Prize</span>
-                    <span style={{ textAlign: 'right' }}>
-                      <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{prizeLine.main}</span>
-                      {prizeLine.hint ? (
-                        <span style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.12rem' }}>
-                          {prizeLine.hint}
-                        </span>
-                      ) : null}
-                    </span>
-                  </div>
-                  <div style={STYLES.statRow}>
-                    <span style={{ color: 'var(--text-muted)' }}>Max (this run)</span>
-                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.25rem', flexWrap: 'wrap' }}>
-                      <span>{Number(displayRunMax).toFixed(2)}×</span>
-                      <button
-                        type="button"
-                        disabled={!canCopyRunShare}
-                        onClick={() => {
-                          if (!canCopyRunShare) return
-                          try {
-                            if (navigator?.clipboard?.writeText) {
-                              navigator.clipboard.writeText(copyBetIdRunFormatted).catch(() => {})
-                              log(`Run bet id copied — ${run.slotName}`)
-                            }
-                          } catch (_) {}
-                        }}
-                        style={{
-                          padding: '0.15rem 0.35rem',
-                          fontSize: '0.65rem',
-                          borderRadius: 'var(--radius-sm)',
-                          border: '1px solid var(--border)',
-                          background: 'transparent',
-                          color: 'var(--accent)',
-                          cursor: canCopyRunShare ? 'pointer' : 'not-allowed',
-                          opacity: canCopyRunShare ? 1 : 0.45,
-                        }}
-                        title={
-                          canCopyRunShare
-                            ? `Same format as BetList: ${copyBetIdRunFormatted}`
-                            : 'No houseBets share id yet (run state and feed rows are empty).'
-                        }
-                      >
-                        Copy Run
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!stakeBetLink}
-                        onClick={() => {
-                          if (!stakeBetLink) return
-                          try {
-                            if (navigator?.clipboard?.writeText) {
-                              navigator.clipboard.writeText(stakeBetLink).catch(() => {})
-                              log(`Stake bet link copied (${run.slotName})`)
-                            }
-                          } catch (_) {}
-                        }}
-                        style={{
-                          padding: '0.15rem 0.35rem',
-                          fontSize: '0.65rem',
-                          borderRadius: 'var(--radius-sm)',
-                          border: '1px solid var(--border)',
-                          background: 'transparent',
-                          color: 'var(--text-muted)',
-                          cursor: stakeBetLink ? 'pointer' : 'not-allowed',
-                          opacity: stakeBetLink ? 1 : 0.45,
-                        }}
-                        title={
-                          stakeBetLink
-                            ? 'Full Stake share link (?iid is exact houseBets.iid, URL encoded)'
-                            : 'Copy a bet id first (Copy ID).'
-                        }
-                      >
-                        Link
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!previewBetId}
-                        onClick={() => {
-                          if (!previewBetId) return
-                          try {
-                            if (navigator?.clipboard?.writeText) {
-                              navigator.clipboard.writeText(previewBetId).catch(() => {})
-                              log(`Bet preview UUID copied (${run.slotName}) — for POST /bet/preview body betId`)
-                            }
-                          } catch (_) {}
-                        }}
-                        style={{
-                          padding: '0.15rem 0.35rem',
-                          fontSize: '0.65rem',
-                          borderRadius: 'var(--radius-sm)',
-                          border: '1px solid var(--border)',
-                          background: 'transparent',
-                          color: 'var(--text-muted)',
-                          cursor: previewBetId ? 'pointer' : 'not-allowed',
-                          opacity: previewBetId ? 1 : 0.45,
-                        }}
-                        title={
-                          previewBetId
-                            ? 'UUID only (no casino: prefix) for Stake REST bet preview: { "betId": "<uuid>" }'
-                            : 'Copy bet ID first (Copy ID).'
-                        }
-                      >
-                        Preview
-                      </button>
-                    </span>
-                  </div>
-                  <div style={STYLES.statRow}>
-                    <span style={{ color: 'var(--text-muted)' }}>Record Multi</span>
-                    <span>
-                      {run.slotSlug && displaySlotRec != null && Number.isFinite(Number(displaySlotRec))
-                        ? `${Number(displaySlotRec).toFixed(2)}×`
-                        : '—'}
-                    </span>
-                  </div>
-                  <div style={STYLES.statRow}>
-                    <span style={{ color: 'var(--text-muted)' }}>Bet ID record (slot)</span>
-                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.25rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.68rem', wordBreak: 'break-all', textAlign: 'right' }}>
-                        {copyBetIdRecord || '—'}
-                      </span>
-                      <button
-                        type="button"
-                        disabled={!copyBetIdRecord}
-                        onClick={() => {
-                          if (!copyBetIdRecord) return
-                          try {
-                            if (navigator?.clipboard?.writeText) {
-                              navigator.clipboard.writeText(copyBetIdRecord).catch(() => {})
-                              log(`Bet ID (lifetime slot record, houseBets) copied — ${run.slotName}`)
-                            }
-                          } catch (_) {}
-                        }}
-                        style={{
-                          padding: '0.15rem 0.35rem',
-                          fontSize: '0.65rem',
-                          borderRadius: 'var(--radius-sm)',
-                          border: '1px solid var(--border)',
-                          background: 'transparent',
-                          color: 'var(--accent)',
-                          cursor: copyBetIdRecord ? 'pointer' : 'not-allowed',
-                          opacity: copyBetIdRecord ? 1 : 0.45,
-                        }}
-                      >
-                        Copy
-                      </button>
-                    </span>
-                  </div>
-                  <div style={{marginTop: '0.5rem'}}>
-                    <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap'}}>
-                      <Button
-                        onClick={() => stopRunByRunId(run.id)}
-                        variant="secondary"
-                        disabled={run.status !== 'running'}
-                        title={
-                          run.status === 'running'
-                            ? 'No further spin after the current one — this parallel run only'
-                            : 'No active spin'
-                        }
-                      >
-                        Stop after spin
-                      </Button>
-                      <Button
-                        onClick={() => restartRunByRunId(run.id)}
-                        variant="primary"
-                        disabled={run.status === 'running' || run.status === 'completed'}
-                        title={
-                          run.status === 'running'
-                            ? 'Only possible after stop'
-                            : run.status === 'completed'
-                              ? 'Stake challenge completed'
-                              : 'Start this run again'
-                        }
-                      >
-                        Restart
-                      </Button>
-                      <Button
-                        onClick={() => removeRun(run.id)}
-                        variant="outline"
-                        title="Aus Liste und Queue entfernen"
-                      >
-                        Aus Liste
-                      </Button>
-                    </div>
-                  </div>
-                  </div>
-                </div>
+                  <HunterRunCard
+                    key={run.id}
+                    run={run}
+                    prizeLine={prizeLine}
+                    targetCurrency={targetCurrency}
+                    rates={rates}
+                    bestMultiBySlot={bestMultiBySlot}
+                    onLog={log}
+                    onSeedResetChange={(runId, n) => {
+                      setActiveRuns((prev) => {
+                        const cur = prev[runId]
+                        if (!cur) return prev
+                        return { ...prev, [runId]: { ...cur, stakeRgsSeedResetEvery: n } }
+                      })
+                    }}
+                    onStopRun={stopRunByRunId}
+                    onRestartRun={restartRunByRunId}
+                    onRemoveRun={removeRun}
+                  />
                 )
               })}
             </div>

@@ -104,10 +104,13 @@ function pickHubRowForHouseBet(bets, bItem) {
   let fallbackBest = null
   let fallbackAt = Infinity
 
+  const hbCurr = String(bItem?.currency || 'usd').toLowerCase()
   for (const row of bets || []) {
     if (hubRowHasShareId(row)) continue
     const rowSlug = normalizeBetSlugForHouseMatch(row?.slotSlug)
     if (payloadSlug && rowSlug && !houseBetSlugMatchesSessionSlug(payloadSlug, rowSlug)) continue
+    const rowCurr = String(row?.currencyCode || '').toLowerCase()
+    if (hbCurr && rowCurr && rowCurr !== hbCurr) continue
     const rowBet = Number(row.betAmount) || 0
     if (betMinor > 0 && rowBet > 0 && !betMinorClose(rowBet, betMinor)) continue
     const rm = hubRowMultiplier(row)

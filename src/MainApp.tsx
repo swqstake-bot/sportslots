@@ -14,7 +14,6 @@ import { useAccentInlineStyle } from './hooks/useAccentInlineStyle';
 import { AutoBetManager } from './components/AutoBet/AutoBetManager';
 import CasinoView from './components/Casino/CasinoView';
 import LoggerView from './components/Logger/LoggerView';
-import LoggerBackgroundCollector from './components/Logger/LoggerBackgroundCollector';
 import { KeyAuthLogin } from './components/KeyAuthLogin';
 import { isKeyAuthEnabled } from './api/keyauth';
 import { UpdaterNotification } from './components/UpdaterNotification';
@@ -251,6 +250,7 @@ function App() {
       console.error(`Error: ${err.message}`);
       setError(err.message);
       if (err.message.includes('401') || err.message.includes('login')) {
+        /* auth failure already surfaced via setError */
       }
     } finally {
       setIsLoading(false);
@@ -322,7 +322,6 @@ function App() {
       data-app-mode={currentView}
     >
       <GlobalToast />
-      <LoggerBackgroundCollector />
       <UpdaterNotification />
       <ChangelogModal 
         isOpen={showChangelog} 

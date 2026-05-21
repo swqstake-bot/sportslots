@@ -4,6 +4,7 @@ import { SectionCard } from '../ui/SectionCard'
 import { subscribeChallengeHubBetFeed } from '../../utils/challengeHubLiveFeed'
 import { SESSION_ONLY_HUB_AND_LOGGER } from '../../../../config/sessionData'
 import { applyHouseBetToHubFeed, flushHubHouseBetBufferForFeedEntry } from '../../utils/challengeHubBetIdPatch'
+import { isHunterHouseBetCoordinatorActive } from '../../utils/hunterHouseBetCoordinator'
 import { ChallengeHubBetListFeed, CHALLENGE_HUB_BET_LIST_MAX_ROWS } from './ChallengeHubBetListFeed'
 import { useChallengeHubRecentBets } from './ChallengeHubBetListContext'
 import { formatAmount } from '../../utils/formatAmount'
@@ -39,14 +40,8 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
   const [highlightsOpen, setHighlightsOpen] = useState(true)
   const [highlightMode, setHighlightMode] = useState<'multis' | 'wins' | 'slots'>('multis')
   const [topMultisAll, setTopMultisAll] = useState<TopEntry[]>(() =>
-    SESSION_ONLY_HUB_AND_LOGGER ? [] : parseStoredTopEntries()
+    SESSION_ONLY_HUB_AND_LOGGER ? [] : dedupeTopEntries(parseStoredTopEntries())
   )
-
-  useEffect(() => {
-    if (!SESSION_ONLY_HUB_AND_LOGGER) {
-      setTopMultisAll((prev) => dedupeTopEntries(prev))
-    }
-  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -74,6 +69,7 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
 
     subscribeToHouseBets(accessToken, (bItem: unknown) => {
       if (cancelled) return
+      if (isHunterHouseBetCoordinatorActive()) return
       applyHouseBetToHubFeed(bItem)
     }).then((s) => {
       if (cancelled) {
