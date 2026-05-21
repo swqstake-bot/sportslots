@@ -11,6 +11,8 @@ const GAME_SERVICE_PATH_V4 = '/gs2c/ge/v4/gameService'
 const GAME_SERVICE_PATH_V3 = '/gs2c/ge/v3/gameService'
 const SSP_FALLBACK_V3_URL = 'http://277bdnt1n6.iumtibif.net/gs2c/ge/v3/gameService'
 const SSP_FALLBACK_V4_URL = 'https://441f8864ac.ukffjfmmka.net/gs2c/ge/v4/gameService'
+/** Browser/Stake 2026 (Psycho Heroes / Sexy Rabbit); ältere Slots tolerieren denselben Wert meist. */
+const PRAGMATIC_DOINIT_CVER = '406989'
 
 function parseUrlParams(urlStr) {
   try {
@@ -19,7 +21,7 @@ function parseUrlParams(urlStr) {
     let mgckey = q.get('mgckey')
     let symbol = q.get('symbol')
 
-    // playGame.do?key=token%3Dxxx%60%7C%60symbol%3Dvs20sugarrushx... (Stake-Neuformat)
+    // playGame.do?key=token=…|symbol=vs20… — token ist NICHT der mgckey-Hash (kommt erst aus html5Game.do).
     if (!mgckey && !symbol && q.has('key')) {
       const keyRaw = decodeURIComponent(q.get('key') || '')
       for (const part of keyRaw.split(/[|`]+/)) {
@@ -27,11 +29,7 @@ function parseUrlParams(urlStr) {
         if (eq < 0) continue
         const k = part.slice(0, eq).trim()
         const v = part.slice(eq + 1).trim()
-        if (k === 'token') mgckey = v
         if (k === 'symbol') symbol = v
-      }
-      if (symbol && mgckey) {
-        mgckey = `AUTHTOKEN@${mgckey}~stylename@rare_stake`
       }
     }
 
@@ -42,6 +40,18 @@ function parseUrlParams(urlStr) {
     }
   } catch {
     return {}
+  }
+}
+
+/** game/load liefert HTML mit eingebetteter html5Game.do-URL inkl. SESSION@ / SN@ mgckey. */
+function extractHtml5GameUrlFromHtml(html, baseUrl) {
+  if (!html || typeof html !== 'string' || !baseUrl) return null
+  const m = html.match(/html5Game\.do[^"'<\s\\]+/i)
+  if (!m?.[0]) return null
+  try {
+    return new URL(m[0], baseUrl).href
+  } catch {
+    return null
   }
 }
 
@@ -94,20 +104,36 @@ async function resolveGameUrl(config) {
     return trimmed
   }
 
-  // playGame.do?key=... – ZWINGEND fetchen, um Token server-seitig zu aktivieren (ohne → doInit liefert "unlogged")
+  // playGame.do?key=… → playGame (302) → game/load (HTML mit html5Game.do + voller mgckey)
   let url = trimmed
   try {
     const res = await safeFetch(url, { method: 'GET' })
-    if (res.ok && res.url) {
+    const responseText = await res.text()
+    const finalBase = res.url || url
+
+    if (res.url) {
       const finalParams = parseUrlParams(res.url)
       if (finalParams.mgckey && finalParams.symbol) return res.url
     }
-    const directParams = parseUrlParams(url)
-    if (directParams.mgckey && directParams.symbol && directParams.host) return url
+
+    const embeddedHtml5 = extractHtml5GameUrlFromHtml(responseText, finalBase)
+    if (embeddedHtml5) {
+      const emb = parseUrlParams(embeddedHtml5)
+      if (emb.mgckey && emb.symbol) {
+        try {
+          await safeFetch(embeddedHtml5, { method: 'GET' })
+        } catch (_) {
+          /* Session-Aktivierung optional; mgckey reicht für doInit */
+        }
+        return embeddedHtml5
+      }
+    }
+
+    if (params.symbol && params.host && trimmed.includes('playGame.do')) {
+      throw pragmaticError('playGame-Session: mgckey aus html5Game.do nicht gefunden.')
+    }
   } catch (e) {
     logApiCall({ type: 'pragmatic/resolve', endpoint: url, request: null, response: null, error: String(e), durationMs: null })
-    const directParams = parseUrlParams(trimmed)
-    if (directParams.mgckey && directParams.symbol && directParams.host) return trimmed
     throw pragmaticError('resolveGameUrl failed', e)
   }
   return null
@@ -369,7 +395,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const doInitBody = new URLSearchParams({
     action: 'doInit',
     symbol,
-    cver: '293728',
+    cver: PRAGMATIC_DOINIT_CVER,
     index: '1',
     counter: '1',
     repeat: '0',

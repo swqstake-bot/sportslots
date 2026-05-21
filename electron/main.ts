@@ -118,6 +118,24 @@ function hostnameMatches(hostname: string, allowed: string): boolean {
   return host.split('.').some((part) => part.includes(needle));
 }
 
+/** Pragmatic / Fat Panda / Sexy Rabbit gs2c hosts (Stake liefert rotierende CDN-Subdomains). */
+const PRAGMATIC_HOST_SUFFIXES = ['gcmlgxrmkp.net', 'ukffjfmmka.net', 'iumtibif.net'] as const;
+
+function isPragmaticProxyTarget(hostname: string, pathname: string): boolean {
+  if (!hostname) return false;
+  if (PRAGMATIC_HOST_SUFFIXES.some((suffix) => hostnameMatches(hostname, suffix))) return true;
+  // playGame.do auf stake.com läuft über rgs — nicht als Pragmatic-CDN behandeln
+  if (
+    hostnameMatches(hostname, 'stake.com') ||
+    hostnameMatches(hostname, 'stake.bet') ||
+    hostnameMatches(hostname, 'stake-engine.com')
+  ) {
+    return false;
+  }
+  const path = (pathname || '').toLowerCase();
+  return path.includes('/gs2c/') || path.includes('playgame.do') || path.includes('html5game.do');
+}
+
 /**
  * Verstecktes Stake-Bridge-Fenster hat kein `parent` — bleibt sonst offen, blockiert `window-all-closed`
  * und hält den Electron-Prozess am Leben (Windows/Linux).
@@ -1829,7 +1847,7 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
         const proxyHostname = parsedProxyUrl?.hostname || '';
         const proxyPathname = parsedProxyUrl?.pathname || '';
 
-        if (proxyHostname && hostnameMatches(proxyHostname, 'gcmlgxrmkp.net')) {
+        if (proxyHostname && isPragmaticProxyTarget(proxyHostname, proxyPathname)) {
             isAllowed = true;
             type = 'pragmatic';
         } 
