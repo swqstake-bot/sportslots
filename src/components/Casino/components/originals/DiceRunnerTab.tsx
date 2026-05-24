@@ -54,7 +54,7 @@ export default function DiceRunnerTab() {
 
   const mult = Number(targetMultiplier) || 2
   const rollUnder = multiplierToRollUnder(mult)
-  const chance = rollOver ? 100 - rollUnder : rollUnder
+  const winChance = rollUnder
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -301,7 +301,7 @@ export default function DiceRunnerTab() {
         </div>
 
         <div className="text-sm text-[var(--text-muted)]">
-          Win chance: {chance.toFixed(4)}% · payout on hit: ~{mult.toFixed(2)}×
+          Win chance: {winChance.toFixed(4)}% · payout on hit: ~{mult.toFixed(2)}× · {rollOver ? 'Roll Over' : 'Roll Under'}
           {autoRerun && ' · auto rerun polls wallet every 3s when a session ends'}
         </div>
 

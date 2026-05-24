@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.171': [
+    '🐛 Dice Runner: Win chance stays the same for Roll Over / Roll Under (display fix)',
+  ],
   '1.0.170': [
     '✨ Originals: Dice Runner — flat USD bets, target multiplier, roll over/under',
     '✨ Dice Runner: optional seed rotation (every N spins / on target hit)',
