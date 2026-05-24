@@ -1,4 +1,4 @@
-export function placeDiceBet(params: { amount: number; currency: string; rollUnder: number; rollOver?: boolean }): Promise<{ iid?: string; payout?: number } | null>
+export function placeDiceBet(params: { amount: number; currency: string; rollUnder: number; rollOver?: boolean }): Promise<{ iid?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
 export function placeLimboBet(params: { amount: number; currency: string; targetMultiplier: number }): Promise<{ iid?: string; payout?: number } | null>
 export function placeMinesBet(params: { amount: number; currency: string; mineCount: number }): Promise<{ iid?: string; id?: string; payout?: number } | null>
 export function minesReveal(params: { identifier: string; fields: number[] }): Promise<{ id?: string; payout?: number; active?: boolean } | null>

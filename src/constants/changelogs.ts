@@ -1,4 +1,10 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.170': [
+    '✨ Originals: Dice Runner — flat USD bets, target multiplier, roll over/under',
+    '✨ Dice Runner: optional seed rotation (every N spins / on target hit)',
+    '✨ Dice Runner: Auto rerun — polls wallet and restarts when balance is back',
+    '✨ Dice Runner: all currencies, spins/sec throttle, profit chart & bet log',
+  ],
   '1.0.152': [
     '🐛 Stats: Wagered/Payout/Profit stabilisiert (HouseBets/HTTP-Reconcile + stärkeres Dedup)',
     '🐛 Stats: KPI-Summen aus USD-Snapshots statt nachträglicher FX-Neubewertung',
