@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.172': [
+    '🐛 Dice Runner: Auto rerun stops on target hit (no restart after win)',
+    '🎨 Dice Runner: removed helper/description text from UI',
+  ],
   '1.0.171': [
     '🐛 Dice Runner: Win chance stays the same for Roll Over / Roll Under (display fix)',
   ],

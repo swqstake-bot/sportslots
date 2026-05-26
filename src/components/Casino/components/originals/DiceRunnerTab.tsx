@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchCurrencyRates } from '../../api/stakeChallenges'
 import { Button } from '../ui/Button'
 import { SvgCumulativeProfitLineChart } from '../../../charts/SvgCumulativeCharts'
-import { multiplierToRollUnder, runDiceRunner, type DiceRunnerConfig } from './diceRunner/runDiceRunner'
+import { runDiceRunner, type DiceRunnerConfig } from './diceRunner/runDiceRunner'
 import { loadDiceRunnerConfig, saveDiceRunnerConfig } from './diceRunner/diceRunnerPersistence'
 import {
   DICE_RUNNER_BALANCE_POLL_MS,
@@ -51,10 +51,6 @@ export default function DiceRunnerTab() {
   const signalRef = useRef({ cancelled: false })
   const manualStopRef = useRef(false)
   const sessionSpinRef = useRef(0)
-
-  const mult = Number(targetMultiplier) || 2
-  const rollUnder = multiplierToRollUnder(mult)
-  const winChance = rollUnder
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -171,12 +167,19 @@ export default function DiceRunnerTab() {
         break
       }
 
-      if (reason === 'hit') addLog('Session ended — target multiplier hit.')
-      else if (reason === 'balance') addLog('Session ended — insufficient balance.')
+      if (reason === 'hit') {
+        addLog('Session ended — target multiplier hit.')
+        if (cfg.autoRerun && cfg.stopOnTargetHit) {
+          addLog('Auto rerun stopped — target hit.')
+        }
+        break
+      }
+
+      if (reason === 'balance') addLog('Session ended — insufficient balance.')
       else if (reason === 'error') addLog('Session ended — error.')
       else if (reason === 'stopped') addLog('Session stopped.')
 
-      if (!cfg.autoRerun || reason === 'stopped') break
+      if (reason === 'stopped' || !cfg.autoRerun || reason !== 'balance') break
 
       setWaitingForBalance(true)
       addLog('Auto rerun: waiting for sufficient balance…')
@@ -240,9 +243,6 @@ export default function DiceRunnerTab() {
           <span className="casino-card-header-accent" />
           Dice Runner
         </h3>
-        <p className="text-sm text-[var(--text-muted)]">
-          Flat-loss spins until stopped manually or limits hit. Target hit can stop and/or rotate seed (both optional).
-        </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
@@ -274,11 +274,10 @@ export default function DiceRunnerTab() {
           <div>
             <label className="block text-xs text-[var(--text-muted)] mb-1">Spins per second</label>
             <input type="number" min="0.5" max="30" step="0.5" value={spinsPerSec} onChange={(e) => setSpinsPerSec(e.target.value)} className={inputCls} disabled={controlsLocked} />
-            <span className="text-xs text-[var(--text-muted)]">0 = max speed</span>
           </div>
           <div>
             <label className="block text-xs text-[var(--text-muted)] mb-1">Rotate seed every N spins</label>
-            <input type="number" min="0" step="1" placeholder="0 = off" value={seedChangeEverySpins} onChange={(e) => setSeedChangeEverySpins(e.target.value)} className={inputCls} disabled={controlsLocked} />
+            <input type="number" min="0" step="1" value={seedChangeEverySpins} onChange={(e) => setSeedChangeEverySpins(e.target.value)} className={inputCls} disabled={controlsLocked} />
           </div>
           <div className="flex flex-col justify-end gap-2 pb-1">
             <label className="flex items-center gap-2 cursor-pointer">
@@ -300,14 +299,9 @@ export default function DiceRunnerTab() {
           </div>
         </div>
 
-        <div className="text-sm text-[var(--text-muted)]">
-          Win chance: {winChance.toFixed(4)}% · payout on hit: ~{mult.toFixed(2)}× · {rollOver ? 'Roll Over' : 'Roll Under'}
-          {autoRerun && ' · auto rerun polls wallet every 3s when a session ends'}
-        </div>
-
         {waitingForBalance && (
           <div className="p-2 rounded bg-amber-500/10 border border-amber-500/30 text-amber-200 text-sm">
-            Waiting for balance… (auto rerun)
+            Waiting for balance…
           </div>
         )}
 
