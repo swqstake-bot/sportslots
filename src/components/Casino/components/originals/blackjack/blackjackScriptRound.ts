@@ -3,6 +3,7 @@
  */
 
 import { stakeBlackjackBet, stakeBlackjackNext } from '../../../api/stakeOriginalsBets'
+import { withOriginalsScriptRetry } from '../scriptEngine/originalsScriptRetry'
 import {
   classifyPair,
   decideBasicStrategy,
@@ -56,7 +57,7 @@ function isPlayerHandComplete(actions: string[] | undefined): boolean {
 
 function effectivePlayerActions(
   hand: { actions?: string[]; cards?: { rank: string }[] },
-  /** >1: bereits gesplittet — Stake erlaubt kein Re-Split; Paare sonst fälschlich wieder „split“ (Screenshot 3+3 aktiv). */
+  /** >1: already split — no re-split; pairs would wrongly suggest split again. */
   playerHandCount: number
 ): string[] {
   const raw = hand.actions || []
@@ -120,7 +121,10 @@ export async function playBlackjackScriptRound(opts: {
 }): Promise<BlackjackScriptRoundResult> {
   const { amount, currency, signal, onLog } = opts
 
-  let raw = await stakeBlackjackBet({ amount, currency, identifier: undefined })
+  let raw = await withOriginalsScriptRetry(
+    () => stakeBlackjackBet({ amount, currency, identifier: undefined }),
+    { signal, onLog, label: 'Blackjack bet' }
+  )
   let bet = unwrapBet(raw)
   if (!bet) {
     throw new Error(describeStakeBlackjackFailure(raw))
@@ -167,7 +171,10 @@ export async function playBlackjackScriptRound(opts: {
       for (const action of attempts) {
         if (signal.cancelled) throw new Error('Abgebrochen')
         try {
-          raw = await stakeBlackjackNext({ action, identifier: undefined })
+          raw = await withOriginalsScriptRetry(
+            () => stakeBlackjackNext({ action, identifier: undefined }),
+            { signal, onLog, label: `Blackjack ${action}` }
+          )
           bet = unwrapBet(raw)
           if (bet) {
             ok = true
@@ -221,7 +228,10 @@ export async function playBlackjackScriptRound(opts: {
     if (!apiAction) throw new Error('Blackjack: keine gültige Spielaktion.')
 
     const prevPlayerCount = players.length
-    raw = await stakeBlackjackNext({ action: apiAction, identifier: undefined })
+    raw = await withOriginalsScriptRetry(
+      () => stakeBlackjackNext({ action: apiAction, identifier: undefined }),
+      { signal, onLog, label: `Blackjack ${apiAction}` }
+    )
     bet = unwrapBet(raw)
     if (!bet) throw new Error('Blackjack: keine Antwort nach next')
 

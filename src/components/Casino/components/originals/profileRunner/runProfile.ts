@@ -13,8 +13,16 @@ import {
   rotateSeedPair,
 } from '../../../api/stakeOriginalsBets'
 import { playBlackjackScriptRound } from '../blackjack/blackjackScriptRound'
+import {
+  isRetryableOriginalsScriptError,
+  ORIGINALS_SCRIPT_RETRY_DELAY_MS,
+} from '../scriptEngine/originalsScriptRetry'
 
 const GRID_SIZE = 25
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms))
+}
 
 export interface ProfileRunnerCallbacks {
   onLog?: (msg: string) => void
@@ -311,6 +319,12 @@ export async function runProfile(
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
+      if (isRetryableOriginalsScriptError(e) && !signal.cancelled) {
+        callbacks.onLog?.(`Fehler — retry in 3s: ${msg.slice(0, 120)}`)
+        rollNumber--
+        await sleep(ORIGINALS_SCRIPT_RETRY_DELAY_MS)
+        continue
+      }
       callbacks.onLog?.('Fehler: ' + msg)
       callbacks.onBetPlaced?.({ error: msg })
       break

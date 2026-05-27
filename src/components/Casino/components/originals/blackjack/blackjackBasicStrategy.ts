@@ -1,5 +1,6 @@
 /**
- * Basic Strategy für Stake Originals Blackjack (Script-Mode), gemäß Nutzer-Regeln.
+ * Basic Strategy for Stake Originals Blackjack (Script mode).
+ * Rules: European, dealer S17, DAS. No surrender on Stake — Rh/Rs map to hit/stand.
  */
 
 export function isTenValue(rank: string): boolean {
@@ -7,7 +8,7 @@ export function isTenValue(rank: string): boolean {
   return r === '10' || r === 'J' || r === 'Q' || r === 'K'
 }
 
-/** Dealer-Up-Karte → 2–10 oder 11 (Ass). */
+/** Dealer up-card → 2–10 or 11 (Ace). */
 export function dealerUpRankToValue(rank: string): number {
   const r = String(rank || '').toUpperCase()
   if (r === 'A') return 11
@@ -20,7 +21,7 @@ function normalizeRank(rank: string): string {
   return String(rank || '').toUpperCase()
 }
 
-/** Zwei Karten: Paar-Typ für Strategie (10/J/Q/K → gemeinsame „Zehner“-Paar-Logik). */
+/** Two cards: pair type for strategy (10/J/Q/K → shared ten pair logic). */
 export function classifyPair(cards: { rank: string }[]): 'A' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'T' | null {
   if (!cards || cards.length !== 2) return null
   const a = normalizeRank(cards[0].rank)
@@ -32,12 +33,11 @@ export function classifyPair(cards: { rank: string }[]): 'A' | '2' | '3' | '4' |
 }
 
 export interface HandTotals {
-  /** Beste Summe für Entscheidung (Soft zählt Ass als 11 wenn möglich). */
   total: number
   isSoft: boolean
 }
 
-/** Werte aus offenen Karten (Ass als 1 oder 11). */
+/** Value open cards (Ace as 1 or 11). */
 export function analyzeHandTotals(cards: { rank: string }[]): HandTotals {
   let hard = 0
   let acesAs11 = 0
@@ -66,14 +66,89 @@ export function analyzeHandTotals(cards: { rank: string }[]): HandTotals {
   return { total, isSoft }
 }
 
-function inRange(d: number, lo: number, hi: number): boolean {
-  return d >= lo && d <= hi
+type ChartAction = 'H' | 'S' | 'P' | 'Dh' | 'Ds' | 'Rh' | 'Rs'
+
+/** Dealer index: 2–9 → 0–7, 10 → 8, A → 9 */
+function dealerIdx(dealerUpValue: number): number {
+  if (dealerUpValue === 11) return 9
+  if (dealerUpValue === 10) return 8
+  return dealerUpValue - 2
+}
+
+function lookup(table: ChartAction[], dealerUpValue: number): ChartAction {
+  return table[dealerIdx(dealerUpValue)] ?? 'H'
+}
+
+const HARD: Record<string, ChartAction[]> = {
+  '5-8': ['H', 'H', 'H', 'H', 'H', 'H', 'H', 'H', 'H', 'H'],
+  '9': ['H', 'Dh', 'Dh', 'Dh', 'Dh', 'H', 'H', 'H', 'H', 'H'],
+  '10': ['Dh', 'Dh', 'Dh', 'Dh', 'Dh', 'Dh', 'Dh', 'Dh', 'H', 'H'],
+  '11': ['Dh', 'Dh', 'Dh', 'Dh', 'Dh', 'Dh', 'Dh', 'Dh', 'Dh', 'H'],
+  '12': ['H', 'H', 'S', 'S', 'S', 'H', 'H', 'H', 'H', 'Rh'],
+  '13': ['S', 'S', 'S', 'S', 'S', 'H', 'H', 'H', 'H', 'Rh'],
+  '14': ['S', 'S', 'S', 'S', 'S', 'H', 'H', 'H', 'Rh', 'Rh'],
+  '15': ['S', 'S', 'S', 'S', 'S', 'H', 'H', 'Rh', 'Rh', 'Rh'],
+  '16': ['S', 'S', 'S', 'S', 'S', 'H', 'H', 'Rh', 'Rh', 'Rh'],
+  '17': ['S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'Rs'],
+  '18+': ['S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S'],
+}
+
+const SOFT: Record<number, ChartAction[]> = {
+  13: ['H', 'H', 'H', 'Dh', 'Dh', 'H', 'H', 'H', 'H', 'H'],
+  14: ['H', 'H', 'H', 'Dh', 'Dh', 'H', 'H', 'H', 'H', 'H'],
+  15: ['H', 'H', 'Dh', 'Dh', 'Dh', 'H', 'H', 'H', 'H', 'H'],
+  16: ['H', 'H', 'Dh', 'Dh', 'Dh', 'H', 'H', 'H', 'H', 'H'],
+  17: ['H', 'Dh', 'Dh', 'Dh', 'Dh', 'H', 'H', 'H', 'H', 'H'],
+  18: ['S', 'Ds', 'Ds', 'Ds', 'Ds', 'S', 'S', 'H', 'H', 'H'],
+  19: ['S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S'],
+  20: ['S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S'],
+  21: ['S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S'],
+}
+
+const PAIRS: Record<string, ChartAction[]> = {
+  '2': ['P', 'P', 'P', 'P', 'P', 'P', 'H', 'H', 'H', 'H'],
+  '3': ['P', 'P', 'P', 'P', 'P', 'P', 'H', 'H', 'H', 'Rh'],
+  '4': ['H', 'H', 'H', 'P', 'P', 'H', 'H', 'H', 'H', 'H'],
+  '5': ['Dh', 'Dh', 'Dh', 'Dh', 'Dh', 'Dh', 'Dh', 'Dh', 'H', 'H'],
+  '6': ['P', 'P', 'P', 'P', 'P', 'H', 'H', 'H', 'H', 'Rh'],
+  '7': ['P', 'P', 'P', 'P', 'P', 'P', 'H', 'Rh', 'Rh', 'Rh'],
+  '8': ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', 'Rh', 'Rh'],
+  '9': ['P', 'P', 'P', 'P', 'P', 'S', 'P', 'P', 'S', 'S'],
+  T: ['S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S'],
+  A: ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P', 'H'],
+}
+
+function hardKey(total: number): string {
+  if (total <= 8) return '5-8'
+  if (total >= 18) return '18+'
+  return String(total)
+}
+
+/** Rh/Rs: Stake has no surrender — use hit / stand instead. */
+function chartToStrategy(chart: ChartAction, canDouble: boolean): StrategyAction {
+  switch (chart) {
+    case 'H':
+    case 'Rh':
+      return 'hit'
+    case 'S':
+    case 'Rs':
+      return 'stand'
+    case 'P':
+      return 'split'
+    case 'Dh':
+      return canDouble ? 'double' : 'hit'
+    case 'Ds':
+      return canDouble ? 'double' : 'stand'
+    default:
+      return 'hit'
+  }
 }
 
 export type StrategyAction = 'hit' | 'stand' | 'double' | 'split'
 
 /**
- * Basic Strategy (Paare, Soft, Hard). `canSplit` nur bei genau zwei Karten und erlaubtem Split.
+ * Basic strategy (pairs, soft, hard).
+ * `canSplit` only on exactly two cards.
  */
 export function decideBasicStrategy(input: {
   cards: { rank: string }[]
@@ -84,70 +159,46 @@ export function decideBasicStrategy(input: {
   const { cards, dealerUpValue: dv } = input
   const canSplit = input.canSplit && cards.length === 2
   const canDouble = input.canDouble
+
   const pairKind = canSplit ? classifyPair(cards) : null
-
-  const chooseDouble = (primary: StrategyAction, fallback: StrategyAction): StrategyAction => {
-    if (primary === 'double' && !canDouble) return fallback
-    return primary
-  }
-
   if (pairKind) {
-    switch (pairKind) {
-      case 'A':
-        return 'split'
-      case '2':
-      case '3':
-        return inRange(dv, 2, 7) ? 'split' : 'hit'
-      case '4':
-        return inRange(dv, 5, 6) ? 'split' : 'hit'
-      case '5':
-        return chooseDouble(inRange(dv, 2, 9) ? 'double' : 'hit', inRange(dv, 2, 9) ? 'hit' : 'hit')
-      case '6':
-        return inRange(dv, 2, 6) ? 'split' : 'hit'
-      case '7':
-        return inRange(dv, 2, 7) ? 'split' : 'hit'
-      case '8':
-        return 'split'
-      case '9':
-        if (dv === 7 || dv === 10 || dv === 11) return 'stand'
-        if (inRange(dv, 2, 6) || dv === 8 || dv === 9) return 'split'
-        return 'stand'
-      case 'T':
-        return 'stand'
-      default:
-        break
+    const chart = lookup(PAIRS[pairKind], dv)
+    const action = chartToStrategy(chart, canDouble)
+    if (action === 'split' && pairKind === '5') {
+      return chartToStrategy(lookup(HARD['10'], dv), canDouble)
+    }
+    if (action === 'split' && !canSplit) {
+      /* fall through to hard/soft */
+    } else {
+      return action
     }
   }
 
   const { total, isSoft } = analyzeHandTotals(cards)
 
-  if (isSoft) {
-    if (total >= 20) return 'stand'
-    if (total === 19) return chooseDouble(dv === 6 ? 'double' : 'stand', 'stand')
-    if (total >= 16 && total <= 18) return chooseDouble(inRange(dv, 2, 6) ? 'double' : 'stand', 'stand')
-    if (total >= 13 && total <= 15) return chooseDouble(inRange(dv, 5, 6) ? 'double' : 'hit', 'hit')
-    if (total <= 12) return 'hit'
-    return 'stand'
+  if (!isSoft && total >= 5 && total <= 7 && dv === 11) {
+    return 'hit'
   }
 
-  if (total <= 8) return 'hit'
-  if (total === 9) return chooseDouble(inRange(dv, 3, 6) ? 'double' : 'hit', 'hit')
-  if (total === 10) return chooseDouble(inRange(dv, 2, 9) ? 'double' : 'hit', 'hit')
-  if (total === 11) return chooseDouble(inRange(dv, 2, 10) ? 'double' : 'hit', 'hit')
-  if (total === 12) return inRange(dv, 4, 6) ? 'stand' : 'hit'
-  if (total >= 13 && total <= 16) return inRange(dv, 2, 6) ? 'stand' : 'hit'
-  return 'stand'
+  if (isSoft && total <= 21 && SOFT[total]) {
+    return chartToStrategy(lookup(SOFT[total], dv), canDouble)
+  }
+
+  return chartToStrategy(lookup(HARD[hardKey(total)], dv), canDouble)
 }
 
-/** Erste erlaubte Aktion passend zur Strategie (Reihenfolge: Entscheidung → hit → stand). */
+/** Map strategy decision to first allowed API action. */
 export function mapStrategyToApiAction(decision: StrategyAction, allowedActions: string[]): string | null {
   const allowed = new Set(allowedActions)
   const tryOne = (a: StrategyAction): string | null => {
-    const key = a === 'double' ? 'double' : a
-    return allowed.has(key) ? key : null
+    return allowed.has(a) ? a : null
   }
   const first = tryOne(decision)
   if (first) return first
+  if (decision === 'double') {
+    if (tryOne('hit')) return 'hit'
+    if (tryOne('stand')) return 'stand'
+  }
   if (decision !== 'hit' && tryOne('hit')) return 'hit'
   if (decision !== 'stand' && tryOne('stand')) return 'stand'
   if (tryOne('double')) return 'double'
