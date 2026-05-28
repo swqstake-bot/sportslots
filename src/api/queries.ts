@@ -58,15 +58,6 @@ const TournamentTreeNested = `fragment TournamentTreeNested on SportTournament {
 }
 ${CategoryTreeNested}`;
 
-const SportFixtureLiveStreamExists = `fragment SportFixtureLiveStreamExists on SportFixture {
-  id
-  betradarStream { exists }
-  imgArenaStream { exists }
-  abiosStream { exists stream { startTime id } }
-  geniussportsStream(deliveryType: hls) { exists }
-  statsPerformStream(getData: false) { isAvailable geoBlocked }
-}`;
-
 const FixtureOptionsSameGameMultiButton_SportFixture = `fragment FixtureOptionsSameGameMultiButton_SportFixture on SportFixture {
   sgmAvailable: customBetAvailable
   swish: swishGame {
@@ -221,7 +212,6 @@ ${SportMarketOutcome}`;
 
 const FixturePreview = `fragment FixturePreview on SportFixture {
   id
-  ...SportFixtureLiveStreamExists
   ...FixtureOptionsSameGameMultiButton_SportFixture
   status
   slug
@@ -244,7 +234,6 @@ const FixturePreview = `fragment FixturePreview on SportFixture {
     ...EsportFixtureEventStatus
   }
 }
-${SportFixtureLiveStreamExists}
 ${FixtureOptionsSameGameMultiButton_SportFixture}
 ${SportFixtureDataMatch}
 ${SportFixtureDataOutright}
