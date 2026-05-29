@@ -21,6 +21,16 @@ function extractWinFromEvents(events) {
   return events.reduce((sum, e) => sum + Number(e.wa || 0), 0)
 }
 
+/** Höchstes awa über alle Events (Hacksaw: feature_exit kann nicht letztes Event sein). */
+function extractMaxAwaFromEvents(events) {
+  let max = 0
+  for (const e of events || []) {
+    const awa = Number(e?.awa)
+    if (Number.isFinite(awa) && awa > max) max = awa
+  }
+  return max
+}
+
 /**
  * Extrahiert Gewinn aus gridwin-Actions in den Events.
  */
@@ -183,7 +193,19 @@ function extractBonusFeatureFromState(state) {
  * @returns {{ success, winAmount, balance, roundId, currencyCode, error? }}
  */
 export function parseBetResponse(response, betAmount) {
-  const success = response?.statusCode === 0
+  const eventsEarly = response?.round?.events || []
+  const hasFeatureExitEarly = eventsEarly.some(
+    (ev) => String(ev?.etn || '').toLowerCase() === 'feature_exit'
+  )
+  const roundStatusEarly = String(response?.round?.status || '').toLowerCase()
+  const roundEndedEarly =
+    hasFeatureExitEarly ||
+    roundStatusEarly === 'complete' ||
+    roundStatusEarly === 'completed' ||
+    roundStatusEarly === 'closed'
+  const success =
+    response?.statusCode === 0 ||
+    (roundEndedEarly && response?.round?.roundId != null)
   const balance = response?.accountBalance?.balance != null
     ? Number(response.accountBalance.balance)
     : null
@@ -374,6 +396,13 @@ export function parseBetResponse(response, betAmount) {
     winAmount = extractWinFromEvents(filteredEvents)
     if (winAmount === 0) {
       winAmount = extractWinFromActions(filteredEvents)
+    }
+    if (winAmount === 0 && hasFeatureExit) {
+      winAmount = Math.max(
+        extractMaxAwaFromEvents(events),
+        extractWinFromEvents(events),
+        extractWinFromActions(events)
+      )
     }
   } else if (success && !usedStakeEngineWinMinor && response?.round?.winAmountDisplay != null) {
     winAmount = Number(response.round.winAmountDisplay)

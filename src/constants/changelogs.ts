@@ -1,4 +1,9 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.175': [
+    '🐛 Hacksaw Challenge Hunter: Bonus wird durchgespielt (Continue/Drain statt Timeout-Abbruch)',
+    '🐛 Hacksaw: Gewinn/Multi nach feature_exit und Balance-Delta (wie Bonus Hunt)',
+    '🐛 Hacksaw: Continue-Retry bei Timeout, Keep-Alive vor Spins',
+  ],
   '1.0.172': [
     '🐛 Dice Runner: Auto rerun stops on target hit (no restart after win)',
     '🎨 Dice Runner: removed helper/description text from UI',

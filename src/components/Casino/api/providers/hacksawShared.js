@@ -11,6 +11,42 @@ export const HACKSAW_API_BASE = import.meta.env.DEV
 /** User-Agent für Hacksaw-Requests */
 export const HACKSAW_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/144.0.0.0'
 
+export const HACKSAW_CONTINUE_RETRY_MS = 3000
+export const HACKSAW_CONTINUE_RETRY_MAX = 8
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+export function hacksawRoundNeedsContinue(data) {
+  const r = data?.round
+  if (!r?.roundId) return false
+  return (
+    r.status === 'wfwpc' ||
+    (r.status === 'started' && Array.isArray(r.possibleActions) && r.possibleActions.length > 0)
+  )
+}
+
+export function isHacksawTimeoutLike(dataOrMessage) {
+  const msg = String(
+    typeof dataOrMessage === 'string' ? dataOrMessage : dataOrMessage?.statusMessage || ''
+  ).toLowerCase()
+  return msg.includes('timeout') || msg.includes('timed out')
+}
+
+export function isHacksawSessionClosed(dataOrMessage) {
+  if (dataOrMessage?.statusCode === 20) return true
+  const msg = String(
+    typeof dataOrMessage === 'string' ? dataOrMessage : dataOrMessage?.statusMessage || ''
+  ).toLowerCase()
+  return (
+    msg.includes('session abgelaufen') ||
+    msg.includes('session expired') ||
+    msg.includes('session timeout') ||
+    msg.includes('err_is')
+  )
+}
+
 export async function safeFetch(url, options = {}) {
   if (window.electronAPI?.proxyRequest) {
     const { method = 'GET', headers = {}, body } = options
@@ -153,4 +189,86 @@ export async function sendHacksawContinue(apiBase, session, roundId, prevRespons
   }
 
   return data
+}
+
+/**
+ * Continue mit Retry bei Timeout — Bonus-Runden können länger dauern.
+ */
+export async function sendHacksawContinueWithRetry(
+  apiBase,
+  session,
+  roundId,
+  prevResponse,
+  slotSlug,
+  gambleOnBonus,
+  continueOptions = {}
+) {
+  let lastData = null
+  for (let attempt = 0; attempt < HACKSAW_CONTINUE_RETRY_MAX; attempt++) {
+    try {
+      const data = await sendHacksawContinue(
+        apiBase,
+        session,
+        roundId,
+        prevResponse,
+        slotSlug,
+        gambleOnBonus,
+        continueOptions
+      )
+      lastData = data
+      if (isHacksawSessionClosed(data)) {
+        const err = new Error(data?.statusMessage || 'Session abgelaufen.')
+        err.sessionClosed = true
+        throw err
+      }
+      if (data?.statusCode === 0 || hacksawRoundNeedsContinue(data) || data?.statusCode === 1) {
+        return data
+      }
+      if (isHacksawTimeoutLike(data) && attempt + 1 < HACKSAW_CONTINUE_RETRY_MAX) {
+        await sleep(HACKSAW_CONTINUE_RETRY_MS)
+        continue
+      }
+      return data
+    } catch (e) {
+      if (isHacksawSessionClosed(e)) throw e
+      if (isHacksawTimeoutLike(e) && attempt + 1 < HACKSAW_CONTINUE_RETRY_MAX) {
+        await sleep(HACKSAW_CONTINUE_RETRY_MS)
+        continue
+      }
+      throw e
+    }
+  }
+  return lastData
+}
+
+/**
+ * Spielt offene Bonus-/Pick-Runden bis fertig (wfwpc / started+actions).
+ */
+export async function drainHacksawContinues(apiBase, session, startData, slotSlug, gambleOnBonus, continueOptions = {}) {
+  let currentData = startData
+  let seq = session.seq
+  let safety = 0
+  const onKeepAlive = continueOptions?.onKeepAlive
+
+  while (hacksawRoundNeedsContinue(currentData) && safety++ < 150) {
+    if (onKeepAlive && safety % 3 === 0) {
+      try {
+        await onKeepAlive({ ...session, seq })
+      } catch {
+        /* ignore */
+      }
+    }
+    currentData = await sendHacksawContinueWithRetry(
+      apiBase,
+      { ...session, seq },
+      currentData.round.roundId,
+      currentData,
+      slotSlug,
+      gambleOnBonus,
+      continueOptions
+    )
+    seq += 1
+  }
+
+  return { data: currentData, nextSeq: seq }
 }

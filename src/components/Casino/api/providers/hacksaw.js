@@ -5,7 +5,7 @@
 import { startThirdPartySession } from '../stake'
 import { logApiCall } from '../../utils/apiLogger'
 import { parseBetResponse } from '../../utils/parseBetResponse'
-import { HACKSAW_API_BASE, HACKSAW_USER_AGENT, sendHacksawKeepAlive, sendHacksawContinue, safeFetch } from './hacksawShared'
+import { HACKSAW_API_BASE, HACKSAW_USER_AGENT, sendHacksawKeepAlive, sendHacksawContinue, sendHacksawContinueWithRetry, drainHacksawContinues, hacksawRoundNeedsContinue, isHacksawTimeoutLike, isHacksawSessionClosed, safeFetch } from './hacksawShared'
 
 /** Vergleich von bonusFeatureWon (CamelCase, snake_case, Leerzeichen). */
 function normalizeHacksawBonusFeatureKey(raw) {
@@ -227,7 +227,61 @@ export async function sendKeepAlive(session) {
 }
 
 export async function sendContinue(session, roundId, prevResponse, slotSlug, gambleOnBonus, continueOptions = {}) {
-  return sendHacksawContinue(HACKSAW_API_BASE, session, roundId, prevResponse, slotSlug, gambleOnBonus, continueOptions)
+  return sendHacksawContinueWithRetry(
+    HACKSAW_API_BASE,
+    session,
+    roundId,
+    prevResponse,
+    slotSlug,
+    gambleOnBonus,
+    continueOptions
+  )
+}
+
+async function hacksawKeepAliveCb(session) {
+  await sendHacksawKeepAlive(HACKSAW_API_BASE, session, { treat404AsOk: true })
+}
+
+function buildContinueOpts(options) {
+  return {
+    skipContinueIfBonusMinScatter: options?.skipContinueIfBonusMinScatter,
+    slotSlug: options?.slotSlug,
+    onKeepAlive: hacksawKeepAliveCb,
+  }
+}
+
+async function tryResumeHacksawRound(session, data, options) {
+  const roundIds = [data?.round?.roundId, session.openRoundId].filter(Boolean)
+  const continueOpts = buildContinueOpts(options)
+  for (const rid of roundIds) {
+    try {
+      const prev = data?.round?.roundId === rid ? data : undefined
+      const first = await sendHacksawContinueWithRetry(
+        HACKSAW_API_BASE,
+        { ...session, seq: session.seq },
+        rid,
+        prev,
+        options?.slotSlug,
+        options?.gambleOnBonus,
+        continueOpts
+      )
+      const drained = await drainHacksawContinues(
+        HACKSAW_API_BASE,
+        { ...session, seq: session.seq + 1 },
+        first,
+        options?.slotSlug,
+        options?.gambleOnBonus,
+        continueOpts
+      )
+      if (drained.data?.statusCode === 0 || !hacksawRoundNeedsContinue(drained.data)) {
+        return drained
+      }
+      return drained
+    } catch {
+      /* next round id */
+    }
+  }
+  return null
 }
 
 /**
@@ -273,55 +327,39 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
   if (!res.ok) {
     throw new Error(`Bet fehlgeschlagen: ${res.status}`)
   }
-  // 1. Session abgelaufen Check
-  if (data?.statusCode === 20) {
-    const err = new Error('Session abgelaufen. Bitte Session neu starten.')
+  // 1. Session abgelaufen
+  if (isHacksawSessionClosed(data)) {
+    const err = new Error(data?.statusMessage || 'Session abgelaufen. Bitte Session neu starten.')
     err.sessionClosed = true
     throw err
   }
 
-  // 2. Spezialfall: "General error" (statusCode 1) KANN bedeuten: "Bonus/Pick wartet" (Round needs continue)
+  // 2. General error / pending round (statusCode 1) — Bonus/Pick wartet
   if (data?.statusCode === 1) {
-    const roundIdsToTry = [data?.round?.roundId, session.openRoundId].filter(Boolean)
-    if (roundIdsToTry.length === 0) roundIdsToTry.push(undefined)
-    const continueOpts = { skipContinueIfBonusMinScatter: options?.skipContinueIfBonusMinScatter }
-
-    for (const rid of roundIdsToTry) {
-      try {
-        const prevResp = data?.round?.roundId === rid ? data : undefined
-        const continueData = await sendContinue({ ...session, seq: session.seq }, rid, prevResp, options?.slotSlug, options?.gambleOnBonus, continueOpts)
-
-        if (continueData?.statusCode === 0 && continueData?.round) {
-          let cSeq = session.seq + 1
-          let cData = continueData
-          while (cData?.round?.roundId && (cData?.round?.status === 'wfwpc' || (cData?.round?.status === 'started' && cData?.round?.possibleActions?.length > 0))) {
-            cData = await sendContinue({ ...session, seq: cSeq }, cData.round.roundId, cData, options?.slotSlug, options?.gambleOnBonus, continueOpts)
-            cSeq += 1
-          }
-          return { data: cData, nextSeq: cSeq }
-        }
-      } catch (e) {
-        // try next roundId
-      }
-    }
+    const resumed = await tryResumeHacksawRound(session, data, options)
+    if (resumed) return { data: resumed.data, nextSeq: resumed.nextSeq }
   }
 
-  // Fallback statusCode 1: versuche win_presentation_complete
+  // Fallback statusCode 1 ohne roundId: win_presentation_complete
   if (data?.statusCode === 1 && !data?.round?.roundId) {
-    const continueOpts = { skipContinueIfBonusMinScatter: options?.skipContinueIfBonusMinScatter }
+    const continueOpts = buildContinueOpts(options)
     try {
       const continueReq = { seq: session.seq, sessionUuid: session.sessionUuid, continueInstructions: { action: 'win_presentation_complete' } }
       const cres = await safeFetch(`${HACKSAW_API_BASE}/bet`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(continueReq) })
       const cdata = await cres.json().catch(() => ({}))
       logApiCall({ type: 'hacksaw/continue', endpoint: `${HACKSAW_API_BASE}/bet`, request: continueReq, response: cdata, error: cdata?.statusCode !== 0 ? cdata?.statusMessage : null, durationMs: 0 })
-      if (cdata?.statusCode === 0 && cdata?.round) {
-        let cSeq = session.seq + 1
-        let cData = cdata
-        while (cData?.round?.roundId && (cData?.round?.status === 'wfwpc' || (cData?.round?.status === 'started' && cData?.round?.possibleActions?.length > 0))) {
-          cData = await sendContinue({ ...session, seq: cSeq }, cData.round.roundId, cData, options?.slotSlug, options?.gambleOnBonus, continueOpts)
-          cSeq += 1
+      if (cdata?.round) {
+        const drained = await drainHacksawContinues(
+          HACKSAW_API_BASE,
+          { ...session, seq: session.seq + 1 },
+          cdata,
+          options?.slotSlug,
+          options?.gambleOnBonus,
+          continueOpts
+        )
+        if (drained.data?.statusCode === 0 || !hacksawRoundNeedsContinue(drained.data)) {
+          return { data: drained.data, nextSeq: drained.nextSeq }
         }
-        return { data: cData, nextSeq: cSeq }
       }
     } catch (e) {
       logApiCall({ type: 'hacksaw/continue', endpoint: `${HACKSAW_API_BASE}/bet`, request: { continueOnly: true }, response: null, error: e?.message, durationMs: 0 })
@@ -338,10 +376,16 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     }
   }
 
-  // Alle anderen Fehler (Insufficient Funds, Invalid seq, Session timeout, etc.): sofort stoppen
+  // Timeout / pending round: nochmal per continue auflösen statt sofort abbrechen
   if (data?.statusCode !== 0 && data?.statusCode !== undefined) {
+    if (isHacksawTimeoutLike(data) || data?.statusCode === 1 || hacksawRoundNeedsContinue(data)) {
+      const resumed = await tryResumeHacksawRound(session, data, options)
+      if (resumed && (resumed.data?.statusCode === 0 || !hacksawRoundNeedsContinue(resumed.data))) {
+        return { data: resumed.data, nextSeq: resumed.nextSeq }
+      }
+    }
     const err = new Error(data?.statusMessage || `Bet fehlgeschlagen (Status ${data?.statusCode})`)
-    if (data?.statusCode === 20) err.sessionClosed = true
+    if (isHacksawSessionClosed(data)) err.sessionClosed = true
     throw err
   }
 
@@ -354,28 +398,28 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     return { data, baseData: data, nextSeq: currentSeq }
   }
 
-  // Continue bei wfwpc ODER started+pick (Le Pharaoh/Le Bandit: links/rechts wählen)
-  // Nach dem Loop: aktuelle Response (currentData) enthält den finalen Gewinn (3er-Bonus, Gamble, etc.)
-  const needsContinue = (r) => r?.round?.roundId && (r?.round?.status === 'wfwpc' || (r?.round?.status === 'started' && r?.round?.possibleActions?.length > 0))
-  if (needsContinue(data)) {
+  // Continue bei wfwpc / started+pick — Bonus automatisch durchspielen
+  if (hacksawRoundNeedsContinue(data)) {
     const initialBonusScatter = parsed?.scatterCount ?? null
-    const continueOpts = { skipContinueIfBonusMinScatter: options?.skipContinueIfBonusMinScatter }
-    let currentData = data
-    while (needsContinue(currentData)) {
-      const continueResult = await sendContinue(
-        { ...session, seq: currentSeq },
-        currentData.round.roundId,
-        currentData,
-        options?.slotSlug,
-        options?.gambleOnBonus,
-        continueOpts
-      )
-      currentData = continueResult
-      currentSeq += 1
-      const parsedAfter = parseBetResponse(currentData, betAmount)
-      if (parsedAfter?.isBonus && shouldSkipBonus(parsedAfter, options)) {
-        const stoppedScatter = getImpliedScatterLevel(parsedAfter, options?.slotSlug)
-        return { data: currentData, baseData: currentData, nextSeq: currentSeq, initialBonusScatter: stoppedScatter ?? initialBonusScatter }
+    const continueOpts = buildContinueOpts(options)
+    const drained = await drainHacksawContinues(
+      HACKSAW_API_BASE,
+      { ...session, seq: currentSeq },
+      data,
+      options?.slotSlug,
+      options?.gambleOnBonus,
+      continueOpts
+    )
+    currentSeq = drained.nextSeq
+    let currentData = drained.data
+    const parsedAfter = parseBetResponse(currentData, betAmount)
+    if (parsedAfter?.isBonus && shouldSkipBonus(parsedAfter, options)) {
+      const stoppedScatter = getImpliedScatterLevel(parsedAfter, options?.slotSlug)
+      return {
+        data: currentData,
+        baseData: currentData,
+        nextSeq: currentSeq,
+        initialBonusScatter: stoppedScatter ?? initialBonusScatter,
       }
     }
     return { data: currentData, nextSeq: currentSeq, initialBonusScatter }
@@ -455,6 +499,7 @@ export function getImpliedScatterLevel(parsed, slotSlug = '') {
  * - Weiterlaufen = Automatisch abspielen (für normale Spins oder zu kleine Boni).
  */
 export function shouldSkipBonus(parsed, options) {
+  if (options?.playThroughBonus) return false
   const minScatter = options?.skipContinueIfBonusMinScatter
   const bonusId = (parsed.bonusFeatureId || '').toLowerCase()
   const slotSlug = (options?.slotSlug || '').toLowerCase()
@@ -555,9 +600,9 @@ export function shouldSkipBonus(parsed, options) {
   }
 
   if (specialLevel != null) {
-    // Wenn kein Filter (minScatter == null), stoppen wir immer (Level >= 0).
-    // Wenn Filter da (z.B. 4), stoppen wir nur, wenn impliedLevel (4) >= Filter (4).
-    if (minScatter == null) return true
+    // Bonus Hunt: skipContinueOnBonus + kein minScatter → bei jedem FS-Level stoppen.
+    // Challenge Hunter / Autospin ohne skipContinueOnBonus → Bonus durchspielen (nicht skippen).
+    if (minScatter == null) return !!options?.skipContinueOnBonus
     return specialLevel >= minScatter
   }
   

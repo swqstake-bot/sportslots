@@ -68,6 +68,22 @@ describe('Hacksaw skipContinue Logic', () => {
     expect(shouldSkipBonus(parsed, options)).toBe(false)
   })
 
+  it('should NOT skip mapped FS bonus without skipContinueOnBonus (Challenge Hunter play-through)', () => {
+    const parsed = mockParsed({ isBonus: true, shouldStopOnBonus: true, bonusFeatureId: 'fs_1' })
+    expect(shouldSkipBonus(parsed, { slotSlug: 'hacksaw-le-bandit' })).toBe(false)
+  })
+
+  it('should NOT skip when playThroughBonus is set', () => {
+    const parsed = mockParsed({ isBonus: true, shouldStopOnBonus: true, bonusFeatureId: 'fs_1' })
+    expect(
+      shouldSkipBonus(parsed, {
+        slotSlug: 'hacksaw-le-bandit',
+        skipContinueOnBonus: true,
+        playThroughBonus: true,
+      })
+    ).toBe(false)
+  })
+
   it('should treat named 5-Scatter bonusFeatureWon (Le Pharaoh) as level 5 for minScatter', () => {
     const parsed = mockParsed({
       isBonus: true,

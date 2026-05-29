@@ -1947,6 +1947,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       let challengeHitPersisted = false
       let pragmaticRecoveryAttempts = 0
       let sessionTimeoutRecoveryAttempts = 0
+      /** Hacksaw: Balance-Delta für Gewinn wenn Events/awa nach Bonus-Drain leer (wie Bonus Hunt). */
+      let lastBalance = null
       while (!runnersRef.current[runId]?.stop) {
         if (targetHit && finalizeSpinsRemaining === 0) {
           log('Target hit — final spin done, run ended.')
@@ -2013,7 +2015,31 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         try {
           trimPendingQueues(pendingHouseBetMatchRef.current, 80)
 
-          const result = await provider.placeBet(session, betAmount, false, false, { slotSlug: gSlug })
+          const providerKey = String(providerId || '').toLowerCase()
+          const isHacksawFamily =
+            providerKey.includes('hacksaw') ||
+            providerKey.includes('backseat') ||
+            providerKey.includes('bullshark')
+          if (isHacksawFamily && typeof provider.sendKeepAlive === 'function') {
+            try {
+              await provider.sendKeepAlive(session)
+            } catch {
+              /* ignore */
+            }
+          }
+
+          const placeBetOpts = {
+            slotSlug: gSlug,
+            playThroughBonus: isHacksawFamily,
+            gambleOnBonus: false,
+          }
+          const result = await provider.placeBet(
+            session,
+            betAmount,
+            false,
+            false,
+            placeBetOpts
+          )
           const { data, nextSeq, session: updatedSession } = result || {}
           session = updatedSession ? updatedSession : session ? { ...session, seq: nextSeq } : session
           sessionTimeoutRecoveryAttempts = 0
@@ -2030,7 +2056,24 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               }
             }
           }
-          const win = parsed.winAmount || 0
+          let win = parsed.winAmount || 0
+          if (
+            win === 0 &&
+            isHacksawFamily &&
+            parsed.balance != null &&
+            lastBalance != null
+          ) {
+            const winFromBalance = Math.max(0, parsed.balance - lastBalance + betAmount)
+            if (winFromBalance > 0) {
+              win = winFromBalance
+              parsed = {
+                ...parsed,
+                winAmount: win,
+                multiplier: betAmount > 0 ? win / betAmount : parsed.multiplier,
+              }
+            }
+          }
+          if (parsed.balance != null) lastBalance = parsed.balance
           const rawRound = data?._stakeEngine?.raw?.round
           const payoutMultRaw = Number(rawRound?.payoutMultiplier ?? rawRound?.payout_multiplier ?? 0)
           const betN = Number(betAmount) || 0
@@ -2454,6 +2497,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             stopReason = 'insufficient_balance'
             break
           }
+          const providerKeyErr = String(providerId || '').toLowerCase()
+          const isHacksawFamilyErr =
+            providerKeyErr.includes('hacksaw') ||
+            providerKeyErr.includes('backseat') ||
+            providerKeyErr.includes('bullshark')
           const isSessionTimeout =
             e?.sessionClosed === true ||
             msgLower.includes('session abgelaufen') ||
@@ -2461,6 +2509,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             msgLower.includes('session timeout') ||
             msgLower.includes('err_is') ||
             msgLower.includes('invalid session') ||
+            msgLower.includes('invalid seq') ||
+            (isHacksawFamilyErr && msgLower.includes('timeout')) ||
             (msgLower.includes('timeout') && (msgLower.includes('session') || msgLower.includes('rgs')))
           if (isSessionTimeout && sessionTimeoutRecoveryAttempts < SESSION_TIMEOUT_RECOVERY_MAX) {
             sessionTimeoutRecoveryAttempts += 1
