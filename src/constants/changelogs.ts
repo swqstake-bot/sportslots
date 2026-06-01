@@ -1,4 +1,10 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.176': [
+    '🐛 Challenge Hunter: houseBets-iid direkt auf Run/Lifetime (ohne Pending-Match-Zwang)',
+    '🐛 Bet-ID-Match: USD/USDC/USDT gleichwertig, High-Multi bei vielen Spins',
+    '🐛 ThirdPartyBet: payoutMultiplier in houseBets-Subscription',
+    '🐛 Run-Card: Bet ID record zeigt auch Run-bestBetId',
+  ],
   '1.0.175': [
     '🐛 Hacksaw Challenge Hunter: Bonus wird durchgespielt (Continue/Drain statt Timeout-Abbruch)',
     '🐛 Hacksaw: Gewinn/Multi nach feature_exit und Balance-Delta (wie Bonus Hunt)',

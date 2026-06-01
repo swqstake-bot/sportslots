@@ -2237,6 +2237,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           const provisionalRunBetId =
             mappedShareId ||
             formatStakeShareBetId(matchEntry.providerBetId || resolvedRoundId || null)
+          const provisionalPersistable =
+            provisionalRunBetId && isPersistableStakeHouseBetShareId(provisionalRunBetId)
+              ? provisionalRunBetId
+              : null
 
           if (win > 0) {
             void saveFirstSlotWinIfNeeded({
@@ -2266,6 +2270,24 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           {
             const prevRun = activeRunsRef.current?.[runId]
             if (prevRun) {
+              const prevRunMax = Number(prevRun.bestMultiRun) || 0
+              const isNewRunRecord = multiForStop > prevRunMax + 0.01
+              let nextBestBetId = prevRun.bestBetId ?? null
+              if (provisionalPersistable && isNewRunRecord) {
+                nextBestBetId = provisionalPersistable
+              } else if (provisionalPersistable && !nextBestBetId) {
+                nextBestBetId = provisionalPersistable
+              }
+              if (
+                provisionalPersistable &&
+                shouldPersistOverallBetId(matchEntry.slug, gSlug, multiForStop, bestMultiBySlotRef.current)
+              ) {
+                try {
+                  const bidMap = loadBestBetIdMap()
+                  persistBestBetIdMap({ ...bidMap, [gSlug]: provisionalPersistable })
+                  bumpHunterStorageRef.current?.()
+                } catch (_) {}
+              }
               patchActiveRunInRef(runId, {
                 spins: (prevRun.spins || 0) + 1,
                 wagered: (prevRun.wagered || 0) + betAmount,
@@ -2273,7 +2295,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 wonUsd: (prevRun.wonUsd ?? 0) + (kpi?.profit ?? 0),
                 balance: parsed.balance,
                 bestMultiRun: prevRun.bestMultiRun ?? 0,
-                bestBetId: prevRun.bestBetId ?? provisionalRunBetId ?? null,
+                bestBetId: nextBestBetId,
               })
               scheduleActiveRunsUiFlush({ immediate: true })
             }

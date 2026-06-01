@@ -89,6 +89,7 @@ const HOUSEBETS_SUBSCRIPTION = `
         ... on ThirdPartyBet {
           id
           active
+          payoutMultiplier
           amount
           payout
           currency

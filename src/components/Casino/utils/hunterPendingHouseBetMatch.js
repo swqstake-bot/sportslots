@@ -1,3 +1,4 @@
+import { hunterBetCurrenciesMatch } from './currencyMeta'
 import { normalizeBetSlugForHouseMatch, houseBetSlugMatchesSessionSlug } from './slotSlugMatching'
 
 /** Pending-Einträge älter: aus Queue entfernen (sonst wächst sie endlos, Matching wird langsam). */
@@ -60,7 +61,7 @@ export function collectPendingHouseBetCandidates(pendingMap, payloadSlug, payloa
       if (p == null || p.multi == null) continue
       if (!houseBetSlugMatchesSessionSlug(payloadSlug, p.slug)) continue
       if (currencyStrict) {
-        if (!payloadCurr || String(p.currency || '').toLowerCase() !== String(payloadCurr).toLowerCase()) {
+        if (!payloadCurr || !hunterBetCurrenciesMatch(p.currency, payloadCurr)) {
           continue
         }
       }
@@ -157,6 +158,19 @@ function selectPendingEntryForHouseBet(candidates, bItem) {
     }
   }
 
+  if (hasHbMult && hbMult >= 15 && candidates.length > 0) {
+    const scored = candidates
+      .map((c) => ({ c, dist: Math.abs(Number(c.p.multi) - hbMult) }))
+      .sort((a, b) => {
+        if (a.dist !== b.dist) return a.dist - b.dist
+        if (a.c.at !== b.c.at) return a.c.at - b.c.at
+        return String(a.c.runId).localeCompare(String(b.c.runId))
+      })
+    const best = scored[0]
+    const rel = best.dist / Math.max(hbMult, 1e-9)
+    if (rel <= 0.04 || best.dist <= 0.5) return best.c
+  }
+
   return null
 }
 
@@ -219,7 +233,7 @@ export function splicePendingHouseBetMatchWithoutSlug(pendingMap, payloadCurr, b
         const p = q[i]
         if (p == null || p.multi == null) continue
         if (currencyStrict) {
-          if (!payloadCurr || String(p.currency || '').toLowerCase() !== String(payloadCurr).toLowerCase()) {
+          if (!payloadCurr || !hunterBetCurrenciesMatch(p.currency, payloadCurr)) {
             continue
           }
         }
@@ -245,7 +259,7 @@ export function splicePendingHouseBetMatchWithoutSlug(pendingMap, payloadCurr, b
         const p = q[i]
         if (p == null || p.multi == null) continue
         if (currencyStrict) {
-          if (!payloadCurr || String(p.currency || '').toLowerCase() !== String(payloadCurr).toLowerCase()) {
+          if (!payloadCurr || !hunterBetCurrenciesMatch(p.currency, payloadCurr)) {
             continue
           }
         }

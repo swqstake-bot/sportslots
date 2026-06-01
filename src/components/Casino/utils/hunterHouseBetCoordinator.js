@@ -1,3 +1,4 @@
+import { hunterBetCurrenciesMatch } from './currencyMeta'
 import { toMinor } from './formatAmount'
 import { subscribeToHouseBets } from '../api/stakeRealtimeFacade'
 import {
@@ -26,6 +27,36 @@ export const HOUSEBET_EVENT_QUEUE_MAX = 500
 export const HOUSEBET_WORKER_MAX_EVENTS = 20
 
 let hunterCoordinatorActive = false
+
+function findRunningRunsForHouseBet(active, payloadSlug, payloadCurr) {
+  return Object.values(active || {}).filter((r) => {
+    if (!r || r.status !== 'running') return false
+    const runSlug = normalizeBetSlugForHouseMatch(r.slotSlug)
+    if (payloadSlug && !houseBetSlugMatchesSessionSlug(payloadSlug, runSlug)) return false
+    if (!payloadCurr) return true
+    const runCurr = String(r.runCurrency || '').toLowerCase()
+    return !runCurr || hunterBetCurrenciesMatch(runCurr, payloadCurr)
+  })
+}
+
+/** houseBets.iid ist da — bei mehreren Runs den mit passendem Rekord-Multi wählen. */
+function pickRunForHouseBetShare(candidateRuns, hbMult, batchRunBestMulti) {
+  if (!candidateRuns.length) return null
+  if (candidateRuns.length === 1) return candidateRuns[0]
+  const hb = Number(hbMult)
+  if (!Number.isFinite(hb) || hb <= 0) return candidateRuns[0]
+  let best = candidateRuns[0]
+  let bestDist = Infinity
+  for (const r of candidateRuns) {
+    const runBest = Math.max(Number(r.bestMultiRun) || 0, Number(batchRunBestMulti[r.id]) || 0)
+    const dist = Math.abs(hb - runBest)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = r
+    }
+  }
+  return best
+}
 
 /** BetListPanel skips applyHouseBetToHubFeed while hunter owns houseBet matching. */
 export function isHunterHouseBetCoordinatorActive() {
@@ -213,41 +244,63 @@ export function attachHunterHouseBetCoordinator(ctx) {
         }
       }
 
-      if (!p && hasRunningForHouseBet) {
-        const rawShareFallback = pickStakeHouseBetShareRawId(bItem)
-        const shareIdFallback = rawShareFallback ? formatStakeShareBetId(rawShareFallback) : null
-        if (shareIdFallback) {
-          const candidateRuns = Object.values(active).filter((r) => {
-            if (!r || r.status !== 'running') return false
-            const runSlug = normalizeBetSlugForHouseMatch(r.slotSlug)
-            if (!houseBetSlugMatchesSessionSlug(payloadSlug, runSlug)) return false
-            if (!payloadCurr) return true
-            const runCurr = String(r.runCurrency || '').toLowerCase()
-            return !runCurr || runCurr === payloadCurr
-          })
-          if (candidateRuns.length === 1) {
-            const targetRun = candidateRuns[0]
-            const targetRunId = targetRun.id
-            if (targetRunId && !areStakeShareIdsEquivalent(targetRun.bestBetId, shareIdFallback)) {
-              bestBetByRunId[targetRunId] = shareIdFallback
+      // houseBets liefert iid/id immer — Pending-Match darf nicht Voraussetzung sein.
+      const shareFromWs = pickStakeHouseBetShareRawId(bItem)
+      const shareIdDirect = shareFromWs ? formatStakeShareBetId(shareFromWs) : null
+      const hbMultDirect = Number(bItem?.payoutMultiplier)
+      const pendingAssignedRunId = p?.runId && bestBetByRunId[p.runId] ? p.runId : null
+
+      if (shareIdDirect && hasRunningForHouseBet) {
+        const candidateRuns = findRunningRunsForHouseBet(active, payloadSlug, payloadCurr)
+        const targetRun = pickRunForHouseBetShare(candidateRuns, hbMultDirect, batchRunBestMulti)
+        const targetRunId = targetRun?.id
+        if (targetRunId && targetRunId !== pendingAssignedRunId) {
+          const runBest = Math.max(
+            Number(targetRun.bestMultiRun) || 0,
+            Number(batchRunBestMulti[targetRunId]) || 0
+          )
+          const hbOk = Number.isFinite(hbMultDirect) && hbMultDirect > 0
+          const attachShare =
+            hbOk &&
+            (hbMultDirect >= runBest * 0.97 || runBest <= 0 || !targetRun.bestBetId)
+          if (attachShare) {
+            if (!areStakeShareIdsEquivalent(targetRun.bestBetId, shareIdDirect)) {
+              bestBetByRunId[targetRunId] = shareIdDirect
             }
-            const hbMultiFallback = Number(bItem?.payoutMultiplier)
-            if (targetRunId && Number.isFinite(hbMultiFallback) && hbMultiFallback > 0) {
-              const prevUiMFallback = multiUiByRunId[targetRunId]?.multi ?? 0
-              if (hbMultiFallback > prevUiMFallback) {
+            if (hbOk) {
+              const trackMulti = Math.max(runBest, hbMultDirect)
+              batchRunBestMulti[targetRunId] = trackMulti
+              const prevUi = multiUiByRunId[targetRunId]?.multi ?? 0
+              if (trackMulti > prevUi) {
                 multiUiByRunId[targetRunId] = {
-                  multi: hbMultiFallback,
+                  multi: trackMulti,
                   storageSlug: targetRun.slotSlug,
-                  slug: targetRun.slotSlug,
-                  spinSeq: null,
+                  slug: normalizeBetSlugForHouseMatch(targetRun.slotSlug),
+                  spinSeq: p?.spinSeq ?? null,
                 }
               }
             }
-            if (targetRunId) {
+            const storageSlug = targetRun.slotSlug
+            if (
+              isPersistableStakeHouseBetShareId(shareIdDirect) &&
+              storageSlug &&
+              shouldPersistOverallBetId(
+                normalizeBetSlugForHouseMatch(storageSlug),
+                storageSlug,
+                hbOk ? hbMultDirect : runBest,
+                bestMultiBySlotRef.current
+              )
+            ) {
+              betIdToPersistOverall[storageSlug] = shareIdDirect
+            }
+            if (!p) {
               patchHubFeedRunFromHouseBet(targetRunId, bItem)
             }
           }
         }
+      }
+
+      if (!p && hasRunningForHouseBet) {
         const dedupeKey = pickStakeHouseBetShareRawId(bItem) || bItem?.id
         if (dedupeKey) {
           const buf = houseBetRetryBufferRef.current

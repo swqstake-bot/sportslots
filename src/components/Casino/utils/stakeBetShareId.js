@@ -21,8 +21,13 @@ export function formatStakeShareBetId(raw) {
  */
 export function pickStakeHouseBetShareRawId(payload) {
   if (!payload) return null
-  const si = payload.shareIid != null && String(payload.shareIid).trim() !== '' ? String(payload.shareIid).trim() : null
-  if (si) return si
+  const siRaw =
+    payload.shareIid != null && String(payload.shareIid).trim() !== ''
+      ? String(payload.shareIid).trim()
+      : payload.iid != null && String(payload.iid).trim() !== ''
+        ? String(payload.iid).trim()
+        : null
+  if (siRaw) return siRaw
   const ht = payload.houseTopId != null && String(payload.houseTopId).trim() !== '' ? String(payload.houseTopId).trim() : null
   if (ht) return ht
   const top = payload.id != null && String(payload.id).trim() !== '' ? String(payload.id).trim() : null

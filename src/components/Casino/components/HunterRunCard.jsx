@@ -42,9 +42,14 @@ export const HunterRunCard = memo(function HunterRunCard({
     const runFormatted = formatStakeShareBetId(shareRaw)
     const canCopyRun =
       typeof runFormatted === 'string' && String(runFormatted).trim() !== ''
-    const record = loadOverallBetIdForSlug(run.slotSlug)
+    const recordStored = loadOverallBetIdForSlug(run.slotSlug)
+    const recordFromRun =
+      run.bestBetId && String(run.bestBetId).trim()
+        ? formatStakeShareBetId(run.bestBetId) || String(run.bestBetId).trim()
+        : null
+    const record = recordStored || recordFromRun
     const combined =
-      (canCopyRun ? runFormatted : null) || (record ? formatStakeShareBetId(record) : null)
+      (canCopyRun ? runFormatted : null) || (record ? formatStakeShareBetId(record) || record : null)
     const preview = combined ? stakeBetIdForPreviewApi(combined) : null
     const link = combined ? stakeBetModalShareUrl(combined) : null
     const runListMax = hubRecentBets?.length ? hunterHubListMaxForRun(hubRecentBets, run.id).max : 0

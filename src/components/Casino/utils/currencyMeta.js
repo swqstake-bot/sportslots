@@ -33,6 +33,16 @@ export function isUsdLikeCurrency(currencyCode) {
   return USD_LIKE_CURRENCIES.includes(normalizeCurrencyCode(currencyCode))
 }
 
+/** Challenge Hunter: USDC-Session mit USD-Ziel und houseBets in USDC trotzdem matchen. */
+export function hunterBetCurrenciesMatch(a, b) {
+  const x = normalizeCurrencyCode(a)
+  const y = normalizeCurrencyCode(b)
+  if (!x || !y) return true
+  if (x === y) return true
+  if (isUsdLikeCurrency(x) && isUsdLikeCurrency(y)) return true
+  return false
+}
+
 export function getMinorFactor(currencyCode) {
   if (isZeroDecimalCurrency(currencyCode)) return 1
   if (isFiatCurrency(currencyCode)) return 100
