@@ -435,17 +435,6 @@ function getBetLogsDir(): string {
   return dir;
 }
 
-function getBetLogPathForDate(isoDateStr?: string): string {
-  const dateStr = isoDateStr ? String(isoDateStr).slice(0, 10) : new Date().toISOString().slice(0, 10);
-  return path.join(getBetLogsDir(), `bets-${dateStr}.jsonl`);
-}
-
-async function appendBetLog(entry: unknown): Promise<string> {
-  const filePath = getBetLogPathForDate();
-  await fs.promises.appendFile(filePath, JSON.stringify(entry) + '\n', 'utf8');
-  return filePath;
-}
-
 /** Session-only logger: wipe JSONL house-bet logs when the app exits (export first if needed). */
 function clearAllBetLogs(): void {
   try {

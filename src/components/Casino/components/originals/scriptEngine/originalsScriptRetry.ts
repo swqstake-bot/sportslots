@@ -42,7 +42,7 @@ export async function withOriginalsScriptRetry<T>(
     } catch (error) {
       if (!isRetryableOriginalsScriptError(error) || signal?.cancelled) throw error
       const msg = error instanceof Error ? error.message : String(error)
-      onLog?.(`${label}: ${msg.slice(0, 100)} — retry in 3s…`)
+      onLog?.(`${label}: ${msg.slice(0, 100)} — retry #${attempt} in 3s…`)
       await sleep(ORIGINALS_SCRIPT_RETRY_DELAY_MS)
     }
   }
