@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.178': [
+    '🐛 Script-Chart: Endlosschleife (Too many re-renders) behoben',
+    '🐛 CI: ESLint Chart-Domain + ungenutzte Logger-Helfer',
+  ],
   '1.0.177': [
     '🐛 Pragmatic Sexy Rabbit (Big Duck Bonanza): vsrar-Linien, cver 421122, v3 gameService',
     '✨ Casino: Bet-Listen nur Session (Start/Schließen leeren IndexedDB + UI)',

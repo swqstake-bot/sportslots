@@ -1,4 +1,4 @@
-import { useMemo, useId, useReducer } from 'react'
+import { useMemo, useId, useLayoutEffect, useRef, useState } from 'react'
 
 const CHART_MAX_RAW_POINTS = 320
 const CHART_MAX_BUCKETS = 200
@@ -183,37 +183,6 @@ const PROFIT_VIEW_W = 280
 const PROFIT_VIEW_H = 120
 const PROFIT_PAD = { l: 40, r: 8, t: 10, b: 22 }
 
-type ProfitYDomainState = { lo: number; hi: number; resetKey?: number | string }
-
-type ProfitYDomainAction = {
-  type: 'sync'
-  profits: number[]
-  stableYDomain: boolean
-  domainResetKey?: number | string
-}
-
-function profitYDomainReducer(state: ProfitYDomainState, action: ProfitYDomainAction): ProfitYDomainState {
-  const { profits, stableYDomain, domainResetKey } = action
-  let base = state
-  if (domainResetKey !== undefined && domainResetKey !== state.resetKey) {
-    base = { lo: 0, hi: 0, resetKey: domainResetKey }
-  }
-  if (profits.length === 0) {
-    if (base.lo === 0 && base.hi === 0 && base.resetKey === state.resetKey) return state
-    return { ...base, lo: 0, hi: 0 }
-  }
-  const rawMin = Math.min(0, ...profits)
-  const rawMax = Math.max(0, ...profits)
-  if (!stableYDomain) {
-    if (base.lo === rawMin && base.hi === rawMax && base.resetKey === state.resetKey) return state
-    return { ...base, lo: rawMin, hi: rawMax }
-  }
-  const lo = base.lo === 0 && base.hi === 0 ? rawMin : Math.min(base.lo, rawMin)
-  const hi = base.lo === 0 && base.hi === 0 ? rawMax : Math.max(base.hi, rawMax)
-  if (lo === base.lo && hi === base.hi && base.resetKey === state.resetKey) return state
-  return { ...base, lo, hi }
-}
-
 /** Kumulativer Profit: Linie + leichtes Grid (Originals) — kein Recharts. */
 export function SvgCumulativeProfitLineChart({
   profits,
@@ -239,8 +208,34 @@ export function SvgCumulativeProfitLineChart({
   const pathValues = useMemo(() => chartPathValues(profits), [profits])
   const last = profits.length ? profits[profits.length - 1]! : 0
   const title = `Kumulativer Profit: ${last >= 0 ? '+' : ''}${last.toFixed(4)}`
-  const [yDomain, dispatchYDomain] = useReducer(profitYDomainReducer, { lo: 0, hi: 0 })
-  dispatchYDomain({ type: 'sync', profits, stableYDomain, domainResetKey })
+  const [yDomain, setYDomain] = useState({ lo: 0, hi: 0 })
+  const domainResetRef = useRef(domainResetKey)
+
+  /* eslint-disable react-hooks/set-state-in-effect -- Y-domain muss zwischen Profit-Ticks akkumulieren */
+  useLayoutEffect(() => {
+    if (domainResetKey !== domainResetRef.current) {
+      domainResetRef.current = domainResetKey
+      setYDomain({ lo: 0, hi: 0 })
+      return
+    }
+    if (profits.length === 0) {
+      setYDomain({ lo: 0, hi: 0 })
+      return
+    }
+    const rawMin = Math.min(0, ...profits)
+    const rawMax = Math.max(0, ...profits)
+    setYDomain((prev) => {
+      if (!stableYDomain) {
+        if (prev.lo === rawMin && prev.hi === rawMax) return prev
+        return { lo: rawMin, hi: rawMax }
+      }
+      const lo = prev.lo === 0 && prev.hi === 0 ? rawMin : Math.min(prev.lo, rawMin)
+      const hi = prev.lo === 0 && prev.hi === 0 ? rawMax : Math.max(prev.hi, rawMax)
+      if (lo === prev.lo && hi === prev.hi) return prev
+      return { lo, hi }
+    })
+  }, [profits, stableYDomain, domainResetKey])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const geom = useMemo(() => {
     const plotL = PROFIT_PAD.l
