@@ -1,8 +1,9 @@
 /**
- * Bet-History dauerhaft – IndexedDB.
- * Pro Slot gespeichert, lädt beim Start.
+ * Bet-History – IndexedDB (nur wenn SESSION_ONLY_CASINO_BETS aus ist).
+ * Session-only: keine Persistenz; CasinoView leert beim App-Start/-Ende.
  */
 
+import { SESSION_ONLY_CASINO_BETS } from '../../../config/sessionData'
 import { CASINO_DB_REGISTRY } from './storageRegistry'
 
 const DB_NAME = CASINO_DB_REGISTRY.betHistory.name
@@ -52,6 +53,7 @@ function openDb() {
  * @returns {Promise<Array<{ id: number, slotSlug: string, betAmount: number, winAmount: number, rawWinAmount?: number, isBonus: boolean, stoppedBonus?: boolean, scatterCount?: number, balance?: number, roundId?: string, source?: string, betUsdSnapshotMajor?: number, winUsdSnapshotMajor?: number, fxRateSnapshot?: number, addedAt: number }>>}
  */
 export async function loadBetHistory(slotSlug, limit = 500) {
+  if (SESSION_ONLY_CASINO_BETS) return []
   const database = await openDb()
   return new Promise((resolve, reject) => {
     const tx = database.transaction(STORE_NAME, 'readonly')
@@ -79,6 +81,7 @@ export async function loadBetHistory(slotSlug, limit = 500) {
  * @param {string} [slotName]
  */
 export async function appendBet(slotSlug, entry, slotName) {
+  if (SESSION_ONLY_CASINO_BETS) return
   const database = await openDb()
   const {
     betAmount,
@@ -132,6 +135,7 @@ const MAX_LOAD_RECENT_BETS = 1_000_000
 const FALLBACK_RECENT_BETS = 5_000
 
 export async function loadRecentBets(limit = 30) {
+  if (SESSION_ONLY_CASINO_BETS) return []
   const database = await openDb()
   const parsedLimit = Number(limit)
   let effectiveLimit = !Number.isFinite(parsedLimit) || parsedLimit <= 0 ? FALLBACK_RECENT_BETS : parsedLimit
@@ -232,6 +236,7 @@ export async function clearAllBetHistory() {
 const BET_HISTORY_AUDIT_KEY = 'slotbot_bet_history_audit'
 
 export function recordBetHistoryAudit(event) {
+  if (SESSION_ONLY_CASINO_BETS) return
   try {
     const raw = localStorage.getItem(BET_HISTORY_AUDIT_KEY)
     const list = raw ? JSON.parse(raw) : []

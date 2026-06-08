@@ -18,7 +18,14 @@ const sectionCls = 'space-y-3'
 
 const COMMON_OPTION_KEYS: (keyof ProfileOptions)[] = [
   'game', 'initialBetSize', 'betSize', 'onWin', 'increaseOnWin', 'onLoss', 'increaseOnLoss',
-  'stopOnProfit', 'stopOnLoss', 'isStopOnWinStreak', 'stopOnWinStreak', 'isStopOnLossStreak', 'stopOnLossStreak', 'isStopOnB2bStreak', 'stopOnB2bStreak',
+  'stopOnProfit', 'stopOnLoss', 'stopOnTotalWagered',
+  'isStopOnWinStreak', 'stopOnWinStreak', 'isStopOnLossStreak', 'stopOnLossStreak', 'isStopOnB2bStreak', 'stopOnB2bStreak',
+  'b2bTakeProfitAfterWins', 'b2bTakeProfitAtChainMultiplier', 'b2bTakeProfitChainProfitPct', 'b2bTakeProfitChainProfitUsd',
+  'b2bRotateSeedOnTakeProfit', 'b2bEscalateBaseEveryTakeProfits', 'b2bEscalateBasePct', 'b2bMaxBaseBetUsd',
+  'b2bSmartTakeProfitAtMulti',
+  'b2bSmartTakeProfitAtChainProfitUsd',
+  'b2bSmartTakeProfitAtChainProfitPctOfBase',
+  'b2bSmartTakeProfitPeelPct',
   'isSeedChangeAfterRolls', 'seedChangeAfterRolls', 'increaseBetAfterSeedReset', 'seedResetOnLossStreak', 'resetSeedOnLoss', 'seedResetOnLossAmount', 'isVaultAllProfits', 'vaultProfitsThreshold',
 ]
 const GAME_OPTION_KEYS: Record<OriginalsGame, (keyof ProfileOptions)[]> = {
@@ -155,6 +162,10 @@ export default function OriginalsScriptBuilder() {
             <input type="number" min="0" step="any" value={opts.stopOnLoss} onChange={(e) => updateOpt('stopOnLoss', Number(e.target.value))} className={inputCls} />
           </div>
           <div>
+            <label className={labelCls} title="Session stoppt bei erreichtem Gesamt-Wagered (USD). 0 = aus.">Stop Total Wagered (USD)</label>
+            <input type="number" min="0" step="any" value={opts.stopOnTotalWagered} onChange={(e) => updateOpt('stopOnTotalWagered', Number(e.target.value))} className={inputCls} placeholder="0 = off" />
+          </div>
+          <div>
             <label className="flex items-center gap-2 mt-3">
               <input type="checkbox" checked={opts.isStopOnWinStreak} onChange={(e) => updateOpt('isStopOnWinStreak', e.target.checked)} className="rounded accent-[var(--accent)]" />
               <span className="text-xs">Stop Win-Streak</span>
@@ -177,6 +188,69 @@ export default function OriginalsScriptBuilder() {
           </div>
         </div>
       </AccordionSection>
+
+      {opts.onWin === 'b2b' && (
+        <AccordionSection title="B2B Take Profit & escalation" defaultOpen={true}>
+          <p className="text-xs text-[var(--text-muted)] mb-2">
+            Smart TP: bei Trigger wird peel % abgesichert, der Rest bleibt B2B (kein Reset auf Base). Trigger sind ODER (Einsatz÷Base, Ketten-$ oder Ketten-% der Base).
+          </p>
+          <div className={`${sectionCls} grid grid-cols-2 sm:grid-cols-4 gap-3`}>
+            <div>
+              <label className={labelCls} title="2 oder 200 = Einsatz mindestens 200% der Base.">Smart TP ab (× Base)</label>
+              <input type="number" min="0" step="0.1" value={opts.b2bSmartTakeProfitAtMulti} onChange={(e) => updateOpt('b2bSmartTakeProfitAtMulti', Number(e.target.value))} className={inputCls} placeholder="2" />
+            </div>
+            <div>
+              <label className={labelCls} title="Ketten-Gewinn in USD seit Kettenstart.">Smart TP ab Ketten-$</label>
+              <input type="number" min="0" step="0.01" value={opts.b2bSmartTakeProfitAtChainProfitUsd} onChange={(e) => updateOpt('b2bSmartTakeProfitAtChainProfitUsd', Number(e.target.value))} className={inputCls} placeholder="12" />
+            </div>
+            <div>
+              <label className={labelCls} title="200 = Ketten-Gewinn ≥ 200% der Base ($0.12 bei $0.06).">Smart TP ab Ketten-% Base</label>
+              <input type="number" min="0" step="1" value={opts.b2bSmartTakeProfitAtChainProfitPctOfBase} onChange={(e) => updateOpt('b2bSmartTakeProfitAtChainProfitPctOfBase', Number(e.target.value))} className={inputCls} placeholder="200" />
+            </div>
+            <div>
+              <label className={labelCls} title="% vom Peel-Pool der nicht reinvestiert wird.">Smart TP peel %</label>
+              <input type="number" min="0" max="100" step="1" value={opts.b2bSmartTakeProfitPeelPct} onChange={(e) => updateOpt('b2bSmartTakeProfitPeelPct', Number(e.target.value))} className={inputCls} placeholder="40" />
+            </div>
+          </div>
+          <p className="text-xs text-[var(--text-muted)] mb-2 mt-3">Vollständiger Take Profit (Kette → Base):</p>
+          <div className={`${sectionCls} grid grid-cols-2 sm:grid-cols-4 gap-3`}>
+            <div>
+              <label className={labelCls} title="0 = aus. Z. B. 5 = nach 5. Gewinn in der Kette auszahlen.">TP after chain wins (0=off)</label>
+              <input type="number" min="0" value={opts.b2bTakeProfitAfterWins} onChange={(e) => updateOpt('b2bTakeProfitAfterWins', Number(e.target.value))} className={inputCls} placeholder="5" />
+            </div>
+            <div>
+              <label className={labelCls} title="Nächster Einsatz ≥ Kettenstart × X → Take Profit.">TP at chain multiplier (0=off)</label>
+              <input type="number" min="0" step="0.1" value={opts.b2bTakeProfitAtChainMultiplier} onChange={(e) => updateOpt('b2bTakeProfitAtChainMultiplier', Number(e.target.value))} className={inputCls} placeholder="6" />
+            </div>
+            <div>
+              <label className={labelCls} title="Ketten-Gewinn ≥ Start der Kette × (pct/100).">TP chain profit % (0=off)</label>
+              <input type="number" min="0" step="1" value={opts.b2bTakeProfitChainProfitPct} onChange={(e) => updateOpt('b2bTakeProfitChainProfitPct', Number(e.target.value))} className={inputCls} placeholder="40" />
+            </div>
+            <div>
+              <label className={labelCls} title="Ketten-Gewinn in USD seit Kettenstart.">TP chain profit USD (0=off)</label>
+              <input type="number" min="0" step="0.01" value={opts.b2bTakeProfitChainProfitUsd} onChange={(e) => updateOpt('b2bTakeProfitChainProfitUsd', Number(e.target.value))} className={inputCls} placeholder="1.5" />
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 mt-3">
+                <input type="checkbox" checked={opts.b2bRotateSeedOnTakeProfit} onChange={(e) => updateOpt('b2bRotateSeedOnTakeProfit', e.target.checked)} className="rounded accent-[var(--accent)]" />
+                <span className="text-xs">Rotate seed on TP</span>
+              </label>
+            </div>
+            <div>
+              <label className={labelCls} title="Alle N Take Profits: Base um % erhöhen (mehr Turnover). 0 = aus.">Escalate base every N TPs</label>
+              <input type="number" min="0" value={opts.b2bEscalateBaseEveryTakeProfits} onChange={(e) => updateOpt('b2bEscalateBaseEveryTakeProfits', Number(e.target.value))} className={inputCls} placeholder="4" />
+            </div>
+            <div>
+              <label className={labelCls}>Escalate base +%</label>
+              <input type="number" min="0" step="1" value={opts.b2bEscalateBasePct} onChange={(e) => updateOpt('b2bEscalateBasePct', Number(e.target.value))} className={inputCls} placeholder="10" />
+            </div>
+            <div>
+              <label className={labelCls} title="0 = kein Cap">Max base bet (USD, 0=off)</label>
+              <input type="number" min="0" step="0.01" value={opts.b2bMaxBaseBetUsd} onChange={(e) => updateOpt('b2bMaxBaseBetUsd', Number(e.target.value))} className={inputCls} placeholder="0.2" />
+            </div>
+          </div>
+        </AccordionSection>
+      )}
 
       <AccordionSection title="Seed & bet ladder" defaultOpen={false}>
         <div className={`${sectionCls} grid grid-cols-2 sm:grid-cols-4 gap-3`}>

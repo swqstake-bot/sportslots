@@ -8,6 +8,7 @@ import { Button } from '../ui/Button'
 import { SvgCumulativeProfitLineChart } from '../../../charts/SvgCumulativeCharts'
 import { runDiceRunner, type DiceRunnerConfig } from './diceRunner/runDiceRunner'
 import { loadDiceRunnerConfig, saveDiceRunnerConfig } from './diceRunner/diceRunnerPersistence'
+import { useCasinoBetListReset } from '../../utils/casinoBetSession'
 import {
   DICE_RUNNER_BALANCE_POLL_MS,
   balanceMajor,
@@ -72,6 +73,18 @@ export default function DiceRunnerTab() {
   const addLog = useCallback((msg: string) => {
     setLogLines((prev) => [...prev.slice(-99), `[${new Date().toLocaleTimeString()}] ${msg}`])
   }, [])
+
+  const clearDiceRunSession = useCallback(() => {
+    manualStopRef.current = true
+    signalRef.current.cancelled = true
+    setRunning(false)
+    setBetList([])
+    setChartData([])
+    setStats(null)
+    setLogLines([])
+  }, [])
+
+  useCasinoBetListReset(clearDiceRunSession)
 
   const buildConfig = useCallback((): DiceRunnerConfig | null => {
     const cfg: DiceRunnerConfig = {

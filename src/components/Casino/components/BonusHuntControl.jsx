@@ -28,6 +28,7 @@ import { TipMenu } from '../../ui/TipMenu'
 import { createEventEnvelope, generateCorrelationId } from '../../../utils/eventEnvelope'
 import { publishRealtimeEvent } from '../../../services/realtimeBus'
 import { createEmptyCasinoAggregate, recomputeCasinoAggregate, aggregateToStatsSnapshot } from '../utils/casinoStatsEngine'
+import { useCasinoBetListReset } from '../utils/casinoBetSession'
 
 const HUNT_BET_LEVELS = [
   1100, 2200, 4400, 6600, 8800, 11000, 22000, 44000, 66000, 110000, 220000,
@@ -104,6 +105,8 @@ export default function BonusHuntControl({
   const [error, setError] = useState('')
   const [huntState, setHuntState] = useState({})
   const [betHistory, setBetHistory] = useState([])
+  const clearHuntBetHistory = useCallback(() => setBetHistory([]), [])
+  useCasinoBetListReset(clearHuntBetHistory)
   const [currentBalance, setCurrentBalance] = useState(null)
   const [currencyCode, setCurrencyCode] = useState(null)
   const [currencyRates, setCurrencyRates] = useState({})

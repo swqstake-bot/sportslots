@@ -1,4 +1,10 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.177': [
+    '🐛 Pragmatic Sexy Rabbit (Big Duck Bonanza): vsrar-Linien, cver 421122, v3 gameService',
+    '✨ Casino: Bet-Listen nur Session (Start/Schließen leeren IndexedDB + UI)',
+    '✨ Script: Limbo B2B-Preset, Session-Stats, house:-Bet-IDs, Chart/Stats-Layout',
+    '🐛 Script: B2B-Multi = Produkt der Win-Multis, Round-Profit in Bet-Liste',
+  ],
   '1.0.176': [
     '🐛 Challenge Hunter: houseBets-iid direkt auf Run/Lifetime (ohne Pending-Match-Zwang)',
     '🐛 Bet-ID-Match: USD/USDC/USDT gleichwertig, High-Multi bei vielen Spins',

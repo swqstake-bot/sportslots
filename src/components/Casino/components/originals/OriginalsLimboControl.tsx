@@ -2,7 +2,7 @@
  * Bot-Oberfläche für Limbo (Stake Originals). Start = Session bis Stop-Bedingungen oder Stop-Button.
  */
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { placeLimboBet } from '../../api/stakeOriginalsBets'
 import { Button } from '../ui/Button'
 import { OriginalsSettings } from './OriginalsSettings'
@@ -10,7 +10,8 @@ import OriginalsBetHistory, { type OriginalsBetEntry } from './OriginalsBetHisto
 import { shouldStopSession } from './originalsStopConditions'
 import type { OriginalsSettingsState } from './OriginalsSettings'
 
-const CURRENCIES = ['usdc', 'btc', 'eth', 'eur', 'usd']
+import { ALL_CURRENCIES, CURRENCY_GROUPS } from '../../constants/currencies'
+import { useCasinoBetListReset } from '../../utils/casinoBetSession'
 const MAX_BET_HISTORY = 500
 
 function delay(ms: number) {
@@ -34,6 +35,8 @@ export default function OriginalsLimboControl({ settings: propSettings, onSettin
   const [delayMs, setDelayMs] = useState(80)
   const cancelledRef = useRef(false)
   const settings = propSettings ?? null
+  const clearBetHistory = useCallback(() => setBetHistory([]), [])
+  useCasinoBetListReset(clearBetHistory)
 
   useEffect(() => () => { cancelledRef.current = true }, [])
 
@@ -100,9 +103,19 @@ export default function OriginalsLimboControl({ settings: propSettings, onSettin
             onChange={(e) => setCurrency(e.target.value)}
             className="w-full bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text)] focus:ring-2 focus:ring-[var(--accent)] outline-none"
           >
-            {CURRENCIES.map((c) => (
-              <option key={c} value={c}>{c.toUpperCase()}</option>
-            ))}
+            <optgroup label="Crypto">
+              {CURRENCY_GROUPS.crypto.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </optgroup>
+            <optgroup label="Fiat">
+              {CURRENCY_GROUPS.fiat.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </optgroup>
+            {!ALL_CURRENCIES.some((c) => c.value === currency) && (
+              <option value={currency}>{currency.toUpperCase()}</option>
+            )}
           </select>
         </div>
         <div>

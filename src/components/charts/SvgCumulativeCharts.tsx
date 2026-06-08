@@ -1,14 +1,13 @@
-import { useMemo, useId } from 'react'
+import { useMemo, useId, useRef, useLayoutEffect, useState } from 'react'
 
-function uniformSampleNumbers(arr: number[], n: number): number[] {
-  if (!arr.length || n <= 0) return []
-  if (arr.length <= n) return [...arr]
-  const out: number[] = []
-  for (let j = 0; j < n; j++) {
-    const idx = Math.round((j / Math.max(1, n - 1)) * (arr.length - 1))
-    out.push(arr[idx]!)
-  }
-  return out
+const CHART_MAX_RAW_POINTS = 320
+const CHART_MAX_BUCKETS = 200
+
+/** Pfad-Punkte: bei kurzen Reihen 1:1, sonst Min/Max-Buckets (kein gleichmäßiges Resampling — das springt). */
+function chartPathValues(arr: number[]): number[] {
+  if (!arr.length) return []
+  if (arr.length <= CHART_MAX_RAW_POINTS) return arr
+  return downsampleWithExtrema(arr, CHART_MAX_BUCKETS)
 }
 
 /**
@@ -191,6 +190,8 @@ export function SvgCumulativeProfitLineChart({
   stroke = 'var(--accent)',
   betIndexStart,
   betIndexEnd,
+  stableYDomain = true,
+  domainResetKey,
 }: {
   profits: number[]
   height?: number
@@ -199,10 +200,39 @@ export function SvgCumulativeProfitLineChart({
   betIndexStart?: number
   /** X-axis: last bet index (default profits.length without baseline). */
   betIndexEnd?: number
+  /** Y-Achse nur erweitern (nicht bei jedem Tick neu zoomen) — weniger Sprünge. */
+  stableYDomain?: boolean
+  /** Bei neuer Session Domain zurücksetzen (z. B. Script-Start). */
+  domainResetKey?: number | string
 }) {
-  const pts = useMemo(() => uniformSampleNumbers(profits, 160), [profits])
+  const pathValues = useMemo(() => chartPathValues(profits), [profits])
   const last = profits.length ? profits[profits.length - 1]! : 0
   const title = `Kumulativer Profit: ${last >= 0 ? '+' : ''}${last.toFixed(4)}`
+  const [yDomain, setYDomain] = useState({ lo: 0, hi: 0 })
+  const domainResetRef = useRef(domainResetKey)
+
+  useLayoutEffect(() => {
+    if (domainResetKey !== domainResetRef.current) {
+      domainResetRef.current = domainResetKey
+      setYDomain({ lo: 0, hi: 0 })
+    }
+    if (profits.length === 0) {
+      setYDomain({ lo: 0, hi: 0 })
+      return
+    }
+    const rawMin = Math.min(0, ...profits)
+    const rawMax = Math.max(0, ...profits)
+    setYDomain((prev) => {
+      if (!stableYDomain) {
+        if (prev.lo === rawMin && prev.hi === rawMax) return prev
+        return { lo: rawMin, hi: rawMax }
+      }
+      const lo = prev.lo === 0 && prev.hi === 0 ? rawMin : Math.min(prev.lo, rawMin)
+      const hi = prev.lo === 0 && prev.hi === 0 ? rawMax : Math.max(prev.hi, rawMax)
+      if (lo === prev.lo && hi === prev.hi) return prev
+      return { lo, hi }
+    })
+  }, [profits, stableYDomain, domainResetKey])
 
   const geom = useMemo(() => {
     const plotL = PROFIT_PAD.l
@@ -210,6 +240,19 @@ export function SvgCumulativeProfitLineChart({
     const plotT = PROFIT_PAD.t
     const plotB = PROFIT_VIEW_H - PROFIT_PAD.b
     const ph = plotB - plotT
+    if (profits.length === 0) {
+      return {
+        pathD: '',
+        zeroGy: null as number | null,
+        plotL,
+        plotR,
+        plotT,
+        plotB,
+        ph,
+        yLabels: [] as { py: number; text: string }[],
+      }
+    }
+    const pts = pathValues.length >= 2 ? pathValues : profits.length >= 2 ? profits : pathValues
     if (pts.length < 2) {
       return {
         pathD: '',
@@ -222,8 +265,8 @@ export function SvgCumulativeProfitLineChart({
         yLabels: [] as { py: number; text: string }[],
       }
     }
-    const min = Math.min(0, ...pts)
-    const max = Math.max(0, ...pts)
+    const min = yDomain.lo
+    const max = yDomain.hi
     const span = Math.max(max - min, 1e-8)
     const padY = span * 0.08
     const lo = min - padY
@@ -245,7 +288,7 @@ export function SvgCumulativeProfitLineChart({
       text: v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2),
     }))
     return { pathD: d, zeroGy, lo, hi, plotL, plotR, plotT, plotB, ph, yLabels }
-  }, [pts])
+  }, [profits, pathValues, yDomain])
 
   const { pathD, zeroGy, plotL, plotR, plotT, plotB, ph, yLabels } = geom
   const dataPoints = Math.max(0, profits.length > 0 ? profits.length - 1 : 0)
@@ -261,7 +304,7 @@ export function SvgCumulativeProfitLineChart({
       role="img"
     >
       <title>{title}</title>
-      {pts.length >= 2 &&
+      {geom.pathD &&
         [0.25, 0.5, 0.75].map((t) => {
           const gy = plotT + ph * (1 - t)
           return (

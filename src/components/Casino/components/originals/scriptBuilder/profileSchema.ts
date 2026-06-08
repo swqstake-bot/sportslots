@@ -21,6 +21,31 @@ export interface ProfileOptions {
   stopOnLossStreak: number
   isStopOnB2bStreak: boolean
   stopOnB2bStreak: number
+  /** Session stoppt bei erreichtem Gesamt-Wagered (USD). 0 = aus. */
+  stopOnTotalWagered: number
+  /** B2B: nach X Gewinnen in der aktuellen Kette → Einsatz auf Base, Gewinn bleibt. 0 = aus. */
+  b2bTakeProfitAfterWins: number
+  /** B2B: wenn nächster Einsatz ≥ Kettenstart × X → Take Profit vor dem Spin. 0 = aus. */
+  b2bTakeProfitAtChainMultiplier: number
+  /** B2B: Ketten-Gewinn (Session-Δ seit Kettenstart) ≥ Kettenstart × (pct/100). 0 = aus. */
+  b2bTakeProfitChainProfitPct: number
+  /** B2B: Ketten-Gewinn in USD ≥ Wert → Take Profit. 0 = aus. */
+  b2bTakeProfitChainProfitUsd: number
+  /** Nach B2B Take Profit: Seed rotieren. */
+  b2bRotateSeedOnTakeProfit: boolean
+  /** Alle N Take Profits: Base-Einsatz um b2bEscalateBasePct % erhöhen (mehr Turnover). 0 = aus. */
+  b2bEscalateBaseEveryTakeProfits: number
+  b2bEscalateBasePct: number
+  /** Obergrenze für Base nach Eskalation (USD). 0 = kein Cap. */
+  b2bMaxBaseBetUsd: number
+  /** Smart TP: wenn nächster Einsatz ÷ Base ≥ X (2 = 200%). 0 = aus. */
+  b2bSmartTakeProfitAtMulti: number
+  /** Smart TP: Ketten-Gewinn (USD seit Kettenstart) ≥ Wert. 0 = aus. */
+  b2bSmartTakeProfitAtChainProfitUsd: number
+  /** Smart TP: Ketten-Gewinn ≥ Base × (Wert/100), z. B. 200 = 200% der Base. 0 = aus. */
+  b2bSmartTakeProfitAtChainProfitPctOfBase: number
+  /** Smart TP: % des abgesicherten Anteils (vom Peel-Pool), Rest B2B-Reinvest. z. B. 40. */
+  b2bSmartTakeProfitPeelPct: number
   isSeedChangeAfterRolls: boolean
   seedChangeAfterRolls: number
   /** Nach jedem Seed-Reset: Einsatz (USD) um diesen Betrag erhöhen (z. B. 0.01 = $0.01 pro Block). */
@@ -82,6 +107,19 @@ export const DEFAULT_PROFILE_OPTIONS: ProfileOptions = {
   stopOnLossStreak: 0,
   isStopOnB2bStreak: false,
   stopOnB2bStreak: 2,
+  stopOnTotalWagered: 0,
+  b2bTakeProfitAfterWins: 0,
+  b2bTakeProfitAtChainMultiplier: 0,
+  b2bTakeProfitChainProfitPct: 0,
+  b2bTakeProfitChainProfitUsd: 0,
+  b2bRotateSeedOnTakeProfit: false,
+  b2bEscalateBaseEveryTakeProfits: 0,
+  b2bEscalateBasePct: 0,
+  b2bMaxBaseBetUsd: 0,
+  b2bSmartTakeProfitAtMulti: 0,
+  b2bSmartTakeProfitAtChainProfitUsd: 0,
+  b2bSmartTakeProfitAtChainProfitPctOfBase: 0,
+  b2bSmartTakeProfitPeelPct: 0,
   isSeedChangeAfterRolls: false,
   seedChangeAfterRolls: 0,
   increaseBetAfterSeedReset: 0,

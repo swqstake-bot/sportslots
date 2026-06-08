@@ -581,7 +581,7 @@ function createLoginWindow() {
 // --- Auto Updater (electron-updater / GitHub Releases + latest.yml) ---
 /** Muss zu package.json → build.publish und zu veröffentlichten Releases passieren. */
 const UPDATER_GITHUB = { owner: 'swqstake-bot', repo: 'sportslots' } as const;
-/** Keep in sync with src/config/sessionData.ts — legacy JSONL cleared on start + quit. */
+/** Keep in sync with src/config/sessionData.ts (SESSION_ONLY_CASINO_BETS) — legacy JSONL cleared on start + quit. */
 const SESSION_ONLY_BET_LOGS = true;
 
 function configureGithubAutoUpdater(): void {

@@ -5,6 +5,7 @@ import { useSlots } from './hooks/useSlots'
 import { loadSlotSets, saveSlotSet, deleteSlotSet, exportSlotSets, importSlotSets, loadFavorites, toggleFavorite } from './utils/slotSets'
 import { loadDiscoveredSlots, saveDiscoveredSlots } from './utils/discoveredSlots'
 import { loadRecentBets, clearSlotHistory } from './utils/betHistoryDb'
+import { useCasinoBetSessionLifecycle } from './utils/casinoBetSession'
 import { ALL_CURRENCIES } from './constants/currencies'
 import { isFiat, isStable } from './utils/formatAmount'
 import { CASINO_STORAGE_KEYS } from './utils/storageRegistry'
@@ -59,6 +60,11 @@ export default function CasinoView() {
     return cb
   }, [])
   const [recentBets, setRecentBets] = useState<any[]>([])
+
+  const onCasinoBetSessionCleared = useCallback(() => {
+    setRecentBets([])
+  }, [])
+  useCasinoBetSessionLifecycle(onCasinoBetSessionCleared)
   const [pendingPromoAutoStarts, setPendingPromoAutoStarts] = useState<Array<{
     instanceId: string
     autospinCount: number

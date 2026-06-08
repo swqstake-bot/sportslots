@@ -23,6 +23,7 @@ import { logApiCall, saveBonusLog, isSaveBonusLogsEnabled } from '../utils/apiLo
 import { saveSlotSpinSample, saveBonusSpinSample, hasEnoughSamplesForSlot } from '../utils/slotSpinSamples'
 import { notifyBonusHit } from '../utils/notifications'
 import { loadBetHistory, appendBet, recordBetHistoryAudit } from '../utils/betHistoryDb'
+import { CASINO_BET_SESSION_CLEAR_EVENT } from '../utils/casinoBetSession'
 import { getSlotCurrency, setSlotCurrency } from '../utils/slotCurrencyConfig'
 import { getSlotBetAmount, setSlotBetAmount, pickClosestBetLevel } from '../utils/slotBetAmountConfig'
 import { subscribeHunterSlotTargets, getHunterSlotTargetsSnapshot } from '../utils/hunterSlotTargetsBridge'
@@ -434,6 +435,16 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     })
     if (pick != null) setBetAmount(pick)
   }, [initialBetHint, initialMinBetUsd, slot.slug, session?.betLevels, betLevels, baseBetLevels, effectiveTarget, toUsdMajor])
+
+  useEffect(() => {
+    const onClear = () => {
+      setBetHistory([])
+      seenBetDedupKeysRef.current.clear()
+      seenBetDedupOrderRef.current = []
+    }
+    window.addEventListener(CASINO_BET_SESSION_CLEAR_EVENT, onClear)
+    return () => window.removeEventListener(CASINO_BET_SESSION_CLEAR_EVENT, onClear)
+  }, [])
 
   useEffect(() => {
     setSession(null)

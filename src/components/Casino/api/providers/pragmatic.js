@@ -11,8 +11,10 @@ const GAME_SERVICE_PATH_V4 = '/gs2c/ge/v4/gameService'
 const GAME_SERVICE_PATH_V3 = '/gs2c/ge/v3/gameService'
 const SSP_FALLBACK_V3_URL = 'http://277bdnt1n6.iumtibif.net/gs2c/ge/v3/gameService'
 const SSP_FALLBACK_V4_URL = 'https://441f8864ac.ukffjfmmka.net/gs2c/ge/v4/gameService'
-/** Browser/Stake 2026 (Psycho Heroes / Sexy Rabbit); ältere Slots tolerieren denselben Wert meist. */
+/** Browser/Stake 2026 — Sexy Rabbit (Big Duck Bonanza) nutzt 421122; ältere Slots oft 406989. */
 const PRAGMATIC_DOINIT_CVER = '406989'
+const PRAGMATIC_DOINIT_CVER_NEW = '421122'
+const PRAGMATIC_DOINIT_CVER_CANDIDATES = [PRAGMATIC_DOINIT_CVER_NEW, PRAGMATIC_DOINIT_CVER]
 
 function parseUrlParams(urlStr) {
   try {
@@ -316,6 +318,25 @@ function pickBonusInd(parsed, currentSession, decisionMode = 'stand') {
 // Fallback, falls doInit keine Bet-Levels liefert (bls/sc fehlt)
 const PRAGMATIC_DEFAULT_BET_LEVELS = [10, 20, 50, 100, 200, 500, 1000, 2000]
 
+/** Sexy Rabbit / Big Duck Bonanza: vsrar10bduckbo — nicht vs10… */
+function isSexyRabbitPragmaticSymbol(symbol = '') {
+  return /^vsrar/i.test(String(symbol || ''))
+}
+
+/** Linien: doInit l=… bevorzugen, sonst vsrar10… → 10, vs20… → 20. */
+function resolvePragmaticLines(symbol = '', doInitText = '') {
+  if (doInitText && typeof doInitText === 'string') {
+    const params = new URLSearchParams(doInitText.startsWith('?') ? doInitText : `?${doInitText}`)
+    const lFromInit = Number(params.get('l'))
+    if (Number.isFinite(lFromInit) && lFromInit > 0) return Math.round(lFromInit)
+  }
+  const rabbit = String(symbol || '').match(/^vsrar(\d+)/i)
+  if (rabbit) return parseInt(rabbit[1], 10)
+  const standard = String(symbol || '').match(/^vs(\d+)/i)
+  if (standard) return parseInt(standard[1], 10)
+  return 20
+}
+
 /**
  * Parst Bet-Levels aus doInit-Response (währungsabhängig).
  * Formate:
@@ -333,7 +354,6 @@ function parseBetLevels(doInitText, targetCurrency, symbol = '') {
   const isZeroDec = isZeroDecimalCurrency(curr)
   const params = new URLSearchParams(doInitText.startsWith('?') ? doInitText : `?${doInitText}`)
   const scRaw = params.get('sc')
-  const lRaw = params.get('l')
   const blsRaw = params.get('bls')
   const lineMultipliers = []
   if (blsRaw) {
@@ -341,13 +361,9 @@ function parseBetLevels(doInitText, targetCurrency, symbol = '') {
       const n = Number(part)
       if (Number.isFinite(n) && n > 0) lineMultipliers.push(n)
     }
-  } else if (lRaw) {
-    const n = Number(lRaw)
-    if (Number.isFinite(n) && n > 0) lineMultipliers.push(n)
   }
   if (lineMultipliers.length === 0) {
-    const linesMatch = symbol?.match(/^vs(\d+)/i)
-    lineMultipliers.push(linesMatch ? parseInt(linesMatch[1], 10) : 20)
+    lineMultipliers.push(resolvePragmaticLines(symbol, doInitText))
   }
 
   if (!scRaw) return PRAGMATIC_DEFAULT_BET_LEVELS
@@ -392,75 +408,79 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     throw pragmaticError('mgckey, symbol oder host fehlt in der Game-URL.')
   }
 
-  const doInitBody = new URLSearchParams({
+  const doInitBase = {
     action: 'doInit',
     symbol,
-    cver: PRAGMATIC_DOINIT_CVER,
     index: '1',
     counter: '1',
     repeat: '0',
     mgckey,
-  })
+  }
 
-  async function tryDoInit(gameServiceUrl) {
+  async function tryDoInit(gameServiceUrl, cver) {
+    const doInitBody = new URLSearchParams({ ...doInitBase, cver })
     let doInitRes
     try {
-        doInitRes = await safeFetch(gameServiceUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: doInitBody.toString(),
-        })
+      doInitRes = await safeFetch(gameServiceUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: doInitBody.toString(),
+      })
     } catch (e) {
-        throw pragmaticError(`Fetch failed: ${e.message}`, e)
+      throw pragmaticError(`Fetch failed: ${e.message}`, e)
     }
-    return { res: doInitRes, text: await doInitRes.text() }
+    return { res: doInitRes, text: await doInitRes.text(), request: Object.fromEntries(doInitBody) }
   }
 
   const t0 = Date.now()
-  const doInitCandidates = [
-    `https://${host}${GAME_SERVICE_PATH_V4}`,
-    `https://${host}${GAME_SERVICE_PATH_V3}`,
-    SSP_FALLBACK_V3_URL,
-    SSP_FALLBACK_V4_URL,
-  ]
+  const hostV3 = `https://${host}${GAME_SERVICE_PATH_V3}`
+  const hostV4 = `https://${host}${GAME_SERVICE_PATH_V4}`
+  const doInitCandidates = isSexyRabbitPragmaticSymbol(symbol)
+    ? [hostV3, hostV4, SSP_FALLBACK_V3_URL, SSP_FALLBACK_V4_URL]
+    : [hostV4, hostV3, SSP_FALLBACK_V4_URL, SSP_FALLBACK_V3_URL]
   let gameServiceUrl = doInitCandidates[0]
   let doInitText
   let lastErr = null
   let lastStatus = null
+  let doInitSucceeded = false
   for (const candidate of doInitCandidates) {
     gameServiceUrl = candidate
-    try {
-      const result = await tryDoInit(candidate)
-      doInitText = result.text
-      lastStatus = result?.res?.status ?? null
-      logApiCall({
-        type: 'pragmatic/doInit',
-        endpoint: candidate,
-        request: Object.fromEntries(doInitBody),
-        response: doInitText?.slice(0, 500),
-        error: !result.res.ok ? `HTTP ${result.res.status}` : null,
-        durationMs: Date.now() - t0,
-      })
-      if (result.res.ok && doInitText && doInitText !== 'unlogged') {
-        lastErr = null
-        break
+    for (const cver of PRAGMATIC_DOINIT_CVER_CANDIDATES) {
+      try {
+        const result = await tryDoInit(candidate, cver)
+        doInitText = result.text
+        lastStatus = result?.res?.status ?? null
+        logApiCall({
+          type: 'pragmatic/doInit',
+          endpoint: candidate,
+          request: result.request,
+          response: doInitText?.slice(0, 500),
+          error: !result.res.ok ? `HTTP ${result.res.status}` : null,
+          durationMs: Date.now() - t0,
+        })
+        if (result.res.ok && doInitText && doInitText !== 'unlogged' && !doInitText.includes('ext_code=SystemError')) {
+          lastErr = null
+          doInitSucceeded = true
+          break
+        }
+        lastErr = pragmaticError(
+          doInitText === 'unlogged'
+            ? 'Session ungültig. Bitte erneut verbinden.'
+            : `DoInit HTTP ${result.res.status}`
+        )
+      } catch (e) {
+        lastErr = e
+        logApiCall({
+          type: 'pragmatic/doInit',
+          endpoint: candidate,
+          request: { ...doInitBase, cver },
+          response: null,
+          error: String(e),
+          durationMs: Date.now() - t0,
+        })
       }
-      lastErr = pragmaticError(
-        doInitText === 'unlogged'
-          ? 'Session ungültig. Bitte erneut verbinden.'
-          : `DoInit HTTP ${result.res.status}`
-      )
-    } catch (e) {
-      lastErr = e
-      logApiCall({
-        type: 'pragmatic/doInit',
-        endpoint: candidate,
-        request: Object.fromEntries(doInitBody),
-        response: null,
-        error: String(e),
-        durationMs: Date.now() - t0,
-      })
     }
+    if (doInitSucceeded) break
   }
   if (!doInitText || doInitText === 'unlogged') {
     throw pragmaticError(
@@ -475,9 +495,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   // SSP-nah: doInit liefert die Cursor-Basis; erster doSpin = index+1 / counter+2
   const firstIndex = nextPragmaticCursorValue(parsed.index, 1, '2')
   const firstCounter = nextPragmaticCursorValue(parsed.counter, 2, '3')
-  // Lines aus Symbol: vs20sugarrushx → 20, vs10bbboom → 10
-  const linesMatch = symbol?.match(/^vs(\d+)/i)
-  const lines = linesMatch ? parseInt(linesMatch[1], 10) : 20
+  const lines = resolvePragmaticLines(symbol, doInitText)
   const isZeroDec = isZeroDecimalCurrency((targetCurrency || 'eur').toLowerCase())
   const bal = Number(parsed.balance) || 0
   const initialBalance = bal ? (isZeroDec ? Math.round(bal) : Math.round(bal * 100)) : null
@@ -623,6 +641,9 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
       counter: currentSession.counter,
       repeat: '0',
       mgckey: currentSession.mgckey,
+    }
+    if (isSexyRabbitPragmaticSymbol(currentSession.symbol)) {
+      spinBody.sInfo = 'n'
     }
     const spinText = await postGameService(currentSession, spinBody)
     return { spinBody, spinText, parsed: parsePragmaticResponse(spinText) }
