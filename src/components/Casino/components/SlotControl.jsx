@@ -942,6 +942,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     // Summen in USD-Cent (wie stats.totalWagered / totalWon) – konsistent mit Autospin Profit/Loss-Schwellen (ganze USD × 100)
     let aggWageredUsd = (stats.totalWagered ?? 0) / 100
     let aggWonUsd = (stats.totalWon ?? 0) / 100
+    let lastAutospinData = null
 
     while ((autospinCount === 0 || spinsDone < autospinCount) && !autospinCancelRef.current) {
       try {
@@ -961,6 +962,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
 
         const placeBetOpts = {
           slotSlug: slot.slug,
+          fastPath: true,
           ...(autospinStopOnBonus ? { skipContinueOnBonus: true } : {}),
           ...(autospinStopOnBonus && autospinMinScatter >= 1
             ? { skipContinueIfBonusMinScatter: autospinMinScatter }
@@ -968,9 +970,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         }
         const result = await provider.placeBet(currentSession, betAmount, extraBet, false, placeBetOpts)
         const { data, nextSeq, session: updatedSession } = result
+        lastAutospinData = data
         currentSession = updatedSession || { ...currentSession, seq: nextSeq }
-        setSession(currentSession)
-        setLastResult(data)
+        sessionRef.current = currentSession
         spinsSinceRefresh += 1
         const effectiveBet = getEffectiveBetAmount(betAmount, extraBet, slot.slug)
         const parsed = parseBetResponse(data, effectiveBet)
@@ -988,7 +990,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           })
           triggerLogRefresh()
         }
-        saveSlotSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, ...placeBetOpts }, response: data, skipIfFull: true })
+        if (!slotHasFullSamplesRef.current) {
+          saveSlotSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, ...placeBetOpts }, response: data, skipIfFull: true })
+        }
         if (parsed.isBonus) saveBonusSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, ...placeBetOpts }, response: data })
 
         let winAmount = parsed.winAmount
@@ -1094,13 +1098,15 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         }
 
         updateStatsFromResult(data, betAmount, extraBet)
-        triggerLogRefresh()
         spinsDone += 1
         if (hasBetUsd && hasWinUsd) {
           aggWageredUsd += betUsd
           aggWonUsd += winUsd
         }
-        setAutospinProgress(spinsDone)
+        if (spinsDone % 4 === 0 || (autospinCount > 0 && spinsDone === autospinCount)) {
+          setSession(currentSession)
+          setAutospinProgress(spinsDone)
+        }
       } catch (err) {
         const msg = err?.userMessage || err?.message || 'Spin failed'
         setError(`${msg} (nach ${spinsDone} Spins)`)
@@ -1117,8 +1123,11 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       }
     }
 
+    setSession(currentSession)
+    if (lastAutospinData) setLastResult(lastAutospinData)
     setIsAutospinning(false)
     setAutospinProgress(null)
+    triggerLogRefresh()
     if (autospinCount > 0 && spinsDone === autospinCount && !autospinCancelRef.current) {
       setError('')
     }

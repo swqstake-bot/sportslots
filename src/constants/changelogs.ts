@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.181': [
+    '⚡ Playnetic: sb (set-bet) nur bei Einsatzwechsel — Autospin ~1 HTTP-Roundtrip schneller pro Spin',
+    '⚡ Autospin: weniger UI-Re-Renders und Logging-Overhead während schneller Serien',
+  ],
   '1.0.180': [
     '🐛 Slot-Statistik: placeBet-Dedup blockierte Spins (Playnetic `n` nicht eindeutig) — alle Spins sofort sichtbar',
     '🐛 houseBets-Reconcile: FIFO ohne strikten Betrag (PowerBet 15c vs Stake 10c), Einsatz aus placeBet behalten',

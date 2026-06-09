@@ -2,7 +2,7 @@
  * Playnetic (Hub88) – z.B. Farmageddon
  * gsplauncher → games.hub88-2-playnetic.com/{game}/gs/g/*
  * Init: GET .../o?oid&gid&cc&token → iid, bets
- * Bet:  GET .../sb?iid&bet  dann  GET .../np?iid[&auxFeature=PowerBet]
+ * Bet:  GET .../sb?iid&bet (nur bei Einsatzwechsel) dann GET .../np?iid[&auxFeature=PowerBet]
  */
 import { startThirdPartySession } from '../stake'
 import { getEffectiveBetAmount } from '../../constants/bet'
@@ -309,27 +309,30 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   }
 }
 
-async function executeSpinRound(activeSession, { betParam, effectiveMinor, extraBet }) {
+async function executeSpinRound(activeSession, { betParam, effectiveMinor, extraBet, skipSetBet = false }) {
   const root = apiRoot(activeSession)
   const iid = activeSession?.iid
-  const sbUrl = `${root}/gs/g/sb?${new URLSearchParams({ iid, bet: betParam }).toString()}`
-  const sbRes = await requestViaProxy(sbUrl, activeSession)
-  const sbText = await sbRes.text().catch(() => '')
-  let sbData = null
-  try {
-    sbData = sbText ? JSON.parse(sbText) : null
-  } catch {
-    sbData = null
-  }
-  if (!sbRes.ok || !sbData) {
-    return {
-      ok: false,
-      phase: 'sb',
-      endpoint: sbUrl,
-      responseText: sbText,
-      status: sbRes.status,
-      npData: null,
-      finalState: null,
+  let sbUrl = null
+  if (!skipSetBet) {
+    sbUrl = `${root}/gs/g/sb?${new URLSearchParams({ iid, bet: betParam }).toString()}`
+    const sbRes = await requestViaProxy(sbUrl, activeSession)
+    const sbText = await sbRes.text().catch(() => '')
+    let sbData = null
+    try {
+      sbData = sbText ? JSON.parse(sbText) : null
+    } catch {
+      sbData = null
+    }
+    if (!sbRes.ok || !sbData) {
+      return {
+        ok: false,
+        phase: 'sb',
+        endpoint: sbUrl,
+        responseText: sbText,
+        status: sbRes.status,
+        npData: null,
+        finalState: null,
+      }
     }
   }
 
@@ -374,13 +377,15 @@ async function executeSpinRound(activeSession, { betParam, effectiveMinor, extra
     apiError,
     auxFeature: npParams.get('auxFeature'),
     ssSid: activeSession?.ssSid ?? 0,
+    skippedSetBet: skipSetBet,
   }
 }
 
-export async function placeBet(session, betAmount, extraBet = false) {
+export async function placeBet(session, betAmount, extraBet = false, _unused, opts = {}) {
   const slotSlug = session?.slotSlug || null
   const baseMinor = Number(betAmount) || 0
   const effectiveMinor = Number(getEffectiveBetAmount(betAmount, extraBet, slotSlug)) || 0
+  const fastPath = opts?.fastPath === true
   // sb setzt die Basiswette; PowerBet-Aufschlag nur via auxFeature beim Spin (HAR)
   const betMajor = snapBetMajor(baseMinor, session?.betLevels)
   const iid = session?.iid
@@ -390,13 +395,20 @@ export async function placeBet(session, betAmount, extraBet = false) {
   const betParam = formatBetMajor(betMajor)
   let activeSession = session
   let spinResult = null
+  // Browser: sb nur bei Einsatzwechsel; Autospin gleiche Wette → nur np (~1 RTT schneller).
+  let skipSetBet = activeSession?.lastBetParam != null && activeSession.lastBetParam === betParam
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    spinResult = await executeSpinRound(activeSession, { betParam, effectiveMinor, extraBet })
+  for (let attempt = 0; attempt < 3; attempt++) {
+    spinResult = await executeSpinRound(activeSession, { betParam, effectiveMinor, extraBet, skipSetBet })
     if (spinResult.ok) break
 
+    if (skipSetBet && attempt === 0) {
+      skipSetBet = false
+      continue
+    }
+
     const sidHint = parseIllegalSidExpected(spinResult.apiError || spinResult.responseText)
-    if (sidHint != null && attempt === 0) {
+    if (sidHint != null && attempt < 2) {
       activeSession = { ...activeSession, ssSid: sidHint }
       continue
     }
@@ -440,29 +452,33 @@ export async function placeBet(session, betAmount, extraBet = false) {
     ...activeSession,
     seq: nextSeq,
     ssSid: getMaxStateSn(spinResult.npData) + 1,
+    lastBetParam: betParam,
     slotSlug: slotSlug || activeSession?.slotSlug,
   }
 
-  logApiCall({
-    type: 'playnetic/spin',
-    endpoint: spinResult.endpoint,
-    request: {
-      betMajor: betParam,
-      effectiveMinor,
-      extraBet,
-      auxFeature: spinResult.auxFeature ?? null,
-      ssSid: spinResult.ssSid,
-      nextSsSid: nextSession.ssSid,
-    },
-    response: {
-      balance: finalState?.balance ?? null,
-      cash: finalState?.cash ?? null,
-      stateCount: spinResult.stateCount,
-      maxSn: getMaxStateSn(spinResult.npData),
-    },
-    error: null,
-    durationMs: Date.now() - t0,
-  })
+  if (!fastPath) {
+    logApiCall({
+      type: 'playnetic/spin',
+      endpoint: spinResult.endpoint,
+      request: {
+        betMajor: betParam,
+        effectiveMinor,
+        extraBet,
+        skipSetBet: spinResult.skippedSetBet === true,
+        auxFeature: spinResult.auxFeature ?? null,
+        ssSid: spinResult.ssSid,
+        nextSsSid: nextSession.ssSid,
+      },
+      response: {
+        balance: finalState?.balance ?? null,
+        cash: finalState?.cash ?? null,
+        stateCount: spinResult.stateCount,
+        maxSn: getMaxStateSn(spinResult.npData),
+      },
+      error: null,
+      durationMs: Date.now() - t0,
+    })
+  }
 
   return buildBetResponse(finalState, nextSession, nextSeq, slotSlug, getMaxStateSn(spinResult.npData))
 }
