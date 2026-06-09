@@ -78,6 +78,15 @@ export interface ElectronAPI {
     payoutFromMultiplierApiRaw?: number | null;
   }) => Promise<{ saved: boolean; path?: string; csvPath?: string; slotCsvPath?: string }>;
   getSlotFirstWinsDir: () => Promise<string>;
+  extractClawbusterSecret: (configUrl: string) => Promise<string | null>;
+  resolvePlayneticLaunch: (configUrl: string) => Promise<{
+    apiBase: string;
+    gamePath: string;
+    oid: string;
+    gid: string;
+    cc: string;
+    token: string;
+  } | null>;
   /** Telegram GramJS (Main-Prozess): siehe IPC-Namen in electron/main.ts */
   on: (channel: string, callback: (...args: any[]) => void) => () => void;
 }

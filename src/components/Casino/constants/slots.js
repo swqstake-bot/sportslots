@@ -51,6 +51,7 @@ export const PROVIDERS = {
   'no-limit-city': { id: 'no-limit-city', name: 'Nolimit City', impl: 'web' },
   nlc: { id: 'nlc', name: 'Nolimit City', impl: 'web' },
   clawbuster: { id: 'clawbuster', name: 'Claw Buster', impl: 'web' },
+  playnetic: { id: 'playnetic', name: 'Playnetic', impl: 'web' },
 }
 
 export function getWebReadySlots() {

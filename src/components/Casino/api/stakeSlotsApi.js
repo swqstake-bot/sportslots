@@ -101,6 +101,8 @@ const PROVIDER_MAP = {
   'videoslots': 'pragmatic',
   'clawbuster': 'clawbuster',
   'clawbuster-gaming': 'clawbuster',
+  playnetic: 'playnetic',
+  'playnetic-gaming': 'playnetic',
 }
 
 /**
@@ -156,7 +158,8 @@ function mapGameToSlot(game) {
   const providerGroup = game.groupGames?.find((g) => g?.group?.type === 'provider')
   const providerSlug = providerGroup?.group?.slug
   if (!providerSlug) return null
-  const providerId = mapProviderSlugToProviderId(providerSlug)
+  let providerId = mapProviderSlugToProviderId(providerSlug)
+  if (game.slug?.toLowerCase().startsWith('playnetic-')) providerId = 'playnetic'
   return {
     slug: game.slug,
     name: game.name,

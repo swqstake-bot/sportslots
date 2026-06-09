@@ -109,7 +109,38 @@ const SESSION_DEPENDENT_BET_LEVELS = [500, 1000, 2000, 5000, 10000, 20000, 50000
 
 const EMPTY_TARGET_MULTIS = []
 const BET_HISTORY_DEDUP_MAX = 6000
-const FALLBACK_RECONCILE_WINDOW_MS = 8000
+const FALLBACK_RECONCILE_WINDOW_MS = 60000
+const PENDING_HOUSE_RECONCILE_SOURCES = new Set(['placebet', 'http_fallback'])
+
+function findPendingRowForHouseReconcile(prev, { betAmount, signature, now, sessionStartAt }) {
+  // FIFO: ältester offener placeBet — Betrag kommt von houseBets (PowerBet: 15c placeBet vs 10c Stake).
+  let fifoIdx = -1
+  let fifoAt = Infinity
+  for (let i = 0; i < prev.length; i++) {
+    const row = prev[i]
+    if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
+    if (!PENDING_HOUSE_RECONCILE_SOURCES.has(String(row?.source || ''))) continue
+    if (row?.houseBetReconciled) continue
+    if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) continue
+    const at = Number(row?.addedAt) || 0
+    if (at < fifoAt) {
+      fifoAt = at
+      fifoIdx = i
+    }
+  }
+  if (fifoIdx >= 0) return fifoIdx
+
+  for (let i = prev.length - 1; i >= 0; i--) {
+    const row = prev[i]
+    if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) break
+    if (!PENDING_HOUSE_RECONCILE_SOURCES.has(String(row?.source || ''))) continue
+    if (row?.houseBetReconciled) continue
+    const rowCurr = String(row?.currencyCode || 'usd').toLowerCase()
+    const rowSig = `${rowCurr}|${Number(row?.betAmount) || 0}|${Number(row?.winAmount) || 0}|${row?.isBonus ? 1 : 0}`
+    if (rowSig === signature) return i
+  }
+  return -1
+}
 
 function formatTargetMultiLabel(n) {
   const x = Number(n)
@@ -129,7 +160,10 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     return merged.map(formatTargetMultiLabel).filter(Boolean)
   }, [hunterBridgeTargets, challengeTargetMultipliers])
 
-  const provider = getProvider(slot.providerId)
+  const effectiveProviderId = String(slot?.slug || '').toLowerCase().startsWith('playnetic-')
+    ? 'playnetic'
+    : slot.providerId
+  const provider = getProvider(effectiveProviderId)
   const [expanded, setExpanded] = useState(initialExpanded)
   const baseBetLevels =
     slot.betLevels ||
@@ -304,7 +338,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     if (amountMinor == null || amountMinor === 0) return Number(amountMinor || 0)
     return convertMinorToUsdMajor(amountMinor, curr, currencyRates).usd
   }, [currencyRates])
-  // BetList + Stats ausschließlich aus WebSocket (houseBets) – Single Source of Truth
+  // Stats/BetList: placeBet sofort (Drittanbieter), houseBets reconciled per FIFO
   const sessionBets = useMemo(
     () => (sessionStartAt ? betHistory.filter((b) => (b.addedAt ?? 0) >= sessionStartAt) : betHistory),
     [betHistory, sessionStartAt]
@@ -534,38 +568,44 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     const parsedWin = Number(parsed.stoppedBonus ? 0 : (parsed.winAmount ?? 0)) || 0
     const signature = `${normCurr}|${parsedBet}|${parsedWin}|${parsed.isBonus ? 1 : 0}`
     setBetHistory((prev) => {
-      if (rid) {
+      const last = prev[prev.length - 1]
+      // Stake houseBets-IDs sind global eindeutig; Provider-roundIds (z. B. Playnetic `n`) nicht deduplizieren.
+      if (rid && source === 'housebets') {
         const roundKey = `round:${rid}`
         if (seenBetDedupKeysRef.current.has(roundKey)) {
           recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-roundId-set', roundId: rid })
           return prev
         }
-      }
-      const last = prev[prev.length - 1]
-      if (rid && last && String(last.roundId ?? '') === rid) {
-        recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-roundId', roundId: rid })
-        return prev // Duplikat vermeiden (gleicher Round)
+        if (last && String(last.roundId ?? '') === rid) {
+          recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-roundId', roundId: rid })
+          return prev
+        }
       }
       if (source === 'housebets') {
-        let fallbackIdx = -1
-        for (let i = prev.length - 1; i >= 0; i--) {
-          const row = prev[i]
-          if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) break
-          if (String(row?.source || '') !== 'http_fallback') continue
-          const rowCurr = String(row?.currencyCode || effectiveTarget || 'usd').toLowerCase()
-          const rowSig = `${rowCurr}|${Number(row?.betAmount) || 0}|${Number(row?.winAmount) || 0}|${row?.isBonus ? 1 : 0}`
-          if (rowSig === signature) {
-            fallbackIdx = i
-            break
-          }
-        }
-        if (fallbackIdx >= 0) {
+        const pendingIdx = findPendingRowForHouseReconcile(prev, {
+          betAmount: parsedBet,
+          signature,
+          now,
+          sessionStartAt,
+        })
+        if (pendingIdx >= 0) {
           const clone = prev.slice()
-          clone[fallbackIdx] = {
-            ...clone[fallbackIdx],
+          const prevRoundKey = clone[pendingIdx]?.roundId != null
+            ? `round:${String(clone[pendingIdx].roundId)}`
+            : null
+          clone[pendingIdx] = {
+            ...clone[pendingIdx],
             source: 'housebets',
-            roundId: rid ?? clone[fallbackIdx]?.roundId,
-            currencyCode: currencyCode ?? clone[fallbackIdx]?.currencyCode,
+            roundId: rid ?? clone[pendingIdx]?.roundId,
+            currencyCode: currencyCode ?? clone[pendingIdx]?.currencyCode,
+            // placeBet kennt PowerBet/Extra-Bet; houseBets meldet oft nur Basis-Einsatz.
+            betAmount: Math.max(Number(clone[pendingIdx]?.betAmount) || 0, parsedBet) || parsedBet,
+            winAmount: parsedWin,
+            rawWinAmount: parsed.winAmount ?? parsedWin,
+            houseBetReconciled: true,
+          }
+          if (prevRoundKey && prevRoundKey !== `round:${rid}`) {
+            seenBetDedupKeysRef.current.delete(prevRoundKey)
           }
           if (rid) {
             const roundKey = `round:${rid}`
@@ -576,7 +616,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
               if (old) seenBetDedupKeysRef.current.delete(old)
             }
           }
-          recordBetHistoryAudit({ slotSlug: slot.slug, event: 'replace-http-fallback-with-housebets', roundId: rid ?? null })
+          recordBetHistoryAudit({ slotSlug: slot.slug, event: 'reconcile-placebet-with-housebets', roundId: rid ?? null })
           return clone
         }
       } else if (source === 'http_fallback') {
@@ -593,7 +633,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           }
         }
       }
-      if (!rid && last && (now - (last.addedAt ?? 0)) < 150) {
+      if (source !== 'placebet' && !rid && last && (now - (last.addedAt ?? 0)) < 150) {
         const same = (last.betAmount ?? 0) === (parsed.betAmount ?? 0) &&
           (last.winAmount ?? 0) === (parsed.winAmount ?? 0) &&
           !!last.isBonus === !!parsed.isBonus
@@ -657,7 +697,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         betAmount: entry.betAmount,
         winAmount: entry.winAmount,
       })
-      if (rid) {
+      if (rid && source === 'housebets') {
         const roundKey = `round:${rid}`
         seenBetDedupKeysRef.current.add(roundKey)
         seenBetDedupOrderRef.current.push(roundKey)
@@ -668,23 +708,19 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       }
       return [...prev, entry]
     })
-  }, [slot.slug, slot.name, effectiveTarget, toUsdMajor, currencyRates])
+  }, [slot.slug, slot.name, effectiveTarget, sessionStartAt, toUsdMajor, currencyRates])
 
-  const isStakeEngine = slot?.providerId === 'stakeEngine' || PROVIDERS_META[slot?.providerId]?.aliasOf === 'stakeEngine'
+  const isStakeEngine =
+    effectiveProviderId === 'stakeEngine' ||
+    PROVIDERS_META[effectiveProviderId]?.aliasOf === 'stakeEngine'
   const fillBetHistoryFromPlaceBet = isStakeEngine
+  const subscribeHouseBetsForHistory = !isStakeEngine
 
-  /**
-   * Realtime (houseBets) ist primär, aber in manchen Sessions bleibt sie leer/verspätet.
-   * Dann fallbacken wir pro Spin auf parseBetResponse, damit Stats/BetList im Play-Mode nicht leer bleiben.
-   */
-  const scheduleFallbackHistoryAppend = useCallback((parsed, baselineCount, delayMs = 1400) => {
-    if (fillBetHistoryFromPlaceBet) return
-    if (!parsed?.success) return
-    setTimeout(() => {
-      if (betHistoryLengthRef.current > baselineCount) return
-      addToBetHistory({ ...parsed, winAmount: parsed.winAmount ?? 0, source: 'http_fallback' })
-    }, delayMs)
-  }, [fillBetHistoryFromPlaceBet, addToBetHistory])
+  /** Drittanbieter: sofort aus placeBet (wie SSP-UX), houseBets reconciled später per FIFO. */
+  const appendSpinHistoryFromPlaceBet = useCallback((parsed) => {
+    if (isStakeEngine || !parsed?.success) return
+    addToBetHistory({ ...parsed, winAmount: parsed.winAmount ?? 0, source: 'placebet' })
+  }, [isStakeEngine, addToBetHistory])
 
   const updateStatsFromResult = useCallback((result, betAmt, useExtraBet = false) => {
     const effectiveBet = getEffectiveBetAmount(betAmt ?? 0, useExtraBet, slot?.slug)
@@ -760,7 +796,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   useSlotRealtime({
     accessToken,
     effectiveTarget,
-    fillBetHistoryFromPlaceBet,
+    subscribeHouseBetsForHistory,
     slot,
     setWsBalance,
     addToBetHistory,
@@ -795,11 +831,13 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       setWsBalance(s?.initialBalance ?? null)
       setBalanceFromPlaceBet(s?.initialBalance ?? null)
       setSessionStartAt(Date.now())
+      seenBetDedupKeysRef.current.clear()
+      seenBetDedupOrderRef.current = []
       const hasFull = await hasEnoughSamplesForSlot(slot.slug).catch(() => false)
       setSlotHasFullSamples(hasFull)
       slotHasFullSamplesRef.current = hasFull
       logApiCall({
-        type: `${slot.providerId}/session`,
+        type: `${effectiveProviderId}/session`,
         endpoint: 'startSession',
         request: { slug: slot.slug, sourceCurrency: effectiveSource, targetCurrency: effectiveTarget },
         response: s,
@@ -812,7 +850,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       const msg = err?.userMessage || err?.message || 'Could not start session'
       setError(msg)
       if (err?.retryable) setProviderWarning('Provider is unstable right now (retry mode active).')
-      logApiCall({ type: `${slot.providerId}/session`, endpoint: 'startSession', request: { slug: slot.slug, sourceCurrency: effectiveSource, targetCurrency: effectiveTarget }, response: null, error: msg, durationMs: null })
+      logApiCall({ type: `${effectiveProviderId}/session`, endpoint: 'startSession', request: { slug: slot.slug, sourceCurrency: effectiveSource, targetCurrency: effectiveTarget }, response: null, error: msg, durationMs: null })
       triggerLogRefresh()
       return null
     } finally {
@@ -833,7 +871,6 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     setError('')
     setProviderWarning('')
     try {
-      const beforeCount = betHistoryLengthRef.current
       let currentSession = session
       if (sessionRefreshSpins > 0 && spinsSinceRefreshRef.current >= sessionRefreshSpins) {
         currentSession = await provider.startSession(accessToken, slot.slug, effectiveSource, effectiveTarget)
@@ -848,7 +885,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       setSession((prev) => (updatedSession ? updatedSession : prev ? { ...prev, seq: nextSeq } : null))
       const effectiveBet = getEffectiveBetAmount(betAmount, extraBet, slot.slug)
       const parsed = parseBetResponse(data, effectiveBet)
-      scheduleFallbackHistoryAppend(parsed, beforeCount)
+      appendSpinHistoryFromPlaceBet(parsed)
       if (isSaveBonusLogsEnabled() && parsed.isBonus) {
         saveBonusLog({
           slotSlug: slot.slug,
@@ -860,7 +897,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           parsed: { isBonus: parsed.isBonus, scatterCount: parsed.scatterCount, bonusFeatureId: parsed.bonusFeatureId },
         })
       }
-      saveSlotSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, slotSlug: slot.slug }, response: data, skipIfFull: true })
+      saveSlotSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: effectiveProviderId, request: { betAmount, extraBet, slotSlug: slot.slug }, response: data, skipIfFull: true })
       if (parsed.isBonus) saveBonusSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, slotSlug: slot.slug }, response: data })
       triggerLogRefresh()
     } catch (err) {
@@ -908,7 +945,6 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
 
     while ((autospinCount === 0 || spinsDone < autospinCount) && !autospinCancelRef.current) {
       try {
-        const beforeCount = betHistoryLengthRef.current
         if (sessionRefreshSpins > 0 && spinsSinceRefresh >= sessionRefreshSpins) {
           let newSession
           try {
@@ -938,7 +974,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         spinsSinceRefresh += 1
         const effectiveBet = getEffectiveBetAmount(betAmount, extraBet, slot.slug)
         const parsed = parseBetResponse(data, effectiveBet)
-        scheduleFallbackHistoryAppend(parsed, beforeCount)
+        appendSpinHistoryFromPlaceBet(parsed)
 
         if (isSaveBonusLogsEnabled() && parsed.isBonus) {
           saveBonusLog({

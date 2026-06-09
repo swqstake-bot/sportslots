@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
             error?: string;
         }>,
     extractClawbusterSecret: (configUrl: string) => ipcRenderer.invoke('clawbuster-extract-secret', configUrl),
+    resolvePlayneticLaunch: (configUrl: string) => ipcRenderer.invoke('playnetic-resolve-launch', configUrl),
     // Slot Spin Samples – automatisches Lernen in Ordner
     saveSlotSpinSample: (payload: { slotSlug: string; slotName?: string; providerId?: string; request: any; response: any }) =>
         ipcRenderer.invoke('save-slot-spin-sample', payload),

@@ -1660,6 +1660,86 @@ ipcMain.handle(
 
 ipcMain.handle('get-slot-first-wins-dir', () => FIRST_SLOT_WINS_DIR);
 
+function parsePlayneticLaunchFromUrl(url: string) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase();
+    const isPlayneticHost = host.includes('playnetic.com');
+    const isOpenEndpoint = u.pathname.includes('/gs/g/o');
+    if (!isPlayneticHost && !isOpenEndpoint) return null;
+
+    const parts = u.pathname.split('/').filter(Boolean);
+    const gsIdx = parts.indexOf('gs');
+    const gamePath = gsIdx > 0 ? parts.slice(0, gsIdx).join('/') : parts[0] || '';
+    const token = u.searchParams.get('token');
+    const gid = u.searchParams.get('gid');
+    if (!token || !gid || !gamePath) return null;
+
+    return {
+      apiBase: `${u.protocol}//${u.host}`,
+      gamePath,
+      oid: u.searchParams.get('oid') || 'Stake.com',
+      gid,
+      cc: (u.searchParams.get('cc') || 'EUR').toUpperCase(),
+      token,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Playnetic: gsplauncher → Hidden Window → /gs/g/o Request abfangen
+ipcMain.handle('playnetic-resolve-launch', async (_event, configUrl: string) => {
+  if (!configUrl || typeof configUrl !== 'string') return null;
+  return new Promise<ReturnType<typeof parsePlayneticLaunchFromUrl>>((resolve) => {
+    const partition = `playnetic-launch-${Date.now()}`;
+    const ses = session.fromPartition(partition, { cache: false });
+    const w = new BrowserWindow({
+      width: 1,
+      height: 1,
+      show: false,
+      webPreferences: {
+        session: ses,
+        contextIsolation: true,
+        sandbox: false,
+        webSecurity: false,
+      },
+    });
+    let settled = false;
+    const finish = (value: ReturnType<typeof parsePlayneticLaunchFromUrl>) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      w.destroy();
+      resolve(value);
+    };
+    const timeout = setTimeout(() => {
+      console.warn('[playnetic] resolvePlayneticLaunch: Timeout nach 20s');
+      finish(null);
+    }, 20000);
+
+    const tryResolve = (url: string) => {
+      const parsed = parsePlayneticLaunchFromUrl(url);
+      if (parsed) finish(parsed);
+    };
+
+    ses.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
+      tryResolve(details.url);
+      callback({});
+    });
+
+    const onNavigate = (_e: Electron.Event, url: string) => {
+      tryResolve(url);
+    };
+    w.webContents.on('did-navigate', onNavigate);
+    w.webContents.on('did-navigate-in-page', onNavigate);
+    w.loadURL(configUrl).catch((err) => {
+      console.warn('[playnetic] resolvePlayneticLaunch: loadURL failed', err?.message);
+      finish(null);
+    });
+  });
+});
+
 // Claw Buster: Launcher-URL laden → Redirect zu clawbuster-cdn → secret aus URL extrahieren
 ipcMain.handle('clawbuster-extract-secret', async (_event, configUrl: string) => {
   if (!configUrl || typeof configUrl !== 'string') return null;
@@ -1854,6 +1934,7 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                 'playngo', 'octoplay', 'peterandsons', 'shady', 'shuffle', 'titan', 'twist',
                 'popiplay', 'helio', 'samurai', '1000lakes', 'hacksawgaming.com', 'd1oa92ndvzdrfz.cloudfront.net',
                 'api.clawbuster.com', 'clawbuster-cdn.com', 'gsplauncher.de',
+                'hub88-2-playnetic.com', 'playnetic.com',
                 // Mascot launcher/runtime hosts (e.g. open.mascot.host -> <session>.mascot.games)
                 'mascot.host', 'mascot.games',
                 // Truelab / Stake third-party: startThirdPartySession config → grandgames launcher, RGS play.launcher-gg.com

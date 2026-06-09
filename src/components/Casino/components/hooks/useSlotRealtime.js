@@ -2,12 +2,12 @@ import { useEffect } from 'react'
 import { toMinor } from '../../utils/formatAmount'
 import { isDebugHouseBetsEnabled } from '../../api/stakeBalanceSubscription'
 import { subscribeToHouseBets, subscribeToStakeBalance } from '../../api/stakeRealtimeFacade'
-import { houseBetSlugMatchesSessionSlug } from '../../utils/slotSlugMatching'
+import { houseBetMatchesSessionSlot } from '../../utils/slotSlugMatching'
 
 export function useSlotRealtime({
   accessToken,
   effectiveTarget,
-  fillBetHistoryFromPlaceBet,
+  subscribeHouseBetsForHistory = true,
   slot,
   setWsBalance,
   addToBetHistory,
@@ -44,13 +44,13 @@ export function useSlotRealtime({
 
   useEffect(() => {
     if (!accessToken) return
-    if (fillBetHistoryFromPlaceBet && !isDebugHouseBetsEnabled()) return
+    if (!subscribeHouseBetsForHistory && !isDebugHouseBetsEnabled()) return
 
     try {
       console.warn('[SlotControl] houseBets subscription init', {
         slot: slot.slug,
         providerId: slot.providerId,
-        fillBetHistoryFromPlaceBet,
+        subscribeHouseBetsForHistory,
         debugHouseBets: isDebugHouseBetsEnabled(),
         effectiveTarget,
       })
@@ -60,22 +60,23 @@ export function useSlotRealtime({
     let cancelled = false
     let sub = null
     subscribeToHouseBets(accessToken, (b) => {
-      const slug = String(b?.gameSlug || '')
-      const matches = slug && houseBetSlugMatchesSessionSlug(slug, slot.slug)
+      const matches = houseBetMatchesSessionSlot(b, slot.slug, slot.name)
       const shouldLog = isDebugHouseBetsEnabled() && matches && slotMatchDebugCount < 20
       if (shouldLog) {
         slotMatchDebugCount += 1
         console.warn('[houseBets→SlotControl]', {
           gameSlug: b?.gameSlug,
+          gameName: b?.gameName,
           slotSlug: slot.slug,
+          slotName: slot.name,
           matches,
-          addToBet: !fillBetHistoryFromPlaceBet,
+          addToBet: subscribeHouseBetsForHistory,
           amount: b?.amount,
           payout: b?.payout,
         })
       }
-      if (fillBetHistoryFromPlaceBet) return
-      if (!slug || !matches) return
+      if (!subscribeHouseBetsForHistory) return
+      if (!matches) return
 
       const curr = (b?.currency || 'usd').toLowerCase()
       const betAmountMajor = Number(b?.amountMajor ?? b?.amount) || 0
@@ -134,6 +135,6 @@ export function useSlotRealtime({
         sub?.disconnect?.()
       } catch (_) {}
     }
-  }, [accessToken, slot.slug, slot.providerId, effectiveTarget, addToBetHistory, fillBetHistoryFromPlaceBet])
+  }, [accessToken, slot.slug, slot.name, slot.providerId, effectiveTarget, addToBetHistory, subscribeHouseBetsForHistory])
 }
 

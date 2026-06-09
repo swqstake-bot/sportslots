@@ -21,6 +21,9 @@ export function getExtraBetMultiplier(slotSlug) {
   if (!slotSlug) return EXTRA_BET_MULTIPLIER
   const override = SLOT_EXTRA_BET_MULTIPLIERS[slotSlug]
   if (override != null && override >= 1) return override
+  if (String(slotSlug).startsWith('playnetic-')) {
+    return 1.5 // PowerBet: 10c Basis → 15c Gesamteinsatz
+  }
   if (String(slotSlug).startsWith('paperclip-')) {
     return 3 // Paperclip: Ante = Extra Bet = 3×
   }

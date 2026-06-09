@@ -2,6 +2,7 @@ import * as hacksaw from './hacksaw'
 import * as pragmatic from './pragmatic'
 import * as stakeEngine from './stakeEngine'
 import * as clawbuster from './clawbuster'
+import * as playnetic from './playnetic'
 import * as avatarux from './avatarux'
 import * as nolimit from './nolimit'
 import * as mascot from './mascot'
@@ -152,6 +153,7 @@ const WEB_PROVIDERS = {
   'bullshark-games': hacksaw,
   bullsharkgames: hacksaw,
   clawbuster,
+  playnetic,
   nolimit,
   avatarux,
   mascot,

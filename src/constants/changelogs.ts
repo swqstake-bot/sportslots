@@ -1,4 +1,15 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.180': [
+    '🐛 Slot-Statistik: placeBet-Dedup blockierte Spins (Playnetic `n` nicht eindeutig) — alle Spins sofort sichtbar',
+    '🐛 houseBets-Reconcile: FIFO ohne strikten Betrag (PowerBet 15c vs Stake 10c), Einsatz aus placeBet behalten',
+  ],
+  '1.0.179': [
+    '✨ Playnetic (Farmageddon): Hub88 gs/g API, gsplauncher-Auflösung, PowerBet 1.5× (10c→15c)',
+    '🐛 Playnetic: Spin-Header (Referer+ss-wid) – leere states-Response behoben',
+    '🐛 Playnetic: ss-sid nach jedem Spin hochzählen (2. Spin „Illegal SID“)',
+    '🐛 SlotControl: houseBets-Match für Playnetic/Hub88 (Slug-Tail + Spielname)',
+    '✨ Drittanbieter-Slots: Sofort-Statistik aus placeBet, houseBets reconciled per FIFO (kein 1.4s-Delay)',
+  ],
   '1.0.178': [
     '🐛 Script-Chart: Endlosschleife (Too many re-renders) behoben',
     '🐛 CI: ESLint Chart-Domain + ungenutzte Logger-Helfer',

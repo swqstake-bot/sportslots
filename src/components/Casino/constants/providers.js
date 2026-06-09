@@ -116,6 +116,16 @@ export const PROVIDERS = {
     name: 'Hub88 alias',
     aliasOf: 'mascot',
   },
+  playnetic: {
+    id: 'playnetic',
+    name: 'Playnetic',
+    sessionFields: ['apiBase', 'gamePath', 'iid', 'gid', 'token'],
+    betLevelsSource: 'init.bets',
+    unitProfile: 'provider-major->minor-parser',
+    supportsExtraBet: true,
+    retryProfile: { maxAttempts: 2, baseDelayMs: 250 },
+    sessionShape: 'session-id',
+  },
   netent: {
     id: 'netent',
     name: 'NetEnt',
