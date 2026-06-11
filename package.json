@@ -69,6 +69,7 @@
     "wait-on": "^9.0.4"
   },
   "build": {
+    "npmRebuild": false,
     "appId": "com.stakesports.electron",
     "productName": "StakeSportsElectron",
     "directories": {

@@ -54,7 +54,7 @@ jobs:
           cache: 'npm'
 
       - name: Install Dependencies
-        run: npm install
+        run: npm install --omit=optional
 
       - name: Quality Gate (Lint + QA Harness)
         run: |
