@@ -25,6 +25,7 @@ interface BetRow {
   multi: number
   win: boolean
   profitUsd: number
+  phase?: 'hunt' | 'moonshot'
 }
 
 function sleep(ms: number) {
@@ -42,6 +43,10 @@ export default function DiceRunnerTab() {
   const [seedChangeOnTargetHit, setSeedChangeOnTargetHit] = useState(saved.seedChangeOnTargetHit)
   const [stopOnTargetHit, setStopOnTargetHit] = useState(saved.stopOnTargetHit)
   const [autoRerun, setAutoRerun] = useState(saved.autoRerun)
+  const [twoPhaseHunt, setTwoPhaseHunt] = useState(saved.twoPhaseHunt)
+  const [huntMultiplier, setHuntMultiplier] = useState(String(saved.huntMultiplier))
+  const [endHuntMultiplier, setEndHuntMultiplier] = useState(String(saved.endHuntMultiplier))
+  const [repeatAfterMoonshot, setRepeatAfterMoonshot] = useState(saved.repeatAfterMoonshot)
   const [running, setRunning] = useState(false)
   const [waitingForBalance, setWaitingForBalance] = useState(false)
   const [error, setError] = useState('')
@@ -65,10 +70,28 @@ export default function DiceRunnerTab() {
         seedChangeOnTargetHit,
         stopOnTargetHit,
         autoRerun,
+        twoPhaseHunt,
+        huntMultiplier: Number(huntMultiplier) || 30,
+        endHuntMultiplier: Number(endHuntMultiplier) || 9900,
+        repeatAfterMoonshot,
       })
     }, 400)
     return () => clearTimeout(t)
-  }, [betUsd, targetMultiplier, rollOver, currency, spinsPerSec, seedChangeEverySpins, seedChangeOnTargetHit, stopOnTargetHit, autoRerun])
+  }, [
+    betUsd,
+    targetMultiplier,
+    rollOver,
+    currency,
+    spinsPerSec,
+    seedChangeEverySpins,
+    seedChangeOnTargetHit,
+    stopOnTargetHit,
+    autoRerun,
+    twoPhaseHunt,
+    huntMultiplier,
+    endHuntMultiplier,
+    repeatAfterMoonshot,
+  ])
 
   const addLog = useCallback((msg: string) => {
     setLogLines((prev) => [...prev.slice(-99), `[${new Date().toLocaleTimeString()}] ${msg}`])
@@ -97,17 +120,44 @@ export default function DiceRunnerTab() {
       seedChangeOnTargetHit,
       stopOnTargetHit,
       autoRerun,
+      twoPhaseHunt,
+      huntMultiplier: Number(huntMultiplier) || 30,
+      endHuntMultiplier: Number(endHuntMultiplier) || 9900,
+      repeatAfterMoonshot,
     }
     if (!(cfg.betUsd > 0)) {
       setError('Bet ($) must be greater than 0.')
       return null
     }
-    if (!(cfg.targetMultiplier >= 1.01)) {
+    if (cfg.twoPhaseHunt) {
+      if (!(cfg.huntMultiplier >= 1.01)) {
+        setError('Hunt multiplier must be at least 1.01.')
+        return null
+      }
+      if (!(cfg.endHuntMultiplier >= 1.01)) {
+        setError('End-hunt multiplier must be at least 1.01.')
+        return null
+      }
+    } else if (!(cfg.targetMultiplier >= 1.01)) {
       setError('Target multiplier must be at least 1.01.')
       return null
     }
     return cfg
-  }, [betUsd, targetMultiplier, rollOver, currency, spinsPerSec, seedChangeEverySpins, seedChangeOnTargetHit, stopOnTargetHit, autoRerun])
+  }, [
+    betUsd,
+    targetMultiplier,
+    rollOver,
+    currency,
+    spinsPerSec,
+    seedChangeEverySpins,
+    seedChangeOnTargetHit,
+    stopOnTargetHit,
+    autoRerun,
+    twoPhaseHunt,
+    huntMultiplier,
+    endHuntMultiplier,
+    repeatAfterMoonshot,
+  ])
 
   const handleStart = useCallback(async () => {
     const cfg = buildConfig()
@@ -163,6 +213,7 @@ export default function DiceRunnerTab() {
                 multi: r.payoutMultiplier,
                 win: r.win,
                 profitUsd: r.profitUsd,
+                phase: r.phase,
               },
             ])
             setChartData((prev) => [...prev.slice(-299), { index: r.spin, profit: r.profitUsd }])
@@ -185,6 +236,11 @@ export default function DiceRunnerTab() {
         if (cfg.autoRerun && cfg.stopOnTargetHit) {
           addLog('Auto rerun stopped — target hit.')
         }
+        break
+      }
+
+      if (reason === 'moonshot_win') {
+        addLog(`Session ended — End-Hunt ${cfg.endHuntMultiplier}× getroffen!`)
         break
       }
 
@@ -263,9 +319,48 @@ export default function DiceRunnerTab() {
             <input type="number" min="0.00000001" step="any" value={betUsd} onChange={(e) => setBetUsd(e.target.value)} className={inputCls} disabled={controlsLocked} />
           </div>
           <div>
-            <label className="block text-xs text-[var(--text-muted)] mb-1">Target multiplier (×)</label>
-            <input type="number" min="1.01" step="any" value={targetMultiplier} onChange={(e) => setTargetMultiplier(e.target.value)} className={inputCls} disabled={controlsLocked} />
+            <label className="block text-xs text-[var(--text-muted)] mb-1">
+              {twoPhaseHunt ? 'Target multiplier (×) — nur ohne Hunt→Moonshot' : 'Target multiplier (×)'}
+            </label>
+            <input
+              type="number"
+              min="1.01"
+              step="any"
+              value={targetMultiplier}
+              onChange={(e) => setTargetMultiplier(e.target.value)}
+              className={inputCls}
+              disabled={controlsLocked || twoPhaseHunt}
+            />
           </div>
+          {twoPhaseHunt && (
+            <>
+              <div>
+                <label className="block text-xs text-[var(--text-muted)] mb-1">Hunt multiplier (×)</label>
+                <input
+                  type="number"
+                  min="1.01"
+                  step="any"
+                  value={huntMultiplier}
+                  onChange={(e) => setHuntMultiplier(e.target.value)}
+                  className={inputCls}
+                  disabled={controlsLocked}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-[var(--text-muted)] mb-1">End-hunt multiplier (×)</label>
+                <input
+                  type="number"
+                  min="1.01"
+                  step="any"
+                  value={endHuntMultiplier}
+                  onChange={(e) => setEndHuntMultiplier(e.target.value)}
+                  className={inputCls}
+                  disabled={controlsLocked}
+                  title="Eine Wette mit vollem Hunt-Gewinn"
+                />
+              </div>
+            </>
+          )}
           <div>
             <label className="block text-xs text-[var(--text-muted)] mb-1">Currency</label>
             <select value={currency} onChange={(e) => setCurrency(e.target.value)} className={inputCls} disabled={controlsLocked}>
@@ -309,8 +404,36 @@ export default function DiceRunnerTab() {
               <input type="checkbox" checked={autoRerun} onChange={(e) => setAutoRerun(e.target.checked)} className="w-4 h-4 rounded accent-[var(--accent)]" disabled={controlsLocked} />
               <span className="text-sm text-[var(--text)]">Auto rerun</span>
             </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={twoPhaseHunt}
+                onChange={(e) => setTwoPhaseHunt(e.target.checked)}
+                className="w-4 h-4 rounded accent-[var(--accent)]"
+                disabled={controlsLocked}
+              />
+              <span className="text-sm text-[var(--text)]">Hunt → Moonshot</span>
+            </label>
+            {twoPhaseHunt && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={repeatAfterMoonshot}
+                  onChange={(e) => setRepeatAfterMoonshot(e.target.checked)}
+                  className="w-4 h-4 rounded accent-[var(--accent)]"
+                  disabled={controlsLocked}
+                />
+                <span className="text-sm text-[var(--text)]">Repeat hunt after moonshot win</span>
+              </label>
+            )}
           </div>
         </div>
+
+        {twoPhaseHunt && (
+          <p className="text-xs text-[var(--text-muted)]">
+            Hunt mit Bet ($) bis Hunt-Multi — bei Treffer 1× Moonshot mit vollem Gewinn auf End-Hunt-Multi. Verfehlt → Hunt läuft weiter. Nur echter End-Hunt-Treffer stoppt.
+          </p>
+        )}
 
         {waitingForBalance && (
           <div className="p-2 rounded bg-amber-500/10 border border-amber-500/30 text-amber-200 text-sm">
@@ -363,6 +486,7 @@ export default function DiceRunnerTab() {
             <thead>
               <tr className="text-[var(--text-muted)] text-left border-b border-[var(--border-subtle)]">
                 <th className="py-2 pr-2">#</th>
+                <th className="py-2 pr-2">Phase</th>
                 <th className="py-2 pr-2">Bet $</th>
                 <th className="py-2 pr-2">Multi</th>
                 <th className="py-2 pr-2">Profit $</th>
@@ -372,6 +496,9 @@ export default function DiceRunnerTab() {
               {[...betList].reverse().slice(0, 15).map((b) => (
                 <tr key={b.spin} className="border-b border-[var(--border-subtle)]/50">
                   <td className="py-1 pr-2">{b.spin}</td>
+                  <td className="py-1 pr-2 text-[var(--text-muted)]">
+                    {b.phase === 'moonshot' ? '🎯' : '·'}
+                  </td>
                   <td className="py-1 pr-2">{b.betUsd.toFixed(4)}</td>
                   <td className={`py-1 pr-2 ${b.win ? 'text-emerald-400' : ''}`}>{b.multi > 0 ? `${b.multi.toFixed(2)}×` : '—'}</td>
                   <td className={`py-1 pr-2 ${b.profitUsd >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{b.profitUsd.toFixed(4)}</td>

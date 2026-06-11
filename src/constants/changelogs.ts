@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.182': [
+    '✨ Dice Runner: Hunt → Moonshot — kleine Hunt-Spins bis Ziel-Multi, dann 1× Wette mit vollem Gewinn auf End-Multi (z. B. 9900×)',
+    '🐛 Dice Runner: Moonshot-Verlust beendet Session nicht mehr fälschlich — Hunt läuft weiter; Jackpot nur bei echtem End-Multi-Treffer',
+  ],
   '1.0.181': [
     '⚡ Playnetic: sb (set-bet) nur bei Einsatzwechsel — Autospin ~1 HTTP-Roundtrip schneller pro Spin',
     '⚡ Autospin: weniger UI-Re-Renders und Logging-Overhead während schneller Serien',

@@ -4,7 +4,19 @@ const STORAGE_KEY = 'originalsDiceRunnerConfig'
 
 export type DiceRunnerPersisted = Pick<
   DiceRunnerConfig,
-  'betUsd' | 'targetMultiplier' | 'rollOver' | 'currency' | 'spinsPerSec' | 'seedChangeEverySpins' | 'seedChangeOnTargetHit' | 'stopOnTargetHit' | 'autoRerun'
+  | 'betUsd'
+  | 'targetMultiplier'
+  | 'rollOver'
+  | 'currency'
+  | 'spinsPerSec'
+  | 'seedChangeEverySpins'
+  | 'seedChangeOnTargetHit'
+  | 'stopOnTargetHit'
+  | 'autoRerun'
+  | 'twoPhaseHunt'
+  | 'huntMultiplier'
+  | 'endHuntMultiplier'
+  | 'repeatAfterMoonshot'
 >
 
 const DEFAULTS: DiceRunnerPersisted = {
@@ -17,6 +29,10 @@ const DEFAULTS: DiceRunnerPersisted = {
   seedChangeOnTargetHit: true,
   stopOnTargetHit: true,
   autoRerun: false,
+  twoPhaseHunt: false,
+  huntMultiplier: 30,
+  endHuntMultiplier: 9900,
+  repeatAfterMoonshot: false,
 }
 
 export function loadDiceRunnerConfig(): DiceRunnerPersisted {
@@ -34,6 +50,14 @@ export function loadDiceRunnerConfig(): DiceRunnerPersisted {
       seedChangeOnTargetHit: parsed.seedChangeOnTargetHit !== false,
       stopOnTargetHit: parsed.stopOnTargetHit !== false,
       autoRerun: parsed.autoRerun === true,
+      twoPhaseHunt: parsed.twoPhaseHunt === true,
+      huntMultiplier:
+        Number(parsed.huntMultiplier) >= 1.01 ? Number(parsed.huntMultiplier) : DEFAULTS.huntMultiplier,
+      endHuntMultiplier:
+        Number(parsed.endHuntMultiplier) >= 1.01
+          ? Number(parsed.endHuntMultiplier)
+          : DEFAULTS.endHuntMultiplier,
+      repeatAfterMoonshot: parsed.repeatAfterMoonshot === true,
     }
   } catch {
     return { ...DEFAULTS }
