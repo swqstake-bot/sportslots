@@ -198,7 +198,7 @@ export function extractProviderGroupSlug(game) {
  * @returns {Promise<{ challenges: Array, totalCount: number }>}
  */
 export async function fetchChallengeList(accessToken, options = {}) {
-  const { limit = PAGE_SIZE, offset = 0, sort = 'startAt', type = 'available', count = 'available' } = options
+  const { limit = PAGE_SIZE, offset = 0, sort = 'startAt', type = 'available', count = 'available', throwOnError = false } = options
   const safeLimit = Math.max(1, Math.min(PAGE_SIZE, Number(limit) || PAGE_SIZE))
   const safeOffset = Math.max(0, Number(offset) || 0)
   const t0 = Date.now()
@@ -249,6 +249,7 @@ export async function fetchChallengeList(accessToken, options = {}) {
       error: error.message,
       durationMs: Date.now() - t0,
     })
+    if (throwOnError) throw error
     return { challenges: [], totalCount: 0 }
   }
 }
@@ -321,6 +322,45 @@ export async function fetchAllChallenges(accessToken, options = {}) {
   }
   const filtered = segment === 'weekly' ? all.filter(isWeeklyChallenge) : all
   return { challenges: filtered, totalCount: filtered.length || totalCount }
+}
+
+const CLAIMED_LIST_CANDIDATES = [
+  { type: 'claimed', count: 'claimed', sort: 'completedAt' },
+  { type: 'completed', count: 'completed', sort: 'completedAt' },
+]
+
+function isChallengeClaimedRow(c) {
+  if (!c) return false
+  if (c.completedAt) return true
+  if (c.active === false) return true
+  if (Array.isArray(c.wins) && c.wins.some((w) => w?.claimedBy)) return true
+  return false
+}
+
+/**
+ * Erste Seite der Stake „All Claimed“-Liste (casino/challenges/all-claimed).
+ * Reicht zum Abgleich laufender Hunter-Runs — neueste Claims stehen oben.
+ */
+export async function fetchClaimedChallengesFirstPage(accessToken) {
+  for (const cand of CLAIMED_LIST_CANDIDATES) {
+    try {
+      const { challenges, totalCount } = await fetchChallengeList(accessToken, {
+        limit: PAGE_SIZE,
+        offset: 0,
+        sort: cand.sort,
+        type: cand.type,
+        count: cand.count,
+        throwOnError: true,
+      })
+      const rows = challenges
+        .filter((c) => c.type === 'casino' && c.game?.slug && isChallengeClaimedRow(c))
+        .map(mapChallengeRow)
+      return { challenges: rows, totalCount, filter: cand }
+    } catch (err) {
+      console.warn('[stakeChallenges] claimed list candidate failed:', cand.type, err?.message || err)
+    }
+  }
+  return { challenges: [], totalCount: 0, filter: null }
 }
 
 /**

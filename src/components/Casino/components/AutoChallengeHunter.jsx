@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback, startTransition } from 'react'
-import { fetchChallengeList, fetchCurrencyRates, extractProviderGroupSlug } from '../api/stakeChallenges'
+import { fetchChallengeList, fetchClaimedChallengesFirstPage, fetchCurrencyRates, extractProviderGroupSlug } from '../api/stakeChallenges'
 import { getProvider } from '../api/providers'
 import { isFiat, isStable, formatAmount, formatBetLabel, toUnits, toMinor, ZERO_DECIMAL_CURRENCIES } from '../utils/formatAmount'
 import { parseBetResponse } from '../utils/parseBetResponse'
@@ -40,7 +40,7 @@ import {
   isUsdLimitInputCharsOk,
 } from '../utils/usdLimitInput'
 import { saveFirstSlotWinIfNeeded } from '../utils/slotFirstWin'
-import { getHunterState, saveHunterState, clearHunterState } from '../utils/challengeCompletion'
+import { getHunterState, saveHunterState, clearHunterState, syncFromApiChallenges, markChallengeCompleted } from '../utils/challengeCompletion'
 import { getChallengeHubRecentBets, publishChallengeHubBet } from '../utils/challengeHubLiveFeed'
 import { hubFeedToLoggerExportRows } from '../utils/hubSessionExport'
 import {
@@ -65,6 +65,8 @@ function resolveHunterProviderId(slug, challengeGame) {
 }
 
 const REFRESH_INTERVAL_MS = 2 * 60 * 1000 // 2 Minuten
+/** Laufende Runs: erste Claimed-Seite prüfen (Stake all-claimed), auch ohne Scan/Autorun. */
+const CLAIMED_POLL_INTERVAL_MS = 15 * 1000
 /** DevTools: [Hunter-BetID] — nur bei Bedarf auf true (sonst volle Konsole). */
 const DEBUG_HUNTER_BETID_MATCH = false
 /** Chrome/F12-Konsole: Best-Multi + Bet-ID als `console.table` bei Änderung (zum Prüfen von Share-IDs). */
@@ -2606,7 +2608,15 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       }
       
       log('Challenge finished.')
-      const status = challenge.completedAt ? 'completed' : targetHit ? 'target_hit' : (stopReason || 'stopped')
+      if (runnersRef.current[runId]?.reason === 'claimed') {
+        stopReason = 'claimed'
+      }
+      const status =
+        challenge.completedAt || stopReason === 'claimed'
+          ? 'completed'
+          : targetHit
+            ? 'target_hit'
+            : stopReason || 'stopped'
       patchActiveRunInRef(runId, { status })
       scheduleActiveRunsUiFlush({ immediate: true })
 
@@ -2766,7 +2776,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
   /** Alle aktiven Läufe zu einer Challenge (z. B. mehrere Zielwährungen) — jeweils nach aktuellem Spin. */
   const stopRunsForChallenge = useCallback(
-    (challengeId) => {
+    (challengeId, reasonOrOpts = null) => {
+      const opts =
+        typeof reasonOrOpts === 'string'
+          ? { reason: reasonOrOpts }
+          : reasonOrOpts && typeof reasonOrOpts === 'object'
+            ? reasonOrOpts
+            : {}
       const runs = Object.values(activeRunsRef.current).filter(
         (r) => r.challengeId === challengeId && r.status === 'running'
       )
@@ -2774,9 +2790,12 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         const rid = r.runId
         if (rid && runnersRef.current[rid]) {
           runnersRef.current[rid].stop = true
+          if (opts.reason) runnersRef.current[rid].reason = opts.reason
         }
       }
-      if (runs.length === 1) {
+      if (opts.message) {
+        log(opts.message)
+      } else if (runs.length === 1) {
         log('Stop after current spin: 1 parallel run of this challenge.')
       } else if (runs.length > 1) {
         log(`Stop after current spin: ${runs.length} parallel runs of this challenge.`)
@@ -2784,6 +2803,67 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     },
     [log]
   )
+
+  const pollClaimedWhileRunning = useCallback(async () => {
+    if (!accessToken) return
+    const running = Object.values(activeRunsRef.current).filter(
+      (r) =>
+        r?.status === 'running' &&
+        r?.challengeId &&
+        !String(r.challengeId).startsWith('local:')
+    )
+    if (running.length === 0) return
+
+    const runningIds = new Set(running.map((r) => r.challengeId))
+    let claimedPage = []
+    try {
+      const result = await fetchClaimedChallengesFirstPage(accessToken)
+      claimedPage = result?.challenges || []
+    } catch (err) {
+      log(`Claimed check failed: ${err?.message || err}`)
+      return
+    }
+    if (claimedPage.length === 0) return
+
+    const claimedHits = claimedPage.filter((c) => runningIds.has(c.id))
+    if (claimedHits.length === 0) return
+
+    syncFromApiChallenges(claimedHits)
+    const hitIds = new Set(claimedHits.map((c) => c.id))
+
+    setChallenges((prev) =>
+      prev.map((c) => {
+        if (!hitIds.has(c.id)) return c
+        const hit = claimedHits.find((h) => h.id === c.id)
+        return {
+          ...c,
+          completedAt: hit?.completedAt || c.completedAt || new Date().toISOString(),
+          active: false,
+        }
+      })
+    )
+
+    setQueue((q) => q.filter((item) => !hitIds.has(normalizeQueueItem(item).challengeId)))
+
+    for (const hit of claimedHits) {
+      processedIdsRef.current.add(hit.id)
+      markChallengeCompleted(hit.id)
+      const name = hit.gameName || hit.gameSlug || hit.id
+      stopRunsForChallenge(hit.id, {
+        reason: 'claimed',
+        message: `Challenge already claimed on Stake — stopping after current spin: ${name}`,
+      })
+    }
+  }, [accessToken, log, stopRunsForChallenge])
+
+  useEffect(() => {
+    if (!accessToken) return
+    void pollClaimedWhileRunning()
+    const interval = setInterval(() => {
+      void pollClaimedWhileRunning()
+    }, CLAIMED_POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [accessToken, pollClaimedWhileRunning])
 
   const restartRunByRunId = useCallback(
     (runId) => {
