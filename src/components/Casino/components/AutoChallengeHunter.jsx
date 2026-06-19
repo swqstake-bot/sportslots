@@ -1,5 +1,10 @@
 import { useState, useEffect, useRef, useMemo, useCallback, startTransition } from 'react'
-import { fetchChallengeList, fetchClaimedChallengesFirstPage, fetchCurrencyRates, extractProviderGroupSlug } from '../api/stakeChallenges'
+import {
+  fetchClaimedChallengesFirstPage,
+  fetchChallengeListMerged,
+  fetchCurrencyRates,
+  extractProviderGroupSlug,
+} from '../api/stakeChallenges'
 import { getProvider } from '../api/providers'
 import { isFiat, isStable, formatAmount, formatBetLabel, toUnits, toMinor, ZERO_DECIMAL_CURRENCIES } from '../utils/formatAmount'
 import { parseBetResponse } from '../utils/parseBetResponse'
@@ -78,9 +83,8 @@ const HUNTER_SEEN_ROUND_DEDUP_MAX = 8000
 const PROFIT_CHART_CAPACITY = 1000
 const HUNTER_ACTIVE_RUNS_UI_FLUSH_MS = 400
 const HUNTER_ACTIVE_RUNS_UI_FLUSH_EVERY_SPINS = 6
-const PAGE_SIZE = 20 // sichere Challenge-Page-Size (Stake number_less_equal Schutz)
-/** UI-Obergrenze für parallele Läufe & Anzahl Challenge-Listen-Seiten (Slider). */
-const CHALLENGE_SLIDER_MAX = 100
+/** UI-Obergrenze parallele Hunter-Läufe. */
+const CHALLENGE_PARALLEL_SLIDER_MAX = 100
 
 const HUNTER_TARGET_CANDIDATES = [
   ...CURRENCY_GROUPS.fiat.map((c) => c.value),
@@ -548,7 +552,6 @@ const DEFAULT_HUNTER_FILTERS = {
   sourceCurrency: 'xrp',
   targetCurrency: 'usd',
   maxParallel: 1,
-  pagesToLoad: 3,
   stopLoss: 0,
   stopProfit: 0,
   /** Per Kurs+Rundung kleinste USD-Überschreitung über minBet; nach Session: kleinster passender betLevel */
@@ -571,8 +574,7 @@ function normalizeHunterFilterObject(o) {
     minPrizeUsd: Number.isFinite(Number(o.minPrizeUsd)) ? Number(o.minPrizeUsd) : DEFAULT_HUNTER_FILTERS.minPrizeUsd,
     sourceCurrency: src || DEFAULT_HUNTER_FILTERS.sourceCurrency,
     targetCurrency: tgt || DEFAULT_HUNTER_FILTERS.targetCurrency,
-    maxParallel: clampHunterInt(o.maxParallel, 1, CHALLENGE_SLIDER_MAX),
-    pagesToLoad: clampHunterInt(o.pagesToLoad, 1, CHALLENGE_SLIDER_MAX),
+    maxParallel: clampHunterInt(o.maxParallel, 1, CHALLENGE_PARALLEL_SLIDER_MAX),
     stopLoss: Number.isFinite(Number(o.stopLoss)) ? Number(o.stopLoss) : 0,
     stopProfit: Number.isFinite(Number(o.stopProfit)) ? Number(o.stopProfit) : 0,
     autoOptimalTargetCurrency:
@@ -680,7 +682,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const [huntEnabled, setHuntEnabled] = useState(false)
   const [autoStart, setAutoStart] = useState(false)
   const [maxParallel, setMaxParallel] = useState(hunterFiltersInitial.maxParallel)
-  const [pagesToLoad, setPagesToLoad] = useState(hunterFiltersInitial.pagesToLoad)
   const [stopLoss, setStopLoss] = useState(hunterFiltersInitial.stopLoss)
   const [stopProfit, setStopProfit] = useState(hunterFiltersInitial.stopProfit)
   const [stopLossStr, setStopLossStr] = useState(() => usdLimitToInputStr(hunterFiltersInitial.stopLoss))
@@ -836,8 +837,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     }
   }, [huntEnabled, queue, activeRuns])
 
-  const maxParallelClamped = Math.min(CHALLENGE_SLIDER_MAX, Math.max(1, maxParallel))
-  const pagesToLoadClamped = Math.min(CHALLENGE_SLIDER_MAX, Math.max(1, pagesToLoad))
+  const maxParallelClamped = Math.min(CHALLENGE_PARALLEL_SLIDER_MAX, Math.max(1, maxParallel))
 
   const runnersRef = useRef({})
   /** Schutz gegen doppelte Verbuchung desselben Rounds innerhalb eines Runs (z. B. Retry/Timing-Rennen). */
@@ -1187,7 +1187,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     setSourceCurrency(n.sourceCurrency)
     setTargetCurrency(n.targetCurrency)
     setMaxParallel(n.maxParallel)
-    setPagesToLoad(n.pagesToLoad)
     setStopLoss(n.stopLoss)
     setStopProfit(n.stopProfit)
     setStopLossStr(usdLimitToInputStr(n.stopLoss))
@@ -1226,7 +1225,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       sourceCurrency,
       targetCurrency,
       maxParallel: maxParallelClamped,
-      pagesToLoad: pagesToLoadClamped,
       stopLoss,
       stopProfit,
       autoOptimalTargetCurrency,
@@ -1250,7 +1248,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     sourceCurrency,
     targetCurrency,
     maxParallelClamped,
-    pagesToLoadClamped,
     stopLoss,
     stopProfit,
     autoOptimalTargetCurrency,
@@ -1281,8 +1278,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       minPrizeUsd,
       sourceCurrency,
       targetCurrency,
-      maxParallel: Math.min(CHALLENGE_SLIDER_MAX, Math.max(1, maxParallel)),
-      pagesToLoad: Math.min(CHALLENGE_SLIDER_MAX, Math.max(1, pagesToLoad)),
+      maxParallel: Math.min(CHALLENGE_PARALLEL_SLIDER_MAX, Math.max(1, maxParallel)),
       stopLoss,
       stopProfit,
       autoOptimalTargetCurrency,
@@ -1294,7 +1290,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     sourceCurrency,
     targetCurrency,
     maxParallel,
-    pagesToLoad,
     stopLoss,
     stopProfit,
     autoOptimalTargetCurrency,
@@ -1309,13 +1304,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       const newRates = await fetchCurrencyRates(accessToken)
       setRates(newRates)
 
-      const pageCount = Math.max(1, pagesToLoadClamped)
-      const requests = Array.from({ length: pageCount }, (_, i) =>
-        fetchChallengeList(accessToken, { limit: PAGE_SIZE, offset: PAGE_SIZE * i })
-      )
-      
-      const results = await Promise.all(requests)
-      const all = results.flatMap((r) => r.challenges || [])
+      const scanResult = await fetchChallengeListMerged(accessToken)
+      const all = scanResult.challenges || []
+      const apiTotal = scanResult.totalCount || 0
       
       // Duplikate entfernen (durch Pagination Überschneidung möglich)
       const unique = []
@@ -1329,7 +1320,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
       const localOnly = localChallengesRef.current || []
       const merged = [...localOnly, ...unique.filter((c) => !localOnly.some((l) => String(l.id) === String(c.id)))]
-      log(`${unique.length} Stake challenges found (${localOnly.length} local).`)
+      if (scanResult.truncated && apiTotal > unique.length) {
+        log(
+          `${unique.length} Stake challenges loaded (${apiTotal} total on Stake — Stake API offset limit, multi-sort merge).`
+        )
+      } else {
+        log(`${unique.length} Stake challenges found (${localOnly.length} local).`)
+      }
       setChallenges(merged)
       setLastRefresh(Date.now())
 
@@ -1413,7 +1410,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     } catch (err) {
       log(`Load error: ${err.message}`)
     }
-  }, [accessToken, minMinBet, maxMinBet, minPrizeUsd, pagesToLoadClamped, log, buildQueueItemForChallenge, sourceCurrency])
+  }, [accessToken, minMinBet, maxMinBet, minPrizeUsd, log, buildQueueItemForChallenge, sourceCurrency])
 
   const createLocalChallenge = useCallback(() => {
     const slotSlug = String(localChallengeSlotSlug || '').trim().toLowerCase()
@@ -3716,40 +3713,21 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                       </div>
                     </div>
                     <div className="hunter-ops-group" style={STYLES.inputGroup}>
-                      <label style={STYLES.label}>Max Parallel Slots ({CHALLENGE_SLIDER_MAX} max)</label>
+                      <label style={STYLES.label}>Max Parallel Slots ({CHALLENGE_PARALLEL_SLIDER_MAX} max)</label>
                       <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
                         <input
                           type="range"
                           min={1}
-                          max={CHALLENGE_SLIDER_MAX}
+                          max={CHALLENGE_PARALLEL_SLIDER_MAX}
                           step={1}
                           value={maxParallelClamped}
                           onChange={(e) =>
-                            setMaxParallel(Math.min(CHALLENGE_SLIDER_MAX, Math.max(1, parseInt(e.target.value, 10) || 1)))
+                            setMaxParallel(Math.min(CHALLENGE_PARALLEL_SLIDER_MAX, Math.max(1, parseInt(e.target.value, 10) || 1)))
                           }
                           style={{ flex: 1 }}
                         />
                         <span style={{ fontSize: '0.8rem', minWidth: 28, textAlign: 'right' }}>
                           {maxParallelClamped}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
-                      <label style={STYLES.label}>Pages to Load ({CHALLENGE_SLIDER_MAX} max)</label>
-                      <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                        <input
-                          type="range"
-                          min={1}
-                          max={CHALLENGE_SLIDER_MAX}
-                          step={1}
-                          value={pagesToLoadClamped}
-                          onChange={(e) =>
-                            setPagesToLoad(Math.min(CHALLENGE_SLIDER_MAX, Math.max(1, parseInt(e.target.value, 10) || 1)))
-                          }
-                          style={{ flex: 1 }}
-                        />
-                        <span style={{ fontSize: '0.8rem', minWidth: 28, textAlign: 'right' }}>
-                          {pagesToLoadClamped}
                         </span>
                       </div>
                     </div>

@@ -129,12 +129,12 @@ export async function fetchSupportedCurrencies(accessToken) {
   }
 }
 
-// Vollständige Query inkl. Fragmente – exakt wie in docs/stake-graphql-apis.md (Stake API erwartet diese Struktur)
-const CHALLENGE_LIST_QUERY = `query ChallengeList($limit: Int!, $offset: Int!, $sort: ChallengeSort!, $type: ChallengeFilterType!, $count: ChallengeCountType!, $includeAffiliateData: Boolean = true) {
+// Abgestimmt auf Stake Web (challenges.har): direction + groupIds, Sort-Enum prize/wager/multiplier/startAt
+const CHALLENGE_LIST_QUERY = `query ChallengeList($limit: Int!, $offset: Int!, $sort: ChallengeSort!, $direction: ChallengeSortDirection, $type: ChallengeFilterType!, $count: ChallengeCountType!, $groupIds: [String!], $includeAffiliateData: Boolean = true) {
   user {
     id
-    challengeCount(type: $count)
-    challengeList(limit: $limit, offset: $offset, sort: $sort, type: $type) {
+    challengeCount(type: $count, groupIds: $groupIds)
+    challengeList(limit: $limit, offset: $offset, sort: $sort, direction: $direction, type: $type, groupIds: $groupIds) {
       ...Challenge
     }
   }
@@ -163,7 +163,7 @@ fragment Challenge on Challenge {
     name
     slug
     thumbnailUrl
-    groupGames { group { id slug type } }
+    groupGames { group { id slug type name } }
   }
   creatorUser { ...UserTags }
   affiliateUser @include(if: $includeAffiliateData) { ...UserTags }
@@ -181,8 +181,35 @@ fragment UserTags on User {
   preferenceHideBets
 }`
 
-/** Stake-API akzeptiert in der Praxis teils strengere Grenzen als 24. */
-const PAGE_SIZE = 20
+/** Wie Stake Web (limit 24 pro Request). */
+export const STAKE_CHALLENGE_PAGE_SIZE = 24
+const PAGE_SIZE = STAKE_CHALLENGE_PAGE_SIZE
+/** GraphQL `numberLessEqual` — offset > 1000 schlägt fehl. */
+export const STAKE_CHALLENGE_MAX_OFFSET = 1000
+export const STAKE_CHALLENGE_MAX_PAGES =
+  Math.floor(STAKE_CHALLENGE_MAX_OFFSET / STAKE_CHALLENGE_PAGE_SIZE) + 1
+
+/** ChallengeSort laut Stake UI / challenges.har */
+const CHALLENGE_SCAN_SORTS = ['startAt', 'prize', 'wager', 'multiplier']
+
+export function isChallengeOffsetLimitError(error) {
+  const msg = String(error?.message || '')
+  return msg.includes('numberLessEqual') || msg.includes('number_less_equal')
+}
+
+export function isChallengeGraphqlValidationError(error) {
+  const msg = String(error?.message || '')
+  return (
+    msg.includes('ChallengeSort') ||
+    msg.includes('ChallengeFilterType') ||
+    msg.includes('got invalid value')
+  )
+}
+
+function clampChallengeOffset(offset) {
+  const n = Math.max(0, Number(offset) || 0)
+  return Math.min(STAKE_CHALLENGE_MAX_OFFSET, n)
+}
 
 /** Provider-Gruppen-Slug (z. B. paperclip-gaming) aus Challenge.game — für Hunter-Filter. */
 export function extractProviderGroupSlug(game) {
@@ -198,16 +225,28 @@ export function extractProviderGroupSlug(game) {
  * @returns {Promise<{ challenges: Array, totalCount: number }>}
  */
 export async function fetchChallengeList(accessToken, options = {}) {
-  const { limit = PAGE_SIZE, offset = 0, sort = 'startAt', type = 'available', count = 'available', throwOnError = false } = options
+  const {
+    limit = PAGE_SIZE,
+    offset = 0,
+    sort = 'startAt',
+    direction = 'asc',
+    type = 'available',
+    count = 'available',
+    groupIds = null,
+    throwOnError = false,
+    suppressErrorLog = false,
+  } = options
   const safeLimit = Math.max(1, Math.min(PAGE_SIZE, Number(limit) || PAGE_SIZE))
-  const safeOffset = Math.max(0, Number(offset) || 0)
+  const safeOffset = clampChallengeOffset(offset)
   const t0 = Date.now()
   const variables = {
       sort,
+      direction,
       type,
       count,
       limit: safeLimit,
       offset: safeOffset,
+      groupIds,
       includeAffiliateData: true,
   }
 
@@ -240,13 +279,19 @@ export async function fetchChallengeList(accessToken, options = {}) {
     return { challenges, totalCount }
 
   } catch (error) {
-    console.error('Fetch challenges error', error)
+    const quiet =
+      suppressErrorLog ||
+      isChallengeOffsetLimitError(error) ||
+      isChallengeGraphqlValidationError(error)
+    if (!quiet) {
+      console.error('Fetch challenges error', error)
+    }
     logApiCall({
       type: 'stake/challengeList',
       endpoint: 'graphql',
       request: variables,
       response: null,
-      error: error.message,
+      error: quiet ? null : error.message,
       durationMs: Date.now() - t0,
     })
     if (throwOnError) throw error
@@ -255,6 +300,153 @@ export async function fetchChallengeList(accessToken, options = {}) {
 }
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Seitenweise Challenge-Liste (kleine Batches, kein 50× Parallel-Spam).
+ * @returns {{ challenges: object[], totalCount: number, truncated: boolean, loadedCount: number, stoppedReason: string|null }}
+ */
+export async function fetchChallengeListPages(accessToken, options = {}) {
+  const {
+    maxPages = STAKE_CHALLENGE_MAX_PAGES,
+    sort = 'startAt',
+    direction = 'asc',
+    type = 'available',
+    count = 'available',
+    groupIds = null,
+    concurrency = 4,
+    delayMs = 120,
+  } = options
+
+  const pageCap = Math.min(Math.max(1, Number(maxPages) || 1), STAKE_CHALLENGE_MAX_PAGES)
+  const offsets = Array.from({ length: pageCap }, (_, i) => i * STAKE_CHALLENGE_PAGE_SIZE)
+
+  const all = []
+  const seen = new Set()
+  let totalCount = 0
+  let stoppedReason = null
+
+  for (let i = 0; i < offsets.length; i += concurrency) {
+    const batch = offsets.slice(i, i + concurrency)
+    const batchResults = await Promise.all(
+      batch.map(async (offset) => {
+        try {
+          return await fetchChallengeList(accessToken, {
+            limit: STAKE_CHALLENGE_PAGE_SIZE,
+            offset,
+            sort,
+            direction,
+            type,
+            count,
+            groupIds,
+            throwOnError: true,
+            suppressErrorLog: true,
+          })
+        } catch (err) {
+          if (isChallengeOffsetLimitError(err) || isChallengeGraphqlValidationError(err)) {
+            return { challenges: [], totalCount: 0, _limit: true }
+          }
+          return { challenges: [], totalCount: 0, _error: err }
+        }
+      })
+    )
+
+    let limitHit = false
+    let emptyInBatch = 0
+    for (const result of batchResults) {
+      if (result._limit) {
+        limitHit = true
+        break
+      }
+      if (result._error) continue
+      totalCount = Math.max(totalCount, result.totalCount || 0)
+      const list = result.challenges || []
+      if (list.length === 0) emptyInBatch++
+      for (const c of list) {
+        if (!c?.id || seen.has(c.id)) continue
+        seen.add(c.id)
+        all.push(c)
+      }
+    }
+
+    if (limitHit) {
+      stoppedReason = 'offset_limit'
+      break
+    }
+    if (emptyInBatch === batchResults.length) {
+      stoppedReason = 'empty'
+      break
+    }
+    if (totalCount > 0 && all.length >= totalCount) {
+      stoppedReason = 'complete'
+      break
+    }
+    if (i + concurrency < offsets.length) await delay(delayMs)
+  }
+
+  return {
+    challenges: all,
+    totalCount,
+    truncated: stoppedReason === 'offset_limit' || (totalCount > 0 && all.length < totalCount),
+    loadedCount: all.length,
+    stoppedReason,
+  }
+}
+
+/**
+ * Mehrere Sortierungen mergen — umgeht das Offset-Limit pro Sort (~1008) teilweise.
+ */
+export async function fetchChallengeListMerged(accessToken, options = {}) {
+  const {
+    maxPagesPerSort = STAKE_CHALLENGE_MAX_PAGES,
+    sorts = CHALLENGE_SCAN_SORTS,
+    direction = 'asc',
+    type = 'available',
+    count = 'available',
+    groupIds = null,
+    concurrency = 4,
+    delayMs = 120,
+  } = options
+
+  const seen = new Set()
+  const merged = []
+  let totalCount = 0
+  let sortsUsed = 0
+
+  for (const sort of sorts) {
+    let result
+    try {
+      result = await fetchChallengeListPages(accessToken, {
+        maxPages: maxPagesPerSort,
+        sort,
+        direction,
+        type,
+        count,
+        groupIds,
+        concurrency,
+        delayMs,
+      })
+    } catch {
+      continue
+    }
+    if (!result?.challenges?.length) continue
+    sortsUsed++
+    totalCount = Math.max(totalCount, result.totalCount || 0)
+    for (const c of result.challenges) {
+      if (!c?.id || seen.has(c.id)) continue
+      seen.add(c.id)
+      merged.push(c)
+    }
+    if (totalCount > 0 && merged.length >= totalCount) break
+  }
+
+  return {
+    challenges: merged,
+    totalCount,
+    truncated: totalCount > 0 && merged.length < totalCount,
+    loadedCount: merged.length,
+    sortsUsed,
+  }
+}
 
 /**
  * Lädt alle aktiven Challenges seitenweise.
@@ -292,41 +484,26 @@ function isWeeklyChallenge(row) {
 
 export async function fetchAllChallenges(accessToken, options = {}) {
   const { segment = 'all' } = options
-  const all = []
-  let offset = 0
-  let totalCount = 0
-  while (true) {
-    let result
-    try {
-      result = await fetchChallengeList(accessToken, { limit: PAGE_SIZE, offset, type: 'available', count: 'available' })
-    } catch (err) {
-      await delay(2500)
-      try {
-        result = await fetchChallengeList(accessToken, { limit: PAGE_SIZE, offset, type: 'available', count: 'available' })
-      } catch (retryErr) {
-        throw retryErr
-      }
-    }
-    const { challenges, totalCount: total } = result
-    totalCount = total
-    
-    // Filter & map consistent with original SwaqSlotbot logic
-    const mapped = challenges
-      .filter((c) => c.type === 'casino' && c.game?.slug)
-      .map(mapChallengeRow)
-      
-    all.push(...mapped)
-    if (challenges.length < PAGE_SIZE || all.length >= totalCount) break
-    offset += PAGE_SIZE
-    await delay(500)
+  const { challenges: raw, totalCount, truncated, loadedCount } = await fetchChallengeListMerged(
+    accessToken,
+    { maxPagesPerSort: STAKE_CHALLENGE_MAX_PAGES }
+  )
+  const mapped = raw
+    .filter((c) => c.type === 'casino' && c.game?.slug)
+    .map(mapChallengeRow)
+  const filtered = segment === 'weekly' ? mapped.filter(isWeeklyChallenge) : mapped
+  if (truncated && totalCount > loadedCount) {
+    console.warn(
+      `[stakeChallenges] Loaded ${loadedCount} of ${totalCount} challenges (Stake offset cap ~${STAKE_CHALLENGE_MAX_OFFSET}).`
+    )
   }
-  const filtered = segment === 'weekly' ? all.filter(isWeeklyChallenge) : all
   return { challenges: filtered, totalCount: filtered.length || totalCount }
 }
 
 const CLAIMED_LIST_CANDIDATES = [
-  { type: 'claimed', count: 'claimed', sort: 'completedAt' },
-  { type: 'completed', count: 'completed', sort: 'completedAt' },
+  { type: 'claimed', count: 'claimed', sort: 'startAt', direction: 'desc' },
+  { type: 'claimed', count: 'claimed', sort: 'prize', direction: 'desc' },
+  { type: 'completed', count: 'completed', sort: 'startAt', direction: 'desc' },
 ]
 
 function isChallengeClaimedRow(c) {
@@ -348,6 +525,7 @@ export async function fetchClaimedChallengesFirstPage(accessToken) {
         limit: PAGE_SIZE,
         offset: 0,
         sort: cand.sort,
+        direction: cand.direction || 'desc',
         type: cand.type,
         count: cand.count,
         throwOnError: true,

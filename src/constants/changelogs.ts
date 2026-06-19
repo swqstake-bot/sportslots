@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.184': [
+    '🐛 Challenge Hunter: Stake ChallengeList an Web-API angeglichen (Sort startAt/prize/wager/multiplier, direction, groupIds) — kein HTTP 400 mehr durch ungültige Sorts',
+    '✨ Challenge Hunter: immer Vollscan (alle Seiten, Multi-Sort-Merge) — Slider „Pages to Load“ entfernt, ~1460+ Challenges sichtbar',
+  ],
   '1.0.183': [
     '✨ Challenge Hunter: alle 15s Claimed-Check (Stake all-claimed, Seite 1) — stoppt laufende Runs automatisch wenn jemand anderes gewonnen hat, auch ohne Scan/Autorun',
   ],
