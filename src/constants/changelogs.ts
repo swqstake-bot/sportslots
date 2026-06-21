@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.185': [
+    '🐛 Script/Originals: Bet-Liste — korrekte Multi (Stake payoutMultiplier), Bet-IDs auch bei Wins (houseBets-Match)',
+    '🐛 Script/Originals: Session-Statistik (Wagered, Profit, Max×) auf tatsächlichem API-Einsatz statt internem USD-Ziel',
+  ],
   '1.0.184': [
     '🐛 Challenge Hunter: Stake ChallengeList an Web-API angeglichen (Sort startAt/prize/wager/multiplier, direction, groupIds) — kein HTTP 400 mehr durch ungültige Sorts',
     '✨ Challenge Hunter: immer Vollscan (alle Seiten, Multi-Sort-Merge) — Slider „Pages to Load“ entfernt, ~1460+ Challenges sichtbar',

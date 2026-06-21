@@ -43,6 +43,14 @@ function shortenBetId(id: string, max = 14): string {
   return `${id.slice(0, max)}…`
 }
 
+/** Kleine Crypto-/B2B-Einsätze nicht auf 2 Dezimalen künstlich runden. */
+function formatScriptUsd(n: number): string {
+  const v = Number(n)
+  if (!Number.isFinite(v)) return '—'
+  if (v !== 0 && Math.abs(v) < 0.1) return v.toFixed(4)
+  return v.toFixed(2)
+}
+
 /** Kumulativer Profit pro Bet-Index (1-basiert, wie stats.bets). */
 function upsertChartProfit(prev: number[], betIndex: number, profit: number): number[] {
   if (betIndex < 1) return prev
@@ -80,10 +88,10 @@ function ScriptStatsPanel({ stats, wide = false }: { stats: ScriptSessionStats; 
   const green = 'text-emerald-400'
   const items: { label: string; value: string; valueClass?: string }[] = [
     { label: 'Bets', value: String(stats.bets) },
-    { label: 'Wagered', value: `$${stats.totalWagered.toFixed(2)}` },
+    { label: 'Wagered', value: `$${formatScriptUsd(stats.totalWagered)}` },
     { label: 'W / L', value: `${stats.wins} / ${stats.losses}` },
     { label: 'Win%', value: `${stats.bets ? ((stats.wins / stats.bets) * 100).toFixed(1) : '0'}%` },
-    { label: 'Profit', value: `${stats.profit >= 0 ? '+' : ''}$${stats.profit.toFixed(2)}`, valueClass: profitCls },
+    { label: 'Profit', value: `${stats.profit >= 0 ? '+' : ''}$${formatScriptUsd(stats.profit)}`, valueClass: profitCls },
     { label: 'Max×', value: stats.maxMulti > 0 ? `${stats.maxMulti.toFixed(2)}×` : '—' },
     {
       label: 'B2B×',
@@ -92,15 +100,15 @@ function ScriptStatsPanel({ stats, wide = false }: { stats: ScriptSessionStats; 
     },
     {
       label: 'Best',
-      value: stats.maxWinUsd > 0 ? `$${stats.maxWinUsd.toFixed(2)}` : '—',
+      value: stats.maxWinUsd > 0 ? `$${formatScriptUsd(stats.maxWinUsd)}` : '—',
       valueClass: stats.maxWinUsd > 0 ? green : undefined,
     },
     {
       label: 'Round+',
-      value: stats.maxRoundProfitUsd > 0 ? `+$${stats.maxRoundProfitUsd.toFixed(2)}` : '—',
+      value: stats.maxRoundProfitUsd > 0 ? `+$${formatScriptUsd(stats.maxRoundProfitUsd)}` : '—',
       valueClass: stats.maxRoundProfitUsd > 0 ? green : undefined,
     },
-    { label: 'MaxBet', value: stats.maxBetUsd > 0 ? `$${stats.maxBetUsd.toFixed(2)}` : '—' },
+    { label: 'MaxBet', value: stats.maxBetUsd > 0 ? `$${formatScriptUsd(stats.maxBetUsd)}` : '—' },
     { label: 'Bets/s', value: stats.betsPerSec > 0 ? stats.betsPerSec.toFixed(2) : '—' },
     {
       label: 'B2B↑',
@@ -250,9 +258,11 @@ export default function OriginalsScriptView() {
               ? Number(r.roundProfitUsd)
               : payoutUsd - betSizeUsd
           const multi =
-            win && betSizeUsd > 0
-              ? payoutUsd / betSizeUsd
-              : 0
+            r.multi != null && Number.isFinite(Number(r.multi)) && Number(r.multi) > 0
+              ? Number(r.multi)
+              : win && betSizeUsd > 0
+                ? payoutUsd / betSizeUsd
+                : 0
           const b2bMulti = win ? Number(r.b2bMulti ?? 0) : 0
           pendingUiRef.current.bet = {
             betIndex: Number(r.betIndex ?? 0),
@@ -610,8 +620,8 @@ export default function OriginalsScriptView() {
                     <span className="text-[var(--text-muted)]">—</span>
                   )}
                 </div>
-                <div className="text-right font-mono text-[var(--text)]">{b.betSizeUsd.toFixed(2)}</div>
-                <div className={`text-right font-mono ${b.win ? 'text-emerald-400' : 'text-red-400'}`}>{b.payoutUsd.toFixed(2)}</div>
+                <div className="text-right font-mono text-[var(--text)]">{formatScriptUsd(b.betSizeUsd)}</div>
+                <div className={`text-right font-mono ${b.win ? 'text-emerald-400' : 'text-red-400'}`}>{formatScriptUsd(b.payoutUsd)}</div>
                 <div className="text-right font-mono text-[var(--text)]">
                   {b.win ? `${b.multi.toFixed(2)}x` : '0.00x'}
                 </div>
@@ -619,7 +629,7 @@ export default function OriginalsScriptView() {
                   {b.b2bMulti > 1.001 ? `${b.b2bMulti.toFixed(2)}x` : '—'}
                 </div>
                 <div className={`text-right font-mono ${b.roundProfitUsd >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {b.roundProfitUsd >= 0 ? '+' : ''}{b.roundProfitUsd.toFixed(2)}
+                  {b.roundProfitUsd >= 0 ? '+' : ''}{formatScriptUsd(b.roundProfitUsd)}
                 </div>
               </div>
             ))}

@@ -27,6 +27,41 @@ function pickBetIidFromResponse(res: unknown): string | undefined {
   return raw || undefined
 }
 
+type OriginalsBetApiRow = {
+  amount?: number
+  payout?: number
+  payoutMultiplier?: number
+}
+
+/** Einsatz/Payout/Multi aus Stake-Response — nicht aus internem USD-Ziel (B2B-Rundung). */
+function resolveOriginalsRoundUsd(
+  betApi: OriginalsBetApiRow | null | undefined,
+  amountPlaced: number,
+  payoutRaw: number,
+  currency: string,
+  usdRates?: Record<string, number>
+): {
+  wageredUsd: number
+  payoutUsd: number
+  multi: number
+  placedAmount: number
+  payout: number
+} {
+  const placedAmount = Number(betApi?.amount ?? amountPlaced)
+  const payout = Number(betApi?.payout ?? payoutRaw)
+  const wageredUsd = currencyAmountToUsd(placedAmount, currency, usdRates)
+  const payoutUsd = currencyAmountToUsd(payout, currency, usdRates)
+  const win = payout > 0
+  const apiMulti = Number(betApi?.payoutMultiplier)
+  const multi =
+    win && Number.isFinite(apiMulti) && apiMulti > 0
+      ? apiMulti
+      : win && wageredUsd > 0
+        ? payoutUsd / wageredUsd
+        : 0
+  return { wageredUsd, payoutUsd, multi, placedAmount, payout }
+}
+
 const GRID_SIZE = 25
 
 function sleep(ms: number) {
@@ -413,9 +448,7 @@ export async function runProfile(
     const profitUsdBeforeRound = profitUsd
     const amountToPlace = toAmount(betSizeUsd)
     let wageredUsdThisRound = betSizeUsd
-    if (currentGame !== 'blackjack') {
-      totalWageredUsd += betSizeUsd
-    }
+    let betApi: OriginalsBetApiRow | null = null
     const opts = currentOpts
     try {
       if (currentGame === 'blackjack') {
@@ -439,17 +472,20 @@ export async function runProfile(
         })
         payout = res?.payout ?? 0
         betIid = pickBetIidFromResponse(res)
+        betApi = res
       } else if (currentGame === 'limbo') {
         const mult = pickLimboTargetMultiplier(opts)
         const res = await placeLimboBet({ amount: amountToPlace, currency: cur, targetMultiplier: mult })
         payout = res?.payout ?? 0
         betIid = pickBetIidFromResponse(res)
+        betApi = res
       } else if (currentGame === 'plinko') {
         const rows = optFrom(opts, 'rows', 16)
         const risk = String(opts.plinkoRisk || opts.risk || 'low').toLowerCase()
         const res = await placePlinkoBet({ amount: amountToPlace, currency: cur, rows, risk: risk as 'low' | 'medium' | 'high' })
         payout = res?.payout ?? 0
         betIid = pickBetIidFromResponse(res)
+        betApi = res
       } else if (currentGame === 'keno') {
         const useHeatmap = optBoolFrom(opts, 'useHeatmapHotNumbers', false) && optFrom(opts, 'heatmapHotNumbers', 0) > 0
         const useRandomEachBet = optFrom(opts, 'randomNumbersFrom', 0) > 0 || optFrom(opts, 'randomNumbersTo', 0) > 0
@@ -487,11 +523,13 @@ export async function runProfile(
         })
         payout = res?.payout ?? 0
         betIid = pickBetIidFromResponse(res)
+        betApi = res
       } else if (currentGame === 'mines') {
         const mines = Math.min(24, Math.max(1, optFrom(opts, 'mines', 3)))
         const diamonds = Math.min(24, Math.max(1, optFrom(opts, 'diamonds', 2)))
         const res = await placeMinesBet({ amount: amountToPlace, currency: cur, mineCount: mines })
         betIid = pickBetIidFromResponse(res)
+        betApi = res
         if (!res?.id && !res?.iid) {
           profitUsd -= betSizeUsd
           break
@@ -508,6 +546,14 @@ export async function runProfile(
         if (gemsRevealed >= diamonds) {
           const cash = await minesCashout({ identifier })
           payout = cash?.payout ?? 0
+          if (cash) {
+            const cashRow = cash as OriginalsBetApiRow
+            betApi = {
+              amount: betApi?.amount ?? (res as OriginalsBetApiRow | null)?.amount,
+              payout: cashRow.payout,
+              payoutMultiplier: cashRow.payoutMultiplier,
+            }
+          }
         }
       } else {
         callbacks.onLog?.('Unbekanntes Spiel: ' + currentGame)
@@ -526,13 +572,28 @@ export async function runProfile(
       break
     }
 
-    const payoutUsd = currencyAmountToUsd(payout, cur, usdRates)
-    const win = payout > 0
+    let payoutUsd: number
+    let multi: number
+    let placedAmountMajor = amountToPlace
+    let win: boolean
+    if (currentGame === 'blackjack') {
+      payoutUsd = currencyAmountToUsd(payout, cur, usdRates)
+      win = payout > 0
+      multi = win && wageredUsdThisRound > 0 ? payoutUsd / wageredUsdThisRound : 0
+    } else {
+      const round = resolveOriginalsRoundUsd(betApi, amountToPlace, payout, cur, usdRates)
+      wageredUsdThisRound = round.wageredUsd
+      payout = round.payout
+      payoutUsd = round.payoutUsd
+      placedAmountMajor = round.placedAmount
+      multi = round.multi
+      win = payout > 0
+      totalWageredUsd += round.wageredUsd
+    }
     const roundProfitUsd = payoutUsd - wageredUsdThisRound
     profitUsd += roundProfitUsd
 
     const isB2bMode = isB2bOnWin(currentOpts)
-    const multi = win && wageredUsdThisRound > 0 ? payoutUsd / wageredUsdThisRound : 0
     const b2bRefBaseUsd = effectiveBaseUsd
 
     if (isB2bMode) {
@@ -736,7 +797,7 @@ export async function runProfile(
       betIndex: rollNumber,
       at: Date.now(),
       currency: cur,
-      amountMajor: amountToPlace,
+      amountMajor: placedAmountMajor,
       game: currentGame,
       payoutMultiplier: multi,
     })
@@ -745,7 +806,7 @@ export async function runProfile(
       iid: betIid,
       betId: betShareId,
       payout,
-      amount: amountToPlace,
+      amount: placedAmountMajor,
       game: currentGame,
       betIndex: rollNumber,
       betSizeUsd: wageredUsdThisRound,
