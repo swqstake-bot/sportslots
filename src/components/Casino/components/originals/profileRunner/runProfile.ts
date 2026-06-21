@@ -593,6 +593,16 @@ export async function runProfile(
     const roundProfitUsd = payoutUsd - wageredUsdThisRound
     profitUsd += roundProfitUsd
 
+    houseBetBridge.registerPending({
+      betIndex: rollNumber,
+      at: Date.now(),
+      currency: cur,
+      amountMajor: placedAmountMajor,
+      amountSentMajor: amountToPlace,
+      game: currentGame,
+      payoutMultiplier: multi,
+    })
+
     const isB2bMode = isB2bOnWin(currentOpts)
     const b2bRefBaseUsd = effectiveBaseUsd
 
@@ -793,14 +803,6 @@ export async function runProfile(
     const sessionElapsedMs = Date.now() - sessionStartMs
     const betsPerSec = sessionElapsedMs >= 200 ? rollNumber / (sessionElapsedMs / 1000) : 0
 
-    houseBetBridge.registerPending({
-      betIndex: rollNumber,
-      at: Date.now(),
-      currency: cur,
-      amountMajor: placedAmountMajor,
-      game: currentGame,
-      payoutMultiplier: multi,
-    })
     const betShareId = houseBetBridge.getShareId(rollNumber)
     callbacks.onBetPlaced?.({
       iid: betIid,

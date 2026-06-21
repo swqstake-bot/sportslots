@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.186': [
+    '🐛 Script/Originals: Bet-IDs wieder zuverlässig — frühes houseBets-Pending, Retry-Puffer, lockeres Match (Betrag Spiel/Währung)',
+    '🐛 Script/Originals: casino:uuid Share-IDs in der Bet-Liste anzeigen (nicht nur house:…)',
+  ],
   '1.0.185': [
     '🐛 Script/Originals: Bet-Liste — korrekte Multi (Stake payoutMultiplier), Bet-IDs auch bei Wins (houseBets-Match)',
     '🐛 Script/Originals: Session-Statistik (Wagered, Profit, Max×) auf tatsächlichem API-Einsatz statt internem USD-Ziel',

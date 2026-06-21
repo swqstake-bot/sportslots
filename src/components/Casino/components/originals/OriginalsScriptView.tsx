@@ -10,6 +10,7 @@ import { fetchCurrencyRates } from '../../api/stakeChallenges'
 import OriginalsScriptBuilder from './scriptBuilder/OriginalsScriptBuilder'
 import { runProfileJson, runScriptAsProfile } from './scriptEngine/runScript'
 import { formatScriptSessionDuration, type ScriptSessionStats } from './scriptEngine/scriptSessionStats'
+import { isScriptDisplayableBetShareId } from './scriptEngine/scriptHouseBetIdBridge'
 import { useCasinoBetListReset } from '../../utils/casinoBetSession'
 import {
   KENO_B2B_INFINITY_WAGER_PROFILE_JSON,
@@ -602,7 +603,7 @@ export default function OriginalsScriptView() {
               >
                 <div className="font-mono text-[var(--text)]">{b.game}</div>
                 <div className="flex items-center gap-1 min-w-0">
-                  {b.betId && /^house:\d+/i.test(b.betId) ? (
+                  {b.betId && isScriptDisplayableBetShareId(b.betId) ? (
                     <>
                       <span className="font-mono text-[10px] text-[var(--text-muted)] truncate" title={b.betId}>
                         {shortenBetId(b.betId, 18)}
