@@ -60,6 +60,13 @@ import { usePrefersReducedMotion } from '../../../hooks/usePrefersReducedMotion'
 import { TipMenu } from '../../ui/TipMenu'
 import { SvgCumulativeProfitLineChart } from '../../charts/SvgCumulativeCharts'
 import { HunterRunCard } from './HunterRunCard'
+import ChallengeDifficultyBadge from './challengeHub/ChallengeDifficultyBadge'
+import {
+  assessChallengeDifficulty,
+  difficultySortScore,
+  clearDifficultyCache,
+} from '../utils/challengeDifficulty'
+import { isCruncherRateOrOverloadError } from '../api/stakeCruncherRequestQueue'
 
 /** Challenge-Liste: alle Einträge wie von Stake; Provider aus Slug/WebSlots (`inferProviderId`), nicht blind stakeEngine. */
 
@@ -723,6 +730,12 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   })
   const [challengeSearch, setChallengeSearch] = useState('')
   const [challengeSort, setChallengeSort] = useState('prize-desc')
+  const [difficultyByChallengeId, setDifficultyByChallengeId] = useState({})
+  const [difficultyLoadingIds, setDifficultyLoadingIds] = useState(() => new Set())
+  const difficultyByChallengeIdRef = useRef({})
+  useEffect(() => {
+    difficultyByChallengeIdRef.current = difficultyByChallengeId
+  }, [difficultyByChallengeId])
   /** Pro Challenge: nächste Queue-Zielwährung — '' = Auto (Sortierung / Probes). */
   const [manualTargetCurrencyByChallengeId, setManualTargetCurrencyByChallengeId] = useState({})
   const [queue, setQueue] = useState([])
@@ -1049,6 +1062,93 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       flushLogsNow()
     }, 120)
   }, [flushLogsNow])
+
+  const difficultyLoadingRef = useRef(new Set())
+  const difficultyRetryCountRef = useRef({})
+  const requestChallengeDifficulty = useCallback((challenge, { force = false } = {}) => {
+    const cid = challenge?.id
+    if (!cid) return
+    const existing = difficultyByChallengeIdRef.current[cid]
+    if (!force && existing && existing.grade !== 'unknown' && existing.grade !== 'error') return
+    if (difficultyLoadingRef.current.has(cid)) return
+    difficultyLoadingRef.current.add(cid)
+    setDifficultyLoadingIds((prev) => {
+      const next = new Set(prev)
+      next.add(cid)
+      return next
+    })
+    assessChallengeDifficulty(challenge, { force })
+      .then((assessment) => {
+        difficultyRetryCountRef.current[cid] = 0
+        setDifficultyByChallengeId((prev) => ({ ...prev, [cid]: assessment }))
+        if (assessment?.grade && assessment.grade !== 'unknown') {
+          console.info('[StakeCruncher] difficulty', {
+            challengeId: cid,
+            slug: challenge?.gameSlug || challenge?.game?.slug,
+            target: challenge?.targetMultiplier,
+            grade: assessment.grade,
+            hitProbability: assessment.hitProbability,
+          })
+        }
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (isCruncherRateOrOverloadError(err)) {
+          const tries = (difficultyRetryCountRef.current[cid] || 0) + 1
+          difficultyRetryCountRef.current[cid] = tries
+          if (tries <= 3) {
+            console.warn('[StakeCruncher] busy — auto-retry in ~10s', {
+              challengeId: cid,
+              slug: challenge?.gameSlug || challenge?.game?.slug,
+              error: msg,
+              try: tries,
+            })
+            window.setTimeout(() => requestChallengeDifficulty(challenge, { force: true }), 10_000)
+          }
+          return
+        }
+        console.error('[StakeCruncher] difficulty request failed', {
+          challengeId: cid,
+          slug: challenge?.gameSlug || challenge?.game?.slug,
+          target: challenge?.targetMultiplier,
+          error: msg,
+        })
+        setDifficultyByChallengeId((prev) => ({
+          ...prev,
+          [cid]: {
+            grade: 'error',
+            label: 'Error',
+            hint: msg,
+            source: 'none',
+            hitProbability: null,
+            expectedSpins: null,
+            maxMulti: null,
+          },
+        }))
+      })
+      .finally(() => {
+        difficultyLoadingRef.current.delete(cid)
+        setDifficultyLoadingIds((prev) => {
+          const next = new Set(prev)
+          next.delete(cid)
+          return next
+        })
+      })
+  }, [])
+
+  useEffect(() => {
+    for (const item of queue) {
+      const n = normalizeQueueItem(item)
+      const c = challenges.find((ch) => ch.id === n.challengeId)
+      if (!c) continue
+      const prev = difficultyByChallengeIdRef.current[c.id]
+      requestChallengeDifficulty(c, { force: !prev || prev.grade === 'unknown' || prev.grade === 'error' })
+    }
+  }, [queue, challenges, requestChallengeDifficulty])
+
+  useEffect(() => {
+    clearDifficultyCache()
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -2990,6 +3090,20 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           <span style={{ color: 'var(--text-muted)' }}>Target Multi</span>
           <span style={{ fontWeight: 600 }}>{c.targetMultiplier}×</span>
         </div>
+        <div
+          style={STYLES.statRow}
+          role="presentation"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <span style={{ color: 'var(--text-muted)' }}>Difficulty</span>
+          <ChallengeDifficultyBadge
+            assessment={difficultyByChallengeId[c.id]}
+            loading={difficultyLoadingIds.has(c.id)}
+            compact
+            onAnalyze={() => requestChallengeDifficulty(c, { force: true })}
+          />
+        </div>
         <div style={STYLES.statRow}>
           <span style={{ color: 'var(--text-muted)' }}>Potential Prize</span>
           <span style={{ textAlign: 'right' }}>
@@ -3303,6 +3417,20 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           <div className="hunter-found-key">Prize</div>
           <div className="hunter-found-val">{prizeMain}</div>
         </div>
+        <div
+          className="hunter-found-col"
+          role="presentation"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="hunter-found-key">Difficulty</div>
+          <ChallengeDifficultyBadge
+            assessment={difficultyByChallengeId[c.id]}
+            loading={difficultyLoadingIds.has(c.id)}
+            compact
+            onAnalyze={() => requestChallengeDifficulty(c, { force: true })}
+          />
+        </div>
         <div className="hunter-found-col">
           <div className="hunter-found-key">Status</div>
           <div className="hunter-found-val">{statusLabel}</div>
@@ -3384,8 +3512,41 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     if (challengeSort === 'stake-desc') {
       return list.sort((a, b) => getNum(b?.minBetUsd, Number.NEGATIVE_INFINITY) - getNum(a?.minBetUsd, Number.NEGATIVE_INFINITY))
     }
+    if (challengeSort === 'target-asc') {
+      return list.sort((a, b) => getNum(a?.targetMultiplier, Number.POSITIVE_INFINITY) - getNum(b?.targetMultiplier, Number.POSITIVE_INFINITY))
+    }
+    if (challengeSort === 'target-desc') {
+      return list.sort((a, b) => getNum(b?.targetMultiplier, Number.NEGATIVE_INFINITY) - getNum(a?.targetMultiplier, Number.NEGATIVE_INFINITY))
+    }
+    if (challengeSort === 'difficulty-easy') {
+      return list.sort((a, b) => {
+        const sa = difficultySortScore(difficultyByChallengeId[a.id])
+        const sb = difficultySortScore(difficultyByChallengeId[b.id])
+        if (sa < 0 && sb < 0) return getNum(b?.award, 0) - getNum(a?.award, 0)
+        if (sa < 0) return 1
+        if (sb < 0) return -1
+        return sb - sa
+      })
+    }
+    if (challengeSort === 'difficulty-hard') {
+      return list.sort((a, b) => {
+        const sa = difficultySortScore(difficultyByChallengeId[a.id])
+        const sb = difficultySortScore(difficultyByChallengeId[b.id])
+        if (sa < 0 && sb < 0) return getNum(b?.award, 0) - getNum(a?.award, 0)
+        if (sa < 0) return 1
+        if (sb < 0) return -1
+        return sa - sb
+      })
+    }
     return list
-  }, [visibleChallenges, challengeSort])
+  }, [visibleChallenges, challengeSort, difficultyByChallengeId])
+
+  useEffect(() => {
+    if (challengeSort !== 'difficulty-easy' && challengeSort !== 'difficulty-hard') return
+    sortedFoundChallenges.slice(0, 6).forEach((c, i) => {
+      window.setTimeout(() => requestChallengeDifficulty(c), i * 1200)
+    })
+  }, [challengeSort, sortedFoundChallenges.length, requestChallengeDifficulty])
   const localChallengeSlotOptions = useMemo(() => {
     const q = String(localChallengeSlotSearch || '').trim().toLowerCase()
     return (webSlots || [])
@@ -3974,7 +4135,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         <div className="hunter-found-head">
           Found Challenges
           <span style={{ display: 'block', fontWeight: 400, fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-            List layout: Slot, Target, Min Bet, Prize, Status. Click row to queue.
+            Slot, Target, Min Bet, Prize, Difficulty (StakeCruncher), Status. Click row to queue — difficulty loads on queue or via Analyze.
           </span>
           <div style={{ marginTop: '0.55rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <input
@@ -3995,6 +4156,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               <option value="prize-asc">Prize: low to high</option>
               <option value="stake-desc">Stake: high to low</option>
               <option value="stake-asc">Stake: low to high</option>
+              <option value="target-desc">Target: high to low</option>
+              <option value="target-asc">Target: low to high</option>
+              <option value="difficulty-easy">Difficulty: easy first</option>
+              <option value="difficulty-hard">Difficulty: hard first</option>
             </select>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               {visibleChallenges.length} / {challenges.length}

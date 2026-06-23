@@ -596,11 +596,7 @@ export async function runProfile(
     houseBetBridge.registerPending({
       betIndex: rollNumber,
       at: Date.now(),
-      currency: cur,
-      amountMajor: placedAmountMajor,
-      amountSentMajor: amountToPlace,
       game: currentGame,
-      payoutMultiplier: multi,
     })
 
     const isB2bMode = isB2bOnWin(currentOpts)

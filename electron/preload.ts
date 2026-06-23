@@ -4,6 +4,7 @@ import type { StakebotxRendererBridgeInfo } from './stakebotxBridgeTypes.js';
 
 const INVOKE_ALLOWLIST = new Set([
     'api-request',
+    'cruncher-api-fetch',
     /** SSP-Parität: RGS `rotateSeed` im Main (gleiche Session/Headers wie `api-request`). */
     'rotate-stake-engine-seed',
     'check-for-updates',

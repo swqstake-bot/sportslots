@@ -1,4 +1,11 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.187': [
+    '✨ Challenge Hunter: StakeCruncher-Schwierigkeit (Lookup-Table, Badge, Sortierung, Analyze)',
+    '✨ Challenge Hunter: Found-Liste — Sortierung nach Target-Multi, RGS-Slug ohne Publisher-Präfix',
+    '✨ Telegram Hunter: Multi-Slot-Posts per StakeCruncher ranken (beste Trefferchance zuerst in Queue)',
+    '🐛 StakeCruncher: Referer + Rate-Limit-Queue, Katalog-Match (Twist z. B. 25_97), Pocket/Donut-Prefix',
+    '🐛 Script/Originals: houseBets Bet-ID-Matching vereinfacht (FIFO, nur eigene Wetten)',
+  ],
   '1.0.186': [
     '🐛 Script/Originals: Bet-IDs wieder zuverlässig — frühes houseBets-Pending, Retry-Puffer, lockeres Match (Betrag Spiel/Währung)',
     '🐛 Script/Originals: casino:uuid Share-IDs in der Bet-Liste anzeigen (nicht nur house:…)',

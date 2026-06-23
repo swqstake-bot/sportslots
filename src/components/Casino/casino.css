@@ -1637,7 +1637,7 @@ html[data-theme='light'] .casino-root {
 
 .casino-root .hunter-found-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.6fr) 0.7fr 0.7fr 1fr 0.9fr minmax(150px, 1.1fr);
+  grid-template-columns: minmax(160px, 1.45fr) 0.62fr 0.62fr 0.85fr 0.72fr 0.88fr minmax(140px, 1.05fr);
   align-items: center;
   gap: 0.55rem;
   padding: 0.48rem 0.55rem;
@@ -1758,6 +1758,77 @@ html[data-theme='light'] .casino-root {
 .casino-root .hunter-challenge-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42), 0 0 24px rgba(var(--accent-rgb), 0.09);
+}
+
+.casino-root .challenge-diff {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.12rem 0.38rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.casino-root .challenge-diff--analyze {
+  cursor: pointer;
+  background: transparent;
+  color: var(--accent);
+  border-style: dashed;
+  font-weight: 600;
+}
+
+.casino-root .challenge-diff--loading {
+  color: var(--text-muted);
+  border-style: dotted;
+}
+
+.casino-root .challenge-diff--easy {
+  color: #34d399;
+  border-color: color-mix(in srgb, #34d399 45%, var(--border-subtle));
+  background: color-mix(in srgb, #34d399 12%, transparent);
+}
+
+.casino-root .challenge-diff--medium {
+  color: #60a5fa;
+  border-color: color-mix(in srgb, #60a5fa 45%, var(--border-subtle));
+  background: color-mix(in srgb, #60a5fa 12%, transparent);
+}
+
+.casino-root .challenge-diff--hard {
+  color: #fbbf24;
+  border-color: color-mix(in srgb, #fbbf24 45%, var(--border-subtle));
+  background: color-mix(in srgb, #fbbf24 12%, transparent);
+}
+
+.casino-root .challenge-diff--extreme {
+  color: #f87171;
+  border-color: color-mix(in srgb, #f87171 45%, var(--border-subtle));
+  background: color-mix(in srgb, #f87171 12%, transparent);
+}
+
+.casino-root .challenge-diff--impossible {
+  color: #a78bfa;
+  border-color: color-mix(in srgb, #a78bfa 45%, var(--border-subtle));
+  background: color-mix(in srgb, #a78bfa 12%, transparent);
+}
+
+.casino-root .challenge-diff--unknown {
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.casino-root .challenge-diff--error {
+  color: #fb7185;
+  border-color: color-mix(in srgb, #fb7185 45%, var(--border-subtle));
+  background: color-mix(in srgb, #fb7185 12%, transparent);
+  cursor: help;
 }
 
 @media (prefers-reduced-motion: reduce) {

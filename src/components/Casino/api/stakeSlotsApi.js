@@ -82,6 +82,8 @@ const PROVIDER_MAP = {
   'backseat-gaming': 'stakeEngine',
   'titan-gaming': 'stakeEngine',
   'donut-gaming': 'stakeEngine',
+  'pocket-gaming': 'stakeEngine',
+  pocketgaming: 'stakeEngine',
   'massive-studios': 'stakeEngine',
   'knucklehead-gaming': 'stakeEngine',
   'blackcoffeestudios': 'stakeEngine',
@@ -118,8 +120,13 @@ export function getStakeEngineGameSlugPrefixes() {
     if (value !== 'stakeEngine') continue
     const k = String(key).toLowerCase()
     prefixes.add(`${k}-`)
+    const compact = k.replace(/-/g, '')
+    if (compact && compact !== k) prefixes.add(`${compact}-`)
     if (k === 'd-bush-gaming') {
       prefixes.add('dbushgaming-')
+    }
+    if (k === 'pocket-gaming' || k === 'pocketgaming') {
+      prefixes.add('pocket-')
     }
   }
   cachedStakeEngineGameSlugPrefixes = Array.from(prefixes).sort((a, b) => b.length - a.length)

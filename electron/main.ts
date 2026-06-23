@@ -1181,6 +1181,49 @@ async function stakeGraphqlInvoke(
 
 ipcMain.handle('api-request', async (_event, payload) => stakeGraphqlInvoke(payload));
 
+/** StakeCruncher tracker API (GET only, public stats / lookup tables). */
+function stakeCruncherRefererForPath(path: string): string | undefined {
+  const lookupSlug = path.match(/[?&]slug=([^&]+)/)?.[1];
+  if (path.includes('/verifier/lookup-table') && lookupSlug) {
+    return `https://stakecruncher.com/slots-tracker/stats/${decodeURIComponent(lookupSlug)}`;
+  }
+  const catalogSlug = path.match(/\/verifier\/catalog\/([^/?]+)/)?.[1];
+  if (catalogSlug) {
+    return `https://stakecruncher.com/slots-tracker/stats/${decodeURIComponent(catalogSlug)}`;
+  }
+  const statsTail = path.split('/engine/stats/games/')[1]?.split('?')[0] ?? '';
+  const statsSlug = statsTail.split('/')[0]?.trim();
+  if (statsSlug && !statsSlug.includes('?')) {
+    return `https://stakecruncher.com/slots-tracker/stats/${decodeURIComponent(statsSlug)}`;
+  }
+  return 'https://stakecruncher.com/slots-tracker';
+}
+
+ipcMain.handle('cruncher-api-fetch', async (_event, payload) => {
+  const path = String(payload?.path || '').trim();
+  if (!path.startsWith('/tracker-api/')) {
+    throw new Error('Invalid StakeCruncher path');
+  }
+  const url = `https://stakecruncher.com${path}`;
+  const headers: Record<string, string> = {
+    Accept: '*/*',
+    'User-Agent': `StakeSportsElectron/${app.getVersion()}`,
+  };
+  const referer = stakeCruncherRefererForPath(path);
+  if (referer) headers.Referer = referer;
+
+  const res = await fetch(url, { method: 'GET', headers });
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (!res.ok) {
+    console.error('[StakeCruncher][main] HTTP', res.status, path, { referer: headers.Referer });
+  }
+  return {
+    ok: res.ok,
+    status: res.status,
+    bodyBase64: buf.toString('base64'),
+  };
+});
+
 /** SSP-kompatibler Name: RGS/Casino-Slot `rotateSeed` (nicht `rotateSeedPair` / Originals). */
 const RGS_ROTATE_GAME_INFORMATION_QUERY = `query GameInformation($gameId: String!) {
   gameInformation(gameId: $gameId) {

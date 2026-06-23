@@ -17,6 +17,10 @@ import {
   isUsdLimitInputCharsOk,
 } from '../utils/usdLimitInput'
 import { parsePacksChallengeHints } from '../utils/packsOriginalsChallenge'
+import {
+  rankChallengesByCruncherEase,
+  formatHitProbability,
+} from '../utils/challengeDifficulty'
 
 const CHALLENGE_SLIDER_MAX = 24
 const DRAFT_KEY = 'slotbot_telegram_challenge_draft_v1'
@@ -125,6 +129,23 @@ function buildTelegramChallenge(parsed, game, messageKey) {
   }
 }
 
+function enrichTelegramChallengeForCruncher(challenge, webSlots) {
+  const slug = String(challenge?.gameSlug || '').toLowerCase()
+  const slot = (webSlots || []).find((s) => String(s.slug || '').toLowerCase() === slug)
+  if (!slot) return challenge
+  return {
+    ...challenge,
+    gameName: challenge.gameName || slot.name,
+    game: { ...challenge.game, name: challenge.gameName || slot.name, slug: slot.slug },
+  }
+}
+
+function formatCruncherRankLogLine(entry) {
+  const name = entry.challenge?.gameName || entry.challenge?.gameSlug || '?'
+  if (!entry.assessment || entry.score < 0) return `${name}: —`
+  return `${name}: ${formatHitProbability(entry.assessment.hitProbability)} (${entry.assessment.label})`
+}
+
 const STYLES = {
   statRow: {
     display: 'flex',
@@ -136,6 +157,7 @@ const STYLES = {
 }
 
 export default function TelegramChallengeHunter({ accessToken, webSlots = [], onDiscoveredSlots, onHubStatsChange }) {
+  const [cruncherRanking, setCruncherRanking] = useState(false)
   const [draft, setDraft] = useState(() => {
     try {
       return localStorage.getItem(DRAFT_KEY) || ''
@@ -335,7 +357,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
   }, [])
 
   const enqueueFromParsed = useCallback(
-    (p, messageKey) => {
+    async (p, messageKey) => {
       if (!p.games.length) return
       const newChallenges = []
       for (const g of p.games) {
@@ -345,10 +367,39 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
         newChallenges.push(buildTelegramChallenge(p, g, messageKey))
       }
       if (newChallenges.length === 0) return
+
+      const slotCandidates = newChallenges.filter(
+        (c) => !c.isOriginalsChallenge && Number(c.targetMultiplier) > 1
+      )
+      let orderedChallenges = newChallenges
+
+      if (slotCandidates.length > 1) {
+        setCruncherRanking(true)
+        try {
+          log(`StakeCruncher: ${slotCandidates.length} Slots bewerten (Ziel ${slotCandidates[0]?.targetMultiplier}×)…`)
+          const enriched = slotCandidates.map((c) =>
+            enrichTelegramChallengeForCruncher(c, webSlotsRef.current)
+          )
+          const ranked = await rankChallengesByCruncherEase(enriched)
+          const rankedIds = new Set(ranked.map((r) => r.challenge.id))
+          const rankedChallenges = ranked.map((r) => r.challenge)
+          const rest = newChallenges.filter((c) => !rankedIds.has(c.id))
+          orderedChallenges = [...rankedChallenges, ...rest]
+          const top = ranked.filter((r) => r.score >= 0).slice(0, 6)
+          if (top.length) {
+            log(`Cruncher-Ranking (beste zuerst): ${top.map(formatCruncherRankLogLine).join(' · ')}`)
+          }
+        } catch (err) {
+          log(`StakeCruncher-Ranking fehlgeschlagen — FIFO: ${err instanceof Error ? err.message : err}`)
+        } finally {
+          setCruncherRanking(false)
+        }
+      }
+
       setChallenges((prev) => {
         const seen = new Set(prev.map((c) => c.id))
         const merged = [...prev]
-        for (const c of newChallenges) {
+        for (const c of orderedChallenges) {
           if (!seen.has(c.id)) {
             seen.add(c.id)
             merged.push(c)
@@ -358,10 +409,10 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
       })
       setQueue((q) => {
         const seen = new Set(q)
-        const additions = newChallenges.map((c) => c.id).filter((id) => !seen.has(id))
+        const additions = orderedChallenges.map((c) => c.id).filter((id) => !seen.has(id))
         return additions.length ? [...q, ...additions] : q
       })
-      log(`${newChallenges.length} Eintrag(e) aus Telegram in die Warteschlange.`)
+      log(`${orderedChallenges.length} Eintrag(e) aus Telegram in die Warteschlange.`)
 
       const known = new Set(webSlotsRef.current.map((s) => s.slug))
       const added = []
@@ -533,6 +584,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
         <p className="hunter-meta" style={{ maxWidth: '56rem', lineHeight: 1.45 }}>
           Runs <strong>standalone</strong> like the auto-hunter: queue, parallel runs, target multiplier —{' '}
           <strong>without</strong> switching to the Play tab. Telegram supplies new challenges (live or paste text into the queue).
+          {' '}Multi-slot posts are ranked via <strong>StakeCruncher</strong> (highest hit chance first) before queueing.
         </p>
       </div>
 
@@ -886,6 +938,11 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
             <div className="hunter-kpi-card" style={{ padding: '0.65rem 1rem' }}>
               <div className="hunter-kpi-label">Queue</div>
               <div className="hunter-kpi-value">{queue.length}</div>
+              {cruncherRanking ? (
+                <div style={{ fontSize: '0.65rem', color: 'var(--accent)', marginTop: '0.15rem' }}>
+                  Cruncher ranking…
+                </div>
+              ) : null}
             </div>
             <div className="hunter-kpi-card" style={{ padding: '0.65rem 1rem' }}>
               <div className="hunter-kpi-label">Running</div>
