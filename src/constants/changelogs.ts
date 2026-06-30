@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.193': [
+    '✨ Originals: Session-Log als einklappbares Panel rechts (Header-Toggle + Rand-Tab)',
+    '✨ Originals: mehr Platz im Start-Bereich — Log nicht mehr unter Start/Chart',
+  ],
   '1.0.192': [
     '✨ Originals: Profile pro Spiel getrennt (Strategy Manager, Load-on-Start, Last-Used je Game)',
     '✨ Originals: Challenge-Hub-Layout — Canvas, Pill-Tabs, keine Sidebar-interne Scrollbox',

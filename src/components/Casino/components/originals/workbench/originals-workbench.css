@@ -688,12 +688,17 @@
 }
 
 .originals-workbench-canvas {
+  position: relative;
   border: 1px solid var(--surface-border, var(--border-subtle));
   border-radius: var(--radius-lg);
   background: var(--surface-1, var(--panel-bg)), var(--panel-bg, var(--bg-deep));
   box-shadow: var(--shadow-soft, 0 4px 16px rgba(0, 0, 0, 0.24)), var(--surface-highlight, inset 0 1px 0 rgba(255, 255, 255, 0.04));
   overflow: visible;
   min-width: 0;
+}
+
+.originals-workbench.has-log-open .originals-workbench-main {
+  padding-right: min(19rem, 44vw);
 }
 
 .originals-mode-header-left {
@@ -1430,12 +1435,156 @@
 
 .originals-log-scroll {
   overflow-y: auto;
-  max-height: 14rem;
+  max-height: none;
   padding: 0.5rem;
   font-size: 0.6875rem;
   font-family: ui-monospace, monospace;
   color: var(--text-muted);
   line-height: 1.45;
+}
+
+.originals-log-dock {
+  position: absolute;
+  top: 0.5rem;
+  right: 0;
+  bottom: 0.5rem;
+  z-index: 35;
+  width: min(18rem, 42vw);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md, 0.75rem) 0 0 var(--radius-md, 0.75rem);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-right: none;
+  background: color-mix(in srgb, var(--bg-deep) 94%, transparent);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.originals-log-dock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  background: color-mix(in srgb, var(--bg-deep) 70%, transparent);
+  flex-shrink: 0;
+}
+
+.originals-log-dock-header h3 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.originals-log-dock-collapse {
+  padding: 0.15rem 0.45rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: var(--radius-sm, 0.5rem);
+  background: transparent;
+}
+
+.originals-log-dock-collapse:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-subtle, var(--border)));
+}
+
+.originals-log-dock-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.originals-log-dock-tab {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  z-index: 34;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.65rem 0.4rem;
+  border: 1px solid var(--border-subtle, var(--border));
+  border-right: none;
+  border-radius: var(--radius-md, 0.75rem) 0 0 var(--radius-md, 0.75rem);
+  background: color-mix(in srgb, var(--bg-deep) 92%, transparent);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.22);
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.originals-log-dock-tab:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle, var(--border)));
+}
+
+.originals-log-dock-tab-label {
+  transform: rotate(180deg);
+}
+
+.originals-log-dock-tab-badge {
+  writing-mode: horizontal-tb;
+  transform: rotate(0);
+  min-width: 1.1rem;
+  padding: 0.05rem 0.25rem;
+  border-radius: 999px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--bg-deep);
+  background: var(--accent);
+}
+
+.originals-log-dock-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+@media (max-width: 900px) {
+  .originals-workbench.has-log-open .originals-workbench-main {
+    padding-right: var(--space-4, 1rem);
+  }
+
+  .originals-log-dock {
+    width: min(16rem, 72vw);
+    top: auto;
+    bottom: 0;
+    max-height: min(42vh, 18rem);
+    border-radius: var(--radius-md, 0.75rem) var(--radius-md, 0.75rem) 0 0;
+    border-right: 1px solid var(--border-subtle, var(--border));
+    border-bottom: none;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.28);
+  }
+
+  .originals-log-dock-tab {
+    top: auto;
+    bottom: 0.5rem;
+    transform: none;
+    writing-mode: horizontal-tb;
+    flex-direction: row;
+    border-radius: var(--radius-md, 0.75rem);
+    border-right: 1px solid var(--border-subtle, var(--border));
+    padding: 0.4rem 0.65rem;
+  }
+
+  .originals-log-dock-tab-label {
+    transform: none;
+  }
 }
 
 .originals-log-line {

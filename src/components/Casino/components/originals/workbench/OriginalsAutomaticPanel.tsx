@@ -19,7 +19,7 @@ export default function OriginalsAutomaticPanel({
   session,
   turboMode,
 }: OriginalsAutomaticPanelProps) {
-  const { running, paused, startCooldownSecs, start, stop, pause, resume, armStopOnNextWin, resetStats, logLines, stats, chartData, chartSessionKey } = session
+  const { running, paused, startCooldownSecs, start, stop, pause, resume, armStopOnNextWin, resetStats, stats, chartData, chartSessionKey } = session
 
   return (
     <div className="originals-automatic-panel space-y-4">
@@ -110,23 +110,6 @@ export default function OriginalsAutomaticPanel({
           <OriginalsProfitChart chartData={chartData} domainResetKey={chartSessionKey} height={200} />
         </div>
       )}
-
-      <div className="originals-automatic-panels">
-        <div className="originals-panel originals-bet-log">
-          <div className="originals-panel-header">Log</div>
-          <div className="originals-panel-body originals-log-scroll">
-            {logLines.length === 0 ? (
-              <span className="originals-empty-hint">Ready — press Start.</span>
-            ) : (
-              logLines.map((line, i) => (
-                <div key={i} className="originals-log-line">
-                  {line}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

@@ -25,6 +25,7 @@ import OriginalsModeHeader from './OriginalsModeHeader'
 import OriginalsSettingsModal from './OriginalsSettingsModal'
 
 import OriginalsStatsDrawer from './OriginalsStatsDrawer'
+import OriginalsLogDock from './OriginalsLogDock'
 import OriginalsSidebar from './OriginalsSidebar'
 import OriginalsBetBrowser from './OriginalsBetBrowser'
 import OriginalsLastResultVisual, { betRowToVisual, type OriginalsLastBetVisual } from './OriginalsLastResultVisual'
@@ -38,6 +39,8 @@ import {
   saveStatsDrawerOpen,
   loadSidebarCollapsed,
   saveSidebarCollapsed,
+  loadLogDockOpen,
+  saveLogDockOpen,
   saveWorkbenchSettings,
   getBetListColumns,
   type WorkbenchSettings,
@@ -89,6 +92,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
   })
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed)
+  const [logOpen, setLogOpen] = useState(loadLogDockOpen)
   const [wbSettings, setWbSettings] = useState<WorkbenchSettings>(() => loadWorkbenchSettingsForGame(gameSlug))
   const [autoOptions, setAutoOptions] = useState<OriginalsWorkbenchOptions>(() => {
     const settings = loadWorkbenchSettings()
@@ -174,6 +178,14 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
     })
   }, [])
 
+  const toggleLog = useCallback(() => {
+    setLogOpen((prev) => {
+      const next = !prev
+      saveLogDockOpen(next)
+      return next
+    })
+  }, [])
+
   const toggleTurbo = useCallback(() => {
     if (session.running || !isTurboCompatibleGame(gameSlug)) return
     setWbSettings((prev) => {
@@ -213,12 +225,13 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
     mode === 'automatic' ? automaticLastResult : mode === 'manual' && game.supportsManual && game.uiReady ? manualLastResult : null
 
   const showBetHistory = (showAutomatic || showConditions) && wbSettings.showBetList
+  const showSessionLog = showAutomatic || showConditions
   const statsVisible = statsOpen && wbSettings.showStatsPanel
   const turboOk = isTurboCompatibleGame(gameSlug)
 
   return (
     <div
-      className={`originals-workbench${statsVisible ? ' has-stats-open' : ''}${wbSettings.statsFloating ? ' has-stats-float' : ''}${sidebarCollapsed && showSidebar ? ' is-sidebar-collapsed' : ''}`}
+      className={`originals-workbench${statsVisible ? ' has-stats-open' : ''}${wbSettings.statsFloating ? ' has-stats-float' : ''}${sidebarCollapsed && showSidebar ? ' is-sidebar-collapsed' : ''}${logOpen && showSessionLog ? ' has-log-open' : ''}`}
       style={{ ['--originals-sidebar-w' as string]: `${wbSettings.sidebarWidth}px` }}
     >
       <OriginalsModeHeader
@@ -240,6 +253,8 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
         showSidebarToggle={showSidebar}
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={toggleSidebar}
+        logOpen={showSessionLog ? logOpen : false}
+        onToggleLog={showSessionLog ? toggleLog : undefined}
       />
 
       <div className="originals-workbench-canvas">
@@ -359,6 +374,15 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
           stats={session.stats}
           floating={wbSettings.statsFloating}
         />
+
+        {showSessionLog && (
+          <OriginalsLogDock
+            open={logOpen}
+            onToggle={toggleLog}
+            logLines={session.logLines}
+            running={session.running}
+          />
+        )}
         </div>
       </div>
 

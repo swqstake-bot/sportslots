@@ -37,6 +37,8 @@ interface OriginalsModeHeaderProps {
   showSidebarToggle?: boolean
   sidebarCollapsed?: boolean
   onToggleSidebar?: () => void
+  logOpen?: boolean
+  onToggleLog?: () => void
 }
 
 export default function OriginalsModeHeader({
@@ -58,6 +60,8 @@ export default function OriginalsModeHeader({
   showSidebarToggle,
   sidebarCollapsed,
   onToggleSidebar,
+  logOpen,
+  onToggleLog,
 }: OriginalsModeHeaderProps) {
   const modes = modesForGame(game)
   const showTurbo = onToggleTurbo && (mode === 'automatic' || mode === 'conditions')
@@ -138,6 +142,16 @@ export default function OriginalsModeHeader({
         {onOpenSettings && (
           <button type="button" className="originals-stats-toggle" onClick={onOpenSettings} title="Settings">
             ⚙
+          </button>
+        )}
+        {onToggleLog && (
+          <button
+            type="button"
+            className={`originals-stats-toggle${logOpen ? ' is-open' : ''}`}
+            onClick={onToggleLog}
+            title="Session log"
+          >
+            Log
           </button>
         )}
         <button

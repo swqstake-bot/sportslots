@@ -9,6 +9,7 @@ import {
 const KEY_GAME = 'originalsWorkbenchGame'
 const KEY_MODE = 'originalsWorkbenchMode'
 const KEY_STATS_OPEN = 'originalsWorkbenchStatsOpen'
+const KEY_LOG_OPEN = 'originalsWorkbenchLogOpen'
 const KEY_SIDEBAR_COLLAPSED = 'originalsWorkbenchSidebarCollapsed'
 const KEY_SETTINGS = 'originalsWorkbenchSettings'
 
@@ -241,6 +242,22 @@ export function loadSidebarCollapsed(): boolean {
 export function saveSidebarCollapsed(collapsed: boolean): void {
   try {
     localStorage.setItem(KEY_SIDEBAR_COLLAPSED, collapsed ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadLogDockOpen(): boolean {
+  try {
+    return localStorage.getItem(KEY_LOG_OPEN) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function saveLogDockOpen(open: boolean): void {
+  try {
+    localStorage.setItem(KEY_LOG_OPEN, open ? '1' : '0')
   } catch {
     /* ignore */
   }
