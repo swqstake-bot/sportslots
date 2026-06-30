@@ -20,13 +20,29 @@ export function WindowTitleBar() {
 
   useEffect(() => {
     if (!hasFramelessChrome()) return
-    void refreshMaximized()
+    let cancelled = false
+
+    const syncMaximized = async () => {
+      const api = window.electronAPI
+      if (!api?.windowIsMaximized) return
+      try {
+        const isMax = await api.windowIsMaximized()
+        if (!cancelled) setMaximized(isMax)
+      } catch {
+        /* ignore */
+      }
+    }
+
+    void syncMaximized()
     const onResize = () => {
-      void refreshMaximized()
+      void syncMaximized()
     }
     window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [refreshMaximized])
+    return () => {
+      cancelled = true
+      window.removeEventListener('resize', onResize)
+    }
+  }, [])
 
   if (!hasFramelessChrome()) return null
 

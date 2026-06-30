@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.199': [
+    '🐛 CI/Release: WindowTitleBar-Lint (setState in effect) behoben',
+    '🐛 Originals: Settings-Modal wieder viewport-zentriert (casino-root nicht mehr auf Fixed-Overlay)',
+  ],
   '1.0.198': [
     '🐛 Branding: Logo/Favicon im Installer wieder sichtbar (relative Pfade für file:// / Electron)',
   ],

@@ -365,10 +365,10 @@ export default function OriginalsSettingsModal({
   if (!open) return null
 
   return createPortal(
-    <div className="casino-root originals-settings-overlay" role="presentation">
+    <div className="originals-settings-overlay" role="presentation">
       <button type="button" className="originals-settings-backdrop" aria-label="Close settings" onClick={onClose} />
       <aside
-        className="originals-settings-modal casino-card"
+        className="casino-root originals-settings-modal casino-card"
         role="dialog"
         aria-modal="true"
         aria-labelledby="originals-settings-title"
