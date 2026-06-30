@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.197': [
+    '🐛 Slots: Vollscan wieder 3000+ Spiele — Provider-Kuratoren einzeln wie SSP (kein globales Offset-Limit)',
+    '🐛 Slots: number_less_equal abgefangen — Scan bricht sauber ab statt Fehler in der UI',
+  ],
   '1.0.196': [
     '✨ UI: integrierte dunkle Titelleiste (Logo + swqbot + Fenster-Buttons) statt weißer File/Edit-Leiste',
     '🐛 Login: Cloudflare-Prüfung wieder möglich — Chrome User-Agent wie Antebot/SSP, Session-Capture nach CF-Cookie',

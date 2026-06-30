@@ -2,9 +2,11 @@ import { StakeApi } from '../../../api/client'
 import { logApiCall } from '../utils/apiLogger'
 import { CASINO_STORAGE_KEYS } from '../utils/storageRegistry'
 
-const PAGE_SIZE = 31
+const PAGE_SIZE = 39
 const SLOTS_CACHE_KEY = CASINO_STORAGE_KEYS.stakeSlotsCache
 const NEWEST_PAGES_MAX = 10
+const KURATOR_PAGE_DELAY_MS = 200
+const KURATOR_SWITCH_DELAY_MS = 150
 /**
  * Zusätzliche slugKuratorGroup-Slugs für Quick-Load: sort „newest“ nur innerhalb der Gruppe.
  * Global `slug: 'slots'` + newest deckt nicht alle Provider-Neuerscheinungen ab (z. B. Hacksaw).
@@ -133,6 +135,11 @@ export function getStakeEngineGameSlugPrefixes() {
   return cachedStakeEngineGameSlugPrefixes
 }
 
+/** Stake-Kurator-Slugs pro Provider (wie SSP reloadSlots). */
+function getProviderKuratorSlugs() {
+  return [...new Set(Object.keys(PROVIDER_MAP))].sort()
+}
+
 const SLUG_KURATOR_QUERY = `query SlugKuratorGroup($slug: String!, $limit: Int!, $offset: Int!, $sort: GameKuratorGroupGameSortEnum = popular7d, $filterIds: [String!], $locale: Locale = "en") {
   slugKuratorGroup(slug: $slug) {
     id name slug
@@ -177,10 +184,32 @@ function mapGameToSlot(game) {
   }
 }
 
+function clampSlotsOffset(offset) {
+  return Math.max(0, Number(offset) || 0)
+}
+
+function clampSlotsLimit(limit) {
+  const n = Number(limit) || PAGE_SIZE
+  return Math.max(1, Math.min(PAGE_SIZE, n))
+}
+
 function isRetryableSlotError(error) {
-  const msg = String(error?.message || '')
-  const errType = error?.errorType || ''
-  return msg.includes('number_less_equal') || errType === 'numberLessEqual'
+  const msg = String(error?.message || '').toLowerCase()
+  const errType = String(error?.errorType || '')
+  return (
+    msg.includes('number_less_equal') ||
+    msg.includes('numberlessequal') ||
+    errType === 'numberLessEqual' ||
+    (msg.includes('less') && msg.includes('equal'))
+  )
+}
+
+function normalizePageVariables(variables) {
+  return {
+    ...variables,
+    limit: clampSlotsLimit(variables?.limit),
+    offset: clampSlotsOffset(variables?.offset),
+  }
 }
 
 function loadCachedSlots() {
@@ -202,13 +231,14 @@ function saveCachedSlots(slots) {
 }
 
 async function fetchPage(variables, maxRetries = 3) {
+  const safeVariables = normalizePageVariables(variables)
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      return await StakeApi.query(SLUG_KURATOR_QUERY, variables)
+      return await StakeApi.query(SLUG_KURATOR_QUERY, safeVariables)
     } catch (error) {
       if (isRetryableSlotError(error) && attempt < maxRetries - 1) {
         const delayMs = 5000
-        console.warn(`[Slots] number_less_equal bei offset ${variables.offset}, Retry ${attempt + 1}/${maxRetries} in 5s`)
+        console.warn(`[Slots] number_less_equal bei offset ${safeVariables.offset}, Retry ${attempt + 1}/${maxRetries} in 5s`)
         await new Promise((r) => setTimeout(r, delayMs))
         continue
       }
@@ -243,13 +273,82 @@ async function fetchNewestPagesForCuratorSlug(curatorSlug, maxPages) {
   for (let page = 0; page < maxPages; page++) {
     const offset = page * PAGE_SIZE
     const variables = { slug: curatorSlug, limit: PAGE_SIZE, offset, sort: 'newest' }
-    const response = await StakeApi.query(SLUG_KURATOR_QUERY, variables)
-    const slots = parseGamesFromResponse(response)
-    if (slots.length === 0) break
-    out.push(...slots)
-    if (slots.length < PAGE_SIZE) break
+    try {
+      const response = await fetchPage(variables, 2)
+      const slots = parseGamesFromResponse(response)
+      if (slots.length === 0) break
+      out.push(...slots)
+      if (slots.length < PAGE_SIZE) break
+    } catch (error) {
+      if (isRetryableSlotError(error)) break
+      throw error
+    }
   }
   return out
+}
+
+/** Ein Provider-Kurator komplett paginieren (limit 39, Offset pro Gruppe — nicht global). */
+async function fetchSlotsForKuratorSlug(curatorSlug, sort = 'popular7d') {
+  const collected = []
+  let offset = 0
+  while (true) {
+    try {
+      const response = await fetchPage({ slug: curatorSlug, limit: PAGE_SIZE, offset, sort }, 2)
+      const batch = parseGamesFromResponse(response)
+      if (!batch.length) break
+      collected.push(...batch)
+      if (batch.length < PAGE_SIZE) break
+      offset += PAGE_SIZE
+      await new Promise((r) => setTimeout(r, KURATOR_PAGE_DELAY_MS))
+    } catch (error) {
+      if (isRetryableSlotError(error)) break
+      throw error
+    }
+  }
+  return collected
+}
+
+/** Vollständiger Katalog: alle Provider-Kuratoren + global „slots“ (SSP reloadSlots-Pattern). */
+async function fetchFullSlotCatalogByProviders() {
+  const bySlug = new Map()
+  const kuratorSlugs = getProviderKuratorSlugs()
+  console.log(`[Slots] Vollscan über ${kuratorSlugs.length} Provider-Kuratoren…`)
+
+  for (let i = 0; i < kuratorSlugs.length; i++) {
+    const curatorSlug = kuratorSlugs[i]
+    try {
+      const batch = await fetchSlotsForKuratorSlug(curatorSlug, 'popular7d')
+      let added = 0
+      for (const slot of batch) {
+        if (!bySlug.has(slot.slug)) added++
+        bySlug.set(slot.slug, slot)
+      }
+      if (batch.length > 0) {
+        console.log(
+          `[Slots] ${i + 1}/${kuratorSlugs.length} „${curatorSlug}“: +${batch.length} (${added} neu) · gesamt ${bySlug.size}`
+        )
+      }
+    } catch (error) {
+      console.warn(`[Slots] Kurator „${curatorSlug}“:`, error?.message || error)
+    }
+    if (i + 1 < kuratorSlugs.length) {
+      await new Promise((r) => setTimeout(r, KURATOR_SWITCH_DELAY_MS))
+    }
+  }
+
+  try {
+    const globalBatch = await fetchSlotsForKuratorSlug('slots', 'popular7d')
+    for (const slot of globalBatch) bySlug.set(slot.slug, slot)
+    if (globalBatch.length) {
+      console.log(`[Slots] Global „slots“: +${globalBatch.length} · gesamt ${bySlug.size}`)
+    }
+  } catch (error) {
+    if (!isRetryableSlotError(error)) {
+      console.warn('[Slots] Global „slots“:', error?.message || error)
+    }
+  }
+
+  return Array.from(bySlug.values())
 }
 
 export async function fetchStakeSlots(accessToken) {
@@ -268,11 +367,16 @@ export async function fetchStakeSlots(accessToken) {
       for (let page = 0; page < NEWEST_PAGES_MAX; page++) {
         const offset = page * PAGE_SIZE
         const variables = { slug: 'slots', limit: PAGE_SIZE, offset, sort: 'newest' }
-        const response = await StakeApi.query(SLUG_KURATOR_QUERY, variables)
-        const slots = parseGamesFromResponse(response)
-        if (slots.length === 0) break
-        newest.push(...slots)
-        if (slots.length < PAGE_SIZE) break
+        try {
+          const response = await fetchPage(variables, 2)
+          const slots = parseGamesFromResponse(response)
+          if (slots.length === 0) break
+          newest.push(...slots)
+          if (slots.length < PAGE_SIZE) break
+        } catch (error) {
+          if (isRetryableSlotError(error)) break
+          throw error
+        }
       }
       for (const g of QUICK_LOAD_EXTRA_GROUPS) {
         try {
@@ -315,48 +419,42 @@ export async function fetchStakeSlots(accessToken) {
     }
   }
 
-  const all = []
-  let offset = 0
-  console.log('[Slots] Kein Cache, vollständiger Ladevorgang...')
+  console.log('[Slots] Kein Cache, vollständiger Ladevorgang (Provider-Kuratoren)…')
 
   try {
-    while (true) {
-      const variables = { slug: 'slots', limit: PAGE_SIZE, offset, sort: 'popular7d' }
-      const response = await fetchPage(variables)
-      const data = response?.data
-      if (!data?.slugKuratorGroup) throw new Error('Invalid response structure')
-      const games = data.slugKuratorGroup.groupGamesList ?? []
-
-      for (const g of games) {
-        const slot = mapGameToSlot(g?.game ?? g)
-        if (slot) all.push(slot)
-      }
-
-      if (offset > 0 && all.length % 100 < PAGE_SIZE) {
-        console.log(`[Slots] Seite ${Math.floor(offset / PAGE_SIZE) + 1}, ${all.length} Slots bisher`)
-      }
-      if (games.length < PAGE_SIZE) break
-      offset += PAGE_SIZE
-      await new Promise((r) => setTimeout(r, 350))
-    }
+    const all = await fetchFullSlotCatalogByProviders()
+    if (!all.length) throw new Error('Keine Slots von der Stake-API erhalten')
 
     saveCachedSlots(all)
     sessionSlotsCache = all
     sessionCacheTime = Date.now()
     console.log(`[Slots] Fertig: ${all.length} Slots in ${Math.round((Date.now() - t0) / 1000)}s`)
-    logApiCall({ type: 'stake/slugKuratorGroup', endpoint: 'graphql', request: { offset }, response: { count: all.length }, error: null, durationMs: Date.now() - t0 })
+    logApiCall({
+      type: 'stake/slugKuratorGroup',
+      endpoint: 'graphql',
+      request: { mode: 'provider_kurators', kuratorCount: getProviderKuratorSlugs().length },
+      response: { count: all.length },
+      error: null,
+      durationMs: Date.now() - t0,
+    })
     return all
   } catch (error) {
-    if (isRetryableSlotError(error) && all.length > 0) {
-      console.warn(`[Slots] API-Limit bei offset ${offset}, behalte ${all.length} geladene Slots`)
-      saveCachedSlots(all)
-      sessionSlotsCache = all
+    const partial = loadCachedSlots()
+    if (partial?.length) {
+      console.warn(`[Slots] Vollscan fehlgeschlagen, nutze Cache (${partial.length} Slots):`, error?.message || error)
+      sessionSlotsCache = partial
       sessionCacheTime = Date.now()
-      logApiCall({ type: 'stake/slugKuratorGroup', endpoint: 'graphql', request: { offset }, response: { count: all.length, partial: true }, error: null, durationMs: Date.now() - t0 })
-      return all
+      return partial
     }
     console.error('[Slots] Fehler:', error?.message || error)
-    logApiCall({ type: 'stake/slugKuratorGroup', endpoint: 'graphql', request: { offset }, response: null, error: error.message, durationMs: Date.now() - t0 })
+    logApiCall({
+      type: 'stake/slugKuratorGroup',
+      endpoint: 'graphql',
+      request: { mode: 'provider_kurators' },
+      response: null,
+      error: error.message,
+      durationMs: Date.now() - t0,
+    })
     throw error
   }
 }
