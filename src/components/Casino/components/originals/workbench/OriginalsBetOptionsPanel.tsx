@@ -21,6 +21,7 @@ import { clampMultiplier, DICE_MAX_MULTIPLIER } from '../games/targetMath'
 import { fieldInputCls } from '../games/gamePanelFields'
 import ActiveTargetSummary from './ActiveTargetSummary'
 import BetSizeSlider from './BetSizeSlider'
+import OriginalsB2bResetPanel, { OriginalsWinLossFields } from './OriginalsB2bResetPanel'
 
 
 
@@ -114,7 +115,7 @@ export default function OriginalsBetOptionsPanel({
 
 
 
-      {gameSlug && (
+      {gameSlug && !isProfile && (
         <ActiveTargetSummary gameSlug={gameSlug} options={o} currency={currency} />
       )}
 
@@ -231,200 +232,8 @@ export default function OriginalsBetOptionsPanel({
 
 
 
-      {!isProfile && (
-      <section className="originals-options-section">
-        <h4 className="originals-section-title">On win / loss</h4>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="block">
-            <span className="text-xs text-[var(--text-muted)]">On win</span>
-            <select
-              disabled={disabled}
-              className={inputCls}
-              value={o.onWin ?? 'reset'}
-              onChange={(e) => patch({ onWin: e.target.value as OriginalsWorkbenchOptions['onWin'] })}
-            >
-              <option value="reset">Reset</option>
-              <option value="increase">Increase</option>
-              <option value="decrease">Decrease</option>
-              <option value="martingale">Martingale</option>
-              <option value="b2b">B2B (reinvest)</option>
-              <option value="none">None</option>
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-xs text-[var(--text-muted)]">On loss</span>
-            <select
-              disabled={disabled}
-              className={inputCls}
-              value={o.onLoss ?? 'reset'}
-              onChange={(e) => patch({ onLoss: e.target.value as OriginalsWorkbenchOptions['onLoss'] })}
-            >
-              <option value="reset">Reset</option>
-              <option value="increase">Increase</option>
-              <option value="decrease">Decrease</option>
-              <option value="martingale">Martingale</option>
-              <option value="none">None</option>
-            </select>
-          </label>
-          {(o.onWin === 'increase' || o.onLoss === 'increase' || o.onWin === 'decrease' || o.onLoss === 'decrease') && (
-            <>
-              {(o.onWin === 'increase' || o.onWin === 'decrease') && (
-                <label className="block">
-                  <span className="text-xs text-[var(--text-muted)]">
-                    {o.onWin === 'decrease' ? 'Win −%' : 'Win +%'}
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    disabled={disabled}
-                    className={inputCls}
-                    value={o.increaseOnWin ?? 0}
-                    onChange={(e) => patch({ increaseOnWin: Number(e.target.value) || 0 })}
-                  />
-                </label>
-              )}
-              {(o.onLoss === 'increase' || o.onLoss === 'decrease') && (
-                <label className="block">
-                  <span className="text-xs text-[var(--text-muted)]">
-                    {o.onLoss === 'decrease' ? 'Loss −%' : 'Loss +%'}
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    disabled={disabled}
-                    className={inputCls}
-                    value={o.increaseOnLoss ?? 0}
-                    onChange={(e) => patch({ increaseOnLoss: Number(e.target.value) || 0 })}
-                  />
-                </label>
-              )}
-            </>
-          )}
-        </div>
-      </section>
-      )}
-
-      {!isProfile && o.onWin === 'b2b' && (
-        <section className="originals-options-section">
-          <h4 className="originals-section-title">B2B take profit</h4>
-          <p className="text-[10px] text-[var(--text-muted)] mb-2 leading-relaxed">
-            After a win chain, cash out to base bet when any rule matches (OR). Smart TP peels a % and keeps the rest in the chain.
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              <span className="text-xs text-[var(--text-muted)]">After wins in chain</span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                disabled={disabled}
-                className={inputCls}
-                value={o.b2bTakeProfitAfterWins ?? 0}
-                onChange={(e) => patch({ b2bTakeProfitAfterWins: Number(e.target.value) || 0 })}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-[var(--text-muted)]">At chain multiplier</span>
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                disabled={disabled}
-                className={inputCls}
-                value={o.b2bTakeProfitAtChainMultiplier ?? 0}
-                onChange={(e) => patch({ b2bTakeProfitAtChainMultiplier: Number(e.target.value) || 0 })}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-[var(--text-muted)]">Chain profit % of base</span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                disabled={disabled}
-                className={inputCls}
-                value={o.b2bTakeProfitChainProfitPct ?? 0}
-                onChange={(e) => patch({ b2bTakeProfitChainProfitPct: Number(e.target.value) || 0 })}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-[var(--text-muted)]">Chain profit ($)</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                disabled={disabled}
-                className={inputCls}
-                value={o.b2bTakeProfitChainProfitUsd ?? 0}
-                onChange={(e) => patch({ b2bTakeProfitChainProfitUsd: Number(e.target.value) || 0 })}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-[var(--text-muted)]">Smart TP peel %</span>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="1"
-                disabled={disabled}
-                className={inputCls}
-                value={o.b2bSmartTakeProfitPeelPct ?? 0}
-                onChange={(e) => patch({ b2bSmartTakeProfitPeelPct: Number(e.target.value) || 0 })}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-[var(--text-muted)]">Escalate base every N TPs</span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                disabled={disabled}
-                className={inputCls}
-                value={o.b2bEscalateBaseEveryTakeProfits ?? 0}
-                onChange={(e) => patch({ b2bEscalateBaseEveryTakeProfits: Number(e.target.value) || 0 })}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-[var(--text-muted)]">Escalate base %</span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                disabled={disabled}
-                className={inputCls}
-                value={o.b2bEscalateBasePct ?? 0}
-                onChange={(e) => patch({ b2bEscalateBasePct: Number(e.target.value) || 0 })}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-[var(--text-muted)]">Max base bet ($)</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                disabled={disabled}
-                className={inputCls}
-                value={o.b2bMaxBaseBetUsd ?? 0}
-                onChange={(e) => patch({ b2bMaxBaseBetUsd: Number(e.target.value) || 0 })}
-              />
-            </label>
-          </div>
-          <label className="originals-settings-check mt-2">
-            <input
-              type="checkbox"
-              checked={!!o.b2bRotateSeedOnTakeProfit}
-              disabled={disabled}
-              onChange={(e) => patch({ b2bRotateSeedOnTakeProfit: e.target.checked })}
-              className="accent-[var(--accent)]"
-            />
-            <span>Rotate seed on take profit</span>
-          </label>
-        </section>
-      )}
-
-
+      <OriginalsWinLossFields options={o} patch={patch} disabled={disabled} inputCls={inputCls} />
+      <OriginalsB2bResetPanel options={o} patch={patch} disabled={disabled} inputCls={inputCls} compact={isProfile} />
 
       {supportsCombo && (
 

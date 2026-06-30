@@ -15,6 +15,7 @@ import type { OriginalsWorkbenchOptions } from '../schema/workbenchOptions'
 import { clampMultiplier } from '../games/targetMath'
 import {
   advanceComboAfterRound,
+  comboEngineControlsBetSize,
   createComboEngine,
   getComboBetParams,
   type ComboEngineState,
@@ -160,12 +161,16 @@ type B2bTakeProfitCheck = {
   chainProfitUsd: number
 }
 
-function readB2bTakeProfitOpts(o: Record<string, unknown>): B2bTakeProfitCheck {
+function readB2bTakeProfitOpts(
+  o: Record<string, unknown>,
+  wb?: OriginalsWorkbenchOptions
+): B2bTakeProfitCheck {
+  const src = wb ? ({ ...o, ...wb } as Record<string, unknown>) : o
   return {
-    afterWins: optFrom(o, 'b2bTakeProfitAfterWins', 0),
-    atChainMultiplier: optFrom(o, 'b2bTakeProfitAtChainMultiplier', 0),
-    chainProfitPct: optFrom(o, 'b2bTakeProfitChainProfitPct', 0),
-    chainProfitUsd: optFrom(o, 'b2bTakeProfitChainProfitUsd', 0),
+    afterWins: optFrom(src, 'b2bTakeProfitAfterWins', 0),
+    atChainMultiplier: optFrom(src, 'b2bTakeProfitAtChainMultiplier', 0),
+    chainProfitPct: optFrom(src, 'b2bTakeProfitChainProfitPct', 0),
+    chainProfitUsd: optFrom(src, 'b2bTakeProfitChainProfitUsd', 0),
   }
 }
 
@@ -210,12 +215,15 @@ type B2bSmartTpCfg = {
   peelPct: number
 }
 
-function readB2bSmartTpOpts(o: Record<string, unknown>): B2bSmartTpCfg {
+function readB2bSmartTpOpts(o: Record<string, unknown>, wb?: OriginalsWorkbenchOptions): B2bSmartTpCfg {
+  const src = wb ? ({ ...o, ...wb } as Record<string, unknown>) : o
   return {
-    atMulti: pctOrMultiplierToRatio(optFrom(o, 'b2bSmartTakeProfitAtMulti', 0)),
-    atChainProfitUsd: optFrom(o, 'b2bSmartTakeProfitAtChainProfitUsd', 0),
-    atChainProfitPctOfBase: pctOrMultiplierToRatio(optFrom(o, 'b2bSmartTakeProfitAtChainProfitPctOfBase', 0)),
-    peelPct: optFrom(o, 'b2bSmartTakeProfitPeelPct', 0),
+    atMulti: pctOrMultiplierToRatio(optFrom(src, 'b2bSmartTakeProfitAtMulti', 0)),
+    atChainProfitUsd: optFrom(src, 'b2bSmartTakeProfitAtChainProfitUsd', 0),
+    atChainProfitPctOfBase: pctOrMultiplierToRatio(
+      optFrom(src, 'b2bSmartTakeProfitAtChainProfitPctOfBase', 0)
+    ),
+    peelPct: optFrom(src, 'b2bSmartTakeProfitPeelPct', 0),
   }
 }
 
@@ -297,6 +305,8 @@ export async function runProfile(
   let losses = 0
   let totalWageredUsd = 0
   let rollNumber = 0
+  const betIndexOffset = Math.max(0, optFrom(options, '_betIndexOffset', 0))
+  const toBetListIndex = (localRoll: number) => localRoll + betIndexOffset
   let currentStreak = 0
   let lastWin = false
   let b2bChainWins = 0
@@ -641,7 +651,9 @@ export async function runProfile(
 
     if (workbenchEnabled && comboEngine) {
       const params = getComboBetParams(workbenchOptions, comboEngine)
-      betSizeUsdThisRound = params.betSizeUsd
+      if (comboEngineControlsBetSize(workbenchOptions)) {
+        betSizeUsdThisRound = params.betSizeUsd
+      }
       if (currentGame === 'dice' || currentGame === 'limbo') {
         currentOpts = { ...currentOpts, targetMultiplier: params.targetMultiplier }
         if (currentGame === 'dice') {
@@ -655,7 +667,7 @@ export async function runProfile(
     betSizeUsdThisRound = capBetUsd(betSizeUsdThisRound)
 
     houseBetBridge.registerPending({
-      betIndex: rollNumber,
+      betIndex: toBetListIndex(rollNumber),
       at: Date.now(),
       game: currentGame,
     })
@@ -680,7 +692,7 @@ export async function runProfile(
       kenoDrawn,
       kenoHits,
     } = roundResult
-    houseBetBridge.linkBetApiId(rollNumber, betApi?.id ?? betApi?.betApiId ?? betIid)
+    houseBetBridge.linkBetApiId(toBetListIndex(rollNumber), betApi?.id ?? betApi?.betApiId ?? betIid)
     totalWageredUsd += wageredUsdThisRound
     const roundProfitUsd = payoutUsd - wageredUsdThisRound
     profitUsd += roundProfitUsd
@@ -726,7 +738,10 @@ export async function runProfile(
       b2bChainMultiProduct = 1
     }
 
-    const b2bTpCfg = readB2bTakeProfitOpts(currentOpts)
+    const b2bTpCfg = readB2bTakeProfitOpts(
+      currentOpts,
+      workbenchEnabled ? workbenchOptions : undefined
+    )
     const hasB2bTakeProfitRules =
       b2bTpCfg.afterWins > 0 ||
       b2bTpCfg.atChainMultiplier > 0 ||
@@ -788,7 +803,7 @@ export async function runProfile(
             nextStakeUsd,
             b2bRefBaseUsd,
             chainProfitUsd,
-            readB2bSmartTpOpts(currentOpts)
+            readB2bSmartTpOpts(currentOpts, workbenchEnabled ? workbenchOptions : undefined)
           )
           if (smart.applied) {
             b2bSecuredUsd += smart.peeledUsd
@@ -1023,7 +1038,7 @@ export async function runProfile(
     const sessionElapsedMs = Date.now() - sessionStartMs
     const betsPerSec = sessionElapsedMs >= 200 ? rollNumber / (sessionElapsedMs / 1000) : 0
 
-    const betShareId = houseBetBridge.getShareId(rollNumber)
+    const betShareId = houseBetBridge.getShareId(toBetListIndex(rollNumber))
     lastBetIdStr = betShareId ?? betIid ?? ''
     if (workbenchEnabled && workbenchOptions.sendBetIdToChallengesRoom && betShareId) {
       callbacks.onLog?.(`[Challenges] Bet ID: ${betShareId}`)
@@ -1034,7 +1049,7 @@ export async function runProfile(
       payout,
       amount: placedAmountMajor,
       game: currentGame,
-      betIndex: rollNumber,
+      betIndex: toBetListIndex(rollNumber),
       betSizeUsd: wageredUsdThisRound,
       payoutUsd,
       roundProfitUsd,

@@ -206,6 +206,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
   return (
     <div
       className={`originals-workbench${statsVisible ? ' has-stats-open' : ''}${wbSettings.statsFloating ? ' has-stats-float' : ''}`}
+      style={{ ['--originals-sidebar-w' as string]: `${wbSettings.sidebarWidth}px` }}
     >
       <OriginalsModeHeader
         game={game}

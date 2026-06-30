@@ -75,11 +75,17 @@ export function useOriginalsSession(accessToken?: string, wbSettings?: Workbench
   const [chartSessionKey, setChartSessionKey] = useState(0)
   const signalRef = useRef<SessionSignal>(createSignal())
   const settingsRef = useRef(wbSettings)
+  const betListRef = useRef(betList)
+  const betIndexOffsetRef = useRef(0)
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     settingsRef.current = wbSettings
   }, [wbSettings])
+
+  useEffect(() => {
+    betListRef.current = betList
+  }, [betList])
 
   const addLog = useCallback((msg: string) => {
     setLogLines((prev) => [...prev.slice(-199), `[${new Date().toLocaleTimeString()}] ${msg}`])
@@ -171,6 +177,10 @@ export function useOriginalsSession(accessToken?: string, wbSettings?: Workbench
       if (running || startCooldownSecs > 0) return
       const sig = createSignal()
       signalRef.current = sig
+      betIndexOffsetRef.current = betListRef.current.reduce(
+        (max, row) => Math.max(max, row.betIndex),
+        0
+      )
       setChartSessionKey((k) => k + 1)
       setChartData([{ index: 0, profit: 0 }])
       setRunning(true)
@@ -200,6 +210,7 @@ export function useOriginalsSession(accessToken?: string, wbSettings?: Workbench
         await runOriginalsSession(
           {
             ...options,
+            _betIndexOffset: betIndexOffsetRef.current,
             asyncMode: wb?.asyncMode,
             requestInterval: wb?.requestInterval ?? options.requestInterval,
             _workbenchSettings: wb
@@ -259,7 +270,11 @@ export function useOriginalsSession(accessToken?: string, wbSettings?: Workbench
                 const idx = prev.findIndex((b) => b.betIndex === row.betIndex)
                 if (idx >= 0) {
                   const next = [...prev]
-                  next[idx] = { ...next[idx], ...row }
+                  next[idx] = {
+                    ...next[idx],
+                    ...row,
+                    betId: row.betId ?? next[idx].betId,
+                  }
                   return next
                 }
                 return [row, ...prev].slice(0, 500)
@@ -267,12 +282,16 @@ export function useOriginalsSession(accessToken?: string, wbSettings?: Workbench
             },
             onStats: (s) => {
               setStats(s)
-              setChartData((prev) => upsertSessionChartPoint(prev, s.bets, s.profit))
+              setChartData((prev) => upsertSessionChartPoint(prev, s.bets + betIndexOffsetRef.current, s.profit))
             },
             onBetShareId: (betIndex, betId) => {
-              setBetList((prev) =>
-                prev.map((row) => (row.betIndex === betIndex ? { ...row, betId } : row))
-              )
+              setBetList((prev) => {
+                const idx = prev.findIndex((row) => row.betIndex === betIndex)
+                if (idx < 0) return prev
+                const next = [...prev]
+                next[idx] = { ...next[idx], betId }
+                return next
+              })
             },
             onConditionStop: stop,
             onResetStats: () => {

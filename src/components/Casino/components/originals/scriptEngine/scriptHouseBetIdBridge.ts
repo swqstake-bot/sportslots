@@ -82,6 +82,7 @@ export function createScriptHouseBetIdBridge(
   const fifoWaiting: number[] = []
   const fifoHouse: { payload: HouseBetPayload; at: number }[] = []
   let disconnectSub: (() => void) | null = null
+  let disposed = false
 
   const prune = (now: number) => {
     for (const [idx, p] of pendingByIndex) {
@@ -199,8 +200,17 @@ export function createScriptHouseBetIdBridge(
 
   if (accessToken?.trim()) {
     void subscribeToHouseBets(accessToken.trim(), (payload: HouseBetPayload) => {
+      if (disposed) return
       enqueueHouseBet(payload)
     }).then((sub) => {
+      if (disposed) {
+        try {
+          sub?.disconnect?.()
+        } catch {
+          /* ignore */
+        }
+        return
+      }
       disconnectSub = typeof sub?.disconnect === 'function' ? sub.disconnect : null
     })
   }
@@ -237,6 +247,7 @@ export function createScriptHouseBetIdBridge(
       return resolved.get(betIndex) ?? null
     },
     dispose() {
+      disposed = true
       pendingByIndex.clear()
       indexByApiId.clear()
       eventBufferByApiId.clear()

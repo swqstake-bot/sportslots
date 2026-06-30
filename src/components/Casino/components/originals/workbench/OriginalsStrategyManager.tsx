@@ -172,7 +172,7 @@ export default function OriginalsStrategyManager({ options, onLoad, disabled }: 
 
       <h4 className="originals-section-title">Strategy Manager</h4>
 
-      <div className="flex gap-2">
+      <div className="originals-strategy-toolbar">
 
         <input
 

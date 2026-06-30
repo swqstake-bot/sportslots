@@ -101,7 +101,7 @@ export default function OriginalsExtendedStops({
         inputCls={inputCls}
       />
       <ToggleNum
-        label="B2B streak"
+        label="Stop session at B2B streak"
         enabled={!!o.isStopOnB2bStreak}
         value={o.stopOnB2bStreak ?? 0}
         onEnabled={(v) => patch({ isStopOnB2bStreak: v, stopOnB2bStreak: v ? o.stopOnB2bStreak || 3 : 0 })}

@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import type { OriginalsWorkbenchOptions } from '../schema/workbenchOptions'
 import { DEFAULT_WORKBENCH_OPTIONS } from '../schema/workbenchOptions'
 import OriginalsExtendedStops from './OriginalsExtendedStops'
+import OriginalsB2bResetPanel, { OriginalsWinLossFields } from './OriginalsB2bResetPanel'
 
 interface OriginalsBetConditionsPanelProps {
   options: OriginalsWorkbenchOptions
@@ -159,75 +160,8 @@ export default function OriginalsBetConditionsPanel({
 
       {tab === 'behavior' && (
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              <span className="text-xs text-[var(--text-muted)]">On win</span>
-              <select
-                disabled={disabled}
-                className={inputCls}
-                value={o.onWin ?? 'reset'}
-                onChange={(e) => patch({ onWin: e.target.value as OriginalsWorkbenchOptions['onWin'] })}
-              >
-                <option value="reset">Reset</option>
-                <option value="increase">Increase</option>
-                <option value="decrease">Decrease</option>
-                <option value="martingale">Martingale</option>
-                <option value="b2b">B2B (reinvest)</option>
-                <option value="none">None</option>
-              </select>
-            </label>
-            <label className="block">
-              <span className="text-xs text-[var(--text-muted)]">On loss</span>
-              <select
-                disabled={disabled}
-                className={inputCls}
-                value={o.onLoss ?? 'reset'}
-                onChange={(e) => patch({ onLoss: e.target.value as OriginalsWorkbenchOptions['onLoss'] })}
-              >
-                <option value="reset">Reset</option>
-                <option value="increase">Increase</option>
-                <option value="decrease">Decrease</option>
-                <option value="martingale">Martingale</option>
-                <option value="none">None</option>
-              </select>
-            </label>
-            {(o.onWin === 'increase' || o.onLoss === 'increase' || o.onWin === 'decrease' || o.onLoss === 'decrease') && (
-              <>
-                {(o.onWin === 'increase' || o.onWin === 'decrease') && (
-                  <label className="block">
-                    <span className="text-xs text-[var(--text-muted)]">
-                      {o.onWin === 'decrease' ? 'Win −%' : 'Win +%'}
-                    </span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      disabled={disabled}
-                      className={inputCls}
-                      value={o.increaseOnWin ?? 0}
-                      onChange={(e) => patch({ increaseOnWin: Number(e.target.value) || 0 })}
-                    />
-                  </label>
-                )}
-                {(o.onLoss === 'increase' || o.onLoss === 'decrease') && (
-                  <label className="block">
-                    <span className="text-xs text-[var(--text-muted)]">
-                      {o.onLoss === 'decrease' ? 'Loss −%' : 'Loss +%'}
-                    </span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      disabled={disabled}
-                      className={inputCls}
-                      value={o.increaseOnLoss ?? 0}
-                      onChange={(e) => patch({ increaseOnLoss: Number(e.target.value) || 0 })}
-                    />
-                  </label>
-                )}
-              </>
-            )}
-          </div>
+          <OriginalsWinLossFields options={o} patch={patch} disabled={disabled} inputCls={inputCls} />
+          <OriginalsB2bResetPanel options={o} patch={patch} disabled={disabled} inputCls={inputCls} compact />
 
           <label className="block">
             <span className="text-xs text-[var(--text-muted)]">Min bet size ($, 0=off)</span>

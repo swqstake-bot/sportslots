@@ -67,6 +67,8 @@ export async function runTurboProfile(
 
   const sessionStartMs = Date.now()
   let rollNumber = 0
+  const betIndexOffset = Math.max(0, optFrom(options, '_betIndexOffset', 0))
+  const toBetListIndex = (localRoll: number) => localRoll + betIndexOffset
   let inFlight = 0
   let stopped = false
   let profitUsd = 0
@@ -171,7 +173,7 @@ export async function runTurboProfile(
   const fireBet = () => {
     if (signal.cancelled || stopped) return
     rollNumber++
-    const betIndex = rollNumber
+    const betIndex = toBetListIndex(rollNumber)
     const betSizeUsd = capBetUsd(initialBetUsd)
     const amountMajor = usdToCurrencyAmount(betSizeUsd, cur, usdRates)
     inFlight++

@@ -159,23 +159,18 @@ export default function OriginalsManualPanel({
         const win = payout > 0
 
         onResult?.({
-
           game: gameSlug.toUpperCase(),
-
           win,
-
           multi,
-
           roundProfitUsd: payout - amt,
-
           betSizeUsd: amt,
-
-          resultLabel: multi > 0 ? `${multi.toFixed(2)}×` : undefined,
-
+          resultLabel:
+            gameSlug.toLowerCase() !== 'keno' && multi > 0 ? `${multi.toFixed(2)}×` : undefined,
           hiloRank: hiloRank || undefined,
-
           hiloSuit: hiloSuit || undefined,
-
+          kenoPicks: result.kenoPicks,
+          kenoDrawn: result.kenoDrawn,
+          kenoHits: result.kenoHits,
         })
 
       }

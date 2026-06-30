@@ -25,6 +25,14 @@ export function createComboEngine(options: OriginalsWorkbenchOptions): ComboEngi
   }
 }
 
+/** True when combo/hunt preset owns stake sizing (not plain B2B / onWin reinvest). */
+export function comboEngineControlsBetSize(options: OriginalsWorkbenchOptions): boolean {
+  const hunt = !!options.huntEnabled && (options.huntMultiplier ?? 0) > 1
+  const hasCombo =
+    options.targetSelectionMode === 'combo' && (options.comboParts?.length ?? 0) > 0
+  return hunt || hasCombo
+}
+
 export function resolveComboParts(options: OriginalsWorkbenchOptions): ComboPart[] {
   const raw = options.comboParts ?? []
   if (raw.length === 0) return []

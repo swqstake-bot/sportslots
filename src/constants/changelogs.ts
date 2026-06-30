@@ -1,4 +1,10 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.190': [
+    '🐛 Originals Keno B2B: Combo-Engine überschrieb Einsatz nach Gewinn — plain B2B-Reinvest funktioniert wieder',
+    '🐛 Originals: Bet-IDs nach Stop→Start — eindeutiger Bet-Index-Offset, kein Überschreiben mit null',
+    '✨ Originals Keno: Picks/Drawn/Hits in Bet-List & Last-Result (Treffer zuerst, grün markiert)',
+    '✨ Originals: B2B-Reset/Take-Profit-Panel, Sidebar-Layout, Settings-Modal zentriert',
+  ],
   '1.0.189': [
     '🐛 Originals Keno: B2B-Reinvest greift — Win über payoutMultiplier > 1, onWin aus Workbench-Options',
     '✨ Originals Keno: Bet-List mit Picks, Drawn, Hits (Antebot-Parität)',

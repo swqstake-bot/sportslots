@@ -1,4 +1,5 @@
 import HiloCardDisplay from '../games/HiloCardDisplay'
+import KenoBetNumbers from '../games/KenoBetNumbers'
 
 export interface OriginalsLastBetVisual {
   game: string
@@ -10,6 +11,9 @@ export interface OriginalsLastBetVisual {
   resultLabel?: string
   hiloRank?: string
   hiloSuit?: string
+  kenoPicks?: number[]
+  kenoDrawn?: number[]
+  kenoHits?: number
 }
 
 interface OriginalsLastResultVisualProps {
@@ -25,8 +29,9 @@ function formatUsd(n: number): string {
 }
 
 function resultHeadline(result: OriginalsLastBetVisual, gameSlug: string): string {
-  if (result.resultLabel) return result.resultLabel
   const g = gameSlug.toLowerCase()
+  if (g === 'keno') return result.win ? 'Win' : 'Loss'
+  if (result.resultLabel) return result.resultLabel
   if (result.multi > 0) return `${result.multi.toFixed(2)}×`
   if (g === 'dice' || g === 'limbo') return '—'
   return result.win ? 'Win' : 'Loss'
@@ -34,6 +39,7 @@ function resultHeadline(result: OriginalsLastBetVisual, gameSlug: string): strin
 
 function resultSubline(result: OriginalsLastBetVisual, gameSlug: string): string | null {
   const g = gameSlug.toLowerCase()
+  if (g === 'keno') return null
   if (g === 'dice' && result.multi > 0) return `Multiplier ${result.multi.toFixed(2)}×`
   if (g === 'limbo' && result.multi > 0) return `Crashed at ${result.multi.toFixed(2)}×`
   if (result.multi > 0) return `${result.multi.toFixed(2)}× payout`
@@ -46,6 +52,9 @@ export function betRowToVisual(row: {
   multi: number
   roundProfitUsd: number
   betSizeUsd: number
+  kenoPicks?: number[]
+  kenoDrawn?: number[]
+  kenoHits?: number
 }): OriginalsLastBetVisual {
   return {
     game: row.game,
@@ -53,13 +62,15 @@ export function betRowToVisual(row: {
     multi: row.multi,
     roundProfitUsd: row.roundProfitUsd,
     betSizeUsd: row.betSizeUsd,
-    resultLabel: row.multi > 0 ? `${row.multi.toFixed(2)}×` : undefined,
+    resultLabel: row.game.toLowerCase() !== 'keno' && row.multi > 0 ? `${row.multi.toFixed(2)}×` : undefined,
+    kenoPicks: row.kenoPicks,
+    kenoDrawn: row.kenoDrawn,
+    kenoHits: row.kenoHits,
   }
 }
 
 export default function OriginalsLastResultVisual({ result, gameSlug, idleHint }: OriginalsLastResultVisualProps) {
   const g = gameSlug.toLowerCase()
-  const showHiloCard = g === 'hilo' && result && (result.hiloRank || result.hiloSuit)
 
   if (!result) {
     return (
@@ -70,6 +81,13 @@ export default function OriginalsLastResultVisual({ result, gameSlug, idleHint }
       </div>
     )
   }
+
+  const showHiloCard = g === 'hilo' && (result.hiloRank || result.hiloSuit)
+  const showKenoResult =
+    g === 'keno' &&
+    ((result.kenoPicks?.length ?? 0) > 0 ||
+      (result.kenoDrawn?.length ?? 0) > 0 ||
+      result.kenoHits != null)
 
   const headline = resultHeadline(result, gameSlug)
   const subline = resultSubline(result, gameSlug)
@@ -83,7 +101,7 @@ export default function OriginalsLastResultVisual({ result, gameSlug, idleHint }
       <div className="originals-last-result-main">
         {showHiloCard ? (
           <HiloCardDisplay rank={result.hiloRank} suit={result.hiloSuit} size="lg" />
-        ) : (
+        ) : showKenoResult ? null : (
           <div className="originals-last-result-value">{headline}</div>
         )}
         <span className={`originals-last-result-badge originals-last-result-badge--${result.win ? 'win' : 'loss'}`}>
@@ -92,7 +110,9 @@ export default function OriginalsLastResultVisual({ result, gameSlug, idleHint }
       </div>
 
       <div className="originals-last-result-meta">
-        {subline && !showHiloCard && <span className="originals-last-result-sub">{subline}</span>}
+        {subline && !showHiloCard && !showKenoResult && (
+          <span className="originals-last-result-sub">{subline}</span>
+        )}
         {result.betSizeUsd != null && result.betSizeUsd > 0 && (
           <span className="originals-last-result-stat">
             Bet <strong>${formatUsd(result.betSizeUsd)}</strong>
@@ -109,6 +129,15 @@ export default function OriginalsLastResultVisual({ result, gameSlug, idleHint }
           </span>
         )}
       </div>
+
+      {showKenoResult && (
+        <KenoBetNumbers
+          picks={result.kenoPicks}
+          drawn={result.kenoDrawn}
+          hits={result.kenoHits}
+          mode="full"
+        />
+      )}
     </div>
   )
 }

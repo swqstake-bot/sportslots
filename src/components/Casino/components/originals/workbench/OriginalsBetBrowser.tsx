@@ -2,6 +2,11 @@ import { useCallback, useState } from 'react'
 import type { OriginalsBetRow } from '../hooks/useOriginalsSession'
 import type { BetListColumns } from './workbenchStorage'
 import { copyBetIdToClipboard, displayBetId, formatBetUsd, shortenBetId } from './betDisplayUtils'
+import KenoBetNumbers, {
+  formatKenoMultiLabel,
+  formatKenoNumberList,
+  kenoHitNumbers,
+} from '../games/KenoBetNumbers'
 
 interface OriginalsBetBrowserProps {
   betList: OriginalsBetRow[]
@@ -16,9 +21,12 @@ function formatTime(ts?: number): string {
   return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`
 }
 
-function formatKenoNumbers(nums?: number[]): string {
-  if (!nums?.length) return '—'
-  return [...nums].sort((a, b) => a - b).join(', ')
+function formatMultiCell(row: OriginalsBetRow): string {
+  if (row.multi <= 0) return '—'
+  if (row.game.toLowerCase() === 'keno' && row.kenoHits != null) {
+    return formatKenoMultiLabel(row.multi, row.kenoHits)
+  }
+  return `${row.multi.toFixed(2)}×`
 }
 
 function exportCsv(rows: OriginalsBetRow[], columns?: BetListColumns): void {
@@ -43,8 +51,14 @@ function exportCsv(rows: OriginalsBetRow[], columns?: BetListColumns): void {
         r.timestamp ? new Date(r.timestamp).toISOString() : '',
         r.nonce ?? '',
       ]
-      if (columns?.kenoPicks) base.push(formatKenoNumbers(r.kenoPicks))
-      if (columns?.kenoDrawn) base.push(formatKenoNumbers(r.kenoDrawn))
+      if (columns?.kenoPicks) {
+        const hitSet = new Set(kenoHitNumbers(r.kenoPicks, r.kenoDrawn))
+        base.push(formatKenoNumberList(r.kenoPicks, hitSet))
+      }
+      if (columns?.kenoDrawn) {
+        const hitSet = new Set(kenoHitNumbers(r.kenoPicks, r.kenoDrawn))
+        base.push(formatKenoNumberList(r.kenoDrawn, hitSet))
+      }
       if (columns?.kenoHits) base.push(r.kenoHits != null ? String(r.kenoHits) : '')
       return base.join(',')
     })
@@ -152,7 +166,7 @@ export default function OriginalsBetBrowser({
                       </td>
                     )}
                     {cols.bet && <td>${formatBetUsd(row.betSizeUsd)}</td>}
-                    {cols.multi && <td>{row.multi > 0 ? `${row.multi.toFixed(2)}×` : '—'}</td>}
+                    {cols.multi && <td>{formatMultiCell(row)}</td>}
                     {cols.b2b && <td>{row.b2bMulti > 1.001 ? `${row.b2bMulti.toFixed(2)}×` : '—'}</td>}
                     {cols.pl && (
                       <td className={row.roundProfitUsd >= 0 ? 'originals-profit' : 'originals-loss'}>
@@ -160,17 +174,24 @@ export default function OriginalsBetBrowser({
                       </td>
                     )}
                     {cols.kenoPicks && (
-                      <td className="originals-keno-nums text-xs" title={formatKenoNumbers(row.kenoPicks)}>
-                        {formatKenoNumbers(row.kenoPicks)}
+                      <td className="originals-keno-nums-cell">
+                        <KenoBetNumbers picks={row.kenoPicks} drawn={row.kenoDrawn} mode="picks" />
                       </td>
                     )}
                     {cols.kenoDrawn && (
-                      <td className="originals-keno-nums text-xs" title={formatKenoNumbers(row.kenoDrawn)}>
-                        {formatKenoNumbers(row.kenoDrawn)}
+                      <td className="originals-keno-nums-cell">
+                        <KenoBetNumbers picks={row.kenoPicks} drawn={row.kenoDrawn} mode="drawn" />
                       </td>
                     )}
                     {cols.kenoHits && (
-                      <td className="tabular-nums text-xs">{row.kenoHits != null ? row.kenoHits : '—'}</td>
+                      <td className="originals-keno-nums-cell">
+                        <KenoBetNumbers
+                          picks={row.kenoPicks}
+                          drawn={row.kenoDrawn}
+                          hits={row.kenoHits}
+                          mode="hits"
+                        />
+                      </td>
                     )}
                     {cols.time && <td className="tabular-nums text-xs">{formatTime(row.timestamp)}</td>}
                     {cols.nonce && <td className="tabular-nums text-xs">{row.nonce ?? '—'}</td>}

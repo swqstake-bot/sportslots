@@ -93,7 +93,7 @@ const DEFAULT_SETTINGS: WorkbenchSettings = {
   forceRestartBetting: false,
   forceRestartDelaySeconds: 15,
   requestIntervalRateLimitIncrement: 25,
-  sidebarWidth: 320,
+  sidebarWidth: 380,
   showBetList: true,
   showStatsPanel: true,
   statsFloating: false,
@@ -130,20 +130,31 @@ function migrateSettings(raw: Partial<WorkbenchSettings>): WorkbenchSettings {
   })
   merged.turboFireIntervalMs = normalized.fireIntervalMs
   merged.turboMaxInFlight = normalized.maxInFlight
+  if (merged.sidebarWidth > 0 && merged.sidebarWidth < 340) {
+    merged.sidebarWidth = DEFAULT_SETTINGS.sidebarWidth
+  }
   return merged
 }
+
+const KENO_BET_LIST_COLUMN_KEYS: BetListColumnId[] = ['kenoPicks', 'kenoDrawn', 'kenoHits']
 
 /** Returns per-game columns if set, otherwise global columns. Keno shows number columns by default. */
 export function getBetListColumns(settings: WorkbenchSettings, gameSlug: string): BetListColumns {
   const slug = gameSlug.toLowerCase()
   const defaults = slug === 'keno' ? DEFAULT_KENO_BET_LIST_COLUMNS : DEFAULT_BET_LIST_COLUMNS
   const perGame = settings.betListColumnsByGame?.[slug]
-  if (perGame) {
-    return { ...defaults, ...settings.betListColumns, ...perGame }
+  const merged: BetListColumns = {
+    ...defaults,
+    ...settings.betListColumns,
+    ...(perGame ?? {}),
   }
-  return slug === 'keno'
-    ? { ...DEFAULT_KENO_BET_LIST_COLUMNS, ...settings.betListColumns }
-    : settings.betListColumns
+  // Global betListColumns (all false) must not hide Keno picks/drawn/hits — Antebot-style defaults for Keno.
+  if (slug === 'keno') {
+    for (const key of KENO_BET_LIST_COLUMN_KEYS) {
+      merged[key] = perGame?.[key] ?? DEFAULT_KENO_BET_LIST_COLUMNS[key]
+    }
+  }
+  return merged
 }
 
 /** Save per-game column preferences and persist to localStorage. */

@@ -26,7 +26,7 @@ export default function OriginalsSidebar({
   supportsCombo = false,
   gameUiReady = false,
   disabled = false,
-  sidebarWidth = 320,
+  sidebarWidth = 380,
   currency = 'usdc',
 }: OriginalsSidebarProps) {
   const [tab, setTab] = useState<SidebarTab>('profile')
@@ -40,7 +40,7 @@ export default function OriginalsSidebar({
   return (
     <aside
       className="originals-workbench-left casino-card"
-      style={{ width: sidebarWidth, flexBasis: sidebarWidth }}
+      style={{ ['--originals-sidebar-w' as string]: `${sidebarWidth}px` }}
     >
       <div className="originals-sidebar-tabs originals-sidebar-tabs--main" role="tablist">
         {tabs

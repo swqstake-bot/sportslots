@@ -246,6 +246,9 @@ export interface OriginalsWorkbenchOptions extends Omit<Partial<LegacyProfileOpt
     forceRestartDelaySeconds?: number
     requestIntervalRateLimitIncrement?: number
   }
+
+  /** Session-only: continue bet list # after stop → start (not persisted). */
+  _betIndexOffset?: number
 }
 
 

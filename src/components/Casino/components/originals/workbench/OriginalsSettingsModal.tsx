@@ -308,14 +308,14 @@ function SettingsForm({
           <span className="originals-field-label">Sidebar width (px)</span>
           <input
             type="number"
-            min="260"
-            max="480"
+            min="300"
+            max="520"
             step="10"
             value={draft.sidebarWidth}
             onChange={(e) =>
               setDraft((d) => ({
                 ...d,
-                sidebarWidth: Math.min(480, Math.max(260, Number(e.target.value) || 320)),
+                sidebarWidth: Math.min(520, Math.max(300, Number(e.target.value) || 380)),
               }))
             }
             className={inputCls}

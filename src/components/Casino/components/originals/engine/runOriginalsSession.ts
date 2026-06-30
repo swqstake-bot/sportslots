@@ -72,9 +72,23 @@ export async function runManualOriginalsBet(
   currency: string,
   options: OriginalsWorkbenchOptions,
   usdRates?: Record<string, number>
-): Promise<{ payout?: number; multi?: number; error?: string }> {
+): Promise<{
+  payout?: number
+  multi?: number
+  error?: string
+  kenoPicks?: number[]
+  kenoDrawn?: number[]
+  kenoHits?: number
+}> {
   const signal: SessionSignal = { cancelled: false, paused: false }
-  let result: { payout?: number; multi?: number; error?: string } = {}
+  let result: {
+    payout?: number
+    multi?: number
+    error?: string
+    kenoPicks?: number[]
+    kenoDrawn?: number[]
+    kenoHits?: number
+  } = {}
   const profileOpts = workbenchOptionsToProfile({ ...options, game, initialBetSize: amountUsd, betSize: amountUsd })
   profileOpts.numberOfBets = 1
   profileOpts._workbench = true
@@ -85,7 +99,15 @@ export async function runManualOriginalsBet(
     {
       onBetPlaced: (r) => {
         if (r.error) result = { error: r.error }
-        else result = { payout: r.payoutUsd, multi: r.multi }
+        else {
+          result = {
+            payout: r.payoutUsd,
+            multi: r.multi,
+            kenoPicks: r.kenoPicks,
+            kenoDrawn: r.kenoDrawn,
+            kenoHits: r.kenoHits,
+          }
+        }
       },
     },
     signal,
