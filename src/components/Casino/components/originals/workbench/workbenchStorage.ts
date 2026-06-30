@@ -9,6 +9,7 @@ import {
 const KEY_GAME = 'originalsWorkbenchGame'
 const KEY_MODE = 'originalsWorkbenchMode'
 const KEY_STATS_OPEN = 'originalsWorkbenchStatsOpen'
+const KEY_SIDEBAR_COLLAPSED = 'originalsWorkbenchSidebarCollapsed'
 const KEY_SETTINGS = 'originalsWorkbenchSettings'
 
 export type BetListColumnId =
@@ -91,10 +92,10 @@ const DEFAULT_SETTINGS: WorkbenchSettings = {
   forceRestartBetting: false,
   forceRestartDelaySeconds: 15,
   requestIntervalRateLimitIncrement: 25,
-  sidebarWidth: 380,
+  sidebarWidth: 320,
   showBetList: true,
   showStatsPanel: true,
-  statsFloating: false,
+  statsFloating: true,
   betListMaxEntries: 250,
   betListColumns: { ...DEFAULT_BET_LIST_COLUMNS },
   betListColumnsByGame: {},
@@ -229,11 +230,41 @@ export function saveStatsDrawerOpen(open: boolean): void {
   }
 }
 
+export function loadSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(KEY_SIDEBAR_COLLAPSED) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function saveSidebarCollapsed(collapsed: boolean): void {
+  try {
+    localStorage.setItem(KEY_SIDEBAR_COLLAPSED, collapsed ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+}
+
+const KEY_LAYOUT_SCROLL_FIX = 'originalsWorkbenchLayoutScrollFixV1'
+
+function applyLayoutScrollFix(settings: WorkbenchSettings): WorkbenchSettings {
+  try {
+    if (localStorage.getItem(KEY_LAYOUT_SCROLL_FIX) === '1') return settings
+    localStorage.setItem(KEY_LAYOUT_SCROLL_FIX, '1')
+    const next = { ...settings, statsFloating: true }
+    saveWorkbenchSettings(next)
+    return next
+  } catch {
+    return settings
+  }
+}
+
 export function loadWorkbenchSettings(): WorkbenchSettings {
   try {
     const raw = localStorage.getItem(KEY_SETTINGS)
     if (!raw) return { ...DEFAULT_SETTINGS, betListColumns: { ...DEFAULT_BET_LIST_COLUMNS }, betListColumnsByGame: {} }
-    return migrateSettings(JSON.parse(raw))
+    return applyLayoutScrollFix(migrateSettings(JSON.parse(raw)))
   } catch {
     return { ...DEFAULT_SETTINGS, betListColumns: { ...DEFAULT_BET_LIST_COLUMNS }, betListColumnsByGame: {} }
   }

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import type { OriginalsProfileV2, OriginalsWorkbenchOptions } from '../schema/workbenchOptions'
 
@@ -10,7 +10,7 @@ import {
 
   loadProfiles,
 
-  saveProfiles,
+  saveProfilesForGame,
 
   upsertProfile,
 
@@ -22,6 +22,8 @@ interface OriginalsStrategyManagerProps {
 
   options: OriginalsWorkbenchOptions
 
+  gameSlug: string
+
   onLoad: (options: OriginalsWorkbenchOptions, name?: string) => void
 
   disabled?: boolean
@@ -30,10 +32,10 @@ interface OriginalsStrategyManagerProps {
 
 
 
-export default function OriginalsStrategyManager({ options, onLoad, disabled }: OriginalsStrategyManagerProps) {
+export default function OriginalsStrategyManager({ options, gameSlug, onLoad, disabled }: OriginalsStrategyManagerProps) {
 
   const [profiles, setProfiles] = useState<OriginalsProfileV2[]>(() => {
-    const loaded = loadProfiles()
+    const loaded = loadProfiles(gameSlug)
     return [...loaded].sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0))
   })
 
@@ -42,11 +44,15 @@ export default function OriginalsStrategyManager({ options, onLoad, disabled }: 
 
 
   const refresh = useCallback(() => {
-    const loaded = loadProfiles()
+    const loaded = loadProfiles(gameSlug)
     setProfiles([...loaded].sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0)))
-  }, [])
+  }, [gameSlug])
 
   const activeProfile = profiles.find((p) => p.lastUsed)
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
 
 
 
@@ -62,7 +68,7 @@ export default function OriginalsStrategyManager({ options, onLoad, disabled }: 
 
       name: trimmed,
 
-      options: { ...options },
+      options: { ...options, game: gameSlug },
 
       lastUsed: true,
 
@@ -70,11 +76,11 @@ export default function OriginalsStrategyManager({ options, onLoad, disabled }: 
 
       loadOnStart: existing?.loadOnStart,
 
-    })
+    }, gameSlug)
 
     refresh()
 
-  }, [name, options, profiles, refresh])
+  }, [name, options, profiles, refresh, gameSlug])
 
 
 
@@ -86,13 +92,13 @@ export default function OriginalsStrategyManager({ options, onLoad, disabled }: 
 
       if (!p) return
 
-      upsertProfile({ ...p, favorite: !p.favorite })
+      upsertProfile({ ...p, favorite: !p.favorite }, gameSlug)
 
       refresh()
 
     },
 
-    [profiles, refresh]
+    [profiles, refresh, gameSlug]
 
   )
 
@@ -102,21 +108,25 @@ export default function OriginalsStrategyManager({ options, onLoad, disabled }: 
 
     (profileName: string) => {
 
+      const toggled = profiles.find((p) => p.name === profileName)
+
+      if (!toggled) return
+
       const next = profiles.map((p) => ({
 
         ...p,
 
-        loadOnStart: p.name === profileName ? !p.loadOnStart : false,
+        loadOnStart: p.name === profileName ? !toggled.loadOnStart : false,
 
       }))
 
-      saveProfiles(next)
+      saveProfilesForGame(gameSlug, next)
 
       refresh()
 
     },
 
-    [profiles, refresh]
+    [profiles, refresh, gameSlug]
 
   )
 
@@ -126,15 +136,15 @@ export default function OriginalsStrategyManager({ options, onLoad, disabled }: 
 
     (p: OriginalsProfileV2) => {
 
-      onLoad({ ...p.options }, p.name)
+      onLoad({ ...p.options, game: gameSlug }, p.name)
 
-      upsertProfile({ ...p, lastUsed: true })
+      upsertProfile({ ...p, lastUsed: true }, gameSlug)
 
       refresh()
 
     },
 
-    [onLoad, refresh]
+    [onLoad, refresh, gameSlug]
 
   )
 
@@ -144,13 +154,13 @@ export default function OriginalsStrategyManager({ options, onLoad, disabled }: 
 
     (profileName: string) => {
 
-      deleteProfile(profileName)
+      deleteProfile(profileName, gameSlug)
 
       refresh()
 
     },
 
-    [refresh]
+    [refresh, gameSlug]
 
   )
 
@@ -158,11 +168,11 @@ export default function OriginalsStrategyManager({ options, onLoad, disabled }: 
 
   const exportCurrent = useCallback(() => {
 
-    const json = exportProfileJson({ name: name.trim() || 'Strategy', options: { ...options } })
+    const json = exportProfileJson({ name: name.trim() || 'Strategy', options: { ...options, game: gameSlug } })
 
     void navigator.clipboard?.writeText(json)
 
-  }, [name, options])
+  }, [name, options, gameSlug])
 
 
 

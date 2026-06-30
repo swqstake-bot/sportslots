@@ -2,7 +2,15 @@ import type { OriginalsProfileV2, OriginalsWorkbenchOptions } from './schema/wor
 
 const KEY = 'originalsWorkbenchProfiles'
 
-export function loadProfiles(): OriginalsProfileV2[] {
+function normalizeGame(slug: string | undefined): string {
+  return (slug || 'dice').toLowerCase().trim()
+}
+
+function profileGame(profile: OriginalsProfileV2): string {
+  return normalizeGame(profile.options?.game)
+}
+
+function loadAllProfiles(): OriginalsProfileV2[] {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return []
@@ -13,6 +21,12 @@ export function loadProfiles(): OriginalsProfileV2[] {
   }
 }
 
+/** Profiles saved for one game (mines, keno, dice, …). */
+export function loadProfiles(gameSlug: string): OriginalsProfileV2[] {
+  const game = normalizeGame(gameSlug)
+  return loadAllProfiles().filter((p) => profileGame(p) === game)
+}
+
 export function saveProfiles(profiles: OriginalsProfileV2[]): void {
   try {
     localStorage.setItem(KEY, JSON.stringify(profiles))
@@ -21,32 +35,56 @@ export function saveProfiles(profiles: OriginalsProfileV2[]): void {
   }
 }
 
-export function upsertProfile(profile: OriginalsProfileV2): OriginalsProfileV2[] {
-  const list = loadProfiles()
-  const idx = list.findIndex((p) => p.name === profile.name)
-  const next = [...list]
-  if (idx >= 0) next[idx] = profile
-  else next.push(profile)
-  saveProfiles(next)
-  return next
+/** Replace all profiles for a single game, keeping other games untouched. */
+export function saveProfilesForGame(gameSlug: string, profiles: OriginalsProfileV2[]): void {
+  const game = normalizeGame(gameSlug)
+  const others = loadAllProfiles().filter((p) => profileGame(p) !== game)
+  const scoped = profiles.map((p) => ({
+    ...p,
+    options: { ...p.options, game } as OriginalsWorkbenchOptions,
+  }))
+  saveProfiles([...others, ...scoped])
 }
 
-export function deleteProfile(name: string): OriginalsProfileV2[] {
-  const next = loadProfiles().filter((p) => p.name !== name)
+export function upsertProfile(profile: OriginalsProfileV2, gameSlug: string): OriginalsProfileV2[] {
+  const game = normalizeGame(gameSlug)
+  const profileWithGame: OriginalsProfileV2 = {
+    ...profile,
+    options: { ...profile.options, game } as OriginalsWorkbenchOptions,
+  }
+
+  let next = loadAllProfiles()
+  if (profileWithGame.lastUsed) {
+    next = next.map((p) => (profileGame(p) === game ? { ...p, lastUsed: false } : p))
+  }
+
+  const idx = next.findIndex((p) => p.name === profile.name && profileGame(p) === game)
+  if (idx >= 0) next[idx] = profileWithGame
+  else next.push(profileWithGame)
+
   saveProfiles(next)
-  return next
+  return loadProfiles(game)
+}
+
+export function deleteProfile(name: string, gameSlug: string): OriginalsProfileV2[] {
+  const game = normalizeGame(gameSlug)
+  const next = loadAllProfiles().filter((p) => !(p.name === name && profileGame(p) === game))
+  saveProfiles(next)
+  return loadProfiles(game)
 }
 
 export function exportProfileJson(profile: OriginalsProfileV2): string {
   return JSON.stringify(profile, null, 2)
 }
 
-export function importOriginalsProfileJson(text: string): OriginalsProfileV2 {
+export function importOriginalsProfileJson(text: string, gameSlug?: string): OriginalsProfileV2 {
   const parsed = JSON.parse(text) as Record<string, unknown>
+  const defaultGame = normalizeGame(gameSlug)
   if (parsed.options && typeof parsed.options === 'object') {
+    const options = parsed.options as OriginalsWorkbenchOptions
     return {
       name: String(parsed.name || 'Imported'),
-      options: parsed.options as OriginalsWorkbenchOptions,
+      options: { ...options, game: normalizeGame(options.game || defaultGame) },
       notes: parsed.notes != null ? String(parsed.notes) : undefined,
       favorite: Boolean(parsed.favorite),
       loadOnStart: Boolean(parsed.loadOnStart),
@@ -54,10 +92,10 @@ export function importOriginalsProfileJson(text: string): OriginalsProfileV2 {
   }
   // Reference flat profile shape (game + bet fields at root)
   if (parsed.game || parsed.initialBetSize != null || parsed.betSize != null) {
-    const { name, favorite, loadOnStart, notes, ...opts } = parsed
+    const { name, favorite, loadOnStart, notes, game, ...opts } = parsed
     return {
       name: String(name || 'Imported'),
-      options: opts as OriginalsWorkbenchOptions,
+      options: { ...(opts as OriginalsWorkbenchOptions), game: normalizeGame(String(game || defaultGame)) },
       favorite: Boolean(favorite),
       loadOnStart: Boolean(loadOnStart),
       notes: notes != null ? String(notes) : undefined,
@@ -65,6 +103,6 @@ export function importOriginalsProfileJson(text: string): OriginalsProfileV2 {
   }
   return {
     name: 'Imported',
-    options: parsed as OriginalsWorkbenchOptions,
+    options: { ...(parsed as OriginalsWorkbenchOptions), game: defaultGame },
   }
 }

@@ -34,6 +34,9 @@ interface OriginalsModeHeaderProps {
   turboMode?: boolean
   turboCompatible?: boolean
   onToggleTurbo?: () => void
+  showSidebarToggle?: boolean
+  sidebarCollapsed?: boolean
+  onToggleSidebar?: () => void
 }
 
 export default function OriginalsModeHeader({
@@ -52,6 +55,9 @@ export default function OriginalsModeHeader({
   turboMode = false,
   turboCompatible = true,
   onToggleTurbo,
+  showSidebarToggle,
+  sidebarCollapsed,
+  onToggleSidebar,
 }: OriginalsModeHeaderProps) {
   const modes = modesForGame(game)
   const showTurbo = onToggleTurbo && (mode === 'automatic' || mode === 'conditions')
@@ -94,6 +100,16 @@ export default function OriginalsModeHeader({
       </div>
 
       <div className="originals-mode-header-actions">
+        {showSidebarToggle && onToggleSidebar && (
+          <button
+            type="button"
+            className={`originals-stats-toggle${sidebarCollapsed ? '' : ' is-open'}`}
+            onClick={onToggleSidebar}
+            title={sidebarCollapsed ? 'Show strategy panel' : 'Hide strategy panel'}
+          >
+            {sidebarCollapsed ? 'Panel' : 'Panel ◂'}
+          </button>
+        )}
         {showTurbo && (
           <button
             type="button"

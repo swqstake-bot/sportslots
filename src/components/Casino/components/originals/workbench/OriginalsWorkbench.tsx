@@ -36,6 +36,8 @@ import {
   loadWorkbenchSettings,
   saveBettingMode,
   saveStatsDrawerOpen,
+  loadSidebarCollapsed,
+  saveSidebarCollapsed,
   saveWorkbenchSettings,
   getBetListColumns,
   type WorkbenchSettings,
@@ -86,6 +88,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
     return true
   })
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed)
   const [wbSettings, setWbSettings] = useState<WorkbenchSettings>(() => loadWorkbenchSettingsForGame(gameSlug))
   const [autoOptions, setAutoOptions] = useState<OriginalsWorkbenchOptions>(() => {
     const settings = loadWorkbenchSettings()
@@ -99,7 +102,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
       const params = new URLSearchParams(window.location.search)
       const strategyId = params.get('strategyId') || params.get('strategyid')
       if (strategyId) {
-        const profiles = loadProfiles()
+        const profiles = loadProfiles(gameSlug)
         const match = profiles.find(
           (p) => p.name === strategyId || p.name.toLowerCase() === strategyId.toLowerCase()
         )
@@ -109,7 +112,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
       /* ignore */
     }
     if (loadProfilesOnStart()) {
-      const profile = loadProfiles().find((p) => p.loadOnStart)
+      const profile = loadProfiles(gameSlug).find((p) => p.loadOnStart)
       if (profile?.options) return { ...base, ...profile.options, game: gameSlug }
     }
     return base
@@ -163,6 +166,14 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
     }))
   }, [])
 
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev
+      saveSidebarCollapsed(next)
+      return next
+    })
+  }, [])
+
   const toggleTurbo = useCallback(() => {
     if (session.running || !isTurboCompatibleGame(gameSlug)) return
     setWbSettings((prev) => {
@@ -207,7 +218,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
 
   return (
     <div
-      className={`originals-workbench${statsVisible ? ' has-stats-open' : ''}${wbSettings.statsFloating ? ' has-stats-float' : ''}`}
+      className={`originals-workbench${statsVisible ? ' has-stats-open' : ''}${wbSettings.statsFloating ? ' has-stats-float' : ''}${sidebarCollapsed && showSidebar ? ' is-sidebar-collapsed' : ''}`}
       style={{ ['--originals-sidebar-w' as string]: `${wbSettings.sidebarWidth}px` }}
     >
       <OriginalsModeHeader
@@ -226,9 +237,13 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
         turboMode={wbSettings.turboMode}
         turboCompatible={turboOk}
         onToggleTurbo={toggleTurbo}
+        showSidebarToggle={showSidebar}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={toggleSidebar}
       />
 
-      <div className="originals-workbench-body">
+      <div className="originals-workbench-canvas">
+        <div className="originals-workbench-body">
         {showSidebar && (
           <OriginalsSidebar
             gameSlug={gameSlug}
@@ -344,6 +359,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
           stats={session.stats}
           floating={wbSettings.statsFloating}
         />
+        </div>
       </div>
 
       <OriginalsSettingsModal

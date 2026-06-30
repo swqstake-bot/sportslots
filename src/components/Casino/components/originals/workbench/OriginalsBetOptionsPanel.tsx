@@ -100,17 +100,12 @@ export default function OriginalsBetOptionsPanel({
     <div className="originals-bet-options space-y-4">
 
       {onLoadProfile && (
-
         <OriginalsStrategyManager
-
           options={o}
-
-          onLoad={(opts) => onLoadProfile({ ...opts, game: o.game })}
-
+          gameSlug={gameSlug ?? o.game ?? 'dice'}
+          onLoad={(opts) => onLoadProfile({ ...opts, game: gameSlug ?? o.game })}
           disabled={disabled}
-
         />
-
       )}
 
 

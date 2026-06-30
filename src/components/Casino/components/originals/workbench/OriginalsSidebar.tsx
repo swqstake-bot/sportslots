@@ -39,7 +39,7 @@ export default function OriginalsSidebar({
 
   return (
     <aside
-      className="originals-workbench-left casino-card"
+      className="originals-workbench-left originals-workbench-sidebar"
       style={{ ['--originals-sidebar-w' as string]: `${sidebarWidth}px` }}
     >
       <div className="originals-sidebar-tabs originals-sidebar-tabs--main" role="tablist">

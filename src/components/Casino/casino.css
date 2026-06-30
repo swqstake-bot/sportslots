@@ -404,6 +404,21 @@ html[data-theme='light'] .casino-root {
   background: color-mix(in srgb, var(--panel-bg-soft) 55%, transparent);
 }
 
+.casino-root .casino-content-frame .originals-workbench-canvas {
+  border: none;
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+  background: color-mix(in srgb, var(--panel-bg-soft) 55%, transparent);
+}
+
+.casino-root .casino-content-frame .originals-mode-header {
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 75%, transparent);
+  box-shadow: none;
+  background: color-mix(in srgb, var(--panel-bg-soft) 65%, transparent);
+}
+
 .casino-root .casino-content-frame .challenge-hub-topbar {
   border: none;
   border-radius: 0;

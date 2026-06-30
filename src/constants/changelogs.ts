@@ -1,4 +1,9 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.192': [
+    '✨ Originals: Profile pro Spiel getrennt (Strategy Manager, Load-on-Start, Last-Used je Game)',
+    '✨ Originals: Challenge-Hub-Layout — Canvas, Pill-Tabs, keine Sidebar-interne Scrollbox',
+    '✨ Originals: einklappbare Strategie-Sidebar, Stats standardmäßig schwebend, weniger Horizontal-Scroll',
+  ],
   '1.0.191': [
     '✨ Originals: Antebot-Parität — Dice/Limbo Target+Result, Mines-Grid, Hilo-Kartenkette, Keno-Multi in Bet-List',
     '✨ Originals: Live-Wallet-Balance im Header (WS + shared Hook), draggable Stats-Fenster',
