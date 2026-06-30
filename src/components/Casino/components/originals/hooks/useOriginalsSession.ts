@@ -72,8 +72,11 @@ export function useOriginalsSession(accessToken?: string, wbSettings?: Workbench
   const [chartSessionKey, setChartSessionKey] = useState(0)
   const signalRef = useRef<SessionSignal>(createSignal())
   const settingsRef = useRef(wbSettings)
-  settingsRef.current = wbSettings
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    settingsRef.current = wbSettings
+  }, [wbSettings])
 
   const addLog = useCallback((msg: string) => {
     setLogLines((prev) => [...prev.slice(-199), `[${new Date().toLocaleTimeString()}] ${msg}`])
@@ -155,6 +158,10 @@ export function useOriginalsSession(accessToken?: string, wbSettings?: Workbench
     signalRef.current.stopOnNextWin = false
     addLog('Stop-on-next-win disarmed.')
   }, [addLog])
+
+  const startRef = useRef<(options: OriginalsWorkbenchOptions, currency: string) => Promise<void>>(
+    async () => {}
+  )
 
   const start = useCallback(
     async (options: OriginalsWorkbenchOptions, currency: string) => {
@@ -299,13 +306,16 @@ export function useOriginalsSession(accessToken?: string, wbSettings?: Workbench
           tick()
         })
         if (!sig.cancelled) {
-          void start(options, currency)
+          void startRef.current(options, currency)
         }
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [accessToken, addLog, running, startCooldownSecs, stop, startCooldown]
   )
+
+  useEffect(() => {
+    startRef.current = start
+  }, [start])
 
   return {
     running,

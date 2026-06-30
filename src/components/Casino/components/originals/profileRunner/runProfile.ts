@@ -578,10 +578,6 @@ export async function runProfile(
   while (!signal.cancelled) {
     if (await waitWhilePaused(signal)) break
     rollNumber++
-    let payout = 0
-    let betIid: string | undefined
-
-    // Rotation: nach X Bets zum nächsten Spiel
     if (mode === 'wager' && rotationStages.length > 0) {
       if (rotationBetsLeft <= 0) applyRotationStage(rotationIndex + 1)
       rotationBetsLeft--
@@ -679,14 +675,17 @@ export async function runProfile(
     }
     if (roundResult.cancelled) break
 
-    payout = roundResult.payout
-    betIid = roundResult.betIid
-    houseBetBridge.linkBetApiId(rollNumber, roundResult.betApi?.id ?? roundResult.betApi?.betApiId ?? betIid)
-    let wageredUsdThisRound = roundResult.wageredUsdThisRound
-    let payoutUsd = roundResult.payoutUsd
-    let placedAmountMajor = roundResult.placedAmountMajor
-    let multi = roundResult.multi
-    let win = roundResult.win
+    const {
+      payout,
+      betIid,
+      wageredUsdThisRound,
+      payoutUsd,
+      placedAmountMajor,
+      multi,
+      win,
+      betApi,
+    } = roundResult
+    houseBetBridge.linkBetApiId(rollNumber, betApi?.id ?? betApi?.betApiId ?? betIid)
     totalWageredUsd += wageredUsdThisRound
     const roundProfitUsd = payoutUsd - wageredUsdThisRound
     profitUsd += roundProfitUsd

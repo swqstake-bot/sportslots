@@ -1,4 +1,14 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.188': [
+    '✨ Originals: neues Workbench-UI (Dashboard, Automatic, Manual, Conditions, Turbo, flexible Layout/Stats)',
+    '✨ Originals: B2B-Reinvest + Take-Profit, Combo, Pause/Resume, Vault-Deposit, erweiterte Stops & IF/THEN-Conditions',
+    '✨ Originals: Plinko Expert 10.000×, Profit-Chart mit Fläche, Session-Stats (RTP, B2B-Streak)',
+    '⚡ Originals Turbo: parallele Bets mit Rate-Limit-Backoff (B2B/Combo automatisch Normal-Modus)',
+    '🐛 Originals: Bet-IDs via betApiId↔houseBets + myBetUpdated-WS-Fallback',
+    '🐛 Originals: B2B-Streak/Win-Erkennung und Stop-Engine korrigiert',
+    '🐛 Slots: KPI-Drift behoben — deduplizierte Bet-History, kein Autospin-Doppelzählen, WS Multi-Key-Dedup',
+    '✨ Header: VIP/Wagered/Weekly-Wager Meta (Account-Query)',
+  ],
   '1.0.187': [
     '✨ Challenge Hunter: StakeCruncher-Schwierigkeit (Lookup-Table, Badge, Sortierung, Analyze)',
     '✨ Challenge Hunter: Found-Liste — Sortierung nach Target-Multi, RGS-Slug ohne Publisher-Präfix',
