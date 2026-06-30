@@ -27,7 +27,7 @@ jobs:
         shell: pwsh
         run: |
           $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          Write-Host "Publishing StakeSportsElectron v$v → GitHub Releases (electron-updater)"
+          Write-Host "Publishing swqbot v$v → GitHub Releases (electron-updater)"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

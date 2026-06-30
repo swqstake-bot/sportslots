@@ -22,6 +22,8 @@ import { GlobalToast } from './components/ui/GlobalToast';
 import { getChangelogForVersion } from './constants/changelogs';
 import { AppHeader } from './components/AppShell/AppHeader';
 import { SportsSubbar } from './components/AppShell/SportsSubbar';
+import { AppBrandMark } from './components/AppShell/AppBrandMark';
+import { APP_NAME, APP_TAGLINE } from './constants/branding';
 import { refreshWalletBalances } from './utils/walletBalance';
 
 /** Pro GraphQL-Request: Stake validiert `activeSportBets(limit)` mit Obergrenze (typisch ≤50; höhere Werte → error.number_less_equal). */
@@ -106,10 +108,12 @@ function App() {
       const lastSeenVersion = localStorage.getItem('app_last_seen_version');
       if (currentVersion !== lastSeenVersion) {
         const changes = getChangelogForVersion(currentVersion);
-        setChangelogVersion(currentVersion);
-        setChangelogContent(changes || []);
-        setShowChangelog(true);
         localStorage.setItem('app_last_seen_version', currentVersion);
+        if (changes.length > 0) {
+          setChangelogVersion(currentVersion);
+          setChangelogContent(changes);
+          setShowChangelog(true);
+        }
       }
     });
   }, []);
@@ -263,7 +267,7 @@ function App() {
         }
     }, 10000);
     
-    console.log('MainApp mounted - StakeSports UI should be visible');
+    console.log(`MainApp mounted - ${APP_NAME} UI should be visible`);
     return () => clearInterval(interval);
   }, [fetchData, isAuthenticated, needsActiveSportBets, shouldFetchActiveSportBets]);
 
@@ -289,12 +293,9 @@ function App() {
     return <KeyAuthLogin onSuccess={handleKeyAuthSuccess} />;
   }
 
-  const appTitle = currentView === 'casino' ? 'STAKESLOTS' : currentView === 'logger' ? 'STAKELOGGER' : 'STAKESPORTS';
-
   const appHeaderProps = {
     currentView,
     onChangeView: setCurrentView,
-    appTitle,
     userName: user?.name,
     isChallengeRunning,
     isRunning,
@@ -396,19 +397,14 @@ function App() {
                     )
                   ) : (
                       <div className="flex flex-col items-center justify-center h-full text-center p-8" style={{ background: 'var(--app-bg-deep)' }}>
-                      <div 
-                        className="w-24 h-24 rounded-2xl flex items-center justify-center mb-8"
-                        style={{ background: 'var(--app-bg-card)', border: '1px solid var(--app-border)', boxShadow: '0 0 32px var(--app-accent-glow)' }}
-                      >
-                        <svg className="w-12 h-12" style={{ color: 'var(--app-accent)' }} viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M12 2L2 7l10 5 10-5-10-5zm0 9l2.5-1.25L12 8.5l-2.5 1.25L12 11zm0 2.5l-5-2.5-5 2.5L12 22l10-8.5-5-2.5-5 2.5z"/>
-                        </svg>
+                      <div className="mb-8">
+                        <AppBrandMark size={96} />
                       </div>
-                      <h2 className="text-2xl font-black mb-3 tracking-wide uppercase" style={{ color: 'var(--app-text)', fontFamily: 'var(--font-heading)' }}>
-                        Welcome to STAKE<span style={{ color: 'var(--app-accent)' }}>SPORTS</span>
+                      <h2 className="text-2xl font-black mb-3 tracking-wide" style={{ color: 'var(--app-text)', fontFamily: 'var(--font-heading)' }}>
+                        Welcome to {APP_NAME}
                       </h2>
                       <p className="mb-8 max-w-md text-sm leading-relaxed" style={{ color: 'var(--app-text-muted)' }}>
-                        Login with Stake.com to view fixtures, place bets, and manage your portfolio.
+                        {APP_TAGLINE}. Login with Stake.com to view fixtures, place bets, and manage your portfolio.
                       </p>
                       <button 
                         onClick={handleLogin}

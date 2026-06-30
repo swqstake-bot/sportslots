@@ -340,7 +340,7 @@ export default function OriginalsBetOptionsPanel({
 
           >
 
-            StakeSports extensions {advancedOpen ? '▾' : '▸'}
+            swqbot extensions {advancedOpen ? '▾' : '▸'}
 
           </button>
 

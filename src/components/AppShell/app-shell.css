@@ -51,17 +51,63 @@
   color: var(--app-text-muted);
 }
 
-.app-header-title {
-  margin: 0.1rem 0 0;
+.app-header-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.app-header-logo {
+  flex-shrink: 0;
+  border-radius: 0.55rem;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--app-accent) 28%, transparent);
+}
+
+.app-brand-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
   font-family: var(--font-heading);
-  letter-spacing: 0.08em;
-  font-size: 1.02rem;
+  letter-spacing: 0.04em;
+  font-size: 1.05rem;
+  font-weight: 800;
+  text-transform: lowercase;
+}
+
+.app-brand-title-sw {
+  background: linear-gradient(90deg, #6ee7b7, #22d3ee 55%, #a5b4fc);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.app-brand-title-bot {
   color: var(--app-text);
 }
 
+.app-brand-title-suffix {
+  margin-left: 0.15rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--app-border-subtle);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--app-text-muted);
+}
+
+.app-header-title {
+  margin: 0;
+  font-family: inherit;
+  letter-spacing: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
 .app-header-title span {
-  color: var(--app-accent);
-  text-shadow: 0 0 10px var(--app-accent-glow);
+  color: inherit;
+  text-shadow: none;
 }
 
 .app-header-userpill {

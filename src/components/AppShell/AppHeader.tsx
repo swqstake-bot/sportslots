@@ -2,13 +2,14 @@ import { WalletSelector } from '../WalletSelector'
 import { PrimaryNav } from './PrimaryNav'
 import { ThemeAccentButton } from './ThemeAccentButton'
 import { HeaderAccountMeta } from './HeaderAccountMeta'
+import { AppBrandMark, AppBrandTitle } from './AppBrandMark'
+import { APP_VIEW_TITLES } from '../../constants/branding'
 
 type AppView = 'casino' | 'sports' | 'logger'
 
 interface AppHeaderProps {
   currentView: AppView
   onChangeView: (view: AppView) => void
-  appTitle: string
   userName?: string
   isChallengeRunning: boolean
   isRunning: boolean
@@ -21,7 +22,6 @@ interface AppHeaderProps {
 export function AppHeader({
   currentView,
   onChangeView,
-  appTitle,
   userName,
   isChallengeRunning,
   isRunning,
@@ -34,9 +34,10 @@ export function AppHeader({
   return (
     <header className="app-header">
       <div className="app-header-left">
-        <div>
+        <div className="app-header-brand-row">
+          <AppBrandMark size={34} className="app-header-logo" />
           <h1 className="app-header-title">
-            STAKE<span>{appTitle.replace('STAKE', '')}</span>
+            <AppBrandTitle suffix={APP_VIEW_TITLES[currentView]} />
           </h1>
         </div>
         {hasUser && (

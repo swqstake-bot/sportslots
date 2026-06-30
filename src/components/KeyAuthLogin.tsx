@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { keyAuthLogin, keyAuthInit } from '../api/keyauth';
+import { APP_NAME } from '../constants/branding';
 
 const STORAGE_KEY = 'keyauth_save_credentials';
 const SAVED_USER_KEY = 'keyauth_saved_username';
@@ -88,12 +89,13 @@ export function KeyAuthLogin({ onSuccess }: KeyAuthLoginProps) {
           boxShadow: '0 0 60px rgba(0, 240, 255, 0.08), 0 25px 50px -12px rgba(0, 0, 0, 0.5)',
         }}
       >
-        <div className="flex justify-center mb-10">
+        <div className="flex flex-col items-center mb-10 gap-4">
+          <img src="/logo.svg" alt="" className="h-12 w-auto" draggable={false} />
           <h1
-            className="text-2xl font-bold tracking-[0.2em] uppercase"
-            style={{ fontFamily: "var(--font-heading, 'Orbitron', monospace)", color: 'var(--app-accent, #00F0FF)' }}
+            className="text-xl font-bold tracking-wide lowercase"
+            style={{ fontFamily: "var(--font-heading, 'Orbitron', monospace)", color: 'var(--app-text, #e2e8f0)' }}
           >
-            StakeSports
+            {APP_NAME}
           </h1>
         </div>
 

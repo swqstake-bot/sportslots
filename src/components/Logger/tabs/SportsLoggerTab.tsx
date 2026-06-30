@@ -140,7 +140,7 @@ export default function SportsLoggerTab({ bets, currencyRates, subscriptionStatu
     if (!bets.length) return;
     const body = buildLoggerBetsCsv(bets, currencyRates);
     const day = new Date().toISOString().slice(0, 10);
-    downloadLoggerCsv(`stakesports-sports-bets-${day}.csv`, body);
+    downloadLoggerCsv(`swqbot-sports-bets-${day}.csv`, body);
   }, [bets, currencyRates]);
 
   const handleCopyBetId = useCallback(async (value: string) => {

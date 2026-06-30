@@ -31,7 +31,7 @@ export function CasinoShell({
           <header className="casino-shell-header">
             <div className="casino-shell-title-row">
               <div>
-                <p className="casino-shell-kicker">Stakesports · Casino</p>
+                <p className="casino-shell-kicker">swqbot · Casino</p>
                 <h1 className="casino-shell-title">Control center</h1>
                 <p className="casino-shell-sub">Slots, automation &amp; tools — same Stake session as Sports.</p>
               </div>

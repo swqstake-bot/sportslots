@@ -1,22 +1,37 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="swqbot">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#140a0a"/>
-      <stop offset="100%" stop-color="#241011"/>
+      <stop offset="0%" stop-color="#070b12"/>
+      <stop offset="100%" stop-color="#101827"/>
     </linearGradient>
-    <linearGradient id="stroke" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#ff6a42"/>
-      <stop offset="100%" stop-color="#ff3d30"/>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="55%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#818cf8"/>
     </linearGradient>
-    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="2.6" result="blur"/>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6ee7b7"/>
+      <stop offset="100%" stop-color="#67e8f9"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.2" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
   </defs>
-  <rect x="6" y="6" width="116" height="116" rx="26" fill="url(#bg)" stroke="url(#stroke)" stroke-width="6"/>
-  <path d="M36 91L64 28L92 91" fill="none" stroke="url(#stroke)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
-  <path d="M48 68H80" fill="none" stroke="url(#stroke)" stroke-width="8" stroke-linecap="round" filter="url(#glow)"/>
+  <rect x="6" y="6" width="116" height="116" rx="28" fill="url(#bg)" stroke="url(#edge)" stroke-width="5"/>
+  <circle cx="94" cy="34" r="5" fill="#34d399" filter="url(#glow)"/>
+  <path
+    d="M44 44c0-8 7-14 18-14 11 0 18 5 18 13 0 7-5 11-16 14l-8 2c-8 2-12 5-12 11 0 7 7 12 18 12 10 0 17-4 20-11"
+    fill="none"
+    stroke="url(#mark)"
+    stroke-width="9"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    filter="url(#glow)"
+  />
+  <path d="M36 88h44" stroke="url(#edge)" stroke-width="6" stroke-linecap="round" opacity="0.85"/>
+  <path d="M48 98h20" stroke="url(#edge)" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
 </svg>

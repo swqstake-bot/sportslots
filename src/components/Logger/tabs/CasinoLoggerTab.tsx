@@ -296,7 +296,7 @@ export default function CasinoLoggerTab({
     if (!list.length) return;
     const body = buildLoggerBetsCsv(list, currencyRates);
     const day = new Date().toISOString().slice(0, 10);
-    downloadLoggerCsv(`stakesports-casino-bets-${day}.csv`, body);
+    downloadLoggerCsv(`swqbot-casino-bets-${day}.csv`, body);
   }, [filteredBets, bets, currencyRates]);
 
   const handleCopyHouseId = useCallback(async (value: string) => {

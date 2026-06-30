@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net, session, shell, globalShortcut, dialog, type WebContents } from 'electron';
+import { app, BrowserWindow, ipcMain, net, session, shell, globalShortcut, dialog, Tray, Menu, nativeImage, type WebContents } from 'electron';
 // electron-updater ist CommonJS: Named Import `import { autoUpdater }` bricht unter ESM (Main-Prozess).
 import updaterModule from 'electron-updater';
 const { autoUpdater } = updaterModule;
@@ -459,15 +459,53 @@ const LOGGER_CURRENCY_CONFIG_QUERY = `query CurrencyConfiguration($isAcp: Boolea
   }
 }`;
 
+const APP_DISPLAY_NAME = 'swqbot';
+
+let tray: Tray | null = null;
+
+function resolveAppIconPath(kind: 'window' | 'tray'): string {
+  const trayPng = path.join(VITE_PUBLIC, 'tray-icon.png');
+  const iconPng = path.join(VITE_PUBLIC, 'icon.png');
+  const iconSvg = path.join(VITE_PUBLIC, 'favicon.svg');
+  if (kind === 'tray' && fs.existsSync(trayPng)) return trayPng;
+  if (fs.existsSync(iconPng)) return iconPng;
+  return iconSvg;
+}
+
+function createTray(): void {
+  if (tray) return;
+  const iconPath = resolveAppIconPath('tray');
+  const image = nativeImage.createFromPath(iconPath);
+  if (image.isEmpty()) return;
+  const trayImage = image.resize({ width: 16, height: 16 });
+  tray = new Tray(trayImage);
+  tray.setToolTip(APP_DISPLAY_NAME);
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: `Show ${APP_DISPLAY_NAME}`,
+        click: () => {
+          win?.show();
+          win?.focus();
+        },
+      },
+      { type: 'separator' },
+      { label: 'Quit', click: () => app.quit() },
+    ])
+  );
+  tray.on('double-click', () => {
+    win?.show();
+    win?.focus();
+  });
+}
+
 function createWindow() {
-  const iconPngPath = path.join(VITE_PUBLIC, 'icon.png');
-  const iconSvgPath = path.join(VITE_PUBLIC, 'favicon.svg');
-  const resolvedIconPath = fs.existsSync(iconPngPath) ? iconPngPath : iconSvgPath;
+  const resolvedIconPath = resolveAppIconPath('window');
 
   win = new BrowserWindow({
     width: 1200,
     height: 800,
-    title: 'StakeSports',
+    title: APP_DISPLAY_NAME,
     autoHideMenuBar: true,
     icon: resolvedIconPath,
     webPreferences: {
@@ -1207,7 +1245,7 @@ ipcMain.handle('cruncher-api-fetch', async (_event, payload) => {
   const url = `https://stakecruncher.com${path}`;
   const headers: Record<string, string> = {
     Accept: '*/*',
-    'User-Agent': `StakeSportsElectron/${app.getVersion()}`,
+    'User-Agent': `swqbot/${app.getVersion()}`,
   };
   const referer = stakeCruncherRefererForPath(path);
   if (referer) headers.Referer = referer;
@@ -2245,6 +2283,10 @@ app.on('activate', () => {
 });
 
 app.whenReady().then(() => {
+    if (process.platform === 'win32') {
+      app.setAppUserModelId('com.swqbot.electron');
+    }
+
     session.defaultSession.cookies.on(
       'changed',
       (
@@ -2298,6 +2340,7 @@ app.whenReady().then(() => {
     }
 
     createWindow();
+    createTray();
 
     if (app.isPackaged) {
       configureGithubAutoUpdater();

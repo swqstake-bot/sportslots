@@ -1,4 +1,4 @@
-const PERF_LOG = '[StakeSports:perf]';
+const PERF_LOG = '[swqbot:perf]';
 
 function isPerfEnabled(): boolean {
   if (import.meta.env.VITE_PERF_INSTRUMENTATION === '1') return true;
