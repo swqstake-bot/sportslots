@@ -26,6 +26,11 @@ const INVOKE_ALLOWLIST = new Set([
 ]);
 
 contextBridge.exposeInMainWorld('electronAPI', {
+    isFrameless: process.platform === 'win32' || process.platform === 'linux',
+    windowMinimize: () => ipcRenderer.invoke('window-minimize') as Promise<boolean>,
+    windowMaximize: () => ipcRenderer.invoke('window-maximize') as Promise<boolean>,
+    windowClose: () => ipcRenderer.invoke('window-close') as Promise<boolean>,
+    windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized') as Promise<boolean>,
     getAppVersion: () => ipcRenderer.invoke('get-app-version') as Promise<string>,
     version: pkg?.version ?? '',
     login: () => ipcRenderer.invoke('login'),

@@ -2,6 +2,11 @@
 // and https://www.electronjs.org/docs/api/context-bridge
 
 export interface ElectronAPI {
+  isFrameless?: boolean;
+  windowMinimize?: () => Promise<boolean>;
+  windowMaximize?: () => Promise<boolean>;
+  windowClose?: () => Promise<boolean>;
+  windowIsMaximized?: () => Promise<boolean>;
   getStakeSessionStatus: () => Promise<{
     valid: boolean;
     origin: string;

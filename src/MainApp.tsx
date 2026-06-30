@@ -23,6 +23,7 @@ import { getChangelogForVersion } from './constants/changelogs';
 import { AppHeader } from './components/AppShell/AppHeader';
 import { SportsSubbar } from './components/AppShell/SportsSubbar';
 import { AppBrandMark } from './components/AppShell/AppBrandMark';
+import { WindowTitleBar } from './components/AppShell/WindowTitleBar';
 import { APP_NAME, APP_TAGLINE } from './constants/branding';
 import { refreshWalletBalances } from './utils/walletBalance';
 
@@ -290,7 +291,19 @@ function App() {
   }, []);
 
   if (!isAuthenticated) {
-    return <KeyAuthLogin onSuccess={handleKeyAuthSuccess} />;
+    return (
+      <div
+        className="flex flex-col h-screen overflow-hidden"
+        style={{
+          background: 'var(--app-bg-deep)',
+          color: 'var(--app-text)',
+          fontFamily: 'var(--font-body)',
+        }}
+      >
+        <WindowTitleBar />
+        <KeyAuthLogin onSuccess={handleKeyAuthSuccess} />
+      </div>
+    );
   }
 
   const appHeaderProps = {
@@ -316,6 +329,7 @@ function App() {
       }}
       data-app-mode={currentView}
     >
+      <WindowTitleBar />
       <GlobalToast />
       <UpdaterNotification />
       <ChangelogModal 

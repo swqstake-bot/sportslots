@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.196': [
+    '✨ UI: integrierte dunkle Titelleiste (Logo + swqbot + Fenster-Buttons) statt weißer File/Edit-Leiste',
+    '🐛 Login: Cloudflare-Prüfung wieder möglich — Chrome User-Agent wie Antebot/SSP, Session-Capture nach CF-Cookie',
+  ],
   '1.0.194': [
     '✨ Casino: Tab „Play“ heißt jetzt „Slots“ (Navigation + zugehörige UI-Texte)',
   ],

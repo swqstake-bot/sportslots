@@ -1,3 +1,78 @@
+.window-titlebar {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 0 0 0.75rem;
+  background:
+    linear-gradient(180deg, rgba(var(--app-accent-rgb), 0.08), rgba(0, 0, 0, 0)),
+    var(--surface-1);
+  border-bottom: 1px solid var(--app-border);
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.window-titlebar-drag {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  -webkit-app-region: drag;
+}
+
+.window-titlebar-logo {
+  flex-shrink: 0;
+  border-radius: 0.35rem;
+}
+
+.window-titlebar-brand {
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.window-titlebar-controls {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.window-titlebar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.window-titlebar-btn svg {
+  width: 10px;
+  height: 10px;
+}
+
+.window-titlebar-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--app-text);
+}
+
+.window-titlebar-btn.is-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
 .app-header {
   margin: 0;
   padding: 0.78rem 1.15rem;

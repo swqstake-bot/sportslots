@@ -75,7 +75,7 @@ export function KeyAuthLogin({ onSuccess }: KeyAuthLoginProps) {
 
   return (
     <div
-      className="flex items-center justify-center min-h-screen text-white"
+      className="flex flex-1 items-center justify-center min-h-0 text-white"
       style={{
         background: 'linear-gradient(135deg, var(--app-bg-deep, #0A0A0F) 0%, #0d1220 50%, #080a12 100%)',
         fontFamily: "var(--font-body, 'Exo 2', sans-serif)",

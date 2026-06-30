@@ -29,6 +29,15 @@ import {
   resolveStakeOrigin,
   type StakeSessionStatus,
 } from './stakeSessionManager.js';
+import {
+  STAKE_BROWSER_USER_AGENT,
+  applyDefaultSessionUserAgent,
+  applyStakeBrowserUserAgent,
+  configureStakeBrowserUserAgent,
+  stakeClientHintHeaders,
+} from './stakeBrowserChrome.js';
+
+configureStakeBrowserUserAgent();
 
 function extractStakeJsonErrorMessage(parsed: unknown): string {
     if (parsed == null) return 'Leere Antwort';
@@ -68,6 +77,7 @@ import {
 
 let win: BrowserWindow | null;
 let loginWin: BrowserWindow | null;
+let stakeLoginPromise: Promise<void> | null = null;
 let stakeBridgeWin: BrowserWindow | null = null;
 let withdrawPrefillWin: BrowserWindow | null = null;
 let forumLoginWin: BrowserWindow | null = null;
@@ -460,8 +470,39 @@ const LOGGER_CURRENCY_CONFIG_QUERY = `query CurrencyConfiguration($isAcp: Boolea
 }`;
 
 const APP_DISPLAY_NAME = 'swqbot';
+const FRAMELESS_CHROME = process.platform === 'win32' || process.platform === 'linux';
+const WINDOW_BACKGROUND = '#0f212e';
 
 let tray: Tray | null = null;
+
+function registerWindowChromeIpc(): void {
+  ipcMain.handle('window-minimize', () => {
+    BrowserWindow.getFocusedWindow()?.minimize();
+    return true;
+  });
+  ipcMain.handle('window-maximize', () => {
+    const focused = BrowserWindow.getFocusedWindow();
+    if (!focused) return false;
+    if (focused.isMaximized()) focused.unmaximize();
+    else focused.maximize();
+    return focused.isMaximized();
+  });
+  ipcMain.handle('window-close', () => {
+    BrowserWindow.getFocusedWindow()?.close();
+    return true;
+  });
+  ipcMain.handle('window-is-maximized', () => BrowserWindow.getFocusedWindow()?.isMaximized() ?? false);
+}
+
+function applyFramelessChromeOptions(): Pick<Electron.BrowserWindowConstructorOptions, 'frame' | 'backgroundColor'> {
+  if (!FRAMELESS_CHROME) {
+    return {};
+  }
+  return {
+    frame: false,
+    backgroundColor: WINDOW_BACKGROUND,
+  };
+}
 
 function resolveAppIconPath(kind: 'window' | 'tray'): string {
   const trayPng = path.join(VITE_PUBLIC, 'tray-icon.png');
@@ -508,6 +549,7 @@ function createWindow() {
     title: APP_DISPLAY_NAME,
     autoHideMenuBar: true,
     icon: resolvedIconPath,
+    ...applyFramelessChromeOptions(),
     webPreferences: {
       preload: path.join(ELECTRON_DIR, 'preload.js'),
       nodeIntegration: false,
@@ -518,6 +560,8 @@ function createWindow() {
       backgroundThrottling: false,
     },
   });
+
+  applyStakeBrowserUserAgent(win.webContents);
 
   /** Gepackte App: keine DevTools (RAM/UX); nur unfertige Builds aus dem Repo. */
   const allowDevTools = !app.isPackaged;
@@ -572,37 +616,121 @@ function createWindow() {
 }
 
 function createLoginWindow() {
-    if (loginWin) {
+  void openStakeLoginWindow().catch((err) => {
+    console.error('[StakeSession] Login window failed:', err);
+  });
+}
+
+async function openStakeLoginWindow(): Promise<void> {
+  if (stakeLoginPromise) {
+    await stakeLoginPromise;
+    return;
+  }
+
+  stakeLoginPromise = new Promise<void>((resolve) => {
+    void (async () => {
+      const stakeUrl = await resolveStakeOrigin();
+      const ses = session.defaultSession;
+
+      if (loginWin && !loginWin.isDestroyed()) {
         loginWin.focus();
+        resolve();
         return;
-    }
+      }
 
-    loginWin = new BrowserWindow({
+      loginWin = new BrowserWindow({
         width: 1000,
-        height: 700,
-        parent: win || undefined,
-        modal: true,
+        height: 720,
+        autoHideMenuBar: true,
+        title: 'Stake – sign in',
         webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: false,
+        },
+      });
+
+      applyStakeBrowserUserAgent(loginWin.webContents);
+      void loginWin.loadURL(stakeUrl, { userAgent: STAKE_BROWSER_USER_AGENT });
+
+      let settled = false;
+      const finish = async (closeWindow: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearInterval(pollTimer);
+        ses.cookies.removeListener('changed', onCookieChanged);
+        invalidateStakeSessionStatusCache();
+        await captureSession();
+        try {
+          if (loginWin && !loginWin.isDestroyed()) {
+            const pageUa = await loginWin.webContents.executeJavaScript('navigator.userAgent', true);
+            if (typeof pageUa === 'string' && pageUa && !pageUa.toLowerCase().includes('electron')) {
+              sessionData.userAgent = pageUa;
+              ses.setUserAgent(pageUa);
+            }
+          }
+        } catch {
+          /* ignore */
         }
-    });
+        if (closeWindow && loginWin && !loginWin.isDestroyed()) {
+          loginWin.close();
+        }
+        resolve();
+      };
 
-    loginWin.loadURL('https://stake.com');
+      const isStakeLoggedIn = async (): Promise<boolean> => {
+        if (!loginWin || loginWin.isDestroyed()) return false;
+        try {
+          const title = await loginWin.webContents.executeJavaScript('document.title', true);
+          return title === 'Stake';
+        } catch {
+          return false;
+        }
+      };
 
-    loginWin.on('closed', () => {
+      const pollTimer = setInterval(() => {
+        void (async () => {
+          if (await isStakeLoggedIn()) {
+            await finish(true);
+          }
+        })();
+      }, 1000);
+
+      const onCookieChanged = (
+        _event: Electron.Event,
+        cookie: Electron.Cookie,
+        _cause: string,
+        removed: boolean
+      ) => {
+        if (cookie.name === 'cf_clearance' && !removed) {
+          void captureSession();
+        }
+        if (cookie.name === 'session' && !removed) {
+          void (async () => {
+            if (await isStakeLoggedIn()) {
+              await finish(true);
+            }
+          })();
+        }
+      };
+      ses.cookies.on('changed', onCookieChanged);
+
+      loginWin.on('closed', () => {
         loginWin = null;
-    });
+        void finish(false);
+      });
 
-    // Capture session data when navigating
-    loginWin.webContents.on('did-navigate', async () => {
-        invalidateStakeSessionStatusCache();
-        await captureSession();
-    });
-    loginWin.webContents.on('did-finish-load', async () => {
-        invalidateStakeSessionStatusCache();
-        await captureSession();
-    });
+      loginWin.webContents.on('did-finish-load', () => {
+        void captureSession();
+      });
+    })();
+  });
+
+  try {
+    await stakeLoginPromise;
+  } finally {
+    stakeLoginPromise = null;
+  }
 }
 
 // --- Auto Updater (electron-updater / GitHub Releases + latest.yml) ---
@@ -717,8 +845,8 @@ ipcMain.handle('quit-and-install', () => {
 // --------------------------
 
 // IPC Handlers
-ipcMain.handle('login', () => {
-    createLoginWindow();
+ipcMain.handle('login', async () => {
+    await openStakeLoginWindow();
 });
 
 ipcMain.handle('get-keyauth-hwid', async () => {
@@ -2287,6 +2415,12 @@ app.whenReady().then(() => {
       app.setAppUserModelId('com.swqbot.electron');
     }
 
+    if (FRAMELESS_CHROME) {
+      Menu.setApplicationMenu(null);
+    }
+    registerWindowChromeIpc();
+    applyDefaultSessionUserAgent();
+
     session.defaultSession.cookies.on(
       'changed',
       (
@@ -2327,6 +2461,8 @@ app.whenReady().then(() => {
             const origin = `${u.protocol}//${u.host}`;
             details.requestHeaders['Origin'] = origin;
             details.requestHeaders['Referer'] = `${origin}/`;
+            details.requestHeaders['User-Agent'] = STAKE_BROWSER_USER_AGENT;
+            Object.assign(details.requestHeaders, stakeClientHintHeaders());
           } catch {
             // ignore parse errors and keep existing headers
           }
