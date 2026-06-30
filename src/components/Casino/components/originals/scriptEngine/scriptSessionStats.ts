@@ -19,6 +19,8 @@ export type ScriptSessionStats = {
   sessionElapsedMs: number
   betsPerSec: number
   b2bSecuredUsd: number
+  /** Return-to-player ratio: totalPayout / totalWagered. 1.0 = break-even. */
+  rtp: number
 }
 
 export function emptyScriptSessionStats(): ScriptSessionStats {
@@ -39,6 +41,7 @@ export function emptyScriptSessionStats(): ScriptSessionStats {
     sessionElapsedMs: 0,
     betsPerSec: 0,
     b2bSecuredUsd: 0,
+    rtp: 0,
   }
 }
 

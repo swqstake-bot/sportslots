@@ -362,6 +362,34 @@ export const Queries = {
 
   UserDetails: `query UserDetails { user { id name } }`,
 
+  VipProgressMeta: `query VipProgressMeta {
+    user {
+      id
+      flagProgress {
+        flag
+        progress
+      }
+    }
+  }`,
+
+  ActiveRaffles: `query ActiveRaffles($isAuthenticated: Boolean = false) {
+    activeRaffles {
+      id
+      name
+      description
+      reward
+      startTime
+      endTime
+      ticketCount
+      ticketValue
+      promotionPeriod
+      raffleUser @include(if: $isAuthenticated) {
+        progress
+        ticketCount
+      }
+    }
+  }`,
+
   FetchBalances: `query UserBalances {
     user {
       id

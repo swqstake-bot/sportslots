@@ -100,6 +100,26 @@ const HOUSEBETS_SUBSCRIPTION = `
   }
 `
 
+/** Fallback für Share-IDs wenn houseBets verzögert/fehlt (SSP: myBetUpdated.id = house:…). */
+const MY_BET_UPDATED_SUBSCRIPTION = `
+  subscription MyBetUpdated {
+    myBetUpdated {
+      id
+      currency
+      amount
+      payout
+      multiplier
+      game {
+        id
+        name
+        slug
+        __typename
+      }
+      __typename
+    }
+  }
+`
+
 const PROCESSED_HOUSEBET_KEYS_MAX = 2000
 
 /** Optional: auf `true` setzen = immer detaillierte houseBets-Logs (sehr laut). */
@@ -176,8 +196,115 @@ function gameNameToSlug(name) {
 }
 
 /**
+ * @param {Set<string>} processedKeys
+ * @param {string|null|undefined} dedupeKey
+ * @returns {boolean} true wenn Event neu (nicht Duplikat)
+ */
+function markHouseBetKeyProcessed(processedKeys, dedupeKey) {
+  if (!dedupeKey) return true
+  return markHouseBetKeysProcessed(processedKeys, [dedupeKey])
+}
+
+/**
+ * houseBets (iid) und myBetUpdated (numerische id) können dasselbe Event sein —
+ * alle bekannten IDs gemeinsam deduplizieren.
+ * @param {Set<string>} processedKeys
+ * @param {Array<string|null|undefined>} dedupeKeys
+ * @returns {boolean} true wenn Event neu (nicht Duplikat)
+ */
+function markHouseBetKeysProcessed(processedKeys, dedupeKeys) {
+  const unique = [...new Set((dedupeKeys || []).map((k) => (k != null ? String(k).trim() : '')).filter(Boolean))]
+  if (unique.length === 0) return true
+  if (unique.some((k) => processedKeys.has(k))) return false
+  for (const k of unique) {
+    processedKeys.add(k)
+    if (processedKeys.size > PROCESSED_HOUSEBET_KEYS_MAX) {
+      const first = processedKeys.values().next().value
+      processedKeys.delete(first)
+    }
+  }
+  return true
+}
+
+/**
+ * @param {object} game
+ * @param {boolean} doCompactLog
+ */
+function shouldSkipWalletLikeGame(game, doCompactLog) {
+  const name = (game?.name || '').toLowerCase()
+  const icon = (game?.icon || '').toLowerCase()
+  const looksLikeSlotGame = icon.includes('provider-slots') || icon.includes('slots')
+  const isWalletLike = /wallet|transfer|deposit|withdraw/.test(name)
+  const isVaultUiButNotSlots = name.includes('vault') && !looksLikeSlotGame
+  if (isWalletLike || isVaultUiButNotSlots) {
+    if (doCompactLog) console.warn('[StakeBetWS] SKIP: gefiltert (wallet/vault)', { name, icon })
+    return true
+  }
+  return false
+}
+
+/**
+ * Normalisiert myBetUpdated (flaches Bet-Objekt) → gleiches Callback-Format wie houseBets.
+ * @returns {object|null}
+ */
+function payloadFromMyBetUpdated(mb) {
+  const rawId = mb?.id != null && String(mb.id).trim() !== '' ? String(mb.id).trim() : null
+  if (!rawId) return null
+
+  const isPrefixedShare = /^(house|casino):/i.test(rawId)
+  const shareIid = isPrefixedShare ? rawId : null
+  const providerBetId = /^\d+$/.test(rawId) ? rawId : null
+  const dedupeKey = shareIid || rawId
+
+  const game = mb?.game
+  const currency = (mb?.currency || '').toLowerCase()
+  const amountRaw = Number(mb?.amount)
+  const amountCanonical = normalizeHouseBetAmount(amountRaw, currency)
+  const hasValidAmount = Number.isFinite(amountCanonical.amountMajor) && amountCanonical.amountMajor > 0
+  const payoutRaw = Number(mb?.payout)
+  const payoutCanonical = normalizeHouseBetAmount(payoutRaw, currency)
+  const payoutMajor = Number.isFinite(payoutCanonical.amountMajor) && payoutCanonical.amountMajor >= 0
+    ? payoutCanonical.amountMajor
+    : 0
+  const directMultiplier = Number(mb?.multiplier)
+  const payoutMultiplier = Number.isFinite(directMultiplier) && directMultiplier > 0
+    ? directMultiplier
+    : (hasValidAmount && Number.isFinite(payoutMajor) ? payoutMajor / amountCanonical.amountMajor : null)
+  const houseId = shareIid ?? providerBetId ?? rawId
+
+  return {
+    dedupeKeys: [shareIid, providerBetId, rawId].filter(Boolean),
+    dedupeKey: shareIid || rawId,
+    payload: {
+      receivedAt: new Date().toISOString(),
+      houseId,
+      betId: providerBetId,
+      iid: shareIid,
+      betType: mb?.__typename || 'Bet',
+      gameName: game?.name || null,
+      id: shareIid ?? rawId,
+      shareIid,
+      houseTopId: null,
+      gameSlug: game?.slug || gameNameToSlug(game?.name) || '',
+      amount: hasValidAmount ? amountCanonical.amountMajor : null,
+      amountMajor: hasValidAmount ? amountCanonical.amountMajor : null,
+      amountMinor: hasValidAmount ? amountCanonical.amountMinor : null,
+      payout: payoutMajor,
+      payoutMajor: Number.isFinite(payoutCanonical.amountMajor) ? payoutCanonical.amountMajor : null,
+      payoutMinor: Number.isFinite(payoutCanonical.amountMinor) ? payoutCanonical.amountMinor : null,
+      currency,
+      payoutMultiplier,
+      amountMultiplier: 0,
+      unit: 'major',
+      source: 'myBetUpdated',
+    },
+  }
+}
+
+/**
  * Subscribes to bet updates via Stake GraphQL WebSocket (graphql-transport-ws).
  * Liefert Bets direkt mit amount/payout in lesbarem Format (keine RGS-Skalierung nötig).
+ * Abonniert houseBets und myBetUpdated (Fallback für Share-IDs).
  *
  * @param {string} accessToken - Session token (von getSessionToken)
  * @param {function} onUpdate - callback(bet) mit { gameSlug, amount, payout, currency, id, ... }
@@ -189,9 +316,11 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
 
   const wsUrl = await resolveStakeWebSocketUrl()
 
-  let unsubscribe = null
+  let unsubscribeHouseBets = null
+  let unsubscribeMyBetUpdated = null
   let client = null
   let debugNextCount = 0
+  let debugMyBetCount = 0
   const processedHouseBetKeys = new Set()
   // Init-Log: hilft zu erkennen, ob die Subscription überhaupt startet
   try {
@@ -224,7 +353,7 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
       },
     })
 
-    unsubscribe = client.subscribe(
+    unsubscribeHouseBets = client.subscribe(
       { query: HOUSEBETS_SUBSCRIPTION },
       {
         next: (result) => {
@@ -264,16 +393,9 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
             const houseTopId = hb?.id != null && String(hb.id).trim() !== '' ? String(hb.id).trim() : null
             const providerBetId = bet?.id != null && String(bet.id).trim() !== '' ? String(bet.id).trim() : null
             const dedupeKey = shareIid || houseTopId || providerBetId
-            if (dedupeKey) {
-              if (processedHouseBetKeys.has(dedupeKey)) {
-                if (doCompactLog) console.warn('[houseBets] SKIP: duplicate iid/id', dedupeKey)
-                continue
-              }
-              processedHouseBetKeys.add(dedupeKey)
-              if (processedHouseBetKeys.size > PROCESSED_HOUSEBET_KEYS_MAX) {
-                const first = processedHouseBetKeys.values().next().value
-                processedHouseBetKeys.delete(first)
-              }
+            if (!markHouseBetKeysProcessed(processedHouseBetKeys, [shareIid, houseTopId, providerBetId])) {
+              if (doCompactLog) console.warn('[houseBets] SKIP: duplicate iid/id', dedupeKey)
+              continue
             }
 
             const amountRaw = Number(bet?.amount)
@@ -294,17 +416,7 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
               : (hasValidAmount && Number.isFinite(payoutMajor) ? payoutMajor / amountCanonical.amountMajor : null)
             const houseId = shareIid ?? providerBetId ?? houseTopId
             const gameSlug = game?.slug || gameNameToSlug(game?.name) || ''
-            const name = (game?.name || '').toLowerCase()
-            const icon = (game?.icon || '').toLowerCase()
-            // Heuristik: "Vault" in echten Slot-Games (z.B. "Lokis Vault") darf NICHT rausgefiltert werden.
-            // Wir filtern nur echte "wallet/transfer/deposit/withdraw"-Systeme oder "vault"-UIs, die NICHT nach Slots aussehen.
-            const looksLikeSlotGame = icon.includes('provider-slots') || icon.includes('slots')
-            const isWalletLike = /wallet|transfer|deposit|withdraw/.test(name)
-            const isVaultUiButNotSlots = name.includes('vault') && !looksLikeSlotGame
-            if (isWalletLike || isVaultUiButNotSlots) {
-              if (doCompactLog) console.warn('[houseBets] SKIP: gefiltert (wallet/transfer/deposit/withdraw + vault-non-slots)', { name, icon })
-              continue
-            }
+            if (shouldSkipWalletLikeGame(game, doCompactLog)) continue
             const payload = {
               receivedAt: new Date().toISOString(),
               /** House-ID analog Logger: bevorzugt `houseBets.iid`, dann bet.id, dann houseBets.id */
@@ -339,11 +451,49 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
           }
         },
         error: (err) => {
-          console.warn('[StakeBetWS] Subscription error:', err?.message || err)
+          console.warn('[StakeBetWS] houseBets subscription error:', err?.message || err)
         },
-        complete: () => {
-          // Subscription beendet (z.B. bei disconnect)
+        complete: () => {},
+      }
+    )
+
+    unsubscribeMyBetUpdated = client.subscribe(
+      { query: MY_BET_UPDATED_SUBSCRIPTION },
+      {
+        next: (result) => {
+          debugMyBetCount += 1
+          const doRawLog = isDebugHouseBetsEnabled() && debugMyBetCount <= 3
+          const doCompactLog = isDebugHouseBetsEnabled() && debugMyBetCount <= 20
+
+          if (doRawLog) {
+            console.warn('[myBetUpdated] RAW:', JSON.stringify(result?.data?.myBetUpdated ?? result, null, 2))
+          }
+          const rawMyBet = result?.data?.myBetUpdated
+          const myBetItems = Array.isArray(rawMyBet) ? rawMyBet : rawMyBet ? [rawMyBet] : []
+          if (myBetItems.length === 0) {
+            if (doCompactLog) console.warn('[myBetUpdated] SKIP: kein myBetUpdated im payload')
+            return
+          }
+
+          for (const mb of myBetItems) {
+            const parsed = payloadFromMyBetUpdated(mb)
+            if (!parsed) {
+              if (doCompactLog) console.warn('[myBetUpdated] SKIP: kein id')
+              continue
+            }
+            if (shouldSkipWalletLikeGame(mb?.game, doCompactLog)) continue
+            if (!markHouseBetKeysProcessed(processedHouseBetKeys, parsed.dedupeKeys || [parsed.dedupeKey])) {
+              if (doCompactLog) console.warn('[myBetUpdated] SKIP: duplicate id', parsed.dedupeKey)
+              continue
+            }
+            if (doCompactLog) console.warn('[myBetUpdated] OK → onUpdate:', parsed.payload)
+            onUpdate(parsed.payload)
+          }
         },
+        error: (err) => {
+          console.warn('[StakeBetWS] myBetUpdated subscription error:', err?.message || err)
+        },
+        complete: () => {},
       }
     )
   } catch (err) {
@@ -353,7 +503,8 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
   return {
     disconnect() {
       try {
-        if (typeof unsubscribe === 'function') unsubscribe()
+        if (typeof unsubscribeHouseBets === 'function') unsubscribeHouseBets()
+        if (typeof unsubscribeMyBetUpdated === 'function') unsubscribeMyBetUpdated()
         if (client?.dispose) client.dispose()
       } catch (_) {}
     },

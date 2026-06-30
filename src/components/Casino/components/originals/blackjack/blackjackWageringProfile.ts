@@ -23,7 +23,7 @@ export const BLACKJACK_WAGERING_PROFILE = {
   },
 } as const
 
-/** Antebot-style one-liner script (Script tab). */
+/** One-liner script (Script tab). */
 export const BLACKJACK_WAGERING_SCRIPT = `game = 'blackjack'
 initialBetSize = 0.01
 onWin = 'reset'

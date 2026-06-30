@@ -28,7 +28,7 @@ export interface ScriptRunCallbacks {
   onSeedReset?: (tierIndex: number, newBetSizeUsd: number) => void
 }
 
-/** Extrahiert aus Antebot-Style-Script Variablen (game = 'keno', initialBetSize = 0.01, etc.). Pro Variable zählt die erste Übereinstimmung. */
+/** Extrahiert aus Script-Variablen (game = 'keno', initialBetSize = 0.01, etc.). Pro Variable zählt die erste Übereinstimmung. */
 export function extractConfigFromScript(scriptText: string): Record<string, unknown> {
   const opts: Record<string, unknown> = {}
   const patterns: [RegExp, string][] = [
@@ -132,7 +132,7 @@ export function runProfileSession(
   usdRates?: Record<string, number>,
   accessToken?: string
 ): () => void {
-  const signal = { cancelled: false }
+  const signal = { cancelled: false, paused: false }
   runProfile(normalizeProfileOptions(options), currency, callbacks, signal, usdRates, accessToken).finally(() =>
     callbacks.onStopped?.()
   )
@@ -142,7 +142,7 @@ export function runProfileSession(
 }
 
 /**
- * Parst Profil-JSON (Antebot-Format: { name, options }) und startet Session. Einsatz = USD (mit usdRates umgerechnet).
+ * Parst Profil-JSON ({ name, options }) und startet Session. Einsatz = USD (mit usdRates umgerechnet).
  */
 export function runProfileJson(
   jsonText: string,

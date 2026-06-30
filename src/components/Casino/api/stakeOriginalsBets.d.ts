@@ -1,10 +1,30 @@
-export function placeDiceBet(params: { amount: number; currency: string; rollUnder: number; rollOver?: boolean }): Promise<{ iid?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
-export function placeLimboBet(params: { amount: number; currency: string; targetMultiplier: number }): Promise<{ iid?: string; payout?: number } | null>
-export function placeMinesBet(params: { amount: number; currency: string; mineCount: number }): Promise<{ iid?: string; id?: string; payout?: number } | null>
-export function minesReveal(params: { identifier: string; fields: number[] }): Promise<{ id?: string; payout?: number; active?: boolean } | null>
-export function minesCashout(params: { identifier: string }): Promise<{ id?: string; payout?: number } | null>
-export function placePlinkoBet(params: { amount: number; currency: string; rows: number; risk: string }): Promise<{ iid?: string; payout?: number } | null>
-export function placeKenoBet(params: { amount: number; currency: string; picks: number[]; risk: string }): Promise<{ iid?: string; payout?: number } | null>
+export function placeDiceBet(params: { amount: number; currency: string; rollUnder: number; rollOver?: boolean }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeLimboBet(params: { amount: number; currency: string; targetMultiplier: number }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeMinesBet(params: { amount: number; currency: string; mineCount: number; fields?: number[]; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number; active?: boolean } | null>
+export function minesReveal(params: { identifier: string; fields: number[] }): Promise<{ id?: string; payout?: number; active?: boolean; payoutMultiplier?: number } | null>
+export function minesCashout(params: { identifier: string }): Promise<{ id?: string; payout?: number; payoutMultiplier?: number } | null>
+export function placePlinkoBet(params: { amount: number; currency: string; rows: number; risk: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeKenoBet(params: { amount: number; currency: string; picks: number[]; risk: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placePacksBet(params: { amount: number; currency: string; identifier: string; difficulty?: string }): Promise<{ iid?: string; id?: string; payout?: number } | null>
+export function placePacksRestBet(params: { amount: number; currency: string; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeSnakesBet(params: { amount: number; currency: string; difficulty?: string; rollCount?: number; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeWheelBet(params: { amount: number; currency: string; segments?: number; risk?: string; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeFlipBet(params: { amount: number; currency: string; guesses?: string[]; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placePumpBet(params: { amount: number; currency: string; round?: number; difficulty?: string; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeDiamondsBet(params: { amount: number; currency: string; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeTomeOfLifeBet(params: { amount: number; currency: string; lines?: number; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeHiloBet(params: { amount: number; currency: string; startCard?: { rank: string; suit: string }; rounds?: number; guess?: string; pattern?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeDragonTowerBet(params: { amount: number; currency: string; difficulty?: string; eggs?: number[]; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeDartsBet(params: { amount: number; currency: string; difficulty?: string; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeCasesBet(params: { amount: number; currency: string; difficulty?: string; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeBarsBet(params: { amount: number; currency: string; difficulty?: string; tiles?: number[]; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeChickenBet(params: { amount: number; currency: string; round?: number; difficulty?: string; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeTarotBet(params: { amount: number; currency: string; difficulty?: string; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeRockPaperScissorsBet(params: { amount: number; currency: string; guesses?: string[]; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeScarabSpinBet(params: { amount: number; currency: string; lines?: number; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeSamuraiBet(params: { amount: number; currency: string; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
+export function placeUnsupportedOriginalsBet(game: string): Promise<never>
+export function placeOriginalsStubBet(game: string): Promise<never>
 export function rotateSeedPair(seed?: string): Promise<{ ok: boolean }>
 export function stakeBlackjackBet(params: { amount: number; currency: string; identifier?: string }): Promise<unknown>
 export function stakeBlackjackNext(params: { action: string; identifier?: string }): Promise<unknown>

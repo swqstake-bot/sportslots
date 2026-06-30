@@ -12,7 +12,7 @@ import type { OriginalsSettingsState } from './OriginalsSettings'
 
 import { ALL_CURRENCIES, CURRENCY_GROUPS } from '../../constants/currencies'
 import { useCasinoBetListReset } from '../../utils/casinoBetSession'
-const RISK_OPTIONS = ['low', 'medium', 'high'] as const
+const RISK_OPTIONS = ['low', 'medium', 'high', 'expert'] as const
 const ROWS_OPTIONS = [8, 10, 12, 14, 16]
 const MAX_BET_HISTORY = 500
 
@@ -31,7 +31,7 @@ export default function OriginalsPlinkoControl({ settings: propSettings, onSetti
   const [amount, setAmount] = useState('0.01')
   const [currency, setCurrency] = useState('usdc')
   const [rows, setRows] = useState(16)
-  const [risk, setRisk] = useState<'low' | 'medium' | 'high'>('low')
+  const [risk, setRisk] = useState<'low' | 'medium' | 'high' | 'expert'>('low')
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
   const [betHistory, setBetHistory] = useState<OriginalsBetEntry[]>([])

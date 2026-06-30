@@ -119,7 +119,7 @@ export function useSlotRealtime({
         ? Number(b.payoutMinor)
         : toMinor(payoutMajorToUse, curr)
       const currencyCode = (b?.currency || '').toUpperCase() || null
-      addToBetHistory({ betAmount, winAmount, isBonus: false, balance: undefined, currencyCode, roundId: b?.id, source: 'housebets' })
+      addToBetHistory({ betAmount, winAmount, isBonus: false, balance: undefined, currencyCode, roundId: b?.id, source: b?.source || 'housebets' })
     }).then((s) => {
       if (cancelled) {
         try {

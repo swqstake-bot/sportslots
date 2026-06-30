@@ -7,7 +7,7 @@ import { useState, useCallback } from 'react'
 import { AccordionSection } from '../../../../ui/AccordionSection'
 import {
   DEFAULT_PROFILE_OPTIONS,
-  type AntebotProfile,
+  type OriginalsProfile,
   type ProfileOptions,
   type OriginalsGame,
 } from './profileSchema'
@@ -66,7 +66,7 @@ export default function OriginalsScriptBuilder() {
   }, [])
 
   const exportProfile = useCallback(() => {
-    const profile: AntebotProfile = {
+    const profile: OriginalsProfile = {
       name,
       options: optionsForExport(opts),
       lastUsed: false,
@@ -86,7 +86,7 @@ export default function OriginalsScriptBuilder() {
   }, [name, opts])
 
   const copyJson = useCallback(() => {
-    const profile: AntebotProfile = { name, options: optionsForExport(opts), lastUsed: false, favorite: false, loadOnStart: false }
+    const profile: OriginalsProfile = { name, options: optionsForExport(opts), lastUsed: false, favorite: false, loadOnStart: false }
     navigator.clipboard.writeText(JSON.stringify(profile, null, 2))
     setExportSuccess(true)
     setTimeout(() => setExportSuccess(false), 2000)
@@ -95,7 +95,7 @@ export default function OriginalsScriptBuilder() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-[var(--text-muted)]">
-        Select mechanics and tune values. Export produces an Antebot-compatible profile (.json).
+        Select mechanics and tune values. Export produces an Originals profile (.json).
       </p>
 
       <AccordionSection title="Basics" defaultOpen={true}>
@@ -389,6 +389,7 @@ export default function OriginalsScriptBuilder() {
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
+                <option value="expert">Expert</option>
               </select>
             </div>
           </div>

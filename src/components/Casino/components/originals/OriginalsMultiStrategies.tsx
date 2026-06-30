@@ -169,6 +169,7 @@ export default function OriginalsMultiStrategies({ value = {}, onChange }: Origi
               <option value="low">Low</option>
               <option value="medium">Medium</option>
               <option value="high">High</option>
+              <option value="expert">Expert</option>
             </select>
           </div>
           <div>

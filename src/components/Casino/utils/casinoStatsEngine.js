@@ -29,6 +29,70 @@ function toEntryKey(entry) {
   return `ts:${Number.isFinite(ts) ? ts : 0}:${slot}`
 }
 
+const BET_SOURCE_PRIORITY = {
+  housebets: 4,
+  mybetupdated: 4,
+  http_fallback: 2,
+  placebet: 1,
+}
+
+function betEntrySourceRank(entry) {
+  const src = String(entry?.source || '').toLowerCase()
+  let rank = BET_SOURCE_PRIORITY[src] ?? 0
+  if (entry?.houseBetReconciled) rank += 2
+  return rank
+}
+
+function betEntrySpinSignature(entry) {
+  const curr = String(entry?.currencyCode || 'usd').toLowerCase()
+  const bet = Number(entry?.betAmount) || 0
+  const win = Number(entry?.isBonus && entry?.stoppedBonus ? 0 : entry?.winAmount) || 0
+  return `${curr}|${bet}|${win}|${entry?.isBonus ? 1 : 0}`
+}
+
+/** Dedup für KPI-Aggregation: roundId bevorzugt, sonst Signatur-Fenster (placeBet + houseBets). */
+export function dedupeBetHistoryForAggregate(entries) {
+  const list = Array.isArray(entries) ? entries : []
+  const result = []
+  const roundIndex = new Map()
+
+  for (const entry of list) {
+    const rid = entry?.roundId != null ? String(entry.roundId).trim() : ''
+    if (rid) {
+      const existingIdx = roundIndex.get(rid)
+      if (existingIdx != null) {
+        if (betEntrySourceRank(entry) >= betEntrySourceRank(result[existingIdx])) {
+          result[existingIdx] = entry
+        }
+        continue
+      }
+      roundIndex.set(rid, result.length)
+      result.push(entry)
+      continue
+    }
+
+    const sig = betEntrySpinSignature(entry)
+    const ts = Number(entry?.addedAt) || 0
+    let dupIdx = -1
+    for (let i = result.length - 1; i >= 0; i--) {
+      const row = result[i]
+      if (ts - (Number(row?.addedAt) || 0) > 150) break
+      if (betEntrySpinSignature(row) === sig) {
+        dupIdx = i
+        break
+      }
+    }
+    if (dupIdx >= 0) {
+      if (betEntrySourceRank(entry) >= betEntrySourceRank(result[dupIdx])) {
+        result[dupIdx] = entry
+      }
+      continue
+    }
+    result.push(entry)
+  }
+  return result
+}
+
 function resolveUsdMajor(minorAmount, currencyCode, rates, snapshotMajor) {
   if (snapshotMajor != null && Number.isFinite(Number(snapshotMajor))) {
     return Number(snapshotMajor)
@@ -86,7 +150,7 @@ export function applyCasinoSpinToAggregate(prev, entry, rates = {}) {
 }
 
 export function recomputeCasinoAggregate(entries, rates = {}) {
-  const list = Array.isArray(entries) ? entries : []
+  const list = dedupeBetHistoryForAggregate(Array.isArray(entries) ? entries : [])
   let agg = createEmptyCasinoAggregate()
   for (const entry of list) {
     agg = applyCasinoSpinToAggregate(agg, entry, rates)

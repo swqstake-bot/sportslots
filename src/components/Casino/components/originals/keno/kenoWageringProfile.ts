@@ -1,6 +1,6 @@
 /**
 
- * Keno B2B — Wagering-Profile (Antebot-Style).
+ * Keno B2B — Wagering-Profile.
 
  */
 

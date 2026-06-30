@@ -1,6 +1,7 @@
 import { WalletSelector } from '../WalletSelector'
 import { PrimaryNav } from './PrimaryNav'
 import { ThemeAccentButton } from './ThemeAccentButton'
+import { HeaderAccountMeta } from './HeaderAccountMeta'
 
 type AppView = 'casino' | 'sports' | 'logger'
 
@@ -45,9 +46,8 @@ export function AppHeader({
           </div>
         )}
         {isChallengeRunning && <div className="app-header-alert">Challenge running</div>}
+        <PrimaryNav currentView={currentView} onChangeView={onChangeView} />
       </div>
-
-      <PrimaryNav currentView={currentView} onChangeView={onChangeView} />
 
       <div className="app-header-right">
         {hasUser ? (
@@ -56,6 +56,7 @@ export function AppHeader({
               <span>{isRunning ? 'Running' : 'Stopped'}</span>
               <span className="app-run-state-dot" />
             </div>
+            <HeaderAccountMeta enabled={hasUser} />
             <WalletSelector />
             <ThemeAccentButton />
             <button type="button" onClick={onRefresh} className={`app-header-refresh-btn ${isLoading ? 'is-loading' : ''}`.trim()}>

@@ -183,7 +183,7 @@ const PROFIT_VIEW_W = 280
 const PROFIT_VIEW_H = 120
 const PROFIT_PAD = { l: 40, r: 8, t: 10, b: 22 }
 
-/** Kumulativer Profit: Linie + leichtes Grid (Originals) — kein Recharts. */
+/** Kumulativer Profit: Linie + Fläche + Grid (Originals) — kein Recharts. */
 export function SvgCumulativeProfitLineChart({
   profits,
   height = 128,
@@ -192,6 +192,7 @@ export function SvgCumulativeProfitLineChart({
   betIndexEnd,
   stableYDomain = true,
   domainResetKey,
+  fillArea = false,
 }: {
   profits: number[]
   height?: number
@@ -204,6 +205,8 @@ export function SvgCumulativeProfitLineChart({
   stableYDomain?: boolean
   /** Bei neuer Session Domain zurücksetzen (z. B. Script-Start). */
   domainResetKey?: number | string
+  /** Gefüllte Fläche zwischen Linie und Null-Linie. */
+  fillArea?: boolean
 }) {
   const pathValues = useMemo(() => chartPathValues(profits), [profits])
   const last = profits.length ? profits[profits.length - 1]! : 0
@@ -246,6 +249,7 @@ export function SvgCumulativeProfitLineChart({
     if (profits.length === 0) {
       return {
         pathD: '',
+        fillD: '',
         zeroGy: null as number | null,
         plotL,
         plotR,
@@ -259,6 +263,7 @@ export function SvgCumulativeProfitLineChart({
     if (pts.length < 2) {
       return {
         pathD: '',
+        fillD: '',
         zeroGy: null as number | null,
         plotL,
         plotR,
@@ -290,13 +295,27 @@ export function SvgCumulativeProfitLineChart({
       py: plotT + ph * (1 - (v - lo) / span2),
       text: v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2),
     }))
-    return { pathD: d, zeroGy, lo, hi, plotL, plotR, plotT, plotB, ph, yLabels }
-  }, [profits, pathValues, yDomain])
+    const firstX = plotL
+    const lastX = plotR
+    const fillD =
+      fillArea && d
+        ? `${d} L ${lastX.toFixed(1)} ${zeroGy.toFixed(1)} L ${firstX.toFixed(1)} ${zeroGy.toFixed(1)} Z`
+        : ''
+    return { pathD: d, fillD, zeroGy, lo, hi, plotL, plotR, plotT, plotB, ph, yLabels }
+  }, [profits, pathValues, yDomain, fillArea])
 
-  const { pathD, zeroGy, plotL, plotR, plotT, plotB, ph, yLabels } = geom
+  const { pathD, fillD, zeroGy, plotL, plotR, plotT, plotB, ph, yLabels } = geom
   const dataPoints = Math.max(0, profits.length > 0 ? profits.length - 1 : 0)
   const xStart = betIndexStart ?? 1
   const xEnd = betIndexEnd ?? (dataPoints > 0 ? dataPoints : xStart)
+  const fillColor =
+    stroke.startsWith('rgb') || stroke.startsWith('#')
+      ? stroke.includes('248, 113') || stroke.includes('f43f5e') || stroke.includes('F43F5E')
+        ? 'rgba(248, 113, 113, 0.14)'
+        : stroke.includes('52, 211') || stroke.includes('00e701') || stroke.includes('10B981')
+          ? 'rgba(52, 211, 153, 0.14)'
+          : `color-mix(in srgb, ${stroke} 18%, transparent)`
+      : `color-mix(in srgb, ${stroke} 18%, transparent)`
 
   return (
     <svg
@@ -349,6 +368,7 @@ export function SvgCumulativeProfitLineChart({
           </text>
         </>
       )}
+      {fillD ? <path d={fillD} fill={fillColor} stroke="none" /> : null}
       {pathD ? (
         <path
           d={pathD}

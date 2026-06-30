@@ -1,33 +1,39 @@
-/**
- * Profil-Runner: Antebot-kompatibles JSON-Profil parsen und Session gegen Stake-API ausführen.
+﻿/**
+ * Profil-Runner: JSON-Profil parsen und Session gegen Stake-API ausführen.
  */
 
-import {
-  placeDiceBet,
-  placeLimboBet,
-  placeMinesBet,
-  minesReveal,
-  minesCashout,
-  placePlinkoBet,
-  placeKenoBet,
-  rotateSeedPair,
-} from '../../../api/stakeOriginalsBets'
+import { rotateSeedPair } from '../../../api/stakeOriginalsBets'
 import { playBlackjackScriptRound } from '../blackjack/blackjackScriptRound'
+import { placeOriginalsBet } from '../engine/placeOriginalsBet'
 import {
   isRetryableOriginalsScriptError,
   ORIGINALS_SCRIPT_RETRY_DELAY_MS,
 } from '../scriptEngine/originalsScriptRetry'
 import { createScriptHouseBetIdBridge } from '../scriptEngine/scriptHouseBetIdBridge'
 import type { ScriptSessionStats } from '../scriptEngine/scriptSessionStats'
-
-function pickBetIidFromResponse(res: unknown): string | undefined {
-  if (!res || typeof res !== 'object') return undefined
-  const r = res as { iid?: string; id?: string }
-  const raw = String(r.iid ?? r.id ?? '').trim()
-  return raw || undefined
-}
+import type { OriginalsWorkbenchOptions } from '../schema/workbenchOptions'
+import { clampMultiplier } from '../games/targetMath'
+import {
+  advanceComboAfterRound,
+  createComboEngine,
+  getComboBetParams,
+  type ComboEngineState,
+} from '../engine/comboEngine'
+import {
+  createB2bRuntime,
+  recordB2bLoss,
+  recordB2bWin,
+  type B2bRuntimeState,
+} from '../engine/b2bEngine'
+import { checkWorkbenchStops } from '../engine/workbenchStops'
+import { applyConditionBlocks } from '../engine/conditionsRunner'
+import { waitWhilePaused, type SessionSignal } from '../engine/sessionSignal'
+import { createVaultDeposit } from '../../../api/vaultApi'
+import { isRateLimitError, TURBO_RATE_LIMIT_INTERVAL_BUMP_MS } from '../engine/turboConfig'
 
 type OriginalsBetApiRow = {
+  id?: string
+  betApiId?: string
   amount?: number
   payout?: number
   payoutMultiplier?: number
@@ -46,12 +52,13 @@ function resolveOriginalsRoundUsd(
   multi: number
   placedAmount: number
   payout: number
+  win: boolean
 } {
   const placedAmount = Number(betApi?.amount ?? amountPlaced)
   const payout = Number(betApi?.payout ?? payoutRaw)
   const wageredUsd = currencyAmountToUsd(placedAmount, currency, usdRates)
   const payoutUsd = currencyAmountToUsd(payout, currency, usdRates)
-  const win = payout > 0
+  const win = payout > placedAmount + 1e-12
   const apiMulti = Number(betApi?.payoutMultiplier)
   const multi =
     win && Number.isFinite(apiMulti) && apiMulti > 0
@@ -59,10 +66,8 @@ function resolveOriginalsRoundUsd(
       : win && wageredUsd > 0
         ? payoutUsd / wageredUsd
         : 0
-  return { wageredUsd, payoutUsd, multi, placedAmount, payout }
+  return { wageredUsd, payoutUsd, multi, placedAmount, payout, win }
 }
-
-const GRID_SIZE = 25
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
@@ -87,25 +92,21 @@ export interface ProfileRunnerCallbacks {
     profitUsd?: number
     multi?: number
     b2bMulti?: number
+    /** Unix ms timestamp of this bet. */
+    timestamp?: number
+    /** Bet nonce string. */
+    nonce?: string
   }) => void
   /** houseBets liefert später `house:…` — UI-Zeile patchen */
   onBetShareId?: (betIndex: number, betId: string) => void
   onStats?: (stats: ScriptSessionStats) => void
   /** Aufgerufen bei jedem „Seed-Reset“-Block (z. B. alle 25 Bets); Einsatz wird dann um increaseBetAfterSeedReset erhöht. */
   onSeedReset?: (tierIndex: number, newBetSize: number) => void
-}
-
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr]
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]]
-  }
-  return a
-}
-
-function getRandomInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min
+  onConditionStop?: () => void
+  onResetStats?: () => void
+  onResetSeed?: () => void
+  onVaultDeposit?: (amount: number, currency: string) => void
+  onTurboChange?: (enabled: boolean) => void
 }
 
 /** Limbo: festes targetMultiplier oder Zufallsbereich targetMultiplierFrom/To (je Bet). */
@@ -116,9 +117,30 @@ function pickLimboTargetMultiplier(opts: Record<string, unknown>): number {
     const lo = Math.min(from, to)
     const hi = Math.max(from, to)
     const raw = lo + Math.random() * (hi - lo)
-    return Math.round(Math.max(1.01, raw) * 100) / 100
+    return Math.round(clampMultiplier(raw) * 100) / 100
   }
-  return Math.max(1.01, optFrom(opts, 'targetMultiplier', 2))
+  return clampMultiplier(optFrom(opts, 'targetMultiplier', 2))
+}
+
+function pickWorkbenchTargetMultiplier(opts: Record<string, unknown>): number {
+  if (optBoolFrom(opts, 'isRandomMultiplier', false)) {
+    const m1 = optFrom(opts, 'randomMultiplier1', 2)
+    const m2 = optFrom(opts, 'randomMultiplier2', 10)
+    const lo = Math.min(m1, m2)
+    const hi = Math.max(m1, m2)
+    if (lo > 0 && hi > 0) {
+      return Math.round((lo + Math.random() * (hi - lo)) * 100) / 100
+    }
+  }
+  const mode = String(opts.targetSelectionMode ?? 'static')
+  if (mode === 'random') return pickLimboTargetMultiplier(opts)
+  return clampMultiplier(optFrom(opts, 'targetMultiplier', 2))
+}
+
+function applyDiceTargetFromMultiplier(opts: Record<string, unknown>, mult: number): Record<string, unknown> {
+  const m = clampMultiplier(mult)
+  const rollUnder = 99 / m
+  return { ...opts, targetMultiplier: m, rollUnder }
 }
 
 /**
@@ -267,12 +289,12 @@ function applyB2bSmartPartialTakeProfit(
   return { reinvestUsd, peeledUsd, applied: peeledUsd > 0.00000001 }
 }
 
-/** Nimmt Antebot-style options (camelCase) und führt Session aus. Optional: recoveryGame + recoveryTrigger → bei Verlust/Streak Wechsel zu Recovery-Spiel, nach Erholung zurück. */
+/** Nimmt workbench-style options (camelCase) und führt Session aus. Optional: recoveryGame + recoveryTrigger → bei Verlust/Streak Wechsel zu Recovery-Spiel, nach Erholung zurück. */
 export async function runProfile(
   options: Record<string, unknown>,
   currency: string,
   callbacks: ProfileRunnerCallbacks,
-  signal: { cancelled: boolean },
+  signal: SessionSignal,
   usdRates?: Record<string, number>,
   accessToken?: string
 ): Promise<void> {
@@ -307,7 +329,6 @@ export async function runProfile(
   let rollNumber = 0
   let currentStreak = 0
   let lastWin = false
-  let b2bCount = 0
   let b2bChainWins = 0
   /** Produkt der Rund-Multiplikatoren in der aktuellen B2B-Kette (3.5×3.5=12.25). */
   let b2bChainMultiProduct = 1
@@ -329,6 +350,45 @@ export async function runProfile(
   let maxBetUsd = 0
   let longestB2bStreak = 0
   let longestWinStreak = 0
+  let peakProfitUsd = 0
+
+  const workbenchEnabled = options._workbench === true
+  let workbenchOptions: OriginalsWorkbenchOptions = {
+    ...(options._workbenchOptions ?? {}) as OriginalsWorkbenchOptions,
+  }
+  const wbSessionSettings = (options._workbenchSettings ?? {}) as {
+    clientSeed?: string
+    maxFiatBetSize?: number
+    requestIntervalAsyncMode?: number
+  }
+  const capBetUsd = (usd: number): number => {
+    const max = wbSessionSettings.maxFiatBetSize ?? 0
+    if (max > 0 && usd > max) return max
+    return usd
+  }
+  const rotateSeed = () => rotateSeedPair(wbSessionSettings.clientSeed?.trim() || undefined)
+  const getRequestDelayMs = (): number => {
+    if (workbenchOptions.asyncMode) {
+      return wbSessionSettings.requestIntervalAsyncMode ?? workbenchOptions.requestInterval ?? 0
+    }
+    return workbenchOptions.requestInterval ?? 0
+  }
+  const comboEngine: ComboEngineState | null = workbenchEnabled ? createComboEngine(workbenchOptions) : null
+  const b2bRuntime: B2bRuntimeState | null = workbenchEnabled ? createB2bRuntime() : null
+  let lastBetIdStr = ''
+  let lastMultiForStop = 0
+  let stopOnNextWinPending = false
+
+  const minBetSizeUsd = optFrom(options, 'minBetSize', 0)
+  let rollsSinceSwitch = 0
+  let winsSinceSwitch = 0
+  let lossesSinceSwitch = 0
+  let winsSinceSeedChange = 0
+  let lossesSinceSeedChange = 0
+  let vaultDeposited = false
+
+  const preRolls = mode === 'wager' ? Math.max(0, optFrom(options, 'preRolls', 0)) : 0
+  const preRollsBetSizeUsd = Math.max(0.00000001, optFrom(options, 'preRollsBetSize', 0) || initialBetSizeWager)
 
   const stopOnProfit = optFrom(options, 'stopOnProfit', 0)
   const stopOnLoss = optFrom(options, 'stopOnLoss', 0)
@@ -375,6 +435,100 @@ export async function runProfile(
   }
   if (rotationStages.length > 0) applyRotationStage(0)
 
+  const runSingleBetRound = async (
+    betSizeUsdRound: number,
+    optsRound: Record<string, unknown>,
+    gameRound: string,
+    isPreRoll = false
+  ): Promise<{
+    cancelled: boolean
+    payout: number
+    payoutUsd: number
+    wageredUsdThisRound: number
+    placedAmountMajor: number
+    multi: number
+    win: boolean
+    betIid?: string
+    betApi: OriginalsBetApiRow | null
+  } | null> => {
+    const amountToPlace = toAmount(capBetUsd(betSizeUsdRound))
+    let wageredUsdThisRound = betSizeUsdRound
+    let betApi: OriginalsBetApiRow | null = null
+    let payout = 0
+    let betIid: string | undefined
+    let localOpts = { ...optsRound }
+    try {
+      if (gameRound === 'limbo') {
+        localOpts = { ...localOpts, targetMultiplier: pickWorkbenchTargetMultiplier(localOpts) }
+      } else if (gameRound === 'dice') {
+        const modeSel = String(localOpts.targetSelectionMode ?? 'static')
+        if (modeSel === 'random' || optBoolFrom(localOpts, 'isRandomMultiplier', false)) {
+          localOpts = applyDiceTargetFromMultiplier(localOpts, pickWorkbenchTargetMultiplier(localOpts))
+        }
+      }
+      if (gameRound === 'blackjack') {
+        const res = await playBlackjackScriptRound({
+          amount: amountToPlace,
+          currency: cur,
+          signal,
+          onLog: callbacks.onLog,
+        })
+        payout = res.payout
+        wageredUsdThisRound = currencyAmountToUsd(res.amount, cur, usdRates)
+      } else {
+        const placed = await placeOriginalsBet(gameRound, localOpts, amountToPlace, cur, signal, callbacks.onLog)
+        payout = placed.payout
+        betIid = placed.betIid
+        betApi = placed.betApi
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (isRetryableOriginalsScriptError(e) && !signal.cancelled) {
+        const retryDelay = isRateLimitError(e) ? Math.min(30000, ORIGINALS_SCRIPT_RETRY_DELAY_MS + TURBO_RATE_LIMIT_INTERVAL_BUMP_MS * 4) : ORIGINALS_SCRIPT_RETRY_DELAY_MS
+        callbacks.onLog?.(`Fehler — retry in ${Math.round(retryDelay/1000)}s: ${msg.slice(0, 120)}`)
+        await sleep(retryDelay)
+        return null
+      }
+      callbacks.onLog?.('Fehler: ' + msg)
+      callbacks.onBetPlaced?.({ error: msg })
+      return { cancelled: true, payout: 0, payoutUsd: 0, wageredUsdThisRound: 0, placedAmountMajor: amountToPlace, multi: 0, win: false, betApi: null }
+    }
+    let payoutUsd: number
+    let multi: number
+    let placedAmountMajor = amountToPlace
+    let win: boolean
+    if (gameRound === 'blackjack') {
+      payoutUsd = currencyAmountToUsd(payout, cur, usdRates)
+      win = payout > 0
+      multi = win && wageredUsdThisRound > 0 ? payoutUsd / wageredUsdThisRound : 0
+    } else {
+      const round = resolveOriginalsRoundUsd(betApi, amountToPlace, payout, cur, usdRates)
+      wageredUsdThisRound = round.wageredUsd
+      payout = round.payout
+      payoutUsd = round.payoutUsd
+      placedAmountMajor = round.placedAmount
+      multi = round.multi
+      win = round.win
+    }
+    if (isPreRoll) {
+      callbacks.onLog?.(`Pre-roll: ${win ? 'win' : 'loss'} $${wageredUsdThisRound.toFixed(4)}`)
+    }
+    return { cancelled: false, payout, payoutUsd, wageredUsdThisRound, placedAmountMajor, multi, win, betIid, betApi }
+  }
+
+  if (preRolls > 0) {
+    callbacks.onLog?.(`Running ${preRolls} pre-roll warmup bet(s) at $${preRollsBetSizeUsd.toFixed(4)}`)
+    for (let pr = 0; pr < preRolls && !signal.cancelled; pr++) {
+      const preSize = capBetUsd(minBetSizeUsd > 0 ? Math.max(minBetSizeUsd, preRollsBetSizeUsd) : preRollsBetSizeUsd)
+      const pre = await runSingleBetRound(preSize, currentOpts, currentGame, true)
+      if (!pre || pre.cancelled) break
+      totalWageredUsd += pre.wageredUsdThisRound
+      profitUsd += pre.payoutUsd - pre.wageredUsdThisRound
+      const delayMs = getRequestDelayMs()
+      if (delayMs > 0) await sleep(delayMs)
+    }
+  }
+
   const applyWinFor = (
     opts: Record<string, unknown>,
     lastPayoutCurrency: number,
@@ -387,6 +541,10 @@ export async function runProfile(
       betSizeUsd = opts === recoveryOptions ? initialForMode : effectiveBaseUsd
     } else if (onWin === 'increase') {
       betSizeUsd = betSizeUsd * (1 + optFrom(opts, 'increaseOnWin', 0) / 100)
+    } else if (onWin === 'decrease') {
+      const pct = optFrom(opts, 'increaseOnWin', 0)
+      betSizeUsd = betSizeUsd * Math.max(0, 1 - pct / 100)
+      if (minBetSizeUsd > 0) betSizeUsd = Math.max(minBetSizeUsd, betSizeUsd)
     } else if (onWin === 'b2b') {
       const nextUsd =
         lastPayoutUsd != null && lastPayoutUsd > 0
@@ -406,11 +564,19 @@ export async function runProfile(
     if (onLoss === 'reset') {
       const base = opts === recoveryOptions ? initialForMode : effectiveBaseUsd
       betSizeUsd = seedRolls > 0 && incAfter > 0 ? currentBlockBase : base
-    } else if (onLoss === 'martingale') betSizeUsd = betSizeUsd * 2
-    else if (onLoss === 'increase') betSizeUsd = betSizeUsd * (1 + (optFrom(opts, 'increaseOnLoss', 0) / 100))
+    }     else if (onLoss === 'martingale') betSizeUsd = betSizeUsd * 2
+    else if (onLoss === 'increase') betSizeUsd = betSizeUsd * (1 + optFrom(opts, 'increaseOnLoss', 0) / 100)
+    else if (onLoss === 'decrease') {
+      const pct = optFrom(opts, 'increaseOnLoss', 0)
+      betSizeUsd = betSizeUsd * Math.max(0, 1 - pct / 100)
+      if (minBetSizeUsd > 0) betSizeUsd = Math.max(minBetSizeUsd, betSizeUsd)
+    }
   }
 
+  const conditionBlockCounters: Record<string, number> = {}
+
   while (!signal.cancelled) {
+    if (await waitWhilePaused(signal)) break
     rollNumber++
     let payout = 0
     let betIid: string | undefined
@@ -430,7 +596,7 @@ export async function runProfile(
       if (isFirstBetOfBlock) {
         if (!lastRotatedOnLoss) {
           try {
-            await rotateSeedPair()
+            await rotateSeed()
           } catch {
             /* no routine log spam */
           }
@@ -446,158 +612,110 @@ export async function runProfile(
     }
 
     const profitUsdBeforeRound = profitUsd
-    const amountToPlace = toAmount(betSizeUsd)
-    let wageredUsdThisRound = betSizeUsd
-    let betApi: OriginalsBetApiRow | null = null
-    const opts = currentOpts
-    try {
-      if (currentGame === 'blackjack') {
-        const res = await playBlackjackScriptRound({
-          amount: amountToPlace,
-          currency: cur,
-          signal,
-          onLog: callbacks.onLog,
-        })
-        payout = res.payout
-        wageredUsdThisRound = currencyAmountToUsd(res.amount, cur, usdRates)
-        totalWageredUsd += wageredUsdThisRound
-      } else if (currentGame === 'dice') {
-        const rollUnder = optFrom(opts, 'rollUnder', 49.5)
-        const rollOver = Boolean(opts.rollOver)
-        const res = await placeDiceBet({
-          amount: amountToPlace,
-          currency: cur,
-          rollUnder,
-          rollOver,
-        })
-        payout = res?.payout ?? 0
-        betIid = pickBetIidFromResponse(res)
-        betApi = res
-      } else if (currentGame === 'limbo') {
-        const mult = pickLimboTargetMultiplier(opts)
-        const res = await placeLimboBet({ amount: amountToPlace, currency: cur, targetMultiplier: mult })
-        payout = res?.payout ?? 0
-        betIid = pickBetIidFromResponse(res)
-        betApi = res
-      } else if (currentGame === 'plinko') {
-        const rows = optFrom(opts, 'rows', 16)
-        const risk = String(opts.plinkoRisk || opts.risk || 'low').toLowerCase()
-        const res = await placePlinkoBet({ amount: amountToPlace, currency: cur, rows, risk: risk as 'low' | 'medium' | 'high' })
-        payout = res?.payout ?? 0
-        betIid = pickBetIidFromResponse(res)
-        betApi = res
-      } else if (currentGame === 'keno') {
-        const useHeatmap = optBoolFrom(opts, 'useHeatmapHotNumbers', false) && optFrom(opts, 'heatmapHotNumbers', 0) > 0
-        const useRandomEachBet = optFrom(opts, 'randomNumbersFrom', 0) > 0 || optFrom(opts, 'randomNumbersTo', 0) > 0
-        const fixedNumbers = (opts.numbers as number[]) || []
-        let numbers: number[]
-        if (useHeatmap) {
-          const hotCount = Math.max(1, Math.min(10, optFrom(opts, 'heatmapHotNumbers', 5)))
-          const range = Math.max(1, Math.min(39, optFrom(opts, 'heatmapRange', 30)))
-          const hotPool = shuffle(Array.from({ length: range }, (_, i) => i + 1))
-          numbers = hotPool.slice(0, hotCount)
-        } else if (useRandomEachBet) {
-          const from = optFrom(opts, 'randomNumbersFrom', 8)
-          const to = optFrom(opts, 'randomNumbersTo', 8)
-          const lo = Math.min(from, to)
-          const hi = Math.max(from, to)
-          const countRaw = getRandomInt(Math.max(0, lo), Math.max(0, hi)) || 8
-          const count = Math.max(1, Math.min(10, countRaw))
-          const pool = shuffle(Array.from({ length: 39 }, (_, i) => i + 1))
-          numbers = pool.slice(0, count)
-        } else if (Array.isArray(fixedNumbers) && fixedNumbers.length > 0) {
-          numbers = fixedNumbers.filter((n) => n >= 1 && n <= 39).slice(0, 10)
-        } else {
-          const count = 8
-          const pool = shuffle(Array.from({ length: 39 }, (_, i) => i + 1))
-          numbers = pool.slice(0, count)
-        }
-        if (numbers.length === 0) numbers = [1]
-        const riskRaw = String(opts.risk || 'medium').toLowerCase()
-        const risk = riskRaw === 'classic' ? 'medium' : riskRaw
-        const res = await placeKenoBet({
-          amount: amountToPlace,
-          currency: cur,
-          picks: numbers,
-          risk: risk as 'low' | 'medium' | 'high',
-        })
-        payout = res?.payout ?? 0
-        betIid = pickBetIidFromResponse(res)
-        betApi = res
-      } else if (currentGame === 'mines') {
-        const mines = Math.min(24, Math.max(1, optFrom(opts, 'mines', 3)))
-        const diamonds = Math.min(24, Math.max(1, optFrom(opts, 'diamonds', 2)))
-        const res = await placeMinesBet({ amount: amountToPlace, currency: cur, mineCount: mines })
-        betIid = pickBetIidFromResponse(res)
-        betApi = res
-        if (!res?.id && !res?.iid) {
-          profitUsd -= betSizeUsd
-          break
-        }
-        const identifier = (res as { id?: string; iid?: string }).id ?? (res as { iid?: string }).iid ?? ''
-        let gemsRevealed = 0
-        const indices = shuffle(Array.from({ length: GRID_SIZE }, (_, i) => i))
-        for (const idx of indices) {
-          if (signal.cancelled || gemsRevealed >= diamonds) break
-          const rev = await minesReveal({ identifier, fields: [idx] })
-          if (!rev || (rev as { active?: boolean }).active === false) break
-          gemsRevealed++
-        }
-        if (gemsRevealed >= diamonds) {
-          const cash = await minesCashout({ identifier })
-          payout = cash?.payout ?? 0
-          if (cash) {
-            const cashRow = cash as OriginalsBetApiRow
-            betApi = {
-              amount: betApi?.amount ?? (res as OriginalsBetApiRow | null)?.amount,
-              payout: cashRow.payout,
-              payoutMultiplier: cashRow.payoutMultiplier,
-            }
-          }
-        }
-      } else {
-        callbacks.onLog?.('Unbekanntes Spiel: ' + currentGame)
-        break
+    let betSizeUsdThisRound = betSizeUsd
+
+    if (workbenchEnabled && (workbenchOptions.conditionBlocks?.length ?? 0) > 0) {
+      const condResult = applyConditionBlocks(workbenchOptions, {
+        lastMulti: lastMultiForStop,
+        lastWin,
+        rollNumber: rollNumber - 1,
+        profitUsd,
+        peakProfitUsd,
+        totalWageredUsd,
+        currentStreak,
+        betSizeUsd,
+        conditionBlockCounters,
+      })
+      if (Object.keys(condResult.patch).length > 0) {
+        workbenchOptions = { ...workbenchOptions, ...condResult.patch }
+        currentOpts = { ...currentOpts, ...condResult.patch }
+        options._workbenchOptions = workbenchOptions
       }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
-      if (isRetryableOriginalsScriptError(e) && !signal.cancelled) {
-        callbacks.onLog?.(`Fehler — retry in 3s: ${msg.slice(0, 120)}`)
-        rollNumber--
-        await sleep(ORIGINALS_SCRIPT_RETRY_DELAY_MS)
-        continue
+      const cActions = condResult.actions
+      if (cActions.stop) { callbacks.onConditionStop?.(); signal.cancelled = true; break }
+      if (cActions.resetStats) callbacks.onResetStats?.()
+      if (cActions.resetSeed) { try { await rotateSeed() } catch { /* ignore */ }; callbacks.onResetSeed?.() }
+      if (cActions.turboChange) callbacks.onTurboChange?.(cActions.turboChange === 'enable')
+      if (cActions.depositToVault && cActions.depositToVault.amount > 0) {
+        try {
+          await createVaultDeposit(cur, cActions.depositToVault.amount)
+          callbacks.onVaultDeposit?.(cActions.depositToVault.amount, cur)
+          callbacks.onLog?.(`Vault deposit: ${cActions.depositToVault.amount.toFixed(4)} ${cur.toUpperCase()}`)
+        } catch (e) {
+          callbacks.onLog?.(`Vault deposit failed: ${e instanceof Error ? e.message : String(e)}`)
+        }
       }
-      callbacks.onLog?.('Fehler: ' + msg)
-      callbacks.onBetPlaced?.({ error: msg })
-      break
+      if (cActions.setBetSize != null) betSizeUsd = Math.max(0, cActions.setBetSize)
+      if (cActions.addBetSize != null) betSizeUsd = Math.max(0, betSizeUsd + cActions.addBetSize)
+      if (cActions.multiplyBetSize != null) betSizeUsd = Math.max(0, betSizeUsd * cActions.multiplyBetSize)
+      if (signal.cancelled) break
     }
 
-    let payoutUsd: number
-    let multi: number
-    let placedAmountMajor = amountToPlace
-    let win: boolean
-    if (currentGame === 'blackjack') {
-      payoutUsd = currencyAmountToUsd(payout, cur, usdRates)
-      win = payout > 0
-      multi = win && wageredUsdThisRound > 0 ? payoutUsd / wageredUsdThisRound : 0
-    } else {
-      const round = resolveOriginalsRoundUsd(betApi, amountToPlace, payout, cur, usdRates)
-      wageredUsdThisRound = round.wageredUsd
-      payout = round.payout
-      payoutUsd = round.payoutUsd
-      placedAmountMajor = round.placedAmount
-      multi = round.multi
-      win = payout > 0
-      totalWageredUsd += round.wageredUsd
+    if (workbenchEnabled && comboEngine) {
+      const params = getComboBetParams(workbenchOptions, comboEngine)
+      betSizeUsdThisRound = params.betSizeUsd
+      if (currentGame === 'dice' || currentGame === 'limbo') {
+        currentOpts = { ...currentOpts, targetMultiplier: params.targetMultiplier }
+        if (currentGame === 'dice') {
+          const rollUnder = params.rollUnder ?? (params.targetMultiplier >= 1.01 ? 99 / params.targetMultiplier : 49.5)
+          currentOpts = { ...currentOpts, rollUnder, targetMultiplier: params.targetMultiplier }
+        }
+      }
     }
-    const roundProfitUsd = payoutUsd - wageredUsdThisRound
-    profitUsd += roundProfitUsd
+
+    if (minBetSizeUsd > 0) betSizeUsdThisRound = Math.max(minBetSizeUsd, betSizeUsdThisRound)
+    betSizeUsdThisRound = capBetUsd(betSizeUsdThisRound)
 
     houseBetBridge.registerPending({
       betIndex: rollNumber,
       at: Date.now(),
       game: currentGame,
     })
+
+    const roundResult = await runSingleBetRound(betSizeUsdThisRound, currentOpts, currentGame)
+    if (!roundResult) {
+      rollNumber--
+      continue
+    }
+    if (roundResult.cancelled) break
+
+    payout = roundResult.payout
+    betIid = roundResult.betIid
+    houseBetBridge.linkBetApiId(rollNumber, roundResult.betApi?.id ?? roundResult.betApi?.betApiId ?? betIid)
+    let wageredUsdThisRound = roundResult.wageredUsdThisRound
+    let payoutUsd = roundResult.payoutUsd
+    let placedAmountMajor = roundResult.placedAmountMajor
+    let multi = roundResult.multi
+    let win = roundResult.win
+    totalWageredUsd += wageredUsdThisRound
+    const roundProfitUsd = payoutUsd - wageredUsdThisRound
+    profitUsd += roundProfitUsd
+    peakProfitUsd = Math.max(peakProfitUsd, profitUsd)
+    lastMultiForStop = multi
+
+    if (workbenchEnabled && comboEngine) {
+      const { stopSession, enteredCombo } = advanceComboAfterRound(workbenchOptions, comboEngine, win)
+      if (enteredCombo && win && payoutUsd > 0 && (workbenchOptions.comboParts?.length ?? 0) > 0) {
+        const parts = (workbenchOptions.comboParts ?? []).map((p, i) => ({
+          ...p,
+          betSize: i === 0 ? payoutUsd : p.betSize,
+        }))
+        workbenchOptions = { ...workbenchOptions, comboParts: parts }
+        options._workbenchOptions = workbenchOptions
+      }
+      if (stopSession) {
+        callbacks.onLog?.('Combo complete — stop on combo hit')
+        break
+      }
+    }
+
+    if (workbenchEnabled && b2bRuntime && win) {
+      const b2bOn = isB2bOnWin(currentOpts) || workbenchOptions.targetSelectionMode === 'combo'
+      const prod = recordB2bWin(b2bRuntime, multi, b2bOn)
+      maxB2bMulti = Math.max(maxB2bMulti, prod)
+    } else if (workbenchEnabled && b2bRuntime && !win) {
+      recordB2bLoss(b2bRuntime)
+    }
 
     const isB2bMode = isB2bOnWin(currentOpts)
     const b2bRefBaseUsd = effectiveBaseUsd
@@ -624,7 +742,6 @@ export async function runProfile(
     if (win) {
       wins++
       currentStreak = lastWin ? currentStreak + 1 : 1
-      b2bCount++
 
       if (isB2bMode) {
         b2bChainWins = lastWin ? b2bChainWins + 1 : 1
@@ -658,7 +775,7 @@ export async function runProfile(
           b2bChainStartProfitUsd = profitUsd
           if (mode === 'wager' && optBoolFrom(currentOpts, 'b2bRotateSeedOnTakeProfit', false)) {
             try {
-              const rotated = await rotateSeedPair()
+              const rotated = await rotateSeed()
               if (rotated?.ok && seedChangeAfterRolls > 0) {
                 rollsInCurrentSeedBlock = 0
                 lastRotatedOnLoss = false
@@ -692,7 +809,6 @@ export async function runProfile(
     } else {
       losses++
       currentStreak = lastWin ? 0 : currentStreak - 1
-      b2bCount = 0
       b2bChainWins = 0
       b2bChainBaseUsd = 0
       b2bChainMultiProduct = 1
@@ -715,7 +831,7 @@ export async function runProfile(
 
     if (mode === 'wager' && !win && seedResetOnLossStreak > 0 && -currentStreak >= seedResetOnLossStreak) {
       try {
-        await rotateSeedPair()
+        await rotateSeed()
       } catch {
         /* no routine log spam */
       }
@@ -723,7 +839,7 @@ export async function runProfile(
 
     if (mode === 'wager' && !win && resetSeedOnLoss) {
       try {
-        const rotated = await rotateSeedPair()
+        const rotated = await rotateSeed()
         if (rotated?.ok && seedChangeAfterRolls > 0) {
           rollsInCurrentSeedBlock = 0
           lastRotatedOnLoss = true
@@ -736,7 +852,7 @@ export async function runProfile(
     if (mode === 'wager' && seedResetOnLossAmount > 0 && profitUsd <= -seedResetOnLossAmount) {
       if (!seedResetLossAmountTriggered) {
         try {
-          const rotated = await rotateSeedPair()
+          const rotated = await rotateSeed()
           if (rotated?.ok) {
             if (seedChangeAfterRolls > 0) {
               rollsInCurrentSeedBlock = 0
@@ -755,6 +871,119 @@ export async function runProfile(
     if (mode === 'wager' && seedChangeAfterRolls > 0) {
       rollsInCurrentSeedBlock++
       if (rollsInCurrentSeedBlock >= seedChangeAfterRolls) rollsInCurrentSeedBlock = 0
+    }
+
+    if (mode === 'wager' && currentGame === 'dice') {
+      rollsSinceSwitch++
+      if (win) winsSinceSwitch++
+      else lossesSinceSwitch++
+      let shouldSwitch = false
+      if (optBoolFrom(currentOpts, 'isSwitchOverUnderAfterRolls', false)) {
+        const n = optFrom(currentOpts, 'switchOverUnderAfterRolls', 0)
+        if (n > 0 && rollsSinceSwitch >= n) shouldSwitch = true
+      }
+      if (optBoolFrom(currentOpts, 'isSwitchOverUnderAfterWins', false) && win) {
+        const n = optFrom(currentOpts, 'switchOverUnderAfterWins', 0)
+        if (n > 0 && winsSinceSwitch >= n) shouldSwitch = true
+      }
+      if (optBoolFrom(currentOpts, 'isSwitchOverUnderAfterLosses', false) && !win) {
+        const n = optFrom(currentOpts, 'switchOverUnderAfterLosses', 0)
+        if (n > 0 && lossesSinceSwitch >= n) shouldSwitch = true
+      }
+      if (optBoolFrom(currentOpts, 'isSwitchOverUnderAfterWinStreak', false) && win && currentStreak > 0) {
+        const n = optFrom(currentOpts, 'switchOverUnderAfterWinStreak', 0)
+        if (n > 0 && currentStreak >= n) shouldSwitch = true
+      }
+      if (optBoolFrom(currentOpts, 'isSwitchOverUnderAfterLossStreak', false) && !win && currentStreak < 0) {
+        const n = optFrom(currentOpts, 'switchOverUnderAfterLossStreak', 0)
+        if (n > 0 && -currentStreak >= n) shouldSwitch = true
+      }
+      if (shouldSwitch) {
+        const over = optBoolFrom(currentOpts, 'rollOver', false)
+        currentOpts = { ...currentOpts, rollOver: !over, betHigh: !over }
+        workbenchOptions = { ...workbenchOptions, rollOver: !over, betHigh: !over }
+        rollsSinceSwitch = 0
+        winsSinceSwitch = 0
+        lossesSinceSwitch = 0
+        callbacks.onLog?.(`Switched to roll ${!over ? 'over' : 'under'}`)
+      }
+    }
+
+    if (mode === 'wager') {
+      if (win) {
+        winsSinceSeedChange++
+        lossesSinceSeedChange = 0
+        if (optBoolFrom(currentOpts, 'isSeedChangeAfterWins', false)) {
+          const n = optFrom(currentOpts, 'seedChangeAfterWins', 0)
+          if (n > 0 && winsSinceSeedChange >= n) {
+            try {
+              await rotateSeed()
+              winsSinceSeedChange = 0
+              callbacks.onLog?.('Seed rotated after wins')
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+        if (optBoolFrom(currentOpts, 'isSeedChangeAfterWinStreak', false) && currentStreak > 0) {
+          const n = optFrom(currentOpts, 'seedChangeAfterWinStreak', 0)
+          if (n > 0 && currentStreak >= n) {
+            try {
+              await rotateSeed()
+              callbacks.onLog?.('Seed rotated after win streak')
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+        if (optBoolFrom(currentOpts, 'isSeedChangeOnMultiplier', false)) {
+          const n = optFrom(currentOpts, 'seedChangeOnMultiplier', 0)
+          if (n > 0 && multi >= n) {
+            try {
+              await rotateSeed()
+              callbacks.onLog?.(`Seed rotated on multiplier ≥ ${n}×`)
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+      } else {
+        lossesSinceSeedChange++
+        winsSinceSeedChange = 0
+        if (optBoolFrom(currentOpts, 'isSeedChangeAfterLosses', false)) {
+          const n = optFrom(currentOpts, 'seedChangeAfterLosses', 0)
+          if (n > 0 && lossesSinceSeedChange >= n) {
+            try {
+              await rotateSeed()
+              lossesSinceSeedChange = 0
+              callbacks.onLog?.('Seed rotated after losses')
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+        if (optBoolFrom(currentOpts, 'isSeedChangeAfterLossStreak', false) && currentStreak < 0) {
+          const n = optFrom(currentOpts, 'seedChangeAfterLossStreak', 0)
+          if (n > 0 && -currentStreak >= n) {
+            try {
+              await rotateSeed()
+              callbacks.onLog?.('Seed rotated after loss streak')
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+      }
+    }
+
+    if (mode === 'wager' && optBoolFrom(options, 'isVaultAllProfits', false) && !vaultDeposited) {
+      const threshold = optFrom(options, 'vaultProfitsThreshold', 0)
+      if (threshold > 0 && profitUsd >= threshold) {
+        vaultDeposited = true
+        callbacks.onLog?.(
+          `Vault threshold reached: profit $${profitUsd.toFixed(4)} ≥ $${threshold} (vault deposit API not available — logged only)`
+        )
+      }
     }
 
     // Recovery: Wechsel zu 2. Spiel bei Verlust/Streak, zurück wenn profit >= 0
@@ -800,6 +1029,10 @@ export async function runProfile(
     const betsPerSec = sessionElapsedMs >= 200 ? rollNumber / (sessionElapsedMs / 1000) : 0
 
     const betShareId = houseBetBridge.getShareId(rollNumber)
+    lastBetIdStr = betShareId ?? betIid ?? ''
+    if (workbenchEnabled && workbenchOptions.sendBetIdToChallengesRoom && betShareId) {
+      callbacks.onLog?.(`[Challenges] Bet ID: ${betShareId}`)
+    }
     callbacks.onBetPlaced?.({
       iid: betIid,
       betId: betShareId,
@@ -813,6 +1046,8 @@ export async function runProfile(
       profitUsd,
       multi,
       b2bMulti,
+      timestamp: Date.now(),
+      nonce: String(rollNumber),
     })
     callbacks.onStats?.({
       bets: rollNumber,
@@ -827,21 +1062,61 @@ export async function runProfile(
       maxBetUsd,
       longestB2bStreak,
       longestWinStreak,
-      currentB2bStreak: isB2bMode ? b2bChainWins : 0,
+      currentB2bStreak: isB2bMode || workbenchOptions.targetSelectionMode === 'combo' ? b2bChainWins : 0,
       sessionElapsedMs,
       betsPerSec,
       b2bSecuredUsd,
+      rtp: totalWageredUsd > 0 ? (totalWageredUsd + profitUsd) / totalWageredUsd : 0,
     })
 
-    if (stopOnProfit > 0 && profitUsd >= stopOnProfit) break
-    if (stopOnLoss > 0 && profitUsd <= -stopOnLoss) break
-    if (stopOnTotalWagered > 0 && totalWageredUsd >= stopOnTotalWagered) {
-      callbacks.onLog?.(`Ziel-Wagered erreicht: $${totalWageredUsd.toFixed(2)} / $${stopOnTotalWagered}`)
+    const deferStopForNextWin = (reason: string | null | undefined): boolean => {
+      if (!reason) return false
+      if ((workbenchOptions.stopOnNextWin || signal.stopOnNextWin) && !win) {
+        stopOnNextWinPending = true
+        callbacks.onLog?.(`Armed: ${reason} — waiting for next win`)
+        return false
+      }
+      callbacks.onLog?.(`Stop: ${reason}`)
+      return true
+    }
+
+    if (stopOnProfit > 0 && profitUsd >= stopOnProfit) {
+      if (deferStopForNextWin(`Profit $${profitUsd.toFixed(4)}`)) break
+    } else if (stopOnLoss > 0 && profitUsd <= -stopOnLoss) {
+      if (deferStopForNextWin(`Loss $${Math.abs(profitUsd).toFixed(4)}`)) break
+    } else if (stopOnTotalWagered > 0 && totalWageredUsd >= stopOnTotalWagered) {
+      if (deferStopForNextWin(`Wagered $${totalWageredUsd.toFixed(2)}`)) break
+    } else if (stopOnWinStreak > 0 && currentStreak >= stopOnWinStreak) {
+      if (deferStopForNextWin(`Win streak ${currentStreak}`)) break
+    } else if (stopOnLossStreak > 0 && -currentStreak >= stopOnLossStreak) {
+      if (deferStopForNextWin(`Loss streak ${-currentStreak}`)) break
+    } else if (stopOnB2bStreak > 0 && isB2bOnWin(currentOpts) && b2bChainWins >= stopOnB2bStreak) {
+      if (deferStopForNextWin(`B2B streak ${b2bChainWins}`)) break
+    } else if (workbenchEnabled) {
+      const stopReason = checkWorkbenchStops(workbenchOptions, {
+        profitUsd,
+        peakProfitUsd,
+        totalWageredUsd,
+        lastMulti: lastMultiForStop,
+        lastBetId: lastBetIdStr,
+        lastWin: win,
+        rollNumber,
+        b2bProduct: isB2bOnWin(currentOpts) ? b2bChainMultiProduct : (b2bRuntime?.runningProduct ?? 0),
+        b2bStreak: isB2bOnWin(currentOpts) ? b2bChainWins : 0,
+      })
+      if (deferStopForNextWin(stopReason ?? null)) break
+    }
+
+    if ((stopOnNextWinPending || signal.stopOnNextWin) && win) {
+      callbacks.onLog?.('Stop: next win')
       break
     }
-    if (stopOnWinStreak > 0 && currentStreak >= stopOnWinStreak) break
-    if (stopOnLossStreak > 0 && -currentStreak >= stopOnLossStreak) break
-    if (stopOnB2bStreak > 0 && b2bCount >= stopOnB2bStreak) break
+
+    const delayMs = getRequestDelayMs()
+    if (delayMs > 0 && !signal.cancelled) {
+      await sleep(delayMs)
+      if (await waitWhilePaused(signal)) break
+    }
   }
   } finally {
     houseBetBridge.dispose()

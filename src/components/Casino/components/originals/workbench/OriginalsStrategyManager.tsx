@@ -1,0 +1,315 @@
+import { useCallback, useState } from 'react'
+
+import type { OriginalsProfileV2, OriginalsWorkbenchOptions } from '../schema/workbenchOptions'
+
+import {
+
+  deleteProfile,
+
+  exportProfileJson,
+
+  loadProfiles,
+
+  saveProfiles,
+
+  upsertProfile,
+
+} from '../profileStorage'
+
+
+
+interface OriginalsStrategyManagerProps {
+
+  options: OriginalsWorkbenchOptions
+
+  onLoad: (options: OriginalsWorkbenchOptions, name?: string) => void
+
+  disabled?: boolean
+
+}
+
+
+
+export default function OriginalsStrategyManager({ options, onLoad, disabled }: OriginalsStrategyManagerProps) {
+
+  const [profiles, setProfiles] = useState<OriginalsProfileV2[]>(() => {
+    const loaded = loadProfiles()
+    return [...loaded].sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0))
+  })
+
+  const [name, setName] = useState('My strategy')
+
+
+
+  const refresh = useCallback(() => {
+    const loaded = loadProfiles()
+    setProfiles([...loaded].sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0)))
+  }, [])
+
+  const activeProfile = profiles.find((p) => p.lastUsed)
+
+
+
+  const saveCurrent = useCallback(() => {
+
+    const trimmed = name.trim()
+
+    if (!trimmed) return
+
+    const existing = profiles.find((p) => p.name === trimmed)
+
+    upsertProfile({
+
+      name: trimmed,
+
+      options: { ...options },
+
+      lastUsed: true,
+
+      favorite: existing?.favorite,
+
+      loadOnStart: existing?.loadOnStart,
+
+    })
+
+    refresh()
+
+  }, [name, options, profiles, refresh])
+
+
+
+  const toggleFavorite = useCallback(
+
+    (profileName: string) => {
+
+      const p = profiles.find((x) => x.name === profileName)
+
+      if (!p) return
+
+      upsertProfile({ ...p, favorite: !p.favorite })
+
+      refresh()
+
+    },
+
+    [profiles, refresh]
+
+  )
+
+
+
+  const toggleLoadOnStart = useCallback(
+
+    (profileName: string) => {
+
+      const next = profiles.map((p) => ({
+
+        ...p,
+
+        loadOnStart: p.name === profileName ? !p.loadOnStart : false,
+
+      }))
+
+      saveProfiles(next)
+
+      refresh()
+
+    },
+
+    [profiles, refresh]
+
+  )
+
+
+
+  const loadProfile = useCallback(
+
+    (p: OriginalsProfileV2) => {
+
+      onLoad({ ...p.options }, p.name)
+
+      upsertProfile({ ...p, lastUsed: true })
+
+      refresh()
+
+    },
+
+    [onLoad, refresh]
+
+  )
+
+
+
+  const removeProfile = useCallback(
+
+    (profileName: string) => {
+
+      deleteProfile(profileName)
+
+      refresh()
+
+    },
+
+    [refresh]
+
+  )
+
+
+
+  const exportCurrent = useCallback(() => {
+
+    const json = exportProfileJson({ name: name.trim() || 'Strategy', options: { ...options } })
+
+    void navigator.clipboard?.writeText(json)
+
+  }, [name, options])
+
+
+
+  return (
+
+    <section className="originals-strategy-manager space-y-2">
+
+      <h4 className="originals-section-title">Strategy Manager</h4>
+
+      <div className="flex gap-2">
+
+        <input
+
+          type="text"
+
+          value={name}
+
+          disabled={disabled}
+
+          onChange={(e) => setName(e.target.value)}
+
+          placeholder="Profile name"
+
+          className="originals-strategy-name-input flex-1"
+
+        />
+
+        <button type="button" disabled={disabled} className="originals-mini-btn" onClick={saveCurrent}>
+
+          Save
+
+        </button>
+
+        <button type="button" disabled={disabled} className="originals-mini-btn" onClick={exportCurrent}>
+
+          Export
+
+        </button>
+
+      </div>
+
+
+
+      {profiles.length > 0 ? (
+
+        <ul className="originals-strategy-list">
+
+          {profiles.map((p) => (
+
+            <li
+
+              key={p.name}
+
+              className={`originals-strategy-item${p.lastUsed || p.name === activeProfile?.name ? ' is-active' : ''}`}
+
+            >
+
+              <button
+
+                type="button"
+
+                disabled={disabled}
+
+                className="originals-strategy-load"
+
+                onClick={() => loadProfile(p)}
+
+              >
+
+                {p.name}
+
+                {p.favorite ? ' ★' : ''}
+
+                {p.loadOnStart ? ' ⏵' : ''}
+
+              </button>
+
+              <button
+
+                type="button"
+
+                disabled={disabled}
+
+                className="originals-strategy-icon-btn"
+
+                title={p.favorite ? 'Unfavorite' : 'Favorite'}
+
+                onClick={() => toggleFavorite(p.name)}
+
+              >
+
+                {p.favorite ? '★' : '☆'}
+
+              </button>
+
+              <button
+
+                type="button"
+
+                disabled={disabled}
+
+                className="originals-strategy-icon-btn"
+
+                title={p.loadOnStart ? 'Clear load on start' : 'Load on start'}
+
+                onClick={() => toggleLoadOnStart(p.name)}
+
+              >
+
+                ⏵
+
+              </button>
+
+              <button
+
+                type="button"
+
+                disabled={disabled}
+
+                className="originals-combo-del"
+
+                aria-label={`Delete ${p.name}`}
+
+                onClick={() => removeProfile(p.name)}
+
+              >
+
+                ×
+
+              </button>
+
+            </li>
+
+          ))}
+
+        </ul>
+
+      ) : (
+
+        <p className="originals-empty-hint">No saved profiles — configure options and save.</p>
+
+      )}
+
+    </section>
+
+  )
+
+}
+
+

@@ -1,5 +1,5 @@
 /**
- * Antebot-kompatibles Profil-Schema für Script Builder und Profil-Runner.
+ * Profil-Schema für Script Builder und Profil-Runner.
  */
 
 export type OriginalsGame = 'dice' | 'limbo' | 'mines' | 'plinko' | 'keno'
@@ -80,10 +80,10 @@ export interface ProfileOptions {
   targetMultiplier: number
   // Plinko
   rows: number
-  plinkoRisk: 'low' | 'medium' | 'high'
+  plinkoRisk: 'low' | 'medium' | 'high' | 'expert'
 }
 
-export interface AntebotProfile {
+export interface OriginalsProfile {
   name: string
   options: Partial<ProfileOptions>
   lastUsed?: boolean
