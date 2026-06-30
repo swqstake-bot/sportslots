@@ -30,5 +30,5 @@ export default function OriginalsView({ accessToken }: OriginalsViewProps) {
     return <OriginalsGameDashboard selectedSlug={selectedSlug} onSelect={openGame} />
   }
 
-  return <OriginalsWorkbench gameSlug={selectedSlug} onBack={backToDashboard} accessToken={accessToken} />
+  return <OriginalsWorkbench key={selectedSlug} gameSlug={selectedSlug} onBack={backToDashboard} accessToken={accessToken} />
 }

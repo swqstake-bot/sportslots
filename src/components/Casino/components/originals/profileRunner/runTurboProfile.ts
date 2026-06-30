@@ -54,7 +54,7 @@ export async function runTurboProfile(
 
   const houseBetBridge = createScriptHouseBetIdBridge(accessToken, callbacks.onBetShareId)
   const cur = (currency || 'usdc').toLowerCase()
-  let workbenchOptions: OriginalsWorkbenchOptions = {
+  const workbenchOptions: OriginalsWorkbenchOptions = {
     ...((options._workbenchOptions ?? {}) as OriginalsWorkbenchOptions),
     game,
   }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import './originals-workbench.css'
 import DiceRunnerTab from '../DiceRunnerTab'
@@ -48,9 +48,32 @@ interface OriginalsWorkbenchProps {
   accessToken?: string
 }
 
+function normalizeModeForGame(
+  mode: OriginalsBettingMode,
+  slug: string,
+  gameEntry: ReturnType<typeof getOriginalsGame>
+): OriginalsBettingMode {
+  if (mode === 'dice-runner' && slug !== 'dice') return 'automatic'
+  if (mode === 'conditions' && slug !== 'dice') return 'automatic'
+  if (mode === 'manual' && gameEntry && !gameEntry.supportsManual) return 'automatic'
+  return mode
+}
+
+function loadWorkbenchSettingsForGame(slug: string): WorkbenchSettings {
+  const settings = loadWorkbenchSettings()
+  if (!isTurboCompatibleGame(slug) && settings.turboMode) {
+    const next = { ...settings, turboMode: false }
+    saveWorkbenchSettings(next)
+    return next
+  }
+  return settings
+}
+
 export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: OriginalsWorkbenchProps) {
   const game = getOriginalsGame(gameSlug)
-  const [mode, setMode] = useState<OriginalsBettingMode>(() => loadBettingMode())
+  const [mode, setMode] = useState<OriginalsBettingMode>(() =>
+    normalizeModeForGame(loadBettingMode(), gameSlug, getOriginalsGame(gameSlug))
+  )
   const [statsOpen, setStatsOpen] = useState(() => {
     try {
       const v = localStorage.getItem('originalsWorkbenchStatsOpen')
@@ -62,7 +85,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
     return true
   })
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [wbSettings, setWbSettings] = useState<WorkbenchSettings>(() => loadWorkbenchSettings())
+  const [wbSettings, setWbSettings] = useState<WorkbenchSettings>(() => loadWorkbenchSettingsForGame(gameSlug))
   const [autoOptions, setAutoOptions] = useState<OriginalsWorkbenchOptions>(() => {
     const settings = loadWorkbenchSettings()
     const base: OriginalsWorkbenchOptions = {
@@ -91,27 +114,14 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
     return base
   })
 
-  useEffect(() => {
-    setAutoOptions((o) => ({ ...o, game: gameSlug }))
-    if (mode === 'dice-runner' && gameSlug !== 'dice') setMode('automatic')
-    if (mode === 'conditions' && gameSlug !== 'dice') setMode('automatic')
-    if (mode === 'manual' && game && !game.supportsManual) setMode('automatic')
-    if (!isTurboCompatibleGame(gameSlug) && wbSettings.turboMode) {
-      setWbSettings((prev) => {
-        const next = { ...prev, turboMode: false }
-        saveWorkbenchSettings(next)
-        return next
-      })
-    }
-  }, [gameSlug, game, mode, wbSettings.turboMode])
+  const resolvedAutoOptions = useMemo(
+    () => ({ ...autoOptions, game: gameSlug }),
+    [autoOptions, gameSlug]
+  )
 
   const session = useOriginalsSession(accessToken, wbSettings)
   const gameMeta = getGameMeta(gameSlug)
   const [manualLastResult, setManualLastResult] = useState<OriginalsLastBetVisual | null>(null)
-
-  useEffect(() => {
-    setManualLastResult(null)
-  }, [gameSlug, mode])
 
   const automaticLastResult = useMemo(() => {
     const row = session.betList[0]
@@ -127,6 +137,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
   const handleModeChange = useCallback(
     (next: OriginalsBettingMode) => {
       if (session.running) return
+      setManualLastResult(null)
       setMode(next)
       saveBettingMode(next)
     },
@@ -217,7 +228,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
         {showSidebar && (
           <OriginalsSidebar
             gameSlug={gameSlug}
-            options={autoOptions}
+            options={resolvedAutoOptions}
             onChange={setAutoOptions}
             onLoadProfile={(opts) => setAutoOptions({ ...opts, game: gameSlug })}
             supportsCombo={game.supportsCombo}
@@ -243,7 +254,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
 
               <ActiveTargetSummary
                 gameSlug={gameSlug}
-                options={autoOptions}
+                options={resolvedAutoOptions}
                 currency={wbSettings.currency}
               />
 
@@ -274,7 +285,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
           {showAutomatic && (
             <div className="casino-card originals-automatic-card">
               <OriginalsAutomaticPanel
-                options={autoOptions}
+                options={resolvedAutoOptions}
                 currency={wbSettings.currency}
                 session={session}
                 turboMode={wbSettings.turboMode && turboOk}
@@ -294,7 +305,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
             <div className="casino-card">
               <OriginalsManualPanel
                 gameSlug={gameSlug}
-                options={autoOptions}
+                options={resolvedAutoOptions}
                 currency={wbSettings.currency}
                 accessToken={accessToken}
                 onResult={setManualLastResult}
@@ -305,7 +316,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
           {showConditions && (
             <OriginalsConditionsPanel
               gameSlug={gameSlug}
-              options={autoOptions}
+              options={resolvedAutoOptions}
               onChange={setAutoOptions}
               currency={wbSettings.currency}
               session={session}
