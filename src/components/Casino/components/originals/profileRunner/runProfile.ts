@@ -30,48 +30,14 @@ import { applyConditionBlocks } from '../engine/conditionsRunner'
 import { waitWhilePaused, type SessionSignal } from '../engine/sessionSignal'
 import { createVaultDeposit } from '../../../api/vaultApi'
 import { isRateLimitError, TURBO_RATE_LIMIT_INTERVAL_BUMP_MS } from '../engine/turboConfig'
+import {
+  resolveOriginalsRoundUsd,
+  isB2bWinMode,
+  resolveOnWinMode,
+  type OriginalsBetApiRow,
+} from '../engine/originalsRoundResult'
 
-type OriginalsBetApiRow = {
-  id?: string
-  betApiId?: string
-  amount?: number
-  payout?: number
-  payoutMultiplier?: number
-}
-
-/** Einsatz/Payout/Multi aus Stake-Response — nicht aus internem USD-Ziel (B2B-Rundung). */
-function resolveOriginalsRoundUsd(
-  betApi: OriginalsBetApiRow | null | undefined,
-  amountPlaced: number,
-  payoutRaw: number,
-  currency: string,
-  usdRates?: Record<string, number>
-): {
-  wageredUsd: number
-  payoutUsd: number
-  multi: number
-  placedAmount: number
-  payout: number
-  win: boolean
-} {
-  const placedAmount = Number(betApi?.amount ?? amountPlaced)
-  const payout = Number(betApi?.payout ?? payoutRaw)
-  const wageredUsd = currencyAmountToUsd(placedAmount, currency, usdRates)
-  const payoutUsd = currencyAmountToUsd(payout, currency, usdRates)
-  const win = payout > placedAmount + 1e-12
-  const apiMulti = Number(betApi?.payoutMultiplier)
-  const multi =
-    win && Number.isFinite(apiMulti) && apiMulti > 0
-      ? apiMulti
-      : win && wageredUsd > 0
-        ? payoutUsd / wageredUsd
-        : 0
-  return { wageredUsd, payoutUsd, multi, placedAmount, payout, win }
-}
-
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms))
-}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export interface ProfileRunnerCallbacks {
   onLog?: (msg: string) => void
@@ -96,6 +62,10 @@ export interface ProfileRunnerCallbacks {
     timestamp?: number
     /** Bet nonce string. */
     nonce?: string
+    kenoPicks?: number[]
+    kenoDrawn?: number[]
+    kenoHits?: number
+    win?: boolean
   }) => void
   /** houseBets liefert später `house:…` — UI-Zeile patchen */
   onBetShareId?: (betIndex: number, betId: string) => void
@@ -175,12 +145,12 @@ function optBoolFrom(o: Record<string, unknown>, key: string, def: boolean): boo
   return (o[key] as boolean) ?? def
 }
 
-function resolveOnWin(o: Record<string, unknown>): string {
-  return String(o.onWin ?? 'reset').toLowerCase().trim()
+function resolveOnWin(o: Record<string, unknown>, wb?: OriginalsWorkbenchOptions): string {
+  return resolveOnWinMode(o, wb?.onWin)
 }
 
-function isB2bOnWin(o: Record<string, unknown>): boolean {
-  return resolveOnWin(o) === 'b2b'
+function isB2bOnWin(o: Record<string, unknown>, wb?: OriginalsWorkbenchOptions): boolean {
+  return isB2bWinMode(o, wb)
 }
 
 type B2bTakeProfitCheck = {
@@ -450,6 +420,9 @@ export async function runProfile(
     win: boolean
     betIid?: string
     betApi: OriginalsBetApiRow | null
+    kenoPicks?: number[]
+    kenoDrawn?: number[]
+    kenoHits?: number
   } | null> => {
     const amountToPlace = toAmount(capBetUsd(betSizeUsdRound))
     let wageredUsdThisRound = betSizeUsdRound
@@ -497,23 +470,42 @@ export async function runProfile(
     let multi: number
     let placedAmountMajor = amountToPlace
     let win: boolean
+    let kenoPicks: number[] | undefined
+    let kenoDrawn: number[] | undefined
+    let kenoHits: number | undefined
     if (gameRound === 'blackjack') {
       payoutUsd = currencyAmountToUsd(payout, cur, usdRates)
       win = payout > 0
       multi = win && wageredUsdThisRound > 0 ? payoutUsd / wageredUsdThisRound : 0
     } else {
-      const round = resolveOriginalsRoundUsd(betApi, amountToPlace, payout, cur, usdRates)
+      const round = resolveOriginalsRoundUsd(betApi, amountToPlace, payout, cur, usdRates, gameRound)
       wageredUsdThisRound = round.wageredUsd
       payout = round.payout
       payoutUsd = round.payoutUsd
       placedAmountMajor = round.placedAmount
       multi = round.multi
       win = round.win
+      kenoPicks = round.kenoPicks
+      kenoDrawn = round.kenoDrawn
+      kenoHits = round.kenoHits
     }
     if (isPreRoll) {
       callbacks.onLog?.(`Pre-roll: ${win ? 'win' : 'loss'} $${wageredUsdThisRound.toFixed(4)}`)
     }
-    return { cancelled: false, payout, payoutUsd, wageredUsdThisRound, placedAmountMajor, multi, win, betIid, betApi }
+    return {
+      cancelled: false,
+      payout,
+      payoutUsd,
+      wageredUsdThisRound,
+      placedAmountMajor,
+      multi,
+      win,
+      betIid,
+      betApi,
+      kenoPicks,
+      kenoDrawn,
+      kenoHits,
+    }
   }
 
   if (preRolls > 0) {
@@ -534,7 +526,7 @@ export async function runProfile(
     lastPayoutCurrency: number,
     lastPayoutUsd?: number
   ) => {
-    const onWin = resolveOnWin(opts)
+    const onWin = resolveOnWin(opts, workbenchEnabled ? workbenchOptions : undefined)
     const initialForMode = opts === recoveryOptions ? initialBetSizeRec : initialBetSizeWager
     if (onWin === 'none') return
     if (onWin === 'reset' || onWin === 'martingale') {
@@ -684,6 +676,9 @@ export async function runProfile(
       multi,
       win,
       betApi,
+      kenoPicks,
+      kenoDrawn,
+      kenoHits,
     } = roundResult
     houseBetBridge.linkBetApiId(rollNumber, betApi?.id ?? betApi?.betApiId ?? betIid)
     totalWageredUsd += wageredUsdThisRound
@@ -709,14 +704,15 @@ export async function runProfile(
     }
 
     if (workbenchEnabled && b2bRuntime && win) {
-      const b2bOn = isB2bOnWin(currentOpts) || workbenchOptions.targetSelectionMode === 'combo'
+      const b2bOn =
+        isB2bOnWin(currentOpts, workbenchOptions) || workbenchOptions.targetSelectionMode === 'combo'
       const prod = recordB2bWin(b2bRuntime, multi, b2bOn)
       maxB2bMulti = Math.max(maxB2bMulti, prod)
     } else if (workbenchEnabled && b2bRuntime && !win) {
       recordB2bLoss(b2bRuntime)
     }
 
-    const isB2bMode = isB2bOnWin(currentOpts)
+    const isB2bMode = isB2bOnWin(currentOpts, workbenchEnabled ? workbenchOptions : undefined)
     const b2bRefBaseUsd = effectiveBaseUsd
 
     if (isB2bMode) {
@@ -1047,6 +1043,10 @@ export async function runProfile(
       b2bMulti,
       timestamp: Date.now(),
       nonce: String(rollNumber),
+      win,
+      kenoPicks,
+      kenoDrawn,
+      kenoHits,
     })
     callbacks.onStats?.({
       bets: rollNumber,
@@ -1089,7 +1089,11 @@ export async function runProfile(
       if (deferStopForNextWin(`Win streak ${currentStreak}`)) break
     } else if (stopOnLossStreak > 0 && -currentStreak >= stopOnLossStreak) {
       if (deferStopForNextWin(`Loss streak ${-currentStreak}`)) break
-    } else if (stopOnB2bStreak > 0 && isB2bOnWin(currentOpts) && b2bChainWins >= stopOnB2bStreak) {
+    } else if (
+      stopOnB2bStreak > 0 &&
+      isB2bOnWin(currentOpts, workbenchEnabled ? workbenchOptions : undefined) &&
+      b2bChainWins >= stopOnB2bStreak
+    ) {
       if (deferStopForNextWin(`B2B streak ${b2bChainWins}`)) break
     } else if (workbenchEnabled) {
       const stopReason = checkWorkbenchStops(workbenchOptions, {
@@ -1100,8 +1104,8 @@ export async function runProfile(
         lastBetId: lastBetIdStr,
         lastWin: win,
         rollNumber,
-        b2bProduct: isB2bOnWin(currentOpts) ? b2bChainMultiProduct : (b2bRuntime?.runningProduct ?? 0),
-        b2bStreak: isB2bOnWin(currentOpts) ? b2bChainWins : 0,
+        b2bProduct: isB2bOnWin(currentOpts, workbenchOptions) ? b2bChainMultiProduct : (b2bRuntime?.runningProduct ?? 0),
+        b2bStreak: isB2bOnWin(currentOpts, workbenchOptions) ? b2bChainWins : 0,
       })
       if (deferStopForNextWin(stopReason ?? null)) break
     }

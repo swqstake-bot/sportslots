@@ -1,4 +1,10 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.189': [
+    '🐛 Originals Keno: B2B-Reinvest greift — Win über payoutMultiplier > 1, onWin aus Workbench-Options',
+    '✨ Originals Keno: Bet-List mit Picks, Drawn, Hits (Antebot-Parität)',
+    '✨ Casino: gemeinsame OriginalsProfitChart in Slots, Hunter, Script, Archive & Workbench',
+    '🐛 Workbench: Settings-Modal zentriert (Portal + Overlay, casino-card-Fix)',
+  ],
   '1.0.188': [
     '✨ Originals: neues Workbench-UI (Dashboard, Automatic, Manual, Conditions, Turbo, flexible Layout/Stats)',
     '✨ Originals: B2B-Reinvest + Take-Profit, Combo, Pause/Resume, Vault-Deposit, erweiterte Stops & IF/THEN-Conditions',

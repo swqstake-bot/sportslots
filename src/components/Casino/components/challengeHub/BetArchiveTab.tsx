@@ -7,7 +7,7 @@ import {
   createEmptyCasinoAggregate,
 } from '../../utils/casinoStatsEngine'
 import { deriveTopSlots, deriveTopWins, mergeTopEntries } from '../../utils/topDomain'
-import { SvgCumulativeProfitLineChart } from '../../../charts/SvgCumulativeCharts'
+import OriginalsProfitChart, { profitsToChartData } from '../OriginalsProfitChart'
 
 type BetArchiveTabProps = {
   accessToken: string
@@ -159,7 +159,11 @@ export function BetArchiveTab({ accessToken }: BetArchiveTabProps) {
 
       <div className="challenge-hub-archive-card">
         <div className="challenge-hub-archive-title">Profit trend</div>
-        <SvgCumulativeProfitLineChart profits={view.cumulative} height={140} />
+        <OriginalsProfitChart
+          chartData={profitsToChartData(view.cumulative)}
+          height={140}
+          compact
+        />
       </div>
 
       <div className="challenge-hub-archive-grid">

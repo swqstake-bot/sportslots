@@ -4,7 +4,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { SvgCumulativeProfitLineChart } from '../../../charts/SvgCumulativeCharts'
+import OriginalsProfitChart, { profitsToChartData } from '../OriginalsProfitChart'
 import { Button } from '../ui/Button'
 import { fetchCurrencyRates } from '../../api/stakeChallenges'
 import OriginalsScriptBuilder from './scriptBuilder/OriginalsScriptBuilder'
@@ -208,9 +208,6 @@ export default function OriginalsScriptView() {
     }
     runFlush()
   }, [])
-
-  const chartBetIndexStart = chartProfits.length > 0 ? 1 : 0
-  const chartBetIndexEnd = chartProfits.length
 
   const handleStart = useCallback(async () => {
     const profileJson = profileContent.trim()
@@ -567,14 +564,11 @@ export default function OriginalsScriptView() {
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
                 {chartProfits.length > 0 && (
                   <div className="min-w-0 flex-1 h-32 shrink-0 overflow-hidden">
-                    <SvgCumulativeProfitLineChart
-                      profits={chartProfits}
+                    <OriginalsProfitChart
+                      chartData={profitsToChartData(chartProfits)}
                       height={128}
-                      stroke="var(--accent)"
-                      stableYDomain
                       domainResetKey={chartSessionKey}
-                      betIndexStart={chartBetIndexStart}
-                      betIndexEnd={chartBetIndexEnd}
+                      compact
                     />
                   </div>
                 )}

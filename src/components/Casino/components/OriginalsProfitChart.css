@@ -1,0 +1,30 @@
+.casino-profit-chart-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.casino-profit-chart-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.casino-profit-chart-value {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.casino-profit-chart-value--profit {
+  color: var(--success, rgb(52, 211, 153));
+}
+
+.casino-profit-chart-value--loss {
+  color: var(--error, rgb(248, 113, 113));
+}
+
+.casino-profit-chart--compact .casino-profit-chart-header {
+  display: none;
+}

@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchCurrencyRates } from '../../api/stakeChallenges'
 import { Button } from '../ui/Button'
-import { SvgCumulativeProfitLineChart } from '../../../charts/SvgCumulativeCharts'
+import OriginalsProfitChart, { profitsToChartData } from '../OriginalsProfitChart'
 import { runDiceRunner, type DiceRunnerConfig } from './diceRunner/runDiceRunner'
 import { loadDiceRunnerConfig, saveDiceRunnerConfig } from './diceRunner/diceRunnerPersistence'
 import { useCasinoBetListReset } from '../../utils/casinoBetSession'
@@ -476,7 +476,10 @@ export default function DiceRunnerTab() {
 
       {chartData.length > 0 && (
         <div className="casino-card h-36">
-          <SvgCumulativeProfitLineChart profits={chartData.map((d) => d.profit)} height={140} stroke="var(--accent)" />
+          <OriginalsProfitChart
+            chartData={profitsToChartData(chartData.map((d) => d.profit))}
+            height={140}
+          />
         </div>
       )}
 

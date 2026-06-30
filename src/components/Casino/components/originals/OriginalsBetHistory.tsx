@@ -3,7 +3,7 @@
  */
 
 import { useMemo } from 'react'
-import { SvgCumulativeProfitLineChart } from '../../../charts/SvgCumulativeCharts'
+import OriginalsProfitChart, { profitsToChartData } from '../OriginalsProfitChart'
 
 export interface OriginalsBetEntry {
   amount: number
@@ -60,7 +60,10 @@ export default function OriginalsBetHistory({
 
       {chartData.length > 0 && (
         <div className="h-32 w-full">
-          <SvgCumulativeProfitLineChart profits={chartData.map((d) => d.profit)} height={128} stroke="var(--accent)" />
+          <OriginalsProfitChart
+            chartData={profitsToChartData(chartData.map((d) => d.profit))}
+            height={128}
+          />
         </div>
       )}
 

@@ -327,18 +327,40 @@
   min-height: 420px;
 }
 
-.originals-settings-modal {
+.originals-settings-overlay {
   position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
   z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(1rem, env(safe-area-inset-top, 0px)) 1rem max(1rem, env(safe-area-inset-bottom, 0px));
+  pointer-events: none;
+}
+
+.originals-settings-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.casino-root .originals-settings-modal.casino-card {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
+  z-index: 1;
   width: min(420px, 94vw);
-  max-height: 88vh;
+  max-height: min(88vh, calc(100vh - 2rem));
+  margin: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-card, 0 10px 30px rgba(0, 0, 0, 0.34));
+  pointer-events: auto;
 }
 
 .originals-settings-form {
@@ -1376,7 +1398,8 @@
   background: color-mix(in srgb, var(--bg-deep) 95%, transparent);
 }
 
-.originals-profit-chart-header {
+.originals-profit-chart-header,
+.casino-session-profit-chart-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -1384,18 +1407,29 @@
   margin-bottom: 0.5rem;
 }
 
-.originals-profit-chart-title {
+.originals-profit-chart-title,
+.casino-session-profit-chart-title {
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text);
 }
 
-.originals-profit-chart-value {
+.originals-profit-chart-value,
+.casino-session-profit-chart-value {
   font-size: 0.875rem;
   font-weight: 700;
 }
 
-.originals-profit-chart--compact .originals-profit-chart-header {
+.casino-session-profit-chart-value--up {
+  color: rgb(52, 211, 153);
+}
+
+.casino-session-profit-chart-value--down {
+  color: rgb(248, 113, 113);
+}
+
+.originals-profit-chart--compact .originals-profit-chart-header,
+.casino-session-profit-chart--compact .casino-session-profit-chart-header {
   display: none;
 }
 

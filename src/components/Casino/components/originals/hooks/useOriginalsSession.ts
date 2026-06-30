@@ -23,6 +23,9 @@ export type OriginalsBetRow = {
   betId?: string | null
   timestamp?: number
   nonce?: string
+  kenoPicks?: number[]
+  kenoDrawn?: number[]
+  kenoHits?: number
 }
 
 /** Cooldown in ms after stop before Start is re-enabled. */
@@ -222,7 +225,10 @@ export function useOriginalsSession(accessToken?: string, wbSettings?: Workbench
               }
               const betSizeUsd = Number(r.betSizeUsd ?? 0)
               const payoutUsd = Number(r.payoutUsd ?? 0)
-              const win = payoutUsd > betSizeUsd + 1e-12
+              const win =
+                r.win != null
+                  ? Boolean(r.win)
+                  : payoutUsd > betSizeUsd + 1e-12
               const roundProfitUsd =
                 r.roundProfitUsd != null ? Number(r.roundProfitUsd) : payoutUsd - betSizeUsd
               const multi =
@@ -245,6 +251,9 @@ export function useOriginalsSession(accessToken?: string, wbSettings?: Workbench
                 betId: r.betId ?? null,
                 timestamp: r.timestamp,
                 nonce: r.nonce,
+                kenoPicks: r.kenoPicks,
+                kenoDrawn: r.kenoDrawn,
+                kenoHits: r.kenoHits,
               }
               setBetList((prev) => {
                 const idx = prev.findIndex((b) => b.betIndex === row.betIndex)

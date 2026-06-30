@@ -58,7 +58,7 @@ import { buildStakeCasinoFairnessReferer, rotateStakeRgsGameSeed } from '../api/
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { usePrefersReducedMotion } from '../../../hooks/usePrefersReducedMotion'
 import { TipMenu } from '../../ui/TipMenu'
-import { SvgCumulativeProfitLineChart } from '../../charts/SvgCumulativeCharts'
+import OriginalsProfitChart, { profitsToChartData } from './OriginalsProfitChart'
 import { HunterRunCard } from './HunterRunCard'
 import ChallengeDifficultyBadge from './challengeHub/ChallengeDifficultyBadge'
 import {
@@ -767,13 +767,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     () => sessionNetBufferRef.current.toChartSeries(),
     [sessionNetSeriesVersion]
   )
-  const sessionChartBetRange = useMemo(() => {
-    const total = sessionNetSpinCount
-    const window = sessionNetBufferRef.current.pointCount
-    if (total <= 0) return { start: 1, end: 0 }
-    if (window <= 0 || total <= window) return { start: 1, end: total }
-    return { start: total - window + 1, end: total }
-  }, [sessionNetSpinCount, sessionNetSeriesVersion])
   /** Höchster getroffener Multiplikator pro Slot-Slug (persistiert). */
   const [bestMultiBySlot, setBestMultiBySlot] = useState(() => loadBestMultiMap())
   useEffect(() => {
@@ -4053,12 +4046,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 </div>
               </div>
               <div style={{ width: '100%' }} title={`Current net: $${netUsd.toFixed(2)}`} data-series-version={sessionNetSeriesVersion}>
-                <SvgCumulativeProfitLineChart
-                  profits={sessionNetSeriesSnapshot}
+                <OriginalsProfitChart
+                  chartData={profitsToChartData(sessionNetSeriesSnapshot)}
                   height={188}
-                  stroke={netUsd >= 0 ? 'var(--success)' : 'var(--error)'}
-                  betIndexStart={sessionChartBetRange.start}
-                  betIndexEnd={sessionChartBetRange.end}
+                  domainResetKey={sessionNetSeriesVersion}
+                  compact
                 />
               </div>
             </div>

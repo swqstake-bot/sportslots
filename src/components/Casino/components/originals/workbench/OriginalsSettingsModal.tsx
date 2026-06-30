@@ -1,4 +1,5 @@
 import { useCallback, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { ALL_CURRENCIES, CURRENCY_GROUPS } from '../../../constants/currencies'
 import type { WorkbenchSettings, BetListColumnId } from './workbenchStorage'
 import {
@@ -280,6 +281,9 @@ function SettingsForm({
                 ['pl', 'P/L'],
                 ['time', 'Time'],
                 ['nonce', 'Nonce'],
+                ['kenoPicks', 'Keno picks'],
+                ['kenoDrawn', 'Keno drawn'],
+                ['kenoHits', 'Keno hits'],
               ] as [BetListColumnId, string][]
             ).map(([id, label]) => (
               <label key={id} className="originals-settings-check originals-settings-check--compact">
@@ -361,18 +365,24 @@ export default function OriginalsSettingsModal({
 }: OriginalsSettingsModalProps) {
   if (!open) return null
 
-  return (
-    <>
-      <button type="button" className="originals-stats-backdrop" aria-label="Close settings" onClick={onClose} />
-      <aside className="originals-settings-modal casino-card">
+  return createPortal(
+    <div className="casino-root originals-settings-overlay" role="presentation">
+      <button type="button" className="originals-settings-backdrop" aria-label="Close settings" onClick={onClose} />
+      <aside
+        className="originals-settings-modal casino-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="originals-settings-title"
+      >
         <div className="originals-stats-drawer-header">
-          <h3>Workbench settings</h3>
+          <h3 id="originals-settings-title">Workbench settings</h3>
           <button type="button" onClick={onClose} className="originals-stats-close">
             ×
           </button>
         </div>
         <SettingsForm initial={settings} onClose={onClose} onChange={onChange} />
       </aside>
-    </>
+    </div>,
+    document.body
   )
 }

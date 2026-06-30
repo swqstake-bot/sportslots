@@ -3,6 +3,7 @@
  * Best for flat-bet wagering on single-shot originals (dice, limbo, plinko, …).
  */
 import { placeOriginalsBet } from '../engine/placeOriginalsBet'
+import { resolveOriginalsRoundUsd } from '../engine/originalsRoundResult'
 import { checkWorkbenchStops } from '../engine/workbenchStops'
 import type { OriginalsWorkbenchOptions } from '../schema/workbenchOptions'
 import { createScriptHouseBetIdBridge } from '../scriptEngine/scriptHouseBetIdBridge'
@@ -24,12 +25,6 @@ function usdToCurrencyAmount(usd: number, currency: string, usdRates?: Record<st
   const rate = usdRates?.[currency.toLowerCase()]
   if (rate && rate > 0) return usd / rate
   return usd
-}
-
-function currencyAmountToUsd(amount: number, currency: string, usdRates?: Record<string, number>): number {
-  const rate = usdRates?.[currency.toLowerCase()]
-  if (rate && rate > 0) return amount * rate
-  return amount
 }
 
 export type TurboSettings = {
@@ -198,15 +193,18 @@ export async function runTurboProfile(
         )
         enqueueProcess(() => {
           if (signal.cancelled) return
-          const wageredUsdThisRound = currencyAmountToUsd(placed.wageredMajor ?? amountMajor, cur, usdRates)
-          const payoutUsd = currencyAmountToUsd(placed.payout ?? 0, cur, usdRates)
-          const multi =
-            placed.betApi?.payoutMultiplier != null
-              ? Number(placed.betApi.payoutMultiplier)
-              : wageredUsdThisRound > 0
-                ? payoutUsd / wageredUsdThisRound
-                : 0
-          const win = payoutUsd > wageredUsdThisRound + 1e-12
+          const round = resolveOriginalsRoundUsd(
+            placed.betApi,
+            placed.wageredMajor ?? amountMajor,
+            placed.payout ?? 0,
+            cur,
+            usdRates,
+            game
+          )
+          const wageredUsdThisRound = round.wageredUsd
+          const payoutUsd = round.payoutUsd
+          const multi = round.multi
+          const win = round.win
           const roundProfitUsd = payoutUsd - wageredUsdThisRound
 
           totalWageredUsd += wageredUsdThisRound
@@ -233,7 +231,7 @@ export async function runTurboProfile(
           callbacks.onBetPlaced?.({
             iid: placed.betIid,
             betId: betShareId,
-            payout: placed.payout,
+            payout: round.payout,
             amount: placed.wageredMajor,
             game,
             betIndex,
@@ -243,6 +241,10 @@ export async function runTurboProfile(
             profitUsd,
             multi,
             b2bMulti: 0,
+            win,
+            kenoPicks: round.kenoPicks,
+            kenoDrawn: round.kenoDrawn,
+            kenoHits: round.kenoHits,
           })
           emitStats()
           if (checkStop()) stopped = true

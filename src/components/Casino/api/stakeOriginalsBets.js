@@ -101,7 +101,12 @@ const PLINKO_BET_MUTATION = `mutation PlinkoBet($amount: Float!, $currency: Curr
 const KENO_BET_MUTATION = `mutation KenoBet($amount: Float!, $currency: CurrencyEnum!, $numbers: [Int!]!, $risk: CasinoGameKenoRiskEnum!) {
   kenoBet(amount: $amount, currency: $currency, numbers: $numbers, risk: $risk) {
     id
-    state { __typename }
+    state {
+      ... on CasinoGameKeno {
+        drawnNumbers
+        selectedNumbers
+      }
+    }
     amount
     payout
     payoutMultiplier

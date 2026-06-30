@@ -16,13 +16,21 @@ function formatTime(ts?: number): string {
   return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`
 }
 
-function exportCsv(rows: OriginalsBetRow[]): void {
+function formatKenoNumbers(nums?: number[]): string {
+  if (!nums?.length) return '—'
+  return [...nums].sort((a, b) => a - b).join(', ')
+}
+
+function exportCsv(rows: OriginalsBetRow[], columns?: BetListColumns): void {
   const header = ['#', 'Game', 'Bet ID', 'Bet ($)', 'Payout ($)', 'P/L ($)', 'Multi', 'B2B', 'Win', 'Time', 'Nonce']
+  if (columns?.kenoPicks) header.push('Picks')
+  if (columns?.kenoDrawn) header.push('Drawn')
+  if (columns?.kenoHits) header.push('Hits')
   const lines = rows
     .slice()
     .reverse()
-    .map((r) =>
-      [
+    .map((r) => {
+      const base = [
         r.betIndex,
         r.game,
         r.betId ?? '',
@@ -34,8 +42,12 @@ function exportCsv(rows: OriginalsBetRow[]): void {
         r.win ? '1' : '0',
         r.timestamp ? new Date(r.timestamp).toISOString() : '',
         r.nonce ?? '',
-      ].join(',')
-    )
+      ]
+      if (columns?.kenoPicks) base.push(formatKenoNumbers(r.kenoPicks))
+      if (columns?.kenoDrawn) base.push(formatKenoNumbers(r.kenoDrawn))
+      if (columns?.kenoHits) base.push(r.kenoHits != null ? String(r.kenoHits) : '')
+      return base.join(',')
+    })
   const blob = new Blob([[header.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -52,7 +64,7 @@ export default function OriginalsBetBrowser({
   columns,
 }: OriginalsBetBrowserProps) {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
-  const handleExport = useCallback(() => exportCsv(betList), [betList])
+  const handleExport = useCallback(() => exportCsv(betList, columns), [betList, columns])
   const cols: BetListColumns = columns ?? {
     game: true,
     betId: true,
@@ -62,6 +74,9 @@ export default function OriginalsBetBrowser({
     pl: true,
     time: false,
     nonce: false,
+    kenoPicks: false,
+    kenoDrawn: false,
+    kenoHits: false,
   }
 
   const copyId = useCallback(async (id: string, betIndex: number) => {
@@ -103,6 +118,9 @@ export default function OriginalsBetBrowser({
                 {cols.multi && <th>×</th>}
                 {cols.b2b && <th>B2B</th>}
                 {cols.pl && <th>P/L</th>}
+                {cols.kenoPicks && <th>Picks</th>}
+                {cols.kenoDrawn && <th>Drawn</th>}
+                {cols.kenoHits && <th>Hits</th>}
                 {cols.time && <th>Time</th>}
                 {cols.nonce && <th>Nonce</th>}
               </tr>
@@ -140,6 +158,19 @@ export default function OriginalsBetBrowser({
                       <td className={row.roundProfitUsd >= 0 ? 'originals-profit' : 'originals-loss'}>
                         {row.roundProfitUsd >= 0 ? '+' : ''}${formatBetUsd(row.roundProfitUsd)}
                       </td>
+                    )}
+                    {cols.kenoPicks && (
+                      <td className="originals-keno-nums text-xs" title={formatKenoNumbers(row.kenoPicks)}>
+                        {formatKenoNumbers(row.kenoPicks)}
+                      </td>
+                    )}
+                    {cols.kenoDrawn && (
+                      <td className="originals-keno-nums text-xs" title={formatKenoNumbers(row.kenoDrawn)}>
+                        {formatKenoNumbers(row.kenoDrawn)}
+                      </td>
+                    )}
+                    {cols.kenoHits && (
+                      <td className="tabular-nums text-xs">{row.kenoHits != null ? row.kenoHits : '—'}</td>
                     )}
                     {cols.time && <td className="tabular-nums text-xs">{formatTime(row.timestamp)}</td>}
                     {cols.nonce && <td className="tabular-nums text-xs">{row.nonce ?? '—'}</td>}

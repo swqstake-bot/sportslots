@@ -82,7 +82,16 @@ function optNumArrayFrom(o: Record<string, unknown>, key: string): number[] {
 }
 
 function resultFromApi(
-  res: { betApiId?: string; iid?: string; id?: string; payout?: number; amount?: number; payoutMultiplier?: number } | null,
+  res: {
+    betApiId?: string
+    iid?: string
+    id?: string
+    payout?: number
+    amount?: number
+    payoutMultiplier?: number
+    game?: string
+    state?: { drawnNumbers?: number[]; selectedNumbers?: number[] }
+  } | null,
   amountMajor: number,
   game: string
 ): OriginalsBetResult {
@@ -90,7 +99,7 @@ function resultFromApi(
   return {
     payout: res?.payout ?? 0,
     betIid: betApiId != null ? String(betApiId) : undefined,
-    betApi: res,
+    betApi: res ? { ...res, game: res.game ?? game } : null,
     wageredMajor: amountMajor,
     game,
   }
@@ -99,7 +108,15 @@ function resultFromApi(
 export type OriginalsBetResult = {
   payout: number
   betIid?: string
-  betApi: { id?: string; betApiId?: string; amount?: number; payout?: number; payoutMultiplier?: number } | null
+  betApi: {
+    id?: string
+    betApiId?: string
+    amount?: number
+    payout?: number
+    payoutMultiplier?: number
+    game?: string
+    state?: { drawnNumbers?: number[]; selectedNumbers?: number[] }
+  } | null
   wageredMajor: number
   game: string
 }
@@ -177,7 +194,22 @@ export async function placeOriginalsBet(
       picks: numbers,
       risk: risk as 'low' | 'medium' | 'high',
     })
-    return resultFromApi(res, amountMajor, g)
+    const result = resultFromApi(res, amountMajor, g)
+    if (result.betApi) {
+      const state = result.betApi.state ?? {}
+      result.betApi = {
+        ...result.betApi,
+        game: g,
+        state: {
+          ...state,
+          selectedNumbers:
+            Array.isArray(state.selectedNumbers) && state.selectedNumbers.length > 0
+              ? state.selectedNumbers
+              : numbers,
+        },
+      }
+    }
+    return result
   }
 
   if (g === 'mines') {

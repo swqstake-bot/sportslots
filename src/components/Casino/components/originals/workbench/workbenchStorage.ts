@@ -11,7 +11,18 @@ const KEY_MODE = 'originalsWorkbenchMode'
 const KEY_STATS_OPEN = 'originalsWorkbenchStatsOpen'
 const KEY_SETTINGS = 'originalsWorkbenchSettings'
 
-export type BetListColumnId = 'game' | 'betId' | 'bet' | 'multi' | 'b2b' | 'pl' | 'time' | 'nonce'
+export type BetListColumnId =
+  | 'game'
+  | 'betId'
+  | 'bet'
+  | 'multi'
+  | 'b2b'
+  | 'pl'
+  | 'time'
+  | 'nonce'
+  | 'kenoPicks'
+  | 'kenoDrawn'
+  | 'kenoHits'
 
 export type BetListColumns = Record<BetListColumnId, boolean>
 
@@ -24,6 +35,17 @@ export const DEFAULT_BET_LIST_COLUMNS: BetListColumns = {
   pl: true,
   time: false,
   nonce: false,
+  kenoPicks: false,
+  kenoDrawn: false,
+  kenoHits: false,
+}
+
+/** Keno defaults: show picked/drawn numbers in bet list (Antebot-style). */
+export const DEFAULT_KENO_BET_LIST_COLUMNS: BetListColumns = {
+  ...DEFAULT_BET_LIST_COLUMNS,
+  kenoPicks: true,
+  kenoDrawn: true,
+  kenoHits: true,
 }
 
 export type WorkbenchSettings = {
@@ -111,13 +133,17 @@ function migrateSettings(raw: Partial<WorkbenchSettings>): WorkbenchSettings {
   return merged
 }
 
-/** Returns per-game columns if set, otherwise global columns. */
+/** Returns per-game columns if set, otherwise global columns. Keno shows number columns by default. */
 export function getBetListColumns(settings: WorkbenchSettings, gameSlug: string): BetListColumns {
-  const perGame = settings.betListColumnsByGame?.[gameSlug.toLowerCase()]
+  const slug = gameSlug.toLowerCase()
+  const defaults = slug === 'keno' ? DEFAULT_KENO_BET_LIST_COLUMNS : DEFAULT_BET_LIST_COLUMNS
+  const perGame = settings.betListColumnsByGame?.[slug]
   if (perGame) {
-    return { ...DEFAULT_BET_LIST_COLUMNS, ...perGame }
+    return { ...defaults, ...settings.betListColumns, ...perGame }
   }
-  return settings.betListColumns
+  return slug === 'keno'
+    ? { ...DEFAULT_KENO_BET_LIST_COLUMNS, ...settings.betListColumns }
+    : settings.betListColumns
 }
 
 /** Save per-game column preferences and persist to localStorage. */

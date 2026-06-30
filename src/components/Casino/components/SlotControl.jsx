@@ -29,7 +29,7 @@ import { getSlotCurrency, setSlotCurrency } from '../utils/slotCurrencyConfig'
 import { getSlotBetAmount, setSlotBetAmount, pickClosestBetLevel } from '../utils/slotBetAmountConfig'
 import { subscribeHunterSlotTargets, getHunterSlotTargetsSnapshot } from '../utils/hunterSlotTargetsBridge'
 import { fetchCurrencyRates } from '../api/stakeChallenges'
-import { SvgNetAreaChart } from '../../charts/SvgCumulativeCharts'
+import OriginalsProfitChart, { profitsToChartData } from './OriginalsProfitChart'
 import { useSlotRealtime } from './hooks/useSlotRealtime'
 import { getProviderSessionState } from '../api/providers/providerRuntime'
 import { startThirdPartySession } from '../api/stake'
@@ -1633,12 +1633,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         const statsNet = (stats.totalWon ?? 0) - (stats.totalWagered ?? 0)
         const useStatsAsReference = sessionStartAt && Math.abs(lastNet - statsNet) > Math.max(1, Math.abs(statsNet) * 0.01)
         const currencyCode = 'usd'
-        const chartColors = ['#00e701', '#22c55e', '#f59e0b', '#8b5cf6']
-        const colorIndex = [...slot.slug].reduce((a, c) => a + c.charCodeAt(0), 0) % chartColors.length
-        const strokeColor = chartColors[colorIndex]
-        // Stake-like Verlauf: komplette Session seit Start anzeigen.
-        // Das Chart verdichtet intern adaptiv (Min/Max je Bucket) für sehr lange Sessions.
-        const chartValues = [0, ...cumNets]
+        const chartValues = [0, ...cumNets.map((c) => c / 100)]
         const chartHeight = settingsCollapsed ? 24 : (compact ? 38 : 80)
         const innerChartH = Math.max(16, chartHeight - (settingsCollapsed ? 18 : (compact ? 22 : 36)))
         return (
@@ -1651,12 +1646,11 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
               style={{ width: '100%', height: innerChartH }}
               title={`Session-Netto (letzter Punkt): ${formatAmount(lastNet, currencyCode)} · ${cumNets.length} Spins`}
             >
-              <SvgNetAreaChart
-                values={chartValues}
+              <OriginalsProfitChart
+                chartData={profitsToChartData(chartValues)}
                 height={innerChartH}
-                strokeColor={strokeColor}
-                lastSignFrom={lastNet}
-                title="Session Netto"
+                domainResetKey={sessionStartAt ?? 'default'}
+                compact
               />
             </div>
           </div>
