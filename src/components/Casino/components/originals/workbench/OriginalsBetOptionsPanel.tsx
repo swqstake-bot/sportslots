@@ -101,6 +101,7 @@ export default function OriginalsBetOptionsPanel({
 
       {onLoadProfile && (
         <OriginalsStrategyManager
+          key={gameSlug ?? o.game ?? 'dice'}
           options={o}
           gameSlug={gameSlug ?? o.game ?? 'dice'}
           onLoad={(opts) => onLoadProfile({ ...opts, game: gameSlug ?? o.game })}

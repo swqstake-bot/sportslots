@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 
 import type { OriginalsProfileV2, OriginalsWorkbenchOptions } from '../schema/workbenchOptions'
 
@@ -49,10 +49,6 @@ export default function OriginalsStrategyManager({ options, gameSlug, onLoad, di
   }, [gameSlug])
 
   const activeProfile = profiles.find((p) => p.lastUsed)
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
 
 
 
