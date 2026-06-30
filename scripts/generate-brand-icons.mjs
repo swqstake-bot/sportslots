@@ -1,5 +1,6 @@
 /**
  * Rasterize public/*.svg → PNG/ICO for Electron + Windows tray/taskbar.
+ * NSIS requires a multi-size .ico (16–256px), not a single large PNG embedded as ICO.
  * Run: node scripts/generate-brand-icons.mjs
  */
 import fs from 'node:fs'
@@ -12,6 +13,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.join(__dirname, '..')
 const publicDir = path.join(root, 'public')
 const buildDir = path.join(root, 'build')
+
+const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
 
 async function rasterize(svgPath, outPath, size) {
   await sharp(svgPath, { density: 384 })
@@ -30,13 +33,16 @@ async function main() {
   await rasterize(iconSvg, path.join(publicDir, 'icon-256.png'), 256)
   await rasterize(traySvg, path.join(publicDir, 'tray-icon.png'), 64)
 
-  const icoBuf = await pngToIco([
-    path.join(publicDir, 'icon.png'),
-    path.join(publicDir, 'icon-256.png'),
-    path.join(publicDir, 'tray-icon.png'),
-  ])
+  const icoPngPaths = []
+  for (const size of ICO_SIZES) {
+    const out = path.join(buildDir, `icon-${size}.png`)
+    await rasterize(iconSvg, out, size)
+    icoPngPaths.push(out)
+  }
+
+  const icoBuf = await pngToIco(icoPngPaths)
   fs.writeFileSync(path.join(buildDir, 'icon.ico'), icoBuf)
-  console.log('wrote build/icon.ico')
+  console.log('wrote build/icon.ico', `(${ICO_SIZES.join(', ')}px)`)
 }
 
 main().catch((err) => {

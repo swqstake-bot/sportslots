@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "version": "1.0.195",
-  "description": "swqbot — Stake automation desktop app",
+  "description": "swqbot - Stake automation desktop app",
   "author": "swqbot",
   "repository": {
     "type": "git",
