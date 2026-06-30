@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.198': [
+    '🐛 Branding: Logo/Favicon im Installer wieder sichtbar (relative Pfade für file:// / Electron)',
+  ],
   '1.0.197': [
     '🐛 Slots: Vollscan wieder 3000+ Spiele — Provider-Kuratoren einzeln wie SSP (kein globales Offset-Limit)',
     '🐛 Slots: number_less_equal abgefangen — Scan bricht sauber ab statt Fehler in der UI',

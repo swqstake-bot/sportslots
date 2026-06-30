@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { keyAuthLogin, keyAuthInit } from '../api/keyauth';
-import { APP_NAME } from '../constants/branding';
+import { APP_LOGO_URL, APP_NAME } from '../constants/branding';
 
 const STORAGE_KEY = 'keyauth_save_credentials';
 const SAVED_USER_KEY = 'keyauth_saved_username';
@@ -90,7 +90,7 @@ export function KeyAuthLogin({ onSuccess }: KeyAuthLoginProps) {
         }}
       >
         <div className="flex flex-col items-center mb-10 gap-4">
-          <img src="/logo.svg" alt="" className="h-12 w-auto" draggable={false} />
+          <img src={APP_LOGO_URL} alt="" className="h-12 w-auto" draggable={false} />
           <h1
             className="text-xl font-bold tracking-wide lowercase"
             style={{ fontFamily: "var(--font-heading, 'Orbitron', monospace)", color: 'var(--app-text, #e2e8f0)' }}

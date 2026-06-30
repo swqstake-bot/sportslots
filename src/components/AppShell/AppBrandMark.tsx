@@ -1,4 +1,4 @@
-import { APP_NAME } from '../../constants/branding'
+import { APP_FAVICON_URL, APP_NAME } from '../../constants/branding'
 
 interface AppBrandMarkProps {
   size?: number
@@ -9,7 +9,7 @@ interface AppBrandMarkProps {
 export function AppBrandMark({ size = 32, className }: AppBrandMarkProps) {
   return (
     <img
-      src="/favicon.svg"
+      src={APP_FAVICON_URL}
       alt=""
       width={size}
       height={size}
