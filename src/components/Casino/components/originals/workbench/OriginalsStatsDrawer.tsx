@@ -1,6 +1,7 @@
 import OriginalsProfitChart from './OriginalsProfitChart'
 import type { ScriptSessionStats } from '../scriptEngine/scriptSessionStats'
 import OriginalsStatsPanel from './OriginalsStatsPanel'
+import { useDraggablePanel } from './useDraggablePanel'
 
 interface OriginalsStatsDrawerProps {
   open: boolean
@@ -23,15 +24,22 @@ export default function OriginalsStatsDrawer({
   stats,
   floating = false,
 }: OriginalsStatsDrawerProps) {
+  const { panelRef, panelStyle, onHeaderPointerDown } = useDraggablePanel(floating)
+
   if (!open) return null
 
   return (
     <aside
+      ref={panelRef}
       className={`originals-stats-dock${floating ? ' originals-stats-dock--float' : ''}`}
+      style={panelStyle}
       aria-label="Statistics"
     >
-      <div className="originals-stats-drawer-header">
-        <h3>Statistics</h3>
+      <div
+        className={`originals-stats-drawer-header${floating ? ' originals-stats-drawer-header--draggable' : ''}`}
+        title={floating ? 'Drag title to move' : undefined}
+      >
+        <h3 onPointerDown={floating ? onHeaderPointerDown : undefined}>Statistics</h3>
         <div className="originals-stats-dock-actions">
           {onReset && (
             <button

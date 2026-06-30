@@ -32,6 +32,7 @@ import {
 } from '../../../api/stakeOriginalsBets'
 import { playBlackjackScriptRound } from '../blackjack/blackjackScriptRound'
 import { eggLevelsToApi, normalizeEggLevels } from '../games/DragonTowerEggGrid'
+import type { OriginalsBetApiRow } from './originalsRoundResult'
 
 const GRID_SIZE = 25
 
@@ -82,16 +83,7 @@ function optNumArrayFrom(o: Record<string, unknown>, key: string): number[] {
 }
 
 function resultFromApi(
-  res: {
-    betApiId?: string
-    iid?: string
-    id?: string
-    payout?: number
-    amount?: number
-    payoutMultiplier?: number
-    game?: string
-    state?: { drawnNumbers?: number[]; selectedNumbers?: number[] }
-  } | null,
+  res: OriginalsBetApiRow | null,
   amountMajor: number,
   game: string
 ): OriginalsBetResult {
@@ -108,15 +100,7 @@ function resultFromApi(
 export type OriginalsBetResult = {
   payout: number
   betIid?: string
-  betApi: {
-    id?: string
-    betApiId?: string
-    amount?: number
-    payout?: number
-    payoutMultiplier?: number
-    game?: string
-    state?: { drawnNumbers?: number[]; selectedNumbers?: number[] }
-  } | null
+  betApi: OriginalsBetApiRow | null
   wageredMajor: number
   game: string
 }
@@ -248,17 +232,19 @@ export async function placeOriginalsBet(
     const identifier = res.id ?? res.iid ?? ''
     let gemsRevealed = 0
     let payout = 0
-    let betApi = res as OriginalsBetResult['betApi']
+    let betApi: OriginalsBetApiRow | null = res
     for (const idx of fields.length > 0 ? fields : shuffle(Array.from({ length: GRID_SIZE }, (_, i) => i))) {
       if (signal.cancelled || gemsRevealed >= diamonds) break
       const rev = await minesReveal({ identifier, fields: [idx] })
-      if (!rev || rev.active === false) break
+      if (!rev) break
+      betApi = rev as OriginalsBetApiRow
+      if (rev.active === false) break
       gemsRevealed++
     }
     if (gemsRevealed >= diamonds) {
       const cash = await minesCashout({ identifier })
       payout = cash?.payout ?? 0
-      if (cash) betApi = { amount: betApi?.amount ?? res.amount, payout: cash.payout, payoutMultiplier: cash.payoutMultiplier }
+      if (cash) betApi = cash as OriginalsBetApiRow
     }
     return { payout, betIid: res.iid ?? res.id, betApi, wageredMajor: amountMajor, game: g }
   }

@@ -22,6 +22,7 @@ import { GlobalToast } from './components/ui/GlobalToast';
 import { getChangelogForVersion } from './constants/changelogs';
 import { AppHeader } from './components/AppShell/AppHeader';
 import { SportsSubbar } from './components/AppShell/SportsSubbar';
+import { refreshWalletBalances } from './utils/walletBalance';
 
 /** Pro GraphQL-Request: Stake validiert `activeSportBets(limit)` mit Obergrenze (typisch ≤50; höhere Werte → error.number_less_equal). */
 const ACTIVE_SPORT_BETS_PAGE_SIZE = 50;
@@ -71,7 +72,7 @@ function App() {
     return sessionStorage.getItem('keyauth_ok') === '1';
   });
 
-  const { user, setUser, setBalancesFromApi, setActiveBets } = useUserStore();
+  const { user, setUser, setActiveBets } = useUserStore();
   const { isRunning } = useAutoBetStore();
   const {
     currentView,
@@ -230,14 +231,7 @@ function App() {
       setUser(userData);
 
       try {
-        const balanceRes = await StakeApi.query(Queries.FetchBalances);
-
-        if (balanceRes.data?.user?.balances) {
-          setBalancesFromApi(balanceRes.data.user.balances);
-        } else {
-            console.warn('Balances not found in response', balanceRes);
-        }
-
+        await refreshWalletBalances();
         const withActiveBets = options?.withActiveBets ?? shouldFetchActiveSportBets();
         if (withActiveBets && userData.name) {
           await fetchActiveSportBets(userData.name);
@@ -255,7 +249,7 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [setUser, setBalancesFromApi, fetchActiveSportBets, shouldFetchActiveSportBets, isAuthenticated]);
+  }, [setUser, fetchActiveSportBets, shouldFetchActiveSportBets, isAuthenticated]);
 
   const needsActiveSportBets = currentView === 'sports' || isActiveBetsModalOpen;
 

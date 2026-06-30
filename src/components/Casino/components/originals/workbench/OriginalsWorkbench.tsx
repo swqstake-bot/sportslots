@@ -12,6 +12,7 @@ import type { OriginalsWorkbenchOptions, OriginalsBettingMode } from '../schema/
 import { DEFAULT_WORKBENCH_OPTIONS } from '../schema/workbenchOptions'
 
 import { useOriginalsSession } from '../hooks/useOriginalsSession'
+import { useUserStore } from '../../../../../store/userStore'
 
 import OriginalsAutomaticPanel from './OriginalsAutomaticPanel'
 
@@ -172,6 +173,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
   }, [session.running, gameSlug])
 
   const handleCurrencyChange = useCallback((currency: string) => {
+    useUserStore.getState().setSelectedCurrency(currency)
     setWbSettings((prev) => {
       const next = { ...prev, currency }
       saveWorkbenchSettings(next)
@@ -220,6 +222,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
         currency={wbSettings.currency}
         onCurrencyChange={handleCurrencyChange}
         currencyDisabled={session.running}
+        accessToken={accessToken}
         turboMode={wbSettings.turboMode}
         turboCompatible={turboOk}
         onToggleTurbo={toggleTurbo}

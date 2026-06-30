@@ -1,5 +1,7 @@
 import HiloCardDisplay from '../games/HiloCardDisplay'
 import KenoBetNumbers from '../games/KenoBetNumbers'
+import MinesGridMini from '../games/MinesGridMini'
+import { formatHiloCardChain } from '../games/originalsBetDisplay'
 
 export interface OriginalsLastBetVisual {
   game: string
@@ -7,10 +9,18 @@ export interface OriginalsLastBetVisual {
   multi: number
   roundProfitUsd: number
   betSizeUsd?: number
-  /** Dice roll / limbo crash / generic result label */
   resultLabel?: string
+  diceTarget?: number
+  diceResult?: number
+  limboTarget?: number
+  limboResult?: number
+  minesCount?: number
+  diamondsCount?: number
+  minesSelected?: number[]
+  minesLocations?: number[]
   hiloRank?: string
   hiloSuit?: string
+  hiloCards?: string
   kenoPicks?: number[]
   kenoDrawn?: number[]
   kenoHits?: number
@@ -28,20 +38,37 @@ function formatUsd(n: number): string {
   return n.toFixed(2)
 }
 
+function formatDiceLimboNum(n?: number): string {
+  if (n == null || !Number.isFinite(n)) return '—'
+  return n.toFixed(2)
+}
+
 function resultHeadline(result: OriginalsLastBetVisual, gameSlug: string): string {
   const g = gameSlug.toLowerCase()
   if (g === 'keno') return result.win ? 'Win' : 'Loss'
+  if (g === 'dice' && result.diceResult != null) return formatDiceLimboNum(result.diceResult)
+  if (g === 'limbo' && result.limboResult != null) return formatDiceLimboNum(result.limboResult)
   if (result.resultLabel) return result.resultLabel
   if (result.multi > 0) return `${result.multi.toFixed(2)}×`
-  if (g === 'dice' || g === 'limbo') return '—'
   return result.win ? 'Win' : 'Loss'
 }
 
 function resultSubline(result: OriginalsLastBetVisual, gameSlug: string): string | null {
   const g = gameSlug.toLowerCase()
   if (g === 'keno') return null
-  if (g === 'dice' && result.multi > 0) return `Multiplier ${result.multi.toFixed(2)}×`
-  if (g === 'limbo' && result.multi > 0) return `Crashed at ${result.multi.toFixed(2)}×`
+  if (g === 'dice' && result.diceTarget != null) {
+    return `Target ${formatDiceLimboNum(result.diceTarget)}`
+  }
+  if (g === 'limbo' && result.limboTarget != null) {
+    return `Target ${formatDiceLimboNum(result.limboTarget)}×`
+  }
+  if (g === 'mines' && result.minesCount != null) {
+    const diamonds = result.diamondsCount ?? result.minesSelected?.length ?? 0
+    return `${result.minesCount} mines · ${diamonds} diamonds`
+  }
+  if (g === 'hilo' && result.hiloCards) {
+    return formatHiloCardChain(result.hiloCards, 6)
+  }
   if (result.multi > 0) return `${result.multi.toFixed(2)}× payout`
   return null
 }
@@ -52,20 +79,46 @@ export function betRowToVisual(row: {
   multi: number
   roundProfitUsd: number
   betSizeUsd: number
+  diceTarget?: number
+  diceResult?: number
+  limboTarget?: number
+  limboResult?: number
+  minesCount?: number
+  diamondsCount?: number
+  minesSelected?: number[]
+  minesLocations?: number[]
+  hiloRank?: string
+  hiloSuit?: string
+  hiloCards?: string
   kenoPicks?: number[]
   kenoDrawn?: number[]
   kenoHits?: number
 }): OriginalsLastBetVisual {
+  const g = row.game.toLowerCase()
   return {
     game: row.game,
     win: row.win,
     multi: row.multi,
     roundProfitUsd: row.roundProfitUsd,
     betSizeUsd: row.betSizeUsd,
-    resultLabel: row.game.toLowerCase() !== 'keno' && row.multi > 0 ? `${row.multi.toFixed(2)}×` : undefined,
+    diceTarget: row.diceTarget,
+    diceResult: row.diceResult,
+    limboTarget: row.limboTarget,
+    limboResult: row.limboResult,
+    minesCount: row.minesCount,
+    diamondsCount: row.diamondsCount,
+    minesSelected: row.minesSelected,
+    minesLocations: row.minesLocations,
+    hiloRank: row.hiloRank,
+    hiloSuit: row.hiloSuit,
+    hiloCards: row.hiloCards,
     kenoPicks: row.kenoPicks,
     kenoDrawn: row.kenoDrawn,
     kenoHits: row.kenoHits,
+    resultLabel:
+      g !== 'keno' && g !== 'dice' && g !== 'limbo' && row.multi > 0
+        ? `${row.multi.toFixed(2)}×`
+        : undefined,
   }
 }
 
@@ -83,6 +136,9 @@ export default function OriginalsLastResultVisual({ result, gameSlug, idleHint }
   }
 
   const showHiloCard = g === 'hilo' && (result.hiloRank || result.hiloSuit)
+  const showMinesGrid =
+    g === 'mines' &&
+    ((result.minesSelected?.length ?? 0) > 0 || (result.minesLocations?.length ?? 0) > 0)
   const showKenoResult =
     g === 'keno' &&
     ((result.kenoPicks?.length ?? 0) > 0 ||
@@ -91,6 +147,7 @@ export default function OriginalsLastResultVisual({ result, gameSlug, idleHint }
 
   const headline = resultHeadline(result, gameSlug)
   const subline = resultSubline(result, gameSlug)
+  const isDiceLimbo = g === 'dice' || g === 'limbo'
 
   return (
     <div
@@ -102,7 +159,11 @@ export default function OriginalsLastResultVisual({ result, gameSlug, idleHint }
         {showHiloCard ? (
           <HiloCardDisplay rank={result.hiloRank} suit={result.hiloSuit} size="lg" />
         ) : showKenoResult ? null : (
-          <div className="originals-last-result-value">{headline}</div>
+          <div
+            className={`originals-last-result-value${isDiceLimbo ? ' originals-last-result-value--game-num' : ''}`}
+          >
+            {headline}
+          </div>
         )}
         <span className={`originals-last-result-badge originals-last-result-badge--${result.win ? 'win' : 'loss'}`}>
           {result.win ? 'Win' : 'Loss'}
@@ -110,8 +171,12 @@ export default function OriginalsLastResultVisual({ result, gameSlug, idleHint }
       </div>
 
       <div className="originals-last-result-meta">
-        {subline && !showHiloCard && !showKenoResult && (
-          <span className="originals-last-result-sub">{subline}</span>
+        {subline && !showKenoResult && (
+          <span
+            className={`originals-last-result-sub${g === 'hilo' ? ' originals-last-result-sub--hilo-chain' : ''}`}
+          >
+            {subline}
+          </span>
         )}
         {result.betSizeUsd != null && result.betSizeUsd > 0 && (
           <span className="originals-last-result-stat">
@@ -123,12 +188,20 @@ export default function OriginalsLastResultVisual({ result, gameSlug, idleHint }
         >
           {result.roundProfitUsd >= 0 ? '+' : ''}${formatUsd(result.roundProfitUsd)}
         </span>
-        {result.multi > 0 && showHiloCard && (
+        {result.multi > 0 && (showHiloCard || g === 'mines') && (
           <span className="originals-last-result-stat">
             <strong>{result.multi.toFixed(2)}×</strong>
           </span>
         )}
       </div>
+
+      {showMinesGrid && (
+        <MinesGridMini
+          selected={result.minesSelected}
+          mines={result.minesLocations}
+          win={result.win}
+        />
+      )}
 
       {showKenoResult && (
         <KenoBetNumbers

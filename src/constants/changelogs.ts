@@ -1,4 +1,10 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.191': [
+    '✨ Originals: Antebot-Parität — Dice/Limbo Target+Result, Mines-Grid, Hilo-Kartenkette, Keno-Multi in Bet-List',
+    '✨ Originals: Live-Wallet-Balance im Header (WS + shared Hook), draggable Stats-Fenster',
+    '✨ Originals: Settings oben zentriert, Nonce-Spalte entfernt (# zeigt Bet-Index)',
+    '✨ Wallet: einheitlicher Balance-Sync (userStore + walletBalanceSync) für Header, Slots, Workbench',
+  ],
   '1.0.190': [
     '🐛 Originals Keno B2B: Combo-Engine überschrieb Einsatz nach Gewinn — plain B2B-Reinvest funktioniert wieder',
     '🐛 Originals: Bet-IDs nach Stop→Start — eindeutiger Bet-Index-Offset, kein Überschreiben mit null',

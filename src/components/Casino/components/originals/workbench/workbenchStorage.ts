@@ -19,7 +19,6 @@ export type BetListColumnId =
   | 'b2b'
   | 'pl'
   | 'time'
-  | 'nonce'
   | 'kenoPicks'
   | 'kenoDrawn'
   | 'kenoHits'
@@ -34,7 +33,6 @@ export const DEFAULT_BET_LIST_COLUMNS: BetListColumns = {
   b2b: true,
   pl: true,
   time: false,
-  nonce: false,
   kenoPicks: false,
   kenoDrawn: false,
   kenoHits: false,

@@ -35,6 +35,7 @@ import {
   resolveOriginalsRoundUsd,
   isB2bWinMode,
   resolveOnWinMode,
+  buildPlacementContext,
   type OriginalsBetApiRow,
 } from '../engine/originalsRoundResult'
 
@@ -66,6 +67,17 @@ export interface ProfileRunnerCallbacks {
     kenoPicks?: number[]
     kenoDrawn?: number[]
     kenoHits?: number
+    diceTarget?: number
+    diceResult?: number
+    limboTarget?: number
+    limboResult?: number
+    minesCount?: number
+    diamondsCount?: number
+    minesSelected?: number[]
+    minesLocations?: number[]
+    hiloCards?: string
+    hiloRank?: string
+    hiloSuit?: string
     win?: boolean
   }) => void
   /** houseBets liefert später `house:…` — UI-Zeile patchen */
@@ -433,6 +445,17 @@ export async function runProfile(
     kenoPicks?: number[]
     kenoDrawn?: number[]
     kenoHits?: number
+    diceTarget?: number
+    diceResult?: number
+    limboTarget?: number
+    limboResult?: number
+    minesCount?: number
+    diamondsCount?: number
+    minesSelected?: number[]
+    minesLocations?: number[]
+    hiloCards?: string
+    hiloRank?: string
+    hiloSuit?: string
   } | null> => {
     const amountToPlace = toAmount(capBetUsd(betSizeUsdRound))
     let wageredUsdThisRound = betSizeUsdRound
@@ -483,12 +506,32 @@ export async function runProfile(
     let kenoPicks: number[] | undefined
     let kenoDrawn: number[] | undefined
     let kenoHits: number | undefined
+    let diceTarget: number | undefined
+    let diceResult: number | undefined
+    let limboTarget: number | undefined
+    let limboResult: number | undefined
+    let minesCount: number | undefined
+    let diamondsCount: number | undefined
+    let minesSelected: number[] | undefined
+    let minesLocations: number[] | undefined
+    let hiloCards: string | undefined
+    let hiloRank: string | undefined
+    let hiloSuit: string | undefined
     if (gameRound === 'blackjack') {
       payoutUsd = currencyAmountToUsd(payout, cur, usdRates)
       win = payout > 0
       multi = win && wageredUsdThisRound > 0 ? payoutUsd / wageredUsdThisRound : 0
     } else {
-      const round = resolveOriginalsRoundUsd(betApi, amountToPlace, payout, cur, usdRates, gameRound)
+      const placementCtx = buildPlacementContext(gameRound, localOpts)
+      const round = resolveOriginalsRoundUsd(
+        betApi,
+        amountToPlace,
+        payout,
+        cur,
+        usdRates,
+        gameRound,
+        placementCtx
+      )
       wageredUsdThisRound = round.wageredUsd
       payout = round.payout
       payoutUsd = round.payoutUsd
@@ -498,6 +541,17 @@ export async function runProfile(
       kenoPicks = round.kenoPicks
       kenoDrawn = round.kenoDrawn
       kenoHits = round.kenoHits
+      diceTarget = round.diceTarget
+      diceResult = round.diceResult
+      limboTarget = round.limboTarget
+      limboResult = round.limboResult
+      minesCount = round.minesCount
+      diamondsCount = round.diamondsCount
+      minesSelected = round.minesSelected
+      minesLocations = round.minesLocations
+      hiloCards = round.hiloCards
+      hiloRank = round.hiloRank
+      hiloSuit = round.hiloSuit
     }
     if (isPreRoll) {
       callbacks.onLog?.(`Pre-roll: ${win ? 'win' : 'loss'} $${wageredUsdThisRound.toFixed(4)}`)
@@ -515,6 +569,17 @@ export async function runProfile(
       kenoPicks,
       kenoDrawn,
       kenoHits,
+      diceTarget,
+      diceResult,
+      limboTarget,
+      limboResult,
+      minesCount,
+      diamondsCount,
+      minesSelected,
+      minesLocations,
+      hiloCards,
+      hiloRank,
+      hiloSuit,
     }
   }
 
@@ -691,6 +756,17 @@ export async function runProfile(
       kenoPicks,
       kenoDrawn,
       kenoHits,
+      diceTarget,
+      diceResult,
+      limboTarget,
+      limboResult,
+      minesCount,
+      diamondsCount,
+      minesSelected,
+      minesLocations,
+      hiloCards,
+      hiloRank,
+      hiloSuit,
     } = roundResult
     houseBetBridge.linkBetApiId(toBetListIndex(rollNumber), betApi?.id ?? betApi?.betApiId ?? betIid)
     totalWageredUsd += wageredUsdThisRound
@@ -1062,6 +1138,17 @@ export async function runProfile(
       kenoPicks,
       kenoDrawn,
       kenoHits,
+      diceTarget,
+      diceResult,
+      limboTarget,
+      limboResult,
+      minesCount,
+      diamondsCount,
+      minesSelected,
+      minesLocations,
+      hiloCards,
+      hiloRank,
+      hiloSuit,
     })
     callbacks.onStats?.({
       bets: rollNumber,

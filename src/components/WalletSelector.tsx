@@ -1,23 +1,20 @@
 import { useState, useRef, useEffect } from 'react';
-import { useUserStore, type UserBalance } from '../store/userStore';
-import { getMinorFactor, normalizeCurrencyCode, convertToUsd } from '../utils/monetaryContract';
-import { StakeApi } from '../api/client';
-import { Queries } from '../api/queries';
-import { fetchCurrencyRates } from './Casino/api/stakeChallenges';
-
-/** Polling nur für die Header-Balance (GraphQL liefert kein Push für Wallet). */
-const BALANCE_POLL_MS = 5000;
+import { useUserStore } from '../store/userStore';
+import { useLiveWalletBalance } from '../hooks/useLiveWalletBalance';
+import { formatWalletBalanceAmount } from '../utils/walletBalance';
 
 export function WalletSelector() {
   const user = useUserStore((s) => s.user);
   const balances = useUserStore((s) => s.balances);
   const selectedCurrency = useUserStore((s) => s.selectedCurrency);
   const setSelectedCurrency = useUserStore((s) => s.setSelectedCurrency);
-  const setBalancesFromApi = useUserStore((s) => s.setBalancesFromApi);
+
+  const { formattedUsd, lastPollAt, lastLiveAt, isLive } = useLiveWalletBalance(selectedCurrency, {
+    poll: !!user,
+    live: !!user,
+  });
 
   const [isOpen, setIsOpen] = useState(false);
-  const [usdRates, setUsdRates] = useState<Record<string, number>>({});
-  const [lastBalanceSync, setLastBalanceSync] = useState<Date | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const toggleDropdown = () => setIsOpen(!isOpen);
@@ -39,7 +36,6 @@ export function WalletSelector() {
     }
   };
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -52,69 +48,11 @@ export function WalletSelector() {
     };
   }, [dropdownRef]);
 
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    const loadRates = async () => {
-      try {
-        const map = await fetchCurrencyRates('');
-        if (!cancelled && map && typeof map === 'object') setUsdRates(map);
-      } catch {
-        /* Kurse optional */
-      }
-    };
-    void loadRates();
-    const ratesId = window.setInterval(() => void loadRates(), 10 * 60 * 1000);
-    return () => {
-      cancelled = true;
-      clearInterval(ratesId);
-    };
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-
-    const pullBalances = async () => {
-      try {
-        const res = await StakeApi.query<{ user?: { balances?: UserBalance[] } }>(Queries.FetchBalances);
-        const list = res.data?.user?.balances;
-        if (!cancelled && Array.isArray(list)) {
-          setBalancesFromApi(list);
-          setLastBalanceSync(new Date());
-        }
-      } catch {
-        /* Session / Netz — letzten Stand behalten */
-      }
-    };
-
-    void pullBalances();
-    const id = window.setInterval(() => void pullBalances(), BALANCE_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [user, setBalancesFromApi]);
-
-  const formatBalance = (amount: number, currency: string) => {
-    const curr = normalizeCurrencyCode(currency);
-    const factor = getMinorFactor(curr);
-    const digits = factor === 1 ? 0 : (factor === 100 ? 2 : 8);
-    return Number(amount || 0).toLocaleString('en-US', {
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits,
-    });
-  };
-
   const currentBalance = balances[selectedCurrency] || 0;
-  // Stake `UserBalances.available.amount` = Hauptbetrag je Währung (z. B. 259.13 USDC), nicht „Minor/Cents“.
-  const usdConv = convertToUsd(currentBalance, selectedCurrency, 'major', usdRates);
-  const usdLine =
-    usdConv.usdAmount != null && Number.isFinite(usdConv.usdAmount)
-      ? `≈ $${usdConv.usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`
-      : 'USD: —';
-  const syncLabel = lastBalanceSync
-    ? `Updated ${lastBalanceSync.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+  const usdLine = formattedUsd.includes('—') ? 'USD: —' : `${formattedUsd} USD`;
+  const syncAt = lastLiveAt && isLive ? lastLiveAt : lastPollAt;
+  const syncLabel = syncAt
+    ? `${isLive && lastLiveAt ? 'Live' : 'Updated'} ${new Date(syncAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
     : 'Balance';
 
   return (
@@ -132,7 +70,7 @@ export function WalletSelector() {
             {usdLine}
           </span>
           <span className="font-mono text-[10px] tracking-tight transition-colors" style={{ color: 'var(--app-text-muted)' }}>
-            {formatBalance(currentBalance, selectedCurrency)} {selectedCurrency.toUpperCase()}
+            {formatWalletBalanceAmount(currentBalance, selectedCurrency)} {selectedCurrency.toUpperCase()}
           </span>
         </div>
         <div className="flex items-center gap-2 pl-3 border-l h-full" style={{ borderColor: 'color-mix(in srgb, var(--app-border) 50%, transparent)' }}>
@@ -195,7 +133,7 @@ export function WalletSelector() {
                     className={`font-mono text-xs font-bold ${selectedCurrency === currency ? '' : 'group-hover:text-white'}`}
                     style={{ color: selectedCurrency === currency ? 'var(--app-accent)' : 'var(--app-text-muted)' }}
                   >
-                      {formatBalance(amount, currency)}
+                      {formatWalletBalanceAmount(amount, currency)}
                   </span>
                 </button>
               ))

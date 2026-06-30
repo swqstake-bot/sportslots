@@ -26,6 +26,17 @@ export type OriginalsBetRow = {
   kenoPicks?: number[]
   kenoDrawn?: number[]
   kenoHits?: number
+  diceTarget?: number
+  diceResult?: number
+  limboTarget?: number
+  limboResult?: number
+  minesCount?: number
+  diamondsCount?: number
+  minesSelected?: number[]
+  minesLocations?: number[]
+  hiloCards?: string
+  hiloRank?: string
+  hiloSuit?: string
 }
 
 /** Cooldown in ms after stop before Start is re-enabled. */
@@ -265,6 +276,17 @@ export function useOriginalsSession(accessToken?: string, wbSettings?: Workbench
                 kenoPicks: r.kenoPicks,
                 kenoDrawn: r.kenoDrawn,
                 kenoHits: r.kenoHits,
+                diceTarget: r.diceTarget,
+                diceResult: r.diceResult,
+                limboTarget: r.limboTarget,
+                limboResult: r.limboResult,
+                minesCount: r.minesCount,
+                diamondsCount: r.diamondsCount,
+                minesSelected: r.minesSelected,
+                minesLocations: r.minesLocations,
+                hiloCards: r.hiloCards,
+                hiloRank: r.hiloRank,
+                hiloSuit: r.hiloSuit,
               }
               setBetList((prev) => {
                 const idx = prev.findIndex((b) => b.betIndex === row.betIndex)

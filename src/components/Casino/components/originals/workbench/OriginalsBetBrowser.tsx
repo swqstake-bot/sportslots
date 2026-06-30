@@ -1,12 +1,12 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import type { OriginalsBetRow } from '../hooks/useOriginalsSession'
 import type { BetListColumns } from './workbenchStorage'
 import { copyBetIdToClipboard, displayBetId, formatBetUsd, shortenBetId } from './betDisplayUtils'
 import KenoBetNumbers, {
-  formatKenoMultiLabel,
   formatKenoNumberList,
   kenoHitNumbers,
 } from '../games/KenoBetNumbers'
+import { formatGameMultiCell } from '../games/originalsBetDisplay'
 
 interface OriginalsBetBrowserProps {
   betList: OriginalsBetRow[]
@@ -21,16 +21,12 @@ function formatTime(ts?: number): string {
   return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`
 }
 
-function formatMultiCell(row: OriginalsBetRow): string {
-  if (row.multi <= 0) return '—'
-  if (row.game.toLowerCase() === 'keno' && row.kenoHits != null) {
-    return formatKenoMultiLabel(row.multi, row.kenoHits)
-  }
-  return `${row.multi.toFixed(2)}×`
+function formatMultiCell(row: OriginalsBetRow): ReactNode {
+  return formatGameMultiCell(row)
 }
 
 function exportCsv(rows: OriginalsBetRow[], columns?: BetListColumns): void {
-  const header = ['#', 'Game', 'Bet ID', 'Bet ($)', 'Payout ($)', 'P/L ($)', 'Multi', 'B2B', 'Win', 'Time', 'Nonce']
+  const header = ['#', 'Game', 'Bet ID', 'Bet ($)', 'Payout ($)', 'P/L ($)', 'Multi', 'B2B', 'Win', 'Time']
   if (columns?.kenoPicks) header.push('Picks')
   if (columns?.kenoDrawn) header.push('Drawn')
   if (columns?.kenoHits) header.push('Hits')
@@ -49,7 +45,6 @@ function exportCsv(rows: OriginalsBetRow[], columns?: BetListColumns): void {
         r.b2bMulti.toFixed(4),
         r.win ? '1' : '0',
         r.timestamp ? new Date(r.timestamp).toISOString() : '',
-        r.nonce ?? '',
       ]
       if (columns?.kenoPicks) {
         const hitSet = new Set(kenoHitNumbers(r.kenoPicks, r.kenoDrawn))
@@ -87,7 +82,6 @@ export default function OriginalsBetBrowser({
     b2b: true,
     pl: true,
     time: false,
-    nonce: false,
     kenoPicks: false,
     kenoDrawn: false,
     kenoHits: false,
@@ -136,7 +130,6 @@ export default function OriginalsBetBrowser({
                 {cols.kenoDrawn && <th>Drawn</th>}
                 {cols.kenoHits && <th>Hits</th>}
                 {cols.time && <th>Time</th>}
-                {cols.nonce && <th>Nonce</th>}
               </tr>
             </thead>
             <tbody>
@@ -144,7 +137,7 @@ export default function OriginalsBetBrowser({
                 const betId = displayBetId(row.betId)
                 return (
                   <tr key={row.betIndex}>
-                    <td>{row.betIndex}</td>
+                    <td>#{row.betIndex}</td>
                     {cols.game && <td>{row.game}</td>}
                     {cols.betId && (
                       <td className="originals-bet-id-cell">
@@ -166,7 +159,7 @@ export default function OriginalsBetBrowser({
                       </td>
                     )}
                     {cols.bet && <td>${formatBetUsd(row.betSizeUsd)}</td>}
-                    {cols.multi && <td>{formatMultiCell(row)}</td>}
+                    {cols.multi && <td className="originals-bet-multi-cell">{formatMultiCell(row)}</td>}
                     {cols.b2b && <td>{row.b2bMulti > 1.001 ? `${row.b2bMulti.toFixed(2)}×` : '—'}</td>}
                     {cols.pl && (
                       <td className={row.roundProfitUsd >= 0 ? 'originals-profit' : 'originals-loss'}>
@@ -194,7 +187,6 @@ export default function OriginalsBetBrowser({
                       </td>
                     )}
                     {cols.time && <td className="tabular-nums text-xs">{formatTime(row.timestamp)}</td>}
-                    {cols.nonce && <td className="tabular-nums text-xs">{row.nonce ?? '—'}</td>}
                   </tr>
                 )
               })}

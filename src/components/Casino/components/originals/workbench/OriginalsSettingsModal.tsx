@@ -280,7 +280,6 @@ function SettingsForm({
                 ['b2b', 'B2B'],
                 ['pl', 'P/L'],
                 ['time', 'Time'],
-                ['nonce', 'Nonce'],
                 ['kenoPicks', 'Keno picks'],
                 ['kenoDrawn', 'Keno drawn'],
                 ['kenoHits', 'Keno hits'],

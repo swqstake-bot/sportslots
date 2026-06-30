@@ -3,7 +3,7 @@
  * Best for flat-bet wagering on single-shot originals (dice, limbo, plinko, …).
  */
 import { placeOriginalsBet } from '../engine/placeOriginalsBet'
-import { resolveOriginalsRoundUsd } from '../engine/originalsRoundResult'
+import { resolveOriginalsRoundUsd, buildPlacementContext } from '../engine/originalsRoundResult'
 import { checkWorkbenchStops } from '../engine/workbenchStops'
 import type { OriginalsWorkbenchOptions } from '../schema/workbenchOptions'
 import { createScriptHouseBetIdBridge } from '../scriptEngine/scriptHouseBetIdBridge'
@@ -195,13 +195,15 @@ export async function runTurboProfile(
         )
         enqueueProcess(() => {
           if (signal.cancelled) return
+          const placementCtx = buildPlacementContext(game, betOpts as Record<string, unknown>)
           const round = resolveOriginalsRoundUsd(
             placed.betApi,
             placed.wageredMajor ?? amountMajor,
             placed.payout ?? 0,
             cur,
             usdRates,
-            game
+            game,
+            placementCtx
           )
           const wageredUsdThisRound = round.wageredUsd
           const payoutUsd = round.payoutUsd
@@ -247,6 +249,17 @@ export async function runTurboProfile(
             kenoPicks: round.kenoPicks,
             kenoDrawn: round.kenoDrawn,
             kenoHits: round.kenoHits,
+            diceTarget: round.diceTarget,
+            diceResult: round.diceResult,
+            limboTarget: round.limboTarget,
+            limboResult: round.limboResult,
+            minesCount: round.minesCount,
+            diamondsCount: round.diamondsCount,
+            minesSelected: round.minesSelected,
+            minesLocations: round.minesLocations,
+            hiloCards: round.hiloCards,
+            hiloRank: round.hiloRank,
+            hiloSuit: round.hiloSuit,
           })
           emitStats()
           if (checkStop()) stopped = true

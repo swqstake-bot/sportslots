@@ -114,6 +114,8 @@ interface UserState {
   
   setUser: (user: User) => void;
   setBalancesFromApi: (balancesData: UserBalance[]) => void;
+  /** Patch one currency from balanceUpdated WS without full API refresh. */
+  patchBalance: (currency: string, amount: number) => void;
   setSelectedCurrency: (currency: string) => void;
   setActiveBets: (bets: SportBet[]) => void;
   addActiveBet: (bet: SportBet) => void;
@@ -175,6 +177,14 @@ export const useUserStore = create<UserState>((set, get) => ({
         availableCurrencies: currencies,
         selectedCurrency: newSelected
     });
+  },
+
+  patchBalance: (currency, amount) => {
+    const cur = String(currency || '').toLowerCase()
+    if (!cur || !Number.isFinite(amount)) return
+    set((state) => ({
+      balances: { ...state.balances, [cur]: amount },
+    }))
   },
 
   setSelectedCurrency: (currency) => set({ selectedCurrency: currency }),

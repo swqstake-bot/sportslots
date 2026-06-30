@@ -10,12 +10,11 @@ import { runDiceRunner, type DiceRunnerConfig } from './diceRunner/runDiceRunner
 import { loadDiceRunnerConfig, saveDiceRunnerConfig } from './diceRunner/diceRunnerPersistence'
 import { useCasinoBetListReset } from '../../utils/casinoBetSession'
 import {
-  DICE_RUNNER_BALANCE_POLL_MS,
-  balanceMajor,
   hasSufficientBalanceForBet,
-  refreshWalletBalances,
   requiredBetMajor,
+  DICE_RUNNER_BALANCE_POLL_MS,
 } from './diceRunner/diceRunnerBalance'
+import { refreshWalletBalances, walletBalanceMajor } from '../../../../utils/walletBalance'
 import { ALL_CURRENCIES, CURRENCY_GROUPS } from '../../constants/currencies'
 
 interface BetRow {
@@ -270,7 +269,7 @@ export default function DiceRunnerTab() {
           /* keep previous rates */
         }
 
-        const have = balanceMajor(cfg.currency)
+        const have = walletBalanceMajor(cfg.currency)
         const need = requiredBetMajor(cfg.currency, cfg.betUsd, usdRates)
         if (hasSufficientBalanceForBet(cfg.currency, cfg.betUsd, usdRates)) {
           ready = true

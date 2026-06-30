@@ -76,18 +76,42 @@ export async function runManualOriginalsBet(
   payout?: number
   multi?: number
   error?: string
+  win?: boolean
   kenoPicks?: number[]
   kenoDrawn?: number[]
   kenoHits?: number
+  diceTarget?: number
+  diceResult?: number
+  limboTarget?: number
+  limboResult?: number
+  minesCount?: number
+  diamondsCount?: number
+  minesSelected?: number[]
+  minesLocations?: number[]
+  hiloCards?: string
+  hiloRank?: string
+  hiloSuit?: string
 }> {
   const signal: SessionSignal = { cancelled: false, paused: false }
   let result: {
     payout?: number
     multi?: number
     error?: string
+    win?: boolean
     kenoPicks?: number[]
     kenoDrawn?: number[]
     kenoHits?: number
+    diceTarget?: number
+    diceResult?: number
+    limboTarget?: number
+    limboResult?: number
+    minesCount?: number
+    diamondsCount?: number
+    minesSelected?: number[]
+    minesLocations?: number[]
+    hiloCards?: string
+    hiloRank?: string
+    hiloSuit?: string
   } = {}
   const profileOpts = workbenchOptionsToProfile({ ...options, game, initialBetSize: amountUsd, betSize: amountUsd })
   profileOpts.numberOfBets = 1
@@ -103,9 +127,21 @@ export async function runManualOriginalsBet(
           result = {
             payout: r.payoutUsd,
             multi: r.multi,
+            win: r.win,
             kenoPicks: r.kenoPicks,
             kenoDrawn: r.kenoDrawn,
             kenoHits: r.kenoHits,
+            diceTarget: r.diceTarget,
+            diceResult: r.diceResult,
+            limboTarget: r.limboTarget,
+            limboResult: r.limboResult,
+            minesCount: r.minesCount,
+            diamondsCount: r.diamondsCount,
+            minesSelected: r.minesSelected,
+            minesLocations: r.minesLocations,
+            hiloCards: r.hiloCards,
+            hiloRank: r.hiloRank,
+            hiloSuit: r.hiloSuit,
           }
         }
       },

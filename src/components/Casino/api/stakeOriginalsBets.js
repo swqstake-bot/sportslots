@@ -14,7 +14,14 @@ import { StakeApi } from '../../../api/client'
 const DICE_ROLL_MUTATION = `mutation DiceRoll($amount: Float!, $currency: CurrencyEnum!, $condition: CasinoGameDiceConditionEnum!, $target: Float!) {
   diceRoll(amount: $amount, currency: $currency, condition: $condition, target: $target) {
     id
-    state { __typename }
+    state {
+      __typename
+      ... on CasinoGameDice {
+        result
+        target
+        condition
+      }
+    }
     amount
     payout
     payoutMultiplier
@@ -28,7 +35,13 @@ const DICE_ROLL_MUTATION = `mutation DiceRoll($amount: Float!, $currency: Curren
 const LIMBO_BET_MUTATION = `mutation LimboBet($amount: Float!, $currency: CurrencyEnum!, $multiplierTarget: Float!) {
   limboBet(amount: $amount, currency: $currency, multiplierTarget: $multiplierTarget) {
     id
-    state { __typename }
+    state {
+      __typename
+      ... on CasinoGameLimbo {
+        result
+        multiplierTarget
+      }
+    }
     amount
     payout
     payoutMultiplier
@@ -42,7 +55,17 @@ const LIMBO_BET_MUTATION = `mutation LimboBet($amount: Float!, $currency: Curren
 const MINES_BET_MUTATION = `mutation MinesBet($amount: Float!, $currency: CurrencyEnum!, $minesCount: Int!, $fields: [Int!], $identifier: String!) {
   minesBet(amount: $amount, currency: $currency, minesCount: $minesCount, fields: $fields, identifier: $identifier) {
     id
-    state { __typename }
+    state {
+      __typename
+      ... on CasinoGameMines {
+        mines
+        minesCount
+        rounds {
+          field
+          payoutMultiplier
+        }
+      }
+    }
     active
     amount
     payout
@@ -57,7 +80,17 @@ const MINES_BET_MUTATION = `mutation MinesBet($amount: Float!, $currency: Curren
 const MINES_NEXT_MUTATION = `mutation MinesNext($identifier: String!, $fields: [Int!]!) {
   minesNext(identifier: $identifier, fields: $fields) {
     id
-    state { __typename }
+    state {
+      __typename
+      ... on CasinoGameMines {
+        mines
+        minesCount
+        rounds {
+          field
+          payoutMultiplier
+        }
+      }
+    }
     active
     amount
     payout
@@ -72,7 +105,17 @@ const MINES_NEXT_MUTATION = `mutation MinesNext($identifier: String!, $fields: [
 const MINES_CASHOUT_MUTATION = `mutation MinesCashout($identifier: String!) {
   minesCashout(identifier: $identifier) {
     id
-    state { __typename }
+    state {
+      __typename
+      ... on CasinoGameMines {
+        mines
+        minesCount
+        rounds {
+          field
+          payoutMultiplier
+        }
+      }
+    }
     active
     amount
     payout
@@ -534,19 +577,61 @@ export async function placeTomeOfLifeBet({ amount, currency, lines = 1, identifi
 
 const HILO_BET_MUTATION = `mutation HiloBet($amount: Float!, $currency: CurrencyEnum!, $startCard: HiloBetStartCardInput!) {
   hiloBet(amount: $amount, currency: $currency, startCard: $startCard) {
-    id active amount payout payoutMultiplier currency game updatedAt
+    id
+    active
+    amount
+    payout
+    payoutMultiplier
+    currency
+    game
+    updatedAt
+    state {
+      __typename
+      ... on CasinoGameHilo {
+        startCard { suit rank }
+        rounds { card { suit rank } guess payoutMultiplier }
+      }
+    }
   }
 }`
 
 const HILO_NEXT_MUTATION = `mutation HiloNext($guess: CasinoGameHiloGuessEnum!) {
   hiloNext(guess: $guess) {
-    id active amount payout payoutMultiplier currency game updatedAt
+    id
+    active
+    amount
+    payout
+    payoutMultiplier
+    currency
+    game
+    updatedAt
+    state {
+      __typename
+      ... on CasinoGameHilo {
+        startCard { suit rank }
+        rounds { card { suit rank } guess payoutMultiplier }
+      }
+    }
   }
 }`
 
 const HILO_CASHOUT_MUTATION = `mutation HiloCashout {
   hiloCashout {
-    id active amount payout payoutMultiplier currency game updatedAt
+    id
+    active
+    amount
+    payout
+    payoutMultiplier
+    currency
+    game
+    updatedAt
+    state {
+      __typename
+      ... on CasinoGameHilo {
+        startCard { suit rank }
+        rounds { card { suit rank } guess payoutMultiplier }
+      }
+    }
   }
 }`
 

@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
 import { toMinor } from '../../utils/formatAmount'
 import { isDebugHouseBetsEnabled } from '../../api/stakeBalanceSubscription'
-import { subscribeToHouseBets, subscribeToStakeBalance } from '../../api/stakeRealtimeFacade'
+import { subscribeToHouseBets } from '../../api/stakeRealtimeFacade'
 import { houseBetMatchesSessionSlot } from '../../utils/slotSlugMatching'
+import { useUserStore } from '../../../../store/userStore'
 
 export function useSlotRealtime({
   accessToken,
@@ -12,35 +13,14 @@ export function useSlotRealtime({
   setWsBalance,
   addToBetHistory,
 }) {
+  const targetCur = String(effectiveTarget || '').toLowerCase()
+  const storeBalanceMajor = useUserStore((s) => s.balances[targetCur])
+
   useEffect(() => {
-    if (!accessToken) return
-    let cancelled = false
-    let balanceSub = null
-    subscribeToStakeBalance(accessToken, (payload) => {
-      if (!payload?.currency) return
-      const curr = (payload.currency || '').toLowerCase()
-      if (curr === String(effectiveTarget || '').toLowerCase()) {
-        // SlotControl expects balances in minor units for toUsdCents/toUnits.
-        const amountMinor = payload?.amountMinor
-        const next = amountMinor != null ? Number(amountMinor) : null
-        setWsBalance(Number.isFinite(next) ? next : null)
-      }
-    }).then((s) => {
-      if (cancelled) {
-        try {
-          s?.disconnect?.()
-        } catch (_) {}
-        return
-      }
-      balanceSub = s
-    })
-    return () => {
-      cancelled = true
-      try {
-        balanceSub?.disconnect?.()
-      } catch (_) {}
-    }
-  }, [accessToken, effectiveTarget, setWsBalance])
+    if (!accessToken || !targetCur) return
+    if (storeBalanceMajor == null || !Number.isFinite(storeBalanceMajor)) return
+    setWsBalance(toMinor(storeBalanceMajor, targetCur))
+  }, [accessToken, targetCur, storeBalanceMajor, setWsBalance])
 
   useEffect(() => {
     if (!accessToken) return
@@ -137,4 +117,3 @@ export function useSlotRealtime({
     }
   }, [accessToken, slot.slug, slot.name, slot.providerId, effectiveTarget, addToBetHistory, subscribeHouseBetsForHistory])
 }
-

@@ -1,4 +1,4 @@
-import WorkbenchCurrencySelect from './WorkbenchCurrencySelect'
+import OriginalsWalletBalance from './OriginalsWalletBalance'
 import type { OriginalsBettingMode } from '../schema/workbenchOptions'
 import type { OriginalsGameEntry } from '../registry/originalsRegistry'
 
@@ -30,6 +30,7 @@ interface OriginalsModeHeaderProps {
   currency?: string
   onCurrencyChange?: (currency: string) => void
   currencyDisabled?: boolean
+  accessToken?: string
   turboMode?: boolean
   turboCompatible?: boolean
   onToggleTurbo?: () => void
@@ -47,6 +48,7 @@ export default function OriginalsModeHeader({
   currency,
   onCurrencyChange,
   currencyDisabled,
+  accessToken,
   turboMode = false,
   turboCompatible = true,
   onToggleTurbo,
@@ -110,11 +112,11 @@ export default function OriginalsModeHeader({
           </button>
         )}
         {currency && onCurrencyChange && (
-          <WorkbenchCurrencySelect
-            value={currency}
+          <OriginalsWalletBalance
+            currency={currency}
             onChange={onCurrencyChange}
             disabled={currencyDisabled || running}
-            compact
+            accessToken={accessToken}
           />
         )}
         {onOpenSettings && (

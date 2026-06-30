@@ -5,9 +5,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { fetchUserBalances } from '../api/stakeWallet'
 import { fetchCurrencyRates } from '../api/stakeChallenges'
-import { subscribeToStakeBalance } from '../api/stakeRealtimeFacade'
 import { formatAmount } from '../utils/formatAmount'
 import { SkeletonWallet } from './SkeletonLoader'
+import { useUserStore } from '../../../store/userStore'
+import { subscribeWalletBalanceSync } from '../../../hooks/walletBalanceSync'
 
 const POLL_INTERVAL_MS = 10 * 60 * 1000
 const POLL_BACKOFF_MS = 30 * 60 * 1000
@@ -90,17 +91,19 @@ const STYLES = {
 }
 
 export default function WalletView({ accessToken, compact = false, hideTitle = false, lastBet = null }) {
+  const storeBalances = useUserStore((s) => s.balances)
   const [available, setAvailable] = useState([])
   const [vault, setVault] = useState([])
   const [rates, setRates] = useState({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [httpOk, setHttpOk] = useState(false)
-  const [liveBalances, setLiveBalances] = useState({})
   const lastRatesRef = useRef(0)
   const lastBalancesRef = useRef(0)
   const pollIntervalRef = useRef(POLL_INTERVAL_MS)
   const consecutiveFailuresRef = useRef(0)
+
+  useEffect(() => subscribeWalletBalanceSync((snap) => setRates(snap.usdRates)), [])
 
   const refresh = useCallback((showLoading = true) => {
     if (!accessToken) return
@@ -148,7 +151,6 @@ export default function WalletView({ accessToken, compact = false, hideTitle = f
       setRates({})
       setError('')
       setHttpOk(false)
-      setLiveBalances({})
       lastRatesRef.current = 0
       lastBalancesRef.current = 0
       pollIntervalRef.current = POLL_INTERVAL_MS
@@ -170,34 +172,6 @@ export default function WalletView({ accessToken, compact = false, hideTitle = f
     }
   }, [accessToken, refresh])
 
-  useEffect(() => {
-    if (!accessToken) return
-    let cancelled = false
-    let sub = null
-    subscribeToStakeBalance(accessToken, (payload) => {
-      if (!payload?.currency) return
-      setLiveBalances((prev) => ({
-        ...prev,
-        // Wallet works in major units (same convention as fetchUserBalances).
-        [payload.currency]: payload.amountMajor != null ? payload.amountMajor : payload.amount,
-      }))
-    }).then((s) => {
-      if (cancelled) {
-        try {
-          s?.disconnect?.()
-        } catch (_) {}
-        return
-      }
-      sub = s
-    })
-    return () => {
-      cancelled = true
-      try {
-        sub?.disconnect?.()
-      } catch (_) {}
-    }
-  }, [accessToken])
-
   if (!accessToken) return null
 
   const toUsd = (amount, currency) => {
@@ -211,9 +185,9 @@ export default function WalletView({ accessToken, compact = false, hideTitle = f
     const c = (currency || '').toLowerCase()
     availMap[c] = amount
   }
-  for (const [currency, amount] of Object.entries(liveBalances)) {
+  for (const [currency, amount] of Object.entries(storeBalances)) {
     const c = (currency || '').toLowerCase()
-    if (c) availMap[c] = amount
+    if (c && Number.isFinite(amount)) availMap[c] = amount
   }
   const effectiveAvailable = Object.entries(availMap).map(([currency, amount]) => ({ currency, amount }))
   for (const { currency, amount } of effectiveAvailable) {
