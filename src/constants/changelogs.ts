@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.194': [
+    '✨ Casino: Tab „Play“ heißt jetzt „Slots“ (Navigation + zugehörige UI-Texte)',
+  ],
   '1.0.193': [
     '✨ Originals: Session-Log als einklappbares Panel rechts (Header-Toggle + Rand-Tab)',
     '✨ Originals: mehr Platz im Start-Bereich — Log nicht mehr unter Start/Chart',

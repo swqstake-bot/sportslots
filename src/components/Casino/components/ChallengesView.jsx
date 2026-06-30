@@ -328,7 +328,7 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
     <div style={STYLES.container}>
       <h2 style={STYLES.title}>Challenges</h2>
       <p style={STYLES.help}>
-        Click a challenge to switch to Play and preselect the game with its minimum bet.
+        Click a challenge to switch to Slots and preselect the game with its minimum bet.
       </p>
       <div style={{ ...STYLES.sortRow, marginBottom: 'var(--space-2)' }}>
         <div style={{ display: 'flex', gap: '0.25rem' }}>

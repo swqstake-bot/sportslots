@@ -713,7 +713,7 @@ export default function TelegramChallengesView({
         >
           <div style={{ flex: '1 1 200px' }}>
             <label className="hunter-kpi-label" style={{ display: 'block', marginBottom: '0.35rem' }}>
-              Max slots at once (Play)
+              Max slots at once (Slots)
             </label>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
               <input
@@ -729,11 +729,11 @@ export default function TelegramChallengesView({
               </span>
             </div>
             <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-              The first {parallelClamped} <strong>checked</strong> games (order as listed below) are added to Play.
+              The first {parallelClamped} <strong>checked</strong> games (order as listed below) are added to Slots.
             </p>
           </div>
           <Button variant="primary" onClick={handleAddToPlay} disabled={parsed.games.length === 0 || checkedSlugs.size === 0}>
-            Add to Play
+            Add to Slots
           </Button>
         </div>
       </div>

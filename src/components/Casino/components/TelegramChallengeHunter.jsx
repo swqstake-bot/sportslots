@@ -583,7 +583,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
         <div className="hunter-title">Telegram Challenge Hunter</div>
         <p className="hunter-meta" style={{ maxWidth: '56rem', lineHeight: 1.45 }}>
           Runs <strong>standalone</strong> like the auto-hunter: queue, parallel runs, target multiplier —{' '}
-          <strong>without</strong> switching to the Play tab. Telegram supplies new challenges (live or paste text into the queue).
+          <strong>without</strong> switching to the Slots tab. Telegram supplies new challenges (live or paste text into the queue).
           {' '}Multi-slot posts are ranked via <strong>StakeCruncher</strong> (highest hit chance first) before queueing.
         </p>
       </div>

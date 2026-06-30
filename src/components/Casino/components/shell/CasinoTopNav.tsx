@@ -6,7 +6,7 @@ interface CasinoTopNavProps {
 }
 
 const MODES: { id: CasinoMode; label: string; title: string }[] = [
-  { id: 'play', label: 'Play', title: 'Play slots, challenges, wheel' },
+  { id: 'play', label: 'Slots', title: 'Slots, wheel, and selected games' },
   { id: 'originals', label: 'Originals', title: 'Stake Originals (Dice, Mines, …)' },
   {
     id: 'challengeHub',

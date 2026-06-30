@@ -6,7 +6,7 @@ const HUB_TABS: { id: HubTab; label: string; title: string }[] = [
   {
     id: 'casino',
     label: 'Challenge Hunt',
-    title: 'Challenge hunt: live bet list and session KPIs (manual overview). Bonus Hunt is under Play → Bonus Hunt.',
+    title: 'Challenge hunt: live bet list and session KPIs (manual overview). Bonus Hunt is under Slots → Bonus Hunt.',
   },
   {
     id: 'autorun',
