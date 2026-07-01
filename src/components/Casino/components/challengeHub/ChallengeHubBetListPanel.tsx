@@ -1,23 +1,11 @@
-﻿import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { subscribeToHouseBets } from '../../api/stakeRealtimeFacade'
+﻿import { memo, useEffect, useMemo, useState } from 'react'
 import { SectionCard } from '../ui/SectionCard'
-import { subscribeChallengeHubBetFeed, getChallengeHubRecentBets } from '../../utils/challengeHubLiveFeed'
+import { subscribeChallengeHubBetFeed } from '../../utils/challengeHubLiveFeed'
 import { SESSION_ONLY_HUB_AND_LOGGER } from '../../../../config/sessionData'
-import {
-  applyHouseBetToHubFeed,
-  backfillRecentBetsShareFromLogger,
-  flushHubHouseBetBufferForFeedEntry,
-} from '../../utils/challengeHubBetIdPatch'
-import { isHunterHouseBetCoordinatorActive } from '../../utils/hunterHouseBetCoordinator'
+import { betShareIdRegistry } from '../../utils/betShareIdRegistry'
 import { ChallengeHubBetListFeed, CHALLENGE_HUB_BET_LIST_MAX_ROWS } from './ChallengeHubBetListFeed'
 import { useChallengeHubRecentBets } from './ChallengeHubBetListContext'
 import { formatAmount } from '../../utils/formatAmount'
-import {
-  LOGGER_BET_SAVED_EVENT,
-  mergeLoggerBetIntoList,
-  normalizeLoggerBetEntry,
-} from '../../../Logger/loggerBetRealtime'
-import type { LoggerBetEntry } from '../../../Logger/loggerUtils'
 import {
   parseStoredTopEntries,
   dedupeTopEntries,
@@ -35,7 +23,7 @@ type ChallengeHubBetListPanelProps = {
 
 /**
  * Hub feed: live rows from Challenge Hunter (amounts/pending).
- * Bet share IDs: single source = houseBets WebSocket (SSP-style), not IndexedDB.
+ * Bet share IDs: single source = betShareIdRegistry (houseBets WebSocket).
  */
 export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
   accessToken,
@@ -52,35 +40,18 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
   const [topMultisAll, setTopMultisAll] = useState<TopEntry[]>(() =>
     SESSION_ONLY_HUB_AND_LOGGER ? [] : dedupeTopEntries(parseStoredTopEntries())
   )
-  const loggerRowsRef = useRef<LoggerBetEntry[]>([])
-
-  const tryBackfillHubShareIdsFromLogger = () => {
-    const bets = getChallengeHubRecentBets()
-    if (!bets.some((row) => !row?.shareIid && row?.hubSettlement !== 'pending')) return
-    backfillRecentBetsShareFromLogger(bets, loggerRowsRef.current)
-  }
 
   useEffect(() => {
-    const onLoggerBet = (event: Event) => {
-      const entry = normalizeLoggerBetEntry((event as CustomEvent).detail)
-      if (!entry) return
-      loggerRowsRef.current = mergeLoggerBetIntoList(loggerRowsRef.current, entry, 240)
-      tryBackfillHubShareIdsFromLogger()
-    }
-    window.addEventListener(LOGGER_BET_SAVED_EVENT, onLoggerBet)
-    return () => window.removeEventListener(LOGGER_BET_SAVED_EVENT, onLoggerBet)
-  }, [])
+    const token = accessToken?.trim()
+    if (!token) return
+    betShareIdRegistry.ensureListening(token)
+    return () => betShareIdRegistry.releaseListening(token)
+  }, [accessToken])
 
   useEffect(() => {
     let cancelled = false
     const unsubscribe = subscribeChallengeHubBetFeed((entry) => {
       if (cancelled) return
-      if (entry?.hubSettlement === 'pending' && entry?.id != null) {
-        flushHubHouseBetBufferForFeedEntry(entry)
-      }
-      if (entry?.hubSettlement === 'settled' && !entry?.shareIid) {
-        tryBackfillHubShareIdsFromLogger()
-      }
       if (entry?.hubSettlement !== 'pending' || entry?.shareIid) {
         setTopMultisAll((prev) => mergeTopEntries(prev, [entry]))
       }
@@ -91,38 +62,6 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
       unsubscribe()
     }
   }, [])
-
-  /** SSP-style: houseBets = einzige ID-Quelle fÃ¼r den Feed. */
-  useEffect(() => {
-    if (!accessToken?.trim()) return
-    let cancelled = false
-    let sub: { disconnect?: () => void } | null = null
-
-    subscribeToHouseBets(accessToken, (bItem: unknown) => {
-      if (cancelled) return
-      if (isHunterHouseBetCoordinatorActive()) return
-      applyHouseBetToHubFeed(bItem)
-    }).then((s) => {
-      if (cancelled) {
-        try {
-          s?.disconnect?.()
-        } catch {
-          // ignore
-        }
-        return
-      }
-      sub = s
-    })
-
-    return () => {
-      cancelled = true
-      try {
-        sub?.disconnect?.()
-      } catch {
-        // ignore
-      }
-    }
-  }, [accessToken])
 
   useEffect(() => {
     if (SESSION_ONLY_HUB_AND_LOGGER) return
@@ -158,7 +97,7 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
       return topSlots.map((row, idx) => ({
         key: `slot:${row.slotName}`,
         title: row.slotName,
-        subtitle: `${row.spins} hits Â· best win ${formatAmount(row.bestWinAmount, row.currencyCode)}`,
+        subtitle: `${row.spins} hits · best win ${formatAmount(row.bestWinAmount, row.currencyCode)}`,
         value: `${row.bestMulti.toFixed(2)}x`,
         rank: idx + 1,
         shareId: null,

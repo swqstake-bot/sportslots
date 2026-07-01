@@ -1,440 +1,397 @@
-import { hunterBetCurrenciesMatch } from './currencyMeta'
-import { toMinor } from './formatAmount'
-import { subscribeToHouseBets } from '../api/stakeRealtimeFacade'
-import {
-  formatStakeShareBetId,
-  areStakeShareIdsEquivalent,
-  isPersistableStakeHouseBetShareId,
-  pickStakeHouseBetShareRawId,
-} from './stakeBetShareId'
-import { normalizeBetSlugForHouseMatch, houseBetSlugMatchesSessionSlug } from './slotSlugMatching'
-import {
-  HOUSEBET_RETRY_BUFFER_MAX_MS,
-  HOUSEBET_RETRY_BUFFER_MAX,
-  prunePendingHouseBetMap,
-  splicePendingHouseBetMatch,
-  splicePendingHouseBetByProviderBetId,
-  splicePendingHouseBetMatchWithoutSlug,
-  hasPendingHouseBetForPayloadSlug,
-} from './hunterPendingHouseBetMatch'
-import {
-  patchHubFeedEntryFromHouseBet,
-  patchHubFeedRunFromHouseBet,
-  applyHouseBetToHubFeed,
-} from './challengeHubBetIdPatch'
-import { setHouseShareIdLookup } from './hunterHouseBetShareIdMap'
-
-export const HOUSEBET_EVENT_QUEUE_MAX = 500
-export const HOUSEBET_WORKER_MAX_EVENTS = 20
-
-let hunterCoordinatorActive = false
-
-function findRunningRunsForHouseBet(active, payloadSlug, payloadCurr) {
-  return Object.values(active || {}).filter((r) => {
-    if (!r || r.status !== 'running') return false
-    const runSlug = normalizeBetSlugForHouseMatch(r.slotSlug)
-    if (payloadSlug && !houseBetSlugMatchesSessionSlug(payloadSlug, runSlug)) return false
-    if (!payloadCurr) return true
-    const runCurr = String(r.runCurrency || '').toLowerCase()
-    return !runCurr || hunterBetCurrenciesMatch(runCurr, payloadCurr)
-  })
-}
-
-/** houseBets.iid ist da — bei mehreren Runs den mit passendem Rekord-Multi wählen. */
-function pickRunForHouseBetShare(candidateRuns, hbMult, batchRunBestMulti) {
-  if (!candidateRuns.length) return null
-  if (candidateRuns.length === 1) return candidateRuns[0]
-  const hb = Number(hbMult)
-  if (!Number.isFinite(hb) || hb <= 0) return candidateRuns[0]
-  let best = candidateRuns[0]
-  let bestDist = Infinity
-  for (const r of candidateRuns) {
-    const runBest = Math.max(Number(r.bestMultiRun) || 0, Number(batchRunBestMulti[r.id]) || 0)
-    const dist = Math.abs(hb - runBest)
-    if (dist < bestDist) {
-      bestDist = dist
-      best = r
-    }
-  }
-  return best
-}
-
-/** BetListPanel skips applyHouseBetToHubFeed while hunter owns houseBet matching. */
-export function isHunterHouseBetCoordinatorActive() {
-  return hunterCoordinatorActive
-}
-
-/**
- * @param {object} ctx
- * @returns {() => void} cleanup
- */
-export function attachHunterHouseBetCoordinator(ctx) {
-  const {
-    accessToken,
-    log,
-    debugBetIdMatch,
-    refs,
-    shouldPersistOverallBetId,
-    loadBestBetIdMap,
-    persistBestBetIdMap,
-    persistBestMultiMap,
-  } = ctx
-
-  const {
-    pendingHouseBetMatchRef,
-    houseBetEventQueueRef,
-    houseBetWorkerScheduledRef,
-    houseBetRetryBufferRef,
-    scheduleHouseBetWorkerRef,
-    activeRunsRef,
-    activeRunsUiDirtyRef,
-    runBestMultiSyncRef,
-    houseShareIdByProviderBetIdRef,
-    houseBetDeferredUiTimersRef,
-    bestMultiBySlotRef,
-    bumpHunterStorageRef,
-    setActiveRuns,
-    setBestMultiBySlotRef,
-  } = refs
-
-  if (!accessToken) return () => {}
-
-  hunterCoordinatorActive = false
-
-  if (debugBetIdMatch) {
-    console.warn('[AutoChallengeHunter] houseBets subscription init', {
-      hasAccessToken: !!accessToken,
-    })
-  }
-
-  let cancelled = false
-  let sub = null
-
-  function shouldCoordinatorStayActive() {
-    const ar = activeRunsRef.current || {}
-    if (Object.values(ar).some((r) => r?.status === 'running')) return true
-    if (houseBetRetryBufferRef.current.length > 0) return true
-    const pm = pendingHouseBetMatchRef.current
-    for (const rid of Object.keys(pm || {})) {
-      const v = pm[rid]
-      if (Array.isArray(v) && v.length) return true
-    }
-    return false
-  }
-
-  const runWorkerTick = () => {
-    houseBetWorkerScheduledRef.current = false
-
-    const rnow = Date.now()
-    houseBetRetryBufferRef.current = houseBetRetryBufferRef.current.filter(
-      (e) => rnow - e.at < HOUSEBET_RETRY_BUFFER_MAX_MS
-    )
-    if (houseBetRetryBufferRef.current.length > HOUSEBET_RETRY_BUFFER_MAX) {
-      houseBetRetryBufferRef.current = houseBetRetryBufferRef.current.slice(-HOUSEBET_RETRY_BUFFER_MAX)
-    }
-
-    const q = houseBetEventQueueRef.current
-    if (q.length === 0) {
-      hunterCoordinatorActive = shouldCoordinatorStayActive()
-      return
-    }
-
-    const batch = q.splice(0, HOUSEBET_WORKER_MAX_EVENTS)
-    const bestBetByRunId = {}
-    const multiUiByRunId = {}
-    const betIdToPersistOverall = {}
-    const batchRunBestMulti = {}
-
-    for (const bItem of batch) {
-      const payloadSlug = normalizeBetSlugForHouseMatch(bItem?.gameSlug)
-      const payloadCurr = String(bItem?.currency || '').toLowerCase()
-
-      const active = activeRunsRef.current || {}
-      const runningSlugList = Object.values(active)
-        .filter((r) => r?.status === 'running' && r?.slotSlug)
-        .map((r) => normalizeBetSlugForHouseMatch(r.slotSlug))
-      const pendingMap = pendingHouseBetMatchRef.current
-      const hasRunningForHouseBet = payloadSlug
-        ? runningSlugList.some((s) => houseBetSlugMatchesSessionSlug(payloadSlug, s)) ||
-          hasPendingHouseBetForPayloadSlug(pendingMap, payloadSlug)
-        : Object.values(active).some((r) => r?.status === 'running') ||
-          Object.keys(pendingMap || {}).some(
-            (rid) => Array.isArray(pendingMap[rid]) && pendingMap[rid].length > 0
-          )
-      if (!hasRunningForHouseBet) continue
-
-      const directProviderBetId = String(bItem?.betId || '').trim()
-      const p =
-        splicePendingHouseBetByProviderBetId(pendingMap, payloadSlug, directProviderBetId) ||
-        (payloadSlug
-          ? splicePendingHouseBetMatch(pendingMap, payloadSlug, payloadCurr, bItem)
-          : splicePendingHouseBetMatchWithoutSlug(pendingMap, payloadCurr, bItem))
-
-      if (p) {
-        const runId = p.runId
-        const rawId = pickStakeHouseBetShareRawId(bItem)
-        const shareId = rawId ? formatStakeShareBetId(rawId) : null
-
-        const spinM = Number(p.multi) || 0
-        const houseBetCurr = String(bItem?.currency || p.currency || '').toLowerCase()
-        const stakeMajor = Number(bItem?.amountMajor ?? bItem?.amount ?? p.betAmountMajor ?? 0)
-        const houseBetMulti = Number(bItem?.payoutMultiplier)
-        const effectiveMulti =
-          Number.isFinite(houseBetMulti) && houseBetMulti >= 0 ? houseBetMulti : spinM
-        const trackMulti = Math.max(spinM, effectiveMulti)
-        const prevBest = Math.max(
-          activeRunsRef.current[runId]?.bestMultiRun ?? 0,
-          batchRunBestMulti[runId] ?? 0
-        )
-        batchRunBestMulti[runId] = Math.max(prevBest, trackMulti)
-
-        const prevUiM = multiUiByRunId[runId]?.multi ?? 0
-        if (trackMulti > prevUiM) {
-          multiUiByRunId[runId] = {
-            multi: trackMulti,
-            storageSlug: p.storageSlug,
-            slug: p.slug,
-            spinSeq: p.spinSeq,
-          }
-        } else if (!multiUiByRunId[runId]) {
-          multiUiByRunId[runId] = {
-            multi: trackMulti,
-            storageSlug: p.storageSlug,
-            slug: p.slug,
-            spinSeq: p.spinSeq,
-          }
-        }
-
-        if (shareId) {
-          if (directProviderBetId) {
-            setHouseShareIdLookup(houseShareIdByProviderBetIdRef, directProviderBetId, shareId)
-          }
-          bestBetByRunId[runId] = shareId
-          const key = p.storageSlug != null ? p.storageSlug : p.slug
-          if (
-            isPersistableStakeHouseBetShareId(shareId) &&
-            shouldPersistOverallBetId(p.slug, key, trackMulti, bestMultiBySlotRef.current)
-          ) {
-            betIdToPersistOverall[key] = shareId
-          }
-        }
-
-        if (p.feedEntryId) {
-          const patchCurr = String(bItem?.currency || p.currency || houseBetCurr || 'usd').toLowerCase()
-          const amountPatch =
-            Number.isFinite(stakeMajor) && stakeMajor > 0
-              ? {
-                  betAmount: toMinor(stakeMajor, patchCurr),
-                  winAmount: toMinor(
-                    stakeMajor * Math.max(0, Number(effectiveMulti) || 0),
-                    patchCurr
-                  ),
-                  multiplier: Math.max(0, Number(effectiveMulti) || 0),
-                  currencyCode: patchCurr.toUpperCase(),
-                }
-              : { currencyCode: patchCurr.toUpperCase() }
-          patchHubFeedEntryFromHouseBet(p.feedEntryId, bItem, amountPatch)
-          if (p.spinSeq != null) {
-            const mk = `${runId}:${p.spinSeq}`
-            const tid = houseBetDeferredUiTimersRef.current.get(mk)
-            if (tid != null) {
-              clearTimeout(tid)
-              houseBetDeferredUiTimersRef.current.delete(mk)
-            }
-          }
-        }
-      }
-
-      // houseBets liefert iid/id immer — Pending-Match darf nicht Voraussetzung sein.
-      const shareFromWs = pickStakeHouseBetShareRawId(bItem)
-      const shareIdDirect = shareFromWs ? formatStakeShareBetId(shareFromWs) : null
-      const hbMultDirect = Number(bItem?.payoutMultiplier)
-      const pendingAssignedRunId = p?.runId && bestBetByRunId[p.runId] ? p.runId : null
-
-      if (shareIdDirect && hasRunningForHouseBet) {
-        const candidateRuns = findRunningRunsForHouseBet(active, payloadSlug, payloadCurr)
-        const targetRun = pickRunForHouseBetShare(candidateRuns, hbMultDirect, batchRunBestMulti)
-        const targetRunId = targetRun?.id
-        if (targetRunId && targetRunId !== pendingAssignedRunId) {
-          const runBest = Math.max(
-            Number(targetRun.bestMultiRun) || 0,
-            Number(batchRunBestMulti[targetRunId]) || 0
-          )
-          const hbOk = Number.isFinite(hbMultDirect) && hbMultDirect > 0
-          const attachShare =
-            hbOk &&
-            (hbMultDirect >= runBest * 0.97 || runBest <= 0 || !targetRun.bestBetId)
-          if (attachShare) {
-            if (!areStakeShareIdsEquivalent(targetRun.bestBetId, shareIdDirect)) {
-              bestBetByRunId[targetRunId] = shareIdDirect
-            }
-            if (hbOk) {
-              const trackMulti = Math.max(runBest, hbMultDirect)
-              batchRunBestMulti[targetRunId] = trackMulti
-              const prevUi = multiUiByRunId[targetRunId]?.multi ?? 0
-              if (trackMulti > prevUi) {
-                multiUiByRunId[targetRunId] = {
-                  multi: trackMulti,
-                  storageSlug: targetRun.slotSlug,
-                  slug: normalizeBetSlugForHouseMatch(targetRun.slotSlug),
-                  spinSeq: p?.spinSeq ?? null,
-                }
-              }
-            }
-            const storageSlug = targetRun.slotSlug
-            if (
-              isPersistableStakeHouseBetShareId(shareIdDirect) &&
-              storageSlug &&
-              shouldPersistOverallBetId(
-                normalizeBetSlugForHouseMatch(storageSlug),
-                storageSlug,
-                hbOk ? hbMultDirect : runBest,
-                bestMultiBySlotRef.current
-              )
-            ) {
-              betIdToPersistOverall[storageSlug] = shareIdDirect
-            }
-            if (!p) {
-              patchHubFeedRunFromHouseBet(targetRunId, bItem)
-            }
-          }
-        }
-      }
-
-      // Hub-Feed: Share-ID auch ohne Pending-Match (FIFO), unabhängig von bestBetId-Multi-Gates.
-      if (shareIdDirect && hasRunningForHouseBet && !p?.feedEntryId) {
-        applyHouseBetToHubFeed(bItem)
-      }
-
-      if (!p && hasRunningForHouseBet) {
-        const dedupeKey = pickStakeHouseBetShareRawId(bItem) || bItem?.id
-        if (dedupeKey) {
-          const buf = houseBetRetryBufferRef.current
-          if (!buf.some((e) => e.key === dedupeKey)) {
-            buf.push({ key: dedupeKey, bItem, at: Date.now() })
-            if (buf.length > HOUSEBET_RETRY_BUFFER_MAX) buf.shift()
-          }
-        }
-      }
-    }
-
-    const runIds = [...new Set([...Object.keys(bestBetByRunId), ...Object.keys(multiUiByRunId)])]
-    if (runIds.length) {
-      for (const runId of runIds) {
-        const m = multiUiByRunId[runId]
-        if (m && m.multi != null && Number.isFinite(Number(m.multi))) {
-          const prevS = runBestMultiSyncRef.current[runId] ?? 0
-          runBestMultiSyncRef.current[runId] = Math.max(Number(prevS) || 0, Number(m.multi))
-        }
-      }
-
-      setActiveRuns((prev) => {
-        const next = { ...prev }
-        for (const runId of runIds) {
-          const run = next[runId]
-          if (!run || run.status !== 'running') continue
-          const refRun = activeRunsUiDirtyRef.current ? activeRunsRef.current?.[runId] : null
-          const baseRun = refRun ? { ...run, ...refRun } : run
-          const m = multiUiByRunId[runId]
-          const nextBest =
-            m && m.multi != null && Number.isFinite(Number(m.multi))
-              ? Math.max(baseRun.bestMultiRun ?? 0, Number(m.multi))
-              : baseRun.bestMultiRun
-          const bid = bestBetByRunId[runId]
-          next[runId] = {
-            ...baseRun,
-            bestBetId: bid != null ? bid : baseRun.bestBetId ?? null,
-            bestMultiRun: nextBest,
-          }
-        }
-        activeRunsRef.current = next
-        return next
-      })
-
-      for (const runId of runIds) {
-        const m = multiUiByRunId[runId]
-        if (!m || m.multi == null || !Number.isFinite(Number(m.multi))) continue
-        const slugKey = m.storageSlug != null ? m.storageSlug : m.slug
-        setBestMultiBySlotRef.current((prev) => {
-          const cur = prev[slugKey] ?? 0
-          const nm = Number(m.multi)
-          if (nm <= cur) return prev
-          const nmap = { ...prev, [slugKey]: nm }
-          persistBestMultiMap(nmap)
-          return nmap
-        })
-      }
-
-      try {
-        const keys = Object.keys(betIdToPersistOverall)
-        if (keys.length) {
-          const bestBetIdMap = loadBestBetIdMap()
-          const merged = { ...bestBetIdMap }
-          for (const k of keys) {
-            const v = betIdToPersistOverall[k]
-            if (v && isPersistableStakeHouseBetShareId(v)) merged[k] = v
-          }
-          persistBestBetIdMap(merged)
-          bumpHunterStorageRef.current?.()
-        }
-      } catch (_) {}
-
-      if (debugBetIdMatch) {
-        log(`houseBets: Bet ID + best multi for ${runIds.length} run(s) (after houseBets).`)
-      }
-    }
-
-    if (houseBetEventQueueRef.current.length > 0) {
-      houseBetWorkerScheduledRef.current = true
-      setTimeout(runWorkerTick, 0)
-    }
-
-    hunterCoordinatorActive = shouldCoordinatorStayActive()
-  }
-
-  const scheduleHouseBetWorker = () => {
-    if (houseBetWorkerScheduledRef.current) return
-    houseBetWorkerScheduledRef.current = true
-    setTimeout(runWorkerTick, 0)
-  }
-  scheduleHouseBetWorkerRef.current = scheduleHouseBetWorker
-
-  const shouldEnqueueHouseBet = () => {
-    hunterCoordinatorActive = shouldCoordinatorStayActive()
-    return hunterCoordinatorActive
-  }
-
-  subscribeToHouseBets(accessToken, (b) => {
-    const betType = String(b?.betType || '')
-    if (/sport/i.test(betType)) return
-    if (!shouldEnqueueHouseBet()) return
-    const now = Date.now()
-    prunePendingHouseBetMap(pendingHouseBetMatchRef.current, now)
-    houseBetEventQueueRef.current.push(b)
-    if (houseBetEventQueueRef.current.length > HOUSEBET_EVENT_QUEUE_MAX) {
-      houseBetEventQueueRef.current.splice(
-        0,
-        houseBetEventQueueRef.current.length - HOUSEBET_EVENT_QUEUE_MAX
-      )
-    }
-    scheduleHouseBetWorker()
-  }).then((s) => {
-    if (cancelled) {
-      try {
-        s?.disconnect?.()
-      } catch (_) {}
-      return
-    }
-    sub = s
-  })
-
-  return () => {
-    cancelled = true
-    hunterCoordinatorActive = false
-    scheduleHouseBetWorkerRef.current = () => {}
-    houseBetRetryBufferRef.current = []
-    try {
-      sub?.disconnect?.()
-    } catch (_) {}
-  }
-}
+import { hunterBetCurrenciesMatch } from './currencyMeta'
+import { toMinor } from './formatAmount'
+import {
+  formatStakeShareBetId,
+  areStakeShareIdsEquivalent,
+  isPersistableStakeHouseBetShareId,
+  pickStakeHouseBetShareRawId,
+} from './stakeBetShareId'
+import { normalizeBetSlugForHouseMatch, houseBetSlugMatchesSessionSlug } from './slotSlugMatching'
+import {
+  prunePendingHouseBetMap,
+  splicePendingHouseBetMatch,
+  splicePendingHouseBetByProviderBetId,
+  splicePendingHouseBetMatchWithoutSlug,
+  hasPendingHouseBetForPayloadSlug,
+} from './hunterPendingHouseBetMatch'
+import {
+  patchHubFeedEntryFromHouseBet,
+  patchHubFeedRunFromHouseBet,
+} from './challengeHubBetIdPatch'
+import { betShareIdRegistry } from './betShareIdRegistry'
+
+export const HOUSEBET_EVENT_QUEUE_MAX = 500
+export const HOUSEBET_WORKER_MAX_EVENTS = 20
+
+let hunterCoordinatorActive = false
+
+function findRunningRunsForHouseBet(active, payloadSlug, payloadCurr) {
+  return Object.values(active || {}).filter((r) => {
+    if (!r || r.status !== 'running') return false
+    const runSlug = normalizeBetSlugForHouseMatch(r.slotSlug)
+    if (payloadSlug && !houseBetSlugMatchesSessionSlug(payloadSlug, runSlug)) return false
+    if (!payloadCurr) return true
+    const runCurr = String(r.runCurrency || '').toLowerCase()
+    return !runCurr || hunterBetCurrenciesMatch(runCurr, payloadCurr)
+  })
+}
+
+/** houseBets.iid ist da — bei mehreren Runs den mit passendem Rekord-Multi wählen. */
+function pickRunForHouseBetShare(candidateRuns, hbMult, batchRunBestMulti) {
+  if (!candidateRuns.length) return null
+  if (candidateRuns.length === 1) return candidateRuns[0]
+  const hb = Number(hbMult)
+  if (!Number.isFinite(hb) || hb <= 0) return candidateRuns[0]
+  let best = candidateRuns[0]
+  let bestDist = Infinity
+  for (const r of candidateRuns) {
+    const runBest = Math.max(Number(r.bestMultiRun) || 0, Number(batchRunBestMulti[r.id]) || 0)
+    const dist = Math.abs(hb - runBest)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = r
+    }
+  }
+  return best
+}
+
+/** BetListPanel skips duplicate hub patching while hunter owns houseBet matching. */
+export function isHunterHouseBetCoordinatorActive() {
+  return hunterCoordinatorActive
+}
+
+/**
+ * @param {object} ctx
+ * @returns {() => void} cleanup
+ */
+export function attachHunterHouseBetCoordinator(ctx) {
+  const {
+    accessToken,
+    log,
+    debugBetIdMatch,
+    refs,
+    shouldPersistOverallBetId,
+    loadBestBetIdMap,
+    persistBestBetIdMap,
+    persistBestMultiMap,
+  } = ctx
+
+  const {
+    pendingHouseBetMatchRef,
+    houseBetEventQueueRef,
+    houseBetWorkerScheduledRef,
+    scheduleHouseBetWorkerRef,
+    activeRunsRef,
+    activeRunsUiDirtyRef,
+    runBestMultiSyncRef,
+    houseBetDeferredUiTimersRef,
+    bestMultiBySlotRef,
+    bumpHunterStorageRef,
+    setActiveRuns,
+    setBestMultiBySlotRef,
+  } = refs
+
+  if (!accessToken) return () => {}
+
+  hunterCoordinatorActive = false
+
+  if (debugBetIdMatch) {
+    console.warn('[AutoChallengeHunter] houseBets subscription init', {
+      hasAccessToken: !!accessToken,
+    })
+  }
+
+  let cancelled = false
+
+  betShareIdRegistry.ensureListening(accessToken)
+
+  function shouldCoordinatorStayActive() {
+    const ar = activeRunsRef.current || {}
+    if (Object.values(ar).some((r) => r?.status === 'running')) return true
+    const pm = pendingHouseBetMatchRef.current
+    for (const rid of Object.keys(pm || {})) {
+      const v = pm[rid]
+      if (Array.isArray(v) && v.length) return true
+    }
+    return false
+  }
+
+  const runWorkerTick = () => {
+    houseBetWorkerScheduledRef.current = false
+
+    const q = houseBetEventQueueRef.current
+    if (q.length === 0) {
+      hunterCoordinatorActive = shouldCoordinatorStayActive()
+      return
+    }
+
+    const batch = q.splice(0, HOUSEBET_WORKER_MAX_EVENTS)
+    const bestBetByRunId = {}
+    const multiUiByRunId = {}
+    const betIdToPersistOverall = {}
+    const batchRunBestMulti = {}
+
+    for (const bItem of batch) {
+      const payloadSlug = normalizeBetSlugForHouseMatch(bItem?.gameSlug)
+      const payloadCurr = String(bItem?.currency || '').toLowerCase()
+
+      const active = activeRunsRef.current || {}
+      const runningSlugList = Object.values(active)
+        .filter((r) => r?.status === 'running' && r?.slotSlug)
+        .map((r) => normalizeBetSlugForHouseMatch(r.slotSlug))
+      const pendingMap = pendingHouseBetMatchRef.current
+      const hasRunningForHouseBet = payloadSlug
+        ? runningSlugList.some((s) => houseBetSlugMatchesSessionSlug(payloadSlug, s)) ||
+          hasPendingHouseBetForPayloadSlug(pendingMap, payloadSlug)
+        : Object.values(active).some((r) => r?.status === 'running') ||
+          Object.keys(pendingMap || {}).some(
+            (rid) => Array.isArray(pendingMap[rid]) && pendingMap[rid].length > 0
+          )
+      if (!hasRunningForHouseBet) continue
+
+      const directProviderBetId = String(bItem?.betId || '').trim()
+      const p =
+        splicePendingHouseBetByProviderBetId(pendingMap, payloadSlug, directProviderBetId) ||
+        (payloadSlug
+          ? splicePendingHouseBetMatch(pendingMap, payloadSlug, payloadCurr, bItem)
+          : splicePendingHouseBetMatchWithoutSlug(pendingMap, payloadCurr, bItem))
+
+      if (p) {
+        const runId = p.runId
+        const rawId = pickStakeHouseBetShareRawId(bItem)
+        const shareId = rawId ? formatStakeShareBetId(rawId) : null
+
+        const spinM = Number(p.multi) || 0
+        const houseBetCurr = String(bItem?.currency || p.currency || '').toLowerCase()
+        const stakeMajor = Number(bItem?.amountMajor ?? bItem?.amount ?? p.betAmountMajor ?? 0)
+        const houseBetMulti = Number(bItem?.payoutMultiplier)
+        const effectiveMulti =
+          Number.isFinite(houseBetMulti) && houseBetMulti >= 0 ? houseBetMulti : spinM
+        const trackMulti = Math.max(spinM, effectiveMulti)
+        const prevBest = Math.max(
+          activeRunsRef.current[runId]?.bestMultiRun ?? 0,
+          batchRunBestMulti[runId] ?? 0
+        )
+        batchRunBestMulti[runId] = Math.max(prevBest, trackMulti)
+
+        const prevUiM = multiUiByRunId[runId]?.multi ?? 0
+        if (trackMulti > prevUiM) {
+          multiUiByRunId[runId] = {
+            multi: trackMulti,
+            storageSlug: p.storageSlug,
+            slug: p.slug,
+            spinSeq: p.spinSeq,
+          }
+        } else if (!multiUiByRunId[runId]) {
+          multiUiByRunId[runId] = {
+            multi: trackMulti,
+            storageSlug: p.storageSlug,
+            slug: p.slug,
+            spinSeq: p.spinSeq,
+          }
+        }
+
+        if (shareId) {
+          bestBetByRunId[runId] = shareId
+          const key = p.storageSlug != null ? p.storageSlug : p.slug
+          if (
+            isPersistableStakeHouseBetShareId(shareId) &&
+            shouldPersistOverallBetId(p.slug, key, trackMulti, bestMultiBySlotRef.current)
+          ) {
+            betIdToPersistOverall[key] = shareId
+          }
+        }
+
+        if (p.feedEntryId) {
+          const patchCurr = String(bItem?.currency || p.currency || houseBetCurr || 'usd').toLowerCase()
+          const amountPatch =
+            Number.isFinite(stakeMajor) && stakeMajor > 0
+              ? {
+                  betAmount: toMinor(stakeMajor, patchCurr),
+                  winAmount: toMinor(
+                    stakeMajor * Math.max(0, Number(effectiveMulti) || 0),
+                    patchCurr
+                  ),
+                  multiplier: Math.max(0, Number(effectiveMulti) || 0),
+                  currencyCode: patchCurr.toUpperCase(),
+                }
+              : { currencyCode: patchCurr.toUpperCase() }
+          patchHubFeedEntryFromHouseBet(p.feedEntryId, bItem, amountPatch)
+          if (p.spinSeq != null) {
+            const mk = `${runId}:${p.spinSeq}`
+            const tid = houseBetDeferredUiTimersRef.current.get(mk)
+            if (tid != null) {
+              clearTimeout(tid)
+              houseBetDeferredUiTimersRef.current.delete(mk)
+            }
+          }
+        }
+      }
+
+      const shareFromWs = pickStakeHouseBetShareRawId(bItem)
+      const shareIdDirect = shareFromWs ? formatStakeShareBetId(shareFromWs) : null
+      const hbMultDirect = Number(bItem?.payoutMultiplier)
+      const pendingAssignedRunId = p?.runId && bestBetByRunId[p.runId] ? p.runId : null
+
+      if (shareIdDirect && hasRunningForHouseBet) {
+        const candidateRuns = findRunningRunsForHouseBet(active, payloadSlug, payloadCurr)
+        const targetRun = pickRunForHouseBetShare(candidateRuns, hbMultDirect, batchRunBestMulti)
+        const targetRunId = targetRun?.id
+        if (targetRunId && targetRunId !== pendingAssignedRunId) {
+          const runBest = Math.max(
+            Number(targetRun.bestMultiRun) || 0,
+            Number(batchRunBestMulti[targetRunId]) || 0
+          )
+          const hbOk = Number.isFinite(hbMultDirect) && hbMultDirect > 0
+          const attachShare =
+            hbOk &&
+            (hbMultDirect >= runBest * 0.97 || runBest <= 0 || !targetRun.bestBetId)
+          if (attachShare) {
+            if (!areStakeShareIdsEquivalent(targetRun.bestBetId, shareIdDirect)) {
+              bestBetByRunId[targetRunId] = shareIdDirect
+            }
+            if (hbOk) {
+              const trackMulti = Math.max(runBest, hbMultDirect)
+              batchRunBestMulti[targetRunId] = trackMulti
+              const prevUi = multiUiByRunId[targetRunId]?.multi ?? 0
+              if (trackMulti > prevUi) {
+                multiUiByRunId[targetRunId] = {
+                  multi: trackMulti,
+                  storageSlug: targetRun.slotSlug,
+                  slug: normalizeBetSlugForHouseMatch(targetRun.slotSlug),
+                  spinSeq: p?.spinSeq ?? null,
+                }
+              }
+            }
+            const storageSlug = targetRun.slotSlug
+            if (
+              isPersistableStakeHouseBetShareId(shareIdDirect) &&
+              storageSlug &&
+              shouldPersistOverallBetId(
+                normalizeBetSlugForHouseMatch(storageSlug),
+                storageSlug,
+                hbOk ? hbMultDirect : runBest,
+                bestMultiBySlotRef.current
+              )
+            ) {
+              betIdToPersistOverall[storageSlug] = shareIdDirect
+            }
+            if (!p) {
+              patchHubFeedRunFromHouseBet(targetRunId, bItem)
+            }
+          }
+        }
+      }
+    }
+
+    const runIds = [...new Set([...Object.keys(bestBetByRunId), ...Object.keys(multiUiByRunId)])]
+    if (runIds.length) {
+      for (const runId of runIds) {
+        const m = multiUiByRunId[runId]
+        if (m && m.multi != null && Number.isFinite(Number(m.multi))) {
+          const prevS = runBestMultiSyncRef.current[runId] ?? 0
+          runBestMultiSyncRef.current[runId] = Math.max(Number(prevS) || 0, Number(m.multi))
+        }
+      }
+
+      setActiveRuns((prev) => {
+        const next = { ...prev }
+        for (const runId of runIds) {
+          const run = next[runId]
+          if (!run || run.status !== 'running') continue
+          const refRun = activeRunsUiDirtyRef.current ? activeRunsRef.current?.[runId] : null
+          const baseRun = refRun ? { ...run, ...refRun } : run
+          const m = multiUiByRunId[runId]
+          const nextBest =
+            m && m.multi != null && Number.isFinite(Number(m.multi))
+              ? Math.max(baseRun.bestMultiRun ?? 0, Number(m.multi))
+              : baseRun.bestMultiRun
+          const bid = bestBetByRunId[runId]
+          next[runId] = {
+            ...baseRun,
+            bestBetId: bid != null ? bid : baseRun.bestBetId ?? null,
+            bestMultiRun: nextBest,
+          }
+        }
+        activeRunsRef.current = next
+        return next
+      })
+
+      for (const runId of runIds) {
+        const m = multiUiByRunId[runId]
+        if (!m || m.multi == null || !Number.isFinite(Number(m.multi))) continue
+        const slugKey = m.storageSlug != null ? m.storageSlug : m.slug
+        setBestMultiBySlotRef.current((prev) => {
+          const cur = prev[slugKey] ?? 0
+          const nm = Number(m.multi)
+          if (nm <= cur) return prev
+          const nmap = { ...prev, [slugKey]: nm }
+          persistBestMultiMap(nmap)
+          return nmap
+        })
+      }
+
+      try {
+        const keys = Object.keys(betIdToPersistOverall)
+        if (keys.length) {
+          const bestBetIdMap = loadBestBetIdMap()
+          const merged = { ...bestBetIdMap }
+          for (const k of keys) {
+            const v = betIdToPersistOverall[k]
+            if (v && isPersistableStakeHouseBetShareId(v)) merged[k] = v
+          }
+          persistBestBetIdMap(merged)
+          bumpHunterStorageRef.current?.()
+        }
+      } catch (_) {}
+
+      if (debugBetIdMatch) {
+        log(`houseBets: Bet ID + best multi for ${runIds.length} run(s) (after houseBets).`)
+      }
+    }
+
+    if (houseBetEventQueueRef.current.length > 0) {
+      houseBetWorkerScheduledRef.current = true
+      setTimeout(runWorkerTick, 0)
+    }
+
+    hunterCoordinatorActive = shouldCoordinatorStayActive()
+  }
+
+  const scheduleHouseBetWorker = () => {
+    if (houseBetWorkerScheduledRef.current) return
+    houseBetWorkerScheduledRef.current = true
+    setTimeout(runWorkerTick, 0)
+  }
+  scheduleHouseBetWorkerRef.current = scheduleHouseBetWorker
+
+  const shouldEnqueueHouseBet = () => {
+    hunterCoordinatorActive = shouldCoordinatorStayActive()
+    return hunterCoordinatorActive
+  }
+
+  const unsubHouseBets = betShareIdRegistry.subscribeHouseBets((b) => {
+    const betType = String(b?.betType || '')
+    if (/sport/i.test(betType)) return
+    if (!shouldEnqueueHouseBet()) return
+    const now = Date.now()
+    prunePendingHouseBetMap(pendingHouseBetMatchRef.current, now)
+    houseBetEventQueueRef.current.push(b)
+    if (houseBetEventQueueRef.current.length > HOUSEBET_EVENT_QUEUE_MAX) {
+      houseBetEventQueueRef.current.splice(
+        0,
+        houseBetEventQueueRef.current.length - HOUSEBET_EVENT_QUEUE_MAX
+      )
+    }
+    scheduleHouseBetWorker()
+  })
+
+  return () => {
+    cancelled = true
+    hunterCoordinatorActive = false
+    scheduleHouseBetWorkerRef.current = () => {}
+    unsubHouseBets()
+    betShareIdRegistry.releaseListening(accessToken)
+  }
+}
+

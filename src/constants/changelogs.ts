@@ -1,4 +1,9 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.201': [
+    '✨ Bet-IDs: einheitliches betShareIdRegistry (providerBetId ↔ house share-iid) für Hunter, Hub und Originals',
+    '🐛 Bet-IDs: FIFO/Logger-Fallback entfernt — nur noch O(1)-Lookup via houseBets WebSocket',
+    '🐛 Originals: Share-ID sofort nach linkApiId (kein 300ms-Poll mehr)',
+  ],
   '1.0.200': [
     '🐛 Bet-IDs: Hub-Feed auch ohne Pending-Match (Hunter houseBets FIFO + Logger-Backfill)',
     '🐛 Originals: kurze WS-Warte vor onBetPlaced — Share-ID öfter direkt in der Bet-Liste',

@@ -28,17 +28,12 @@ import {
 } from '../utils/stakeBetShareId'
 import { normalizeBetSlugForHouseMatch } from '../utils/slotSlugMatching'
 import {
-  HOUSEBET_RETRY_BUFFER_MAX_MS,
-  HOUSEBET_RETRY_BUFFER_MAX,
   normalizeHunterMultiByProvider,
   trimPendingQueues,
-  flushHouseBetRetryBufferForSlug,
 } from '../utils/hunterPendingHouseBetMatch'
 import { setHunterSlotTargets } from '../utils/hunterSlotTargetsBridge'
 import { attachHunterHouseBetCoordinator } from '../utils/hunterHouseBetCoordinator'
-import {
-  getHouseShareIdLookup,
-} from '../utils/hunterHouseBetShareIdMap'
+import { betShareIdRegistry } from '../utils/betShareIdRegistry'
 import {
   usdLimitToInputStr,
   parseUsdLimitInput,
@@ -50,7 +45,6 @@ import { getChallengeHubRecentBets, publishChallengeHubBet } from '../utils/chal
 import { hubFeedToLoggerExportRows } from '../utils/hubSessionExport'
 import {
   clearPendingHouseBetsForRun,
-  flushHubHouseBetBufferForFeedEntry,
   patchHubFeedEntryFromHouseBet,
 } from '../utils/challengeHubBetIdPatch'
 import { buildUsdSpinDelta } from '../utils/casinoStatsEngine'
@@ -867,7 +861,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     activeRunsRef.current = activeRuns
   }
   const activeRunsUiFlushTimerRef = useRef(null)
-  const houseShareIdByProviderBetIdRef = useRef(new Map())
   const flushActiveRunsToReact = useCallback(() => {
     if (activeRunsUiFlushTimerRef.current != null) {
       clearTimeout(activeRunsUiFlushTimerRef.current)
@@ -1043,8 +1036,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   // enqueue wir Events und verarbeiten sie gebündelt in einem Worker-Tick.
   const houseBetEventQueueRef = useRef([])
   const houseBetWorkerScheduledRef = useRef(false)
-  /** Race WS vor HTTP: houseBet-Objekte kurz halten, nach Pending-Push erneut matchen. */
-  const houseBetRetryBufferRef = useRef([]) // { key, bItem, at }[]
   const scheduleHouseBetWorkerRef = useRef(() => {})
   const logBufferRef = useRef([])
   const logFlushTimerRef = useRef(null)
@@ -1261,12 +1252,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         pendingHouseBetMatchRef,
         houseBetEventQueueRef,
         houseBetWorkerScheduledRef,
-        houseBetRetryBufferRef,
         scheduleHouseBetWorkerRef,
         activeRunsRef,
         activeRunsUiDirtyRef,
         runBestMultiSyncRef,
-        houseShareIdByProviderBetIdRef,
         houseBetDeferredUiTimersRef,
         bestMultiBySlotRef,
         bumpHunterStorageRef,
@@ -2276,12 +2265,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             if (!pmap[rid]) pmap[rid] = []
             pmap[rid].push(matchEntry)
           }
-          flushHouseBetRetryBufferForSlug(
-            houseBetRetryBufferRef,
-            houseBetEventQueueRef,
-            normalizeBetSlugForHouseMatch(gSlug),
-            () => scheduleHouseBetWorkerRef.current?.()
-          )
+          betShareIdRegistry.register({
+            providerBetId: matchEntry.providerBetId,
+            feedEntryId: matchEntry.feedEntryId,
+            runId: matchEntry.runId,
+          })
 
           {
             const dk = `${runId}:${spinSeq}`
@@ -2333,7 +2321,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           const resolvedRoundId = roundIdForDedup
           const mappedShareId =
             matchEntry.providerBetId &&
-            getHouseShareIdLookup(houseShareIdByProviderBetIdRef, matchEntry.providerBetId)
+            betShareIdRegistry.getShareId(matchEntry.providerBetId)
           const provisionalRunBetId =
             mappedShareId ||
             formatStakeShareBetId(matchEntry.providerBetId || resolvedRoundId || null)
@@ -2423,11 +2411,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             currencyCode: hubListCc,
             roundId: resolvedRoundId ?? null,
             sourceTag: `casino:${gSlug}`,
-            hubSettlement: 'pending',
-          })
-          flushHubHouseBetBufferForFeedEntry({
-            id: pendingFeedId,
-            slotSlug: gSlug,
             hubSettlement: 'pending',
           })
 
@@ -2765,7 +2748,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     processedIdsRef.current.clear()
     dismissedChallengeIdsRef.current.clear()
     clearHunterState()
-    houseShareIdByProviderBetIdRef.current.clear()
+    betShareIdRegistry.clearSession()
     void flushHunterBetHistory()
     log('All stopped: active spins, scan, auto-start off, queue cleared.')
   }
@@ -2782,7 +2765,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     processedIdsRef.current.clear()
     dismissedChallengeIdsRef.current.clear()
     clearHunterState()
-    houseShareIdByProviderBetIdRef.current.clear()
+    betShareIdRegistry.clearSession()
     clearHunterBetHistoryBuffer()
     void flushHunterBetHistory()
     setQueue([])
