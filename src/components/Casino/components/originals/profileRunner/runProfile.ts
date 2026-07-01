@@ -1114,7 +1114,14 @@ export async function runProfile(
     const sessionElapsedMs = Date.now() - sessionStartMs
     const betsPerSec = sessionElapsedMs >= 200 ? rollNumber / (sessionElapsedMs / 1000) : 0
 
-    const betShareId = houseBetBridge.getShareId(toBetListIndex(rollNumber))
+    let betShareId = houseBetBridge.getShareId(toBetListIndex(rollNumber))
+    if (!betShareId) {
+      for (let wait = 0; wait < 10 && !signal.cancelled; wait++) {
+        await new Promise((r) => setTimeout(r, 30))
+        betShareId = houseBetBridge.getShareId(toBetListIndex(rollNumber))
+        if (betShareId) break
+      }
+    }
     lastBetIdStr = betShareId ?? betIid ?? ''
     if (workbenchEnabled && workbenchOptions.sendBetIdToChallengesRoom && betShareId) {
       callbacks.onLog?.(`[Challenges] Bet ID: ${betShareId}`)

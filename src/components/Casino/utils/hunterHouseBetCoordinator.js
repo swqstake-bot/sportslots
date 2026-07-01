@@ -20,6 +20,7 @@ import {
 import {
   patchHubFeedEntryFromHouseBet,
   patchHubFeedRunFromHouseBet,
+  applyHouseBetToHubFeed,
 } from './challengeHubBetIdPatch'
 import { setHouseShareIdLookup } from './hunterHouseBetShareIdMap'
 
@@ -298,6 +299,11 @@ export function attachHunterHouseBetCoordinator(ctx) {
             }
           }
         }
+      }
+
+      // Hub-Feed: Share-ID auch ohne Pending-Match (FIFO), unabhängig von bestBetId-Multi-Gates.
+      if (shareIdDirect && hasRunningForHouseBet && !p?.feedEntryId) {
+        applyHouseBetToHubFeed(bItem)
       }
 
       if (!p && hasRunningForHouseBet) {

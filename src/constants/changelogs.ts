@@ -1,4 +1,9 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.200': [
+    '🐛 Bet-IDs: Hub-Feed auch ohne Pending-Match (Hunter houseBets FIFO + Logger-Backfill)',
+    '🐛 Originals: kurze WS-Warte vor onBetPlaced — Share-ID öfter direkt in der Bet-Liste',
+    '🐛 Originals/Hunter: Profit-Chart Domain + Script-UI-Flush (visibility) aus lokaler Arbeit',
+  ],
   '1.0.199': [
     '🐛 CI/Release: WindowTitleBar-Lint (setState in effect) behoben',
     '🐛 Originals: Settings-Modal wieder viewport-zentriert (casino-root nicht mehr auf Fixed-Overlay)',

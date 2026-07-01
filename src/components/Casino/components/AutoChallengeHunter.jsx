@@ -761,12 +761,20 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const sessionSpinStartMsRef = useRef(null)
   const [sessionBetsPerSec, setSessionBetsPerSec] = useState(0)
   const [sessionNetSeriesVersion, setSessionNetSeriesVersion] = useState(0)
+  const [sessionChartDomainKey, setSessionChartDomainKey] = useState(0)
   const [sessionNetSpinCount, setSessionNetSpinCount] = useState(0)
   const sessionNetChartFlushTimerRef = useRef(null)
   const sessionNetSeriesSnapshot = useMemo(
     () => sessionNetBufferRef.current.toChartSeries(),
     [sessionNetSeriesVersion]
   )
+  const sessionChartBetRange = useMemo(() => {
+    const total = sessionNetSpinCount
+    const window = sessionNetBufferRef.current.pointCount
+    if (total <= 0) return { start: 1, end: 0 }
+    if (window <= 0 || total <= window) return { start: 1, end: total }
+    return { start: total - window + 1, end: total }
+  }, [sessionNetSpinCount, sessionNetSeriesVersion])
   /** Höchster getroffener Multiplikator pro Slot-Slug (persistiert). */
   const [bestMultiBySlot, setBestMultiBySlot] = useState(() => loadBestMultiMap())
   useEffect(() => {
@@ -2791,6 +2799,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       sessionSpinStartMsRef.current = null
       setSessionBetsPerSec(0)
       setSessionNetSeriesVersion((v) => v + 1)
+      setSessionChartDomainKey((k) => k + 1)
       setSessionNetSpinCount(0)
     }
     setAutoStart(false)
@@ -4049,7 +4058,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 <OriginalsProfitChart
                   chartData={profitsToChartData(sessionNetSeriesSnapshot)}
                   height={188}
-                  domainResetKey={sessionNetSeriesVersion}
+                  domainResetKey={sessionChartDomainKey}
+                  betIndexStart={sessionChartBetRange.start}
+                  betIndexEnd={sessionChartBetRange.end}
+                  fillArea={false}
                   compact
                 />
               </div>

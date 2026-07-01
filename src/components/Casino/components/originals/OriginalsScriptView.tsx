@@ -164,7 +164,7 @@ export default function OriginalsScriptView() {
   const [copiedBetIndex, setCopiedBetIndex] = useState<number | null>(null)
   const [appVersion, setAppVersion] = useState<string>('…')
   const stopRef = useRef<(() => void) | null>(null)
-  const uiRafRef = useRef<number | null>(null)
+  const uiFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingUiRef = useRef<{
     stats: ScriptSessionStats | null
     bet: BetRow | null
@@ -186,28 +186,45 @@ export default function OriginalsScriptView() {
     setLogLines((prev) => [...prev.slice(-99), `[${new Date().toLocaleTimeString()}] ${msg}`])
   }, [])
 
-  const flushScriptUi = useCallback(() => {
-    const runFlush = () => {
-      if (uiRafRef.current != null) return
-      uiRafRef.current = requestAnimationFrame(() => {
-        uiRafRef.current = null
-        const snap = pendingUiRef.current
-        pendingUiRef.current = { stats: null, bet: null }
-        if (snap.stats) {
-          const stats = snap.stats
-          setLastStats(stats)
-          setChartProfits((prev) => upsertChartProfit(prev, stats.bets, stats.profit))
-        }
-        if (snap.bet) {
-          setBetList((prev) => upsertBetRow(prev, snap.bet!))
-        }
-        if (pendingUiRef.current.stats || pendingUiRef.current.bet) {
-          runFlush()
-        }
-      })
+  const executeScriptUiFlush = useCallback(() => {
+    uiFlushTimerRef.current = null
+    const snap = pendingUiRef.current
+    pendingUiRef.current = { stats: null, bet: null }
+    if (snap.stats) {
+      const stats = snap.stats
+      setLastStats(stats)
+      setChartProfits((prev) => upsertChartProfit(prev, stats.bets, stats.profit))
     }
-    runFlush()
+    if (snap.bet) {
+      setBetList((prev) => upsertBetRow(prev, snap.bet!))
+    }
+    if (pendingUiRef.current.stats || pendingUiRef.current.bet) {
+      if (uiFlushTimerRef.current == null) {
+        const delay = typeof document !== 'undefined' && document.hidden ? 50 : 16
+        uiFlushTimerRef.current = setTimeout(executeScriptUiFlush, delay)
+      }
+    }
   }, [])
+
+  const flushScriptUi = useCallback(() => {
+    if (uiFlushTimerRef.current != null) return
+    const delay = typeof document !== 'undefined' && document.hidden ? 50 : 16
+    uiFlushTimerRef.current = setTimeout(executeScriptUiFlush, delay)
+  }, [executeScriptUiFlush])
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.hidden) return
+      if (!pendingUiRef.current.stats && !pendingUiRef.current.bet) return
+      if (uiFlushTimerRef.current != null) {
+        clearTimeout(uiFlushTimerRef.current)
+        uiFlushTimerRef.current = null
+      }
+      executeScriptUiFlush()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [executeScriptUiFlush])
 
   const handleStart = useCallback(async () => {
     const profileJson = profileContent.trim()
@@ -330,9 +347,9 @@ export default function OriginalsScriptView() {
       stopRef.current()
       stopRef.current = null
     }
-    if (uiRafRef.current != null) {
-      cancelAnimationFrame(uiRafRef.current)
-      uiRafRef.current = null
+    if (uiFlushTimerRef.current != null) {
+      clearTimeout(uiFlushTimerRef.current)
+      uiFlushTimerRef.current = null
     }
     pendingUiRef.current = { stats: null, bet: null }
     setRunning(false)

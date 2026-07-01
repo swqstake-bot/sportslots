@@ -20,9 +20,12 @@ interface OriginalsProfitChartProps {
   compact?: boolean
   title?: string
   className?: string
+  fillArea?: boolean
+  betIndexStart?: number
+  betIndexEnd?: number
 }
 
-/** Session profit/loss chart — cumulative USD, filled area, stable Y scale. */
+/** Session profit/loss chart — cumulative USD, stable Y scale. */
 export default function OriginalsProfitChart({
   chartData,
   height = 220,
@@ -30,6 +33,9 @@ export default function OriginalsProfitChart({
   compact,
   title = 'Profit / Loss',
   className,
+  fillArea = true,
+  betIndexStart,
+  betIndexEnd,
 }: OriginalsProfitChartProps) {
   const profits = chartData.map((d) => d.profit)
   const lastProfit = profits.length ? profits[profits.length - 1]! : 0
@@ -56,11 +62,11 @@ export default function OriginalsProfitChart({
         profits={profits}
         height={height}
         stroke={stroke}
-        fillArea
+        fillArea={fillArea}
         stableYDomain
         domainResetKey={domainResetKey}
-        betIndexStart={0}
-        betIndexEnd={betCount}
+        betIndexStart={betIndexStart ?? 0}
+        betIndexEnd={betIndexEnd ?? betCount}
       />
     </div>
   )
