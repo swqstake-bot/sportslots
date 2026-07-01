@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.202': [
+    '🧹 Bet-IDs: totes hunterHouseBetShareIdMap entfernt (ersetzt durch betShareIdRegistry)',
+  ],
   '1.0.201': [
     '✨ Bet-IDs: einheitliches betShareIdRegistry (providerBetId ↔ house share-iid) für Hunter, Hub und Originals',
     '🐛 Bet-IDs: FIFO/Logger-Fallback entfernt — nur noch O(1)-Lookup via houseBets WebSocket',
