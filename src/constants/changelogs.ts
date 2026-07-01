@@ -1,4 +1,9 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.205': [
+    '🐛 Bet-IDs Stake-RGS: keine Registry mit round.betID (≠ houseBets bet.id/UUID)',
+    '🐛 Bet-IDs Hunter: houseBets immer enqueuen + Single-Run Hub-Patch bei shareIid',
+    '🐛 Bet-IDs Hunter: Amount-Toleranz bei eindeutigem Pending (Stake-RGS)',
+  ],
   '1.0.204': [
     '🐛 Bet-IDs Hunter: WS-vor-HTTP Retry-Buffer wieder aktiv (2 parallele Slots)',
     '🐛 Bet-IDs Hunter: nur numerische CasinoBet.id für Registry — kein roundId-Mismatch',

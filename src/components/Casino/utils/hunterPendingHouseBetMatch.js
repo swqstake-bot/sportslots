@@ -113,7 +113,15 @@ function trySpliceSinglePendingHouseBet(pendingMap, payloadSlug, payloadCurr, bI
   )
   if (candidates.length !== 1) return null
   const chosen = candidates[0]
-  if (!houseBetStakeMajorMatchesPending(chosen.p.betAmountMajor, bItem)) return null
+  const amountOk = houseBetStakeMajorMatchesPending(chosen.p.betAmountMajor, bItem)
+  if (!amountOk) {
+    const hb = Number(bItem?.amountMajor ?? bItem?.amount)
+    const pm = Number(chosen.p.betAmountMajor)
+    if (Number.isFinite(hb) && Number.isFinite(pm) && hb > 0 && pm > 0) {
+      const rel = Math.abs(pm - hb) / Math.max(hb, pm, 1e-12)
+      if (rel > 0.2) return null
+    }
+  }
   const q = pendingMap[chosen.runId]
   if (!Array.isArray(q) || chosen.idx < 0 || chosen.idx >= q.length) return null
   const [removed] = q.splice(chosen.idx, 1)

@@ -7,6 +7,7 @@ import {
   formatStakeShareBetId,
   isPersistableStakeHouseBetShareId,
   pickStakeHouseBetShareRawId,
+  isStakeRgsInternalBetId,
 } from './stakeBetShareId'
 import { patchHubFeedEntryFromHouseBet } from './challengeHubBetIdPatch'
 
@@ -208,16 +209,14 @@ export const betShareIdRegistry = {
     const at = meta?.at || Date.now()
     const apiId = meta?.providerBetId != null ? String(meta.providerBetId).trim() : ''
 
-    if (meta?.betIndex != null && !apiId) {
-      pendingByBetIndex.set(meta.betIndex, { ...meta, at })
-      const existing = resolvedByBetIndex.get(meta.betIndex)
-      if (existing) {
-        if (typeof meta.onResolved === 'function') meta.onResolved(meta.betIndex, existing)
+    if (!apiId || isStakeRgsInternalBetId(apiId)) {
+      if (meta?.betIndex != null && !apiId) {
+        pendingByBetIndex.set(meta.betIndex, { ...meta, at })
+        const existing = resolvedByBetIndex.get(meta.betIndex)
+        if (existing && typeof meta.onResolved === 'function') meta.onResolved(meta.betIndex, existing)
       }
       return
     }
-
-    if (!apiId) return
 
     const entry = { ...meta, providerBetId: apiId, at }
     pendingByApiId.set(apiId, entry)

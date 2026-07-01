@@ -22,6 +22,12 @@ export function pickNumericCasinoBetId(...candidates) {
   return null
 }
 
+/** Stake-RGS `round.betID` (lange Zahl) ist nicht houseBets `bet.id` — nicht in Registry registrieren. */
+export function isStakeRgsInternalBetId(id) {
+  const s = String(id ?? '').trim()
+  return /^\d{10,}$/.test(s)
+}
+
 /**
  * Nur Stake-„House“-Share-IDs (`houseBets.iid` / Top-Level `houseBets.id`).
  * `bet.id` (Union) ist oft die interne RGS-/Provider-ID (z. B. 527… statt 460…) — nicht für Links nutzen.

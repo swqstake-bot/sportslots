@@ -610,6 +610,28 @@ export function attachHunterHouseBetCoordinator(ctx) {
 
 
 
+      if (!p && shareIdDirect && hasRunningForHouseBet) {
+
+        const soleRuns = findRunningRunsForHouseBet(active, payloadSlug, payloadCurr)
+
+        if (soleRuns.length === 1) {
+
+          const rid = soleRuns[0].id
+
+          patchHubFeedRunFromHouseBet(rid, bItem)
+
+          if (isPersistableStakeHouseBetShareId(shareIdDirect)) {
+
+            bestBetByRunId[rid] = shareIdDirect
+
+          }
+
+        }
+
+      }
+
+
+
       if (!p && hasRunningForHouseBet) {
 
         const dedupeKey = pickStakeHouseBetShareRawId(bItem) || bItem?.id
@@ -796,23 +818,11 @@ export function attachHunterHouseBetCoordinator(ctx) {
 
 
 
-  const shouldEnqueueHouseBet = () => {
-
-    hunterCoordinatorActive = shouldCoordinatorStayActive()
-
-    return hunterCoordinatorActive
-
-  }
-
-
-
   const unsubHouseBets = betShareIdRegistry.subscribeHouseBets((b) => {
 
     const betType = String(b?.betType || '')
 
     if (/sport/i.test(betType)) return
-
-    if (!shouldEnqueueHouseBet()) return
 
     const now = Date.now()
 

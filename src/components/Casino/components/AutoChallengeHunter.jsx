@@ -26,6 +26,7 @@ import {
   formatStakeShareBetId,
   isPersistableStakeHouseBetShareId,
   pickNumericCasinoBetId,
+  isStakeRgsInternalBetId,
 } from '../utils/stakeBetShareId'
 import { normalizeBetSlugForHouseMatch } from '../utils/slotSlugMatching'
 import {
@@ -2276,11 +2277,20 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             normalizeBetSlugForHouseMatch(gSlug),
             scheduleHouseBetWorkerRef.current
           )
-          betShareIdRegistry.register({
-            providerBetId: matchEntry.providerBetId,
-            feedEntryId: matchEntry.feedEntryId,
-            runId: matchEntry.runId,
-          })
+          const httpBetId = pickNumericCasinoBetId(
+            rawRound?.betId,
+            rawRound?.betID,
+            rawRound?.id,
+            data?.round?.betId,
+            parsed?.roundId
+          )
+          if (httpBetId && !isStakeRgsInternalBetId(httpBetId)) {
+            betShareIdRegistry.register({
+              providerBetId: httpBetId,
+              feedEntryId: matchEntry.feedEntryId,
+              runId: matchEntry.runId,
+            })
+          }
 
           {
             const dk = `${runId}:${spinSeq}`
