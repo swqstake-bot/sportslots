@@ -13,6 +13,15 @@ export function formatStakeShareBetId(raw) {
   return `casino:${s}`
 }
 
+/** GraphQL `CasinoBet.id` / houseBets `bet.id` — nur numerisch, kein Provider-roundId. */
+export function pickNumericCasinoBetId(...candidates) {
+  for (const v of candidates) {
+    const s = String(v ?? '').trim()
+    if (/^\d+$/.test(s)) return s
+  }
+  return null
+}
+
 /**
  * Nur Stake-„House“-Share-IDs (`houseBets.iid` / Top-Level `houseBets.id`).
  * `bet.id` (Union) ist oft die interne RGS-/Provider-ID (z. B. 527… statt 460…) — nicht für Links nutzen.

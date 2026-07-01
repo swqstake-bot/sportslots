@@ -25,11 +25,13 @@ import {
 import {
   formatStakeShareBetId,
   isPersistableStakeHouseBetShareId,
+  pickNumericCasinoBetId,
 } from '../utils/stakeBetShareId'
 import { normalizeBetSlugForHouseMatch } from '../utils/slotSlugMatching'
 import {
   normalizeHunterMultiByProvider,
   trimPendingQueues,
+  flushHouseBetRetryBufferForSlug,
 } from '../utils/hunterPendingHouseBetMatch'
 import { setHunterSlotTargets } from '../utils/hunterSlotTargetsBridge'
 import { attachHunterHouseBetCoordinator } from '../utils/hunterHouseBetCoordinator'
@@ -1036,6 +1038,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   // enqueue wir Events und verarbeiten sie gebündelt in einem Worker-Tick.
   const houseBetEventQueueRef = useRef([])
   const houseBetWorkerScheduledRef = useRef(false)
+  /** Race WS vor HTTP: houseBet kurz puffern, nach Pending-Push erneut matchen. */
+  const houseBetRetryBufferRef = useRef([])
   const scheduleHouseBetWorkerRef = useRef(() => {})
   const logBufferRef = useRef([])
   const logFlushTimerRef = useRef(null)
@@ -1252,6 +1256,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         pendingHouseBetMatchRef,
         houseBetEventQueueRef,
         houseBetWorkerScheduledRef,
+        houseBetRetryBufferRef,
         scheduleHouseBetWorkerRef,
         activeRunsRef,
         activeRunsUiDirtyRef,
@@ -2245,13 +2250,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             challengeId,
             slug: normalizeBetSlugForHouseMatch(gSlug),
             storageSlug: gSlug,
-            providerBetId: String(
-              rawRound?.betId ??
-              rawRound?.id ??
-              rawRound?.roundId ??
-              rawRound?.betID ??
-              ''
-            ).trim() || null,
+            providerBetId: pickNumericCasinoBetId(
+              rawRound?.betId,
+              rawRound?.betID,
+              rawRound?.id,
+              data?.round?.betId,
+              parsed?.roundId
+            ),
             currency: String(tCurr).toLowerCase(),
             betAmountMajor: toUnits(betAmount, tCurr),
             at: Date.now(),
@@ -2265,6 +2270,12 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             if (!pmap[rid]) pmap[rid] = []
             pmap[rid].push(matchEntry)
           }
+          flushHouseBetRetryBufferForSlug(
+            houseBetRetryBufferRef,
+            houseBetEventQueueRef,
+            normalizeBetSlugForHouseMatch(gSlug),
+            scheduleHouseBetWorkerRef.current
+          )
           betShareIdRegistry.register({
             providerBetId: matchEntry.providerBetId,
             feedEntryId: matchEntry.feedEntryId,

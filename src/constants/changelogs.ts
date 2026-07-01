@@ -1,4 +1,9 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.204': [
+    '🐛 Bet-IDs Hunter: WS-vor-HTTP Retry-Buffer wieder aktiv (2 parallele Slots)',
+    '🐛 Bet-IDs Hunter: nur numerische CasinoBet.id für Registry — kein roundId-Mismatch',
+    '🐛 Bet-IDs Hunter: parallele Pending-Matches bei gleichem Stake robuster',
+  ],
   '1.0.203': [
     '🐛 CI: OriginalsScriptView UI-Flush-Lint (executeScriptUiFlush vor Deklaration)',
   ],

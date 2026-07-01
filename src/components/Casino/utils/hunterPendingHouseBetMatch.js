@@ -174,6 +174,14 @@ function selectPendingEntryForHouseBet(candidates, bItem) {
   return null
 }
 
+function pickPendingWhenAmbiguous(candidates, bItem) {
+  if (!candidates.length) return null
+  const byAmount = candidates.filter(({ p }) => houseBetStakeMajorMatchesPending(p.betAmountMajor, bItem))
+  if (byAmount.length === 1) return byAmount[0]
+  if (byAmount.length > 1) return pickOldestPendingEntry(byAmount)
+  return pickOldestPendingEntry(candidates)
+}
+
 export function splicePendingHouseBetMatch(pendingMap, payloadSlug, payloadCurr, bItem) {
   if (!pendingMap || typeof pendingMap !== 'object' || bItem == null) return null
   const trySplice = (currencyStrict) => {
@@ -186,7 +194,7 @@ export function splicePendingHouseBetMatch(pendingMap, payloadSlug, payloadCurr,
     )
     if (fast) return fast
     const candidates = collectPendingHouseBetCandidates(pendingMap, payloadSlug, payloadCurr, currencyStrict)
-    const chosen = selectPendingEntryForHouseBet(candidates, bItem)
+    const chosen = selectPendingEntryForHouseBet(candidates, bItem) ?? pickPendingWhenAmbiguous(candidates, bItem)
     if (!chosen) return null
     const q = pendingMap[chosen.runId]
     if (!Array.isArray(q) || chosen.idx < 0 || chosen.idx >= q.length) return null
@@ -266,7 +274,7 @@ export function splicePendingHouseBetMatchWithoutSlug(pendingMap, payloadCurr, b
         candidates.push({ runId, idx: i, p, at: Number(p.at) || 0 })
       }
     }
-    const chosen = selectPendingEntryForHouseBet(candidates, bItem)
+    const chosen = selectPendingEntryForHouseBet(candidates, bItem) ?? pickPendingWhenAmbiguous(candidates, bItem)
     if (!chosen) return null
     const q = pendingMap[chosen.runId]
     if (!Array.isArray(q) || chosen.idx < 0 || chosen.idx >= q.length) return null
