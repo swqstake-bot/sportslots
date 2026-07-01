@@ -165,6 +165,7 @@ export default function OriginalsScriptView() {
   const [appVersion, setAppVersion] = useState<string>('…')
   const stopRef = useRef<(() => void) | null>(null)
   const uiFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const executeScriptUiFlushRef = useRef<() => void>(() => {})
   const pendingUiRef = useRef<{
     stats: ScriptSessionStats | null
     bet: BetRow | null
@@ -201,10 +202,14 @@ export default function OriginalsScriptView() {
     if (pendingUiRef.current.stats || pendingUiRef.current.bet) {
       if (uiFlushTimerRef.current == null) {
         const delay = typeof document !== 'undefined' && document.hidden ? 50 : 16
-        uiFlushTimerRef.current = setTimeout(executeScriptUiFlush, delay)
+        uiFlushTimerRef.current = setTimeout(() => executeScriptUiFlushRef.current(), delay)
       }
     }
   }, [])
+
+  useEffect(() => {
+    executeScriptUiFlushRef.current = executeScriptUiFlush
+  }, [executeScriptUiFlush])
 
   const flushScriptUi = useCallback(() => {
     if (uiFlushTimerRef.current != null) return

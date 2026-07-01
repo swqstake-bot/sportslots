@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.203': [
+    '🐛 CI: OriginalsScriptView UI-Flush-Lint (executeScriptUiFlush vor Deklaration)',
+  ],
   '1.0.202': [
     '🧹 Bet-IDs: totes hunterHouseBetShareIdMap entfernt (ersetzt durch betShareIdRegistry)',
   ],
