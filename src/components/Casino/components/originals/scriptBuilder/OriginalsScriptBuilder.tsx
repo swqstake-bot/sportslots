@@ -29,7 +29,12 @@ const COMMON_OPTION_KEYS: (keyof ProfileOptions)[] = [
   'isSeedChangeAfterRolls', 'seedChangeAfterRolls', 'increaseBetAfterSeedReset', 'seedResetOnLossStreak', 'resetSeedOnLoss', 'seedResetOnLossAmount', 'isVaultAllProfits', 'vaultProfitsThreshold',
 ]
 const GAME_OPTION_KEYS: Record<OriginalsGame, (keyof ProfileOptions)[]> = {
-  keno: ['risk', 'numbers', 'randomNumbersFrom', 'randomNumbersTo', 'useHeatmapHotNumbers', 'heatmapHotNumbers', 'heatmapRange'],
+  keno: [
+    'risk', 'numbers', 'randomNumbersFrom', 'randomNumbersTo',
+    'useHeatmapHotNumbers', 'heatmapHotNumbers', 'heatmapRange',
+    'kenoHeatmapCycleEnabled', 'kenoHeatmapPrerollBets', 'kenoHeatmapAttackBets',
+    'kenoHeatmapPrerollBetSize', 'kenoHeatmapAttackBetSize', 'kenoHeatmapPickCount',
+  ],
   mines: ['mines', 'diamonds', 'randomMinesFrom', 'randomMinesTo', 'randomDiamondsFrom', 'randomDiamondsTo'],
   dice: ['rollUnder', 'rollOver'],
   limbo: ['targetMultiplier'],
@@ -319,7 +324,40 @@ export default function OriginalsScriptBuilder() {
             </div>
             <div>
               <label className={labelCls}>Heatmap Range (1–X)</label>
-              <input type="number" min="1" max="39" value={opts.heatmapRange} onChange={(e) => updateOpt('heatmapRange', Number(e.target.value))} className={inputCls} disabled={!opts.useHeatmapHotNumbers} />
+              <input type="number" min="1" max="39" value={opts.heatmapRange} onChange={(e) => updateOpt('heatmapRange', Number(e.target.value))} className={inputCls} disabled={!opts.useHeatmapHotNumbers && !opts.kenoHeatmapCycleEnabled} />
+            </div>
+          </div>
+          <div className={`${sectionCls} mt-3 pt-3 border-t border-[var(--border)]`}>
+            <p className="text-xs text-[var(--text-muted)] mb-2">
+              Heatmap-Zyklus: Preroll sammelt Draw-Frequenzen, Attack setzt auf die häufigsten Zahlen.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="flex items-end sm:col-span-2">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={opts.kenoHeatmapCycleEnabled} onChange={(e) => updateOpt('kenoHeatmapCycleEnabled', e.target.checked)} className="rounded accent-[var(--accent)]" />
+                  <span className="text-xs">Heatmap-Zyklus aktiv</span>
+                </label>
+              </div>
+              <div>
+                <label className={labelCls}>Preroll Bets</label>
+                <input type="number" min="1" value={opts.kenoHeatmapPrerollBets} onChange={(e) => updateOpt('kenoHeatmapPrerollBets', Number(e.target.value))} className={inputCls} disabled={!opts.kenoHeatmapCycleEnabled} />
+              </div>
+              <div>
+                <label className={labelCls}>Attack Bets</label>
+                <input type="number" min="1" value={opts.kenoHeatmapAttackBets} onChange={(e) => updateOpt('kenoHeatmapAttackBets', Number(e.target.value))} className={inputCls} disabled={!opts.kenoHeatmapCycleEnabled} />
+              </div>
+              <div>
+                <label className={labelCls}>Preroll Einsatz ($)</label>
+                <input type="number" min="0.0001" step="0.01" value={opts.kenoHeatmapPrerollBetSize} onChange={(e) => updateOpt('kenoHeatmapPrerollBetSize', Number(e.target.value))} className={inputCls} disabled={!opts.kenoHeatmapCycleEnabled} />
+              </div>
+              <div>
+                <label className={labelCls}>Attack Einsatz ($)</label>
+                <input type="number" min="0.0001" step="0.01" value={opts.kenoHeatmapAttackBetSize} onChange={(e) => updateOpt('kenoHeatmapAttackBetSize', Number(e.target.value))} className={inputCls} disabled={!opts.kenoHeatmapCycleEnabled} />
+              </div>
+              <div>
+                <label className={labelCls}>Zahlen pro Bet</label>
+                <input type="number" min="1" max="10" value={opts.kenoHeatmapPickCount} onChange={(e) => updateOpt('kenoHeatmapPickCount', Number(e.target.value))} className={inputCls} disabled={!opts.kenoHeatmapCycleEnabled} />
+              </div>
             </div>
           </div>
         </AccordionSection>

@@ -333,3 +333,82 @@ export const KENO_B2B_COMPLEX_TP_PROFILE_JSON = JSON.stringify(KENO_B2B_COMPLEX_
 export const KENO_B2B_HIGH_10_500_PROFILE_JSON = JSON.stringify(KENO_B2B_HIGH_10_500_PROFILE, null, 2)
 
 
+
+/** Keno Heatmap-Zyklus: 100× Preroll @ 1¢ → 20× Attack @ 10¢ mit Hot Picks, wiederholen. */
+
+export const KENO_HEATMAP_CYCLE_PROFILE = {
+
+  name: 'Keno Heatmap Cycle · 4 picks · 100/20',
+
+  options: {
+
+    game: 'keno',
+
+    risk: 'medium',
+
+    initialBetSize: 0.1,
+
+    betSize: 0.1,
+
+    onWin: 'reset',
+
+    onLoss: 'reset',
+
+    kenoHeatmapCycleEnabled: true,
+
+    kenoHeatmapPrerollBets: 100,
+
+    kenoHeatmapAttackBets: 20,
+
+    kenoHeatmapPrerollBetSize: 0.01,
+
+    kenoHeatmapAttackBetSize: 0.1,
+
+    kenoHeatmapPickCount: 4,
+
+    heatmapRange: 39,
+
+    stopOnProfit: 0,
+
+    stopOnLoss: 50,
+
+    stopOnTotalWagered: 0,
+
+  },
+
+} as const
+
+
+
+export const KENO_HEATMAP_CYCLE_SCRIPT = `game = 'keno'
+
+risk = 'medium'
+
+initialBetSize = 0.10
+
+onWin = 'reset'
+
+onLoss = 'reset'
+
+kenoHeatmapCycleEnabled = true
+
+kenoHeatmapPrerollBets = 100
+
+kenoHeatmapAttackBets = 20
+
+kenoHeatmapPrerollBetSize = 0.01
+
+kenoHeatmapAttackBetSize = 0.10
+
+kenoHeatmapPickCount = 4
+
+heatmapRange = 39
+
+stopOnLoss = 50
+
+`
+
+
+
+export const KENO_HEATMAP_CYCLE_PROFILE_JSON = JSON.stringify(KENO_HEATMAP_CYCLE_PROFILE, null, 2)
+

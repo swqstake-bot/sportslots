@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.206': [
+    '✨ Sport: aktives Wetten-Limit 150 → 500 (AutoBet Fill-Up, Sidebar, Bet-History)',
+    '✨ Sport: zentrale Konstante sportsBetLimits.ts — API-Fehler-Erkennung flexibler',
+  ],
   '1.0.205': [
     '🐛 Bet-IDs Stake-RGS: keine Registry mit round.betID (≠ houseBets bet.id/UUID)',
     '🐛 Bet-IDs Hunter: houseBets immer enqueuen + Single-Run Hub-Patch bei shareIid',

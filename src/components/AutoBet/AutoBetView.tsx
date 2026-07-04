@@ -7,6 +7,7 @@ import { AccordionSection } from '../ui/AccordionSection';
 import { TournamentEventPickFields } from './TournamentEventPickFields';
 import { EventMarketsScanner } from './EventMarketsScanner';
 import { hasTournamentScope } from '../../utils/tournamentScope';
+import { ACTIVE_SPORT_BETS_MAX_TOTAL } from '../../constants/sportsBetLimits';
 import './autobet.css';
 
 const STRATEGIES: AutoBetStrategy[] = [
@@ -221,7 +222,7 @@ export function AutoBetView() {
                         <input type="checkbox" checked={settings.fillUp || false} onChange={(e) => updateSettings({ fillUp: e.target.checked })} className="w-4 h-4 rounded cursor-pointer" style={{ accentColor: 'var(--app-accent)', borderColor: 'var(--app-border)' }} />
                         <div>
                           <span className="block text-sm font-bold" style={{ color: 'var(--app-text)' }}>Fill Up Mode</span>
-                          <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>Keep filling up to 150 bets. Retry every 3 mins if full.</span>
+                          <span className="text-xs" style={{ color: 'var(--app-text-muted)' }}>Keep filling up to {ACTIVE_SPORT_BETS_MAX_TOTAL} bets. Retry every 3 mins if full.</span>
                         </div>
                       </label>
                       <label className="autobet-check-card flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors">

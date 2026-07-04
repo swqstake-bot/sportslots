@@ -18,6 +18,8 @@ import {
   KENO_B2B_COMPLEX_TP_PROFILE_JSON,
   KENO_B2B_COMPLEX_TP_SCRIPT,
   KENO_B2B_HIGH_10_500_PROFILE_JSON,
+  KENO_HEATMAP_CYCLE_PROFILE_JSON,
+  KENO_HEATMAP_CYCLE_SCRIPT,
 } from './keno/kenoWageringProfile'
 import {
   LIMBO_B2B_RANDOM_MULTI_200_PROFILE_JSON,
@@ -540,6 +542,32 @@ export default function OriginalsScriptView() {
               }}
             >
               Preset: High·10 → $500
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={running}
+              onClick={() => {
+                setProfileContent(KENO_HEATMAP_CYCLE_PROFILE_JSON)
+                setScriptContent('')
+                setProfilePath('keno-heatmap-cycle.json')
+                addLog('Preset: Keno Heatmap Cycle (100×1¢ → 20×10¢)')
+              }}
+            >
+              Preset: Heatmap Cycle
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={running}
+              onClick={() => {
+                setScriptContent(KENO_HEATMAP_CYCLE_SCRIPT)
+                setProfileContent('')
+                setScriptPath('keno-heatmap-cycle.js')
+                addLog('Preset: Keno Heatmap Cycle Script')
+              }}
+            >
+              Preset: Heatmap Script
             </Button>
             <Button
               type="button"

@@ -26,11 +26,10 @@ import { AppBrandMark } from './components/AppShell/AppBrandMark';
 import { WindowTitleBar } from './components/AppShell/WindowTitleBar';
 import { APP_NAME, APP_TAGLINE } from './constants/branding';
 import { refreshWalletBalances } from './utils/walletBalance';
-
-/** Pro GraphQL-Request: Stake validiert `activeSportBets(limit)` mit Obergrenze (typisch ≤50; höhere Werte → error.number_less_equal). */
-const ACTIVE_SPORT_BETS_PAGE_SIZE = 50;
-/** Max. Anzahl Einträge für Header/Sidebar (mehrere Seiten à PAGE_SIZE). */
-const ACTIVE_SPORT_BETS_MAX_TOTAL = 150;
+import {
+  ACTIVE_SPORT_BETS_MAX_TOTAL,
+  ACTIVE_SPORT_BETS_PAGE_SIZE,
+} from './constants/sportsBetLimits';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
   constructor(props: { children: ReactNode }) {

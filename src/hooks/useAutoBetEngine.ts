@@ -8,6 +8,11 @@ import { fetchCurrencyRates } from '../components/Casino/api/stakeChallenges';
 import { resolveTournamentScope } from '../utils/tournamentScope';
 import { MAIN_FIXTURE_MARKET_GROUP_SLUGS } from '../constants/fixtureMarketGroups';
 import { placeSportBetWithPolicy } from '../services/sportsRuntime';
+import {
+  ACTIVE_SPORT_BETS_LIMIT_PROBE_OFFSET,
+  ACTIVE_SPORT_BETS_MAX_TOTAL,
+  isActiveSportBetsLimitError,
+} from '../constants/sportsBetLimits';
 
 // Helper to generate UUID for bets
 const generateUUID = () => {
@@ -179,7 +184,7 @@ export function useAutoBetEngine() {
     
     processingRef.current = true;
     setIsProcessing(true);
-    let scheduled150Retry = false;
+    let scheduledActiveLimitRetry = false;
 
     const tournamentParsed = resolveTournamentScope(settings);
     const startParts = [
@@ -196,7 +201,7 @@ export function useAutoBetEngine() {
       startParts.push('Event fill mode: max. Legs pro Turnier (Max Legs als Obergrenze)');
     }
     if (settings.fillUp) {
-      startParts.push('Fill-Up: bis 150 aktive Wetten');
+      startParts.push(`Fill-Up: bis ${ACTIVE_SPORT_BETS_MAX_TOTAL} aktive Wetten`);
     }
     addLog(`Starting AutoBet cycle… (${startParts.join(' · ')})`, 'info');
 
@@ -225,15 +230,13 @@ export function useAutoBetEngine() {
         }
       }
 
-      // 0. Check Active Bets Limit (150)
-      // Check for limit of active bets (150 is the hard limit)
-      // We check if we can fetch a bet at offset 149, it means we have at least 150 active bets.
+      // 0. Check Active Bets Limit (Stake account cap)
       let isLimitReached = false;
       
       try {
         const activeBetsCheck = await StakeApi.query<any>(Queries.FetchActiveSportBets, {
           limit: 1,
-          offset: 149,
+          offset: ACTIVE_SPORT_BETS_LIMIT_PROBE_OFFSET,
           name: currentUser.name
         });
         
@@ -251,7 +254,7 @@ export function useAutoBetEngine() {
             const eventFillNote =
               tournamentParsed && settings.fillUpEventMaxLegs ? ' · Event fill mode bleibt aktiv' : '';
             addLog(
-              `Active bets limit (150) reached. Fill Up: Pause ${Math.round(waitMs / 60000)} min, dann erneut scannen.${eventFillNote}`,
+              `Active bets limit (${ACTIVE_SPORT_BETS_MAX_TOTAL}) reached. Fill Up: Pause ${Math.round(waitMs / 60000)} min, dann erneut scannen.${eventFillNote}`,
               'warning'
             );
             processingRef.current = false;
@@ -261,7 +264,7 @@ export function useAutoBetEngine() {
             timeoutRef.current = setTimeout(processAutoBet, waitMs);
             return;
         } else {
-            addLog('Active bets limit (150) reached. Cannot place more bets until some settle.', 'error');
+            addLog(`Active bets limit (${ACTIVE_SPORT_BETS_MAX_TOTAL}) reached. Cannot place more bets until some settle.`, 'error');
             stop();
             processingRef.current = false;
             setIsProcessing(false);
@@ -641,14 +644,10 @@ export function useAutoBetEngine() {
       /** Bereits in diesem AutoBet-Durchlauf platzierte outcomeId-Kombinationen (nicht erneut wählen). */
       const placedSlipSignatures = new Set<string>();
 
-      // Fill-up: place until 150 (API limit); otherwise cap by numberOfBets. Re-read settings each iteration.
-      // WICHTIG: Bei fillUp NICHT auf placedBetsCount prüfen – der zählt nur diese Session und
-      // wird nicht zurückgesetzt wenn Wetten settled haben. Wenn z.B. 150 platziert, 10 settled →
-      // User hat 140 aktive, könnte 10 mehr platzieren. placedBetsCount=150 würde sonst sofort
-      // brechen, obwohl die API noch Kapazität hat. Die API lehnt ab wenn 150 erreicht (Catch-Block).
+      // Fill-up: place until API account cap; otherwise cap by numberOfBets.
       while (useAutoBetStore.getState().isRunning) {
         const currentSettings = useAutoBetStore.getState().settings;
-        const maxBets = currentSettings.fillUp ? 150 : currentSettings.numberOfBets;
+        const maxBets = currentSettings.fillUp ? ACTIVE_SPORT_BETS_MAX_TOTAL : currentSettings.numberOfBets;
         if (!currentSettings.fillUp && placedBetsCount.current >= maxBets) break;
         
         // Recalculate crypto amount based on current settings (if user changed amount or currency)
@@ -995,18 +994,18 @@ export function useAutoBetEngine() {
               addLog('Same-bet (API): neuer Zufalls-Schein – keine identische Kombination erneut.', 'warning');
               continue;
             }
-            const is150Limit = msg.includes('150') && (msg.includes('active') || msg.includes('sport bet'));
-            if (is150Limit) {
+            const isActiveLimit = isActiveSportBetsLimitError(msg);
+            if (isActiveLimit) {
                 const currentSettings = useAutoBetStore.getState().settings;
                 if (currentSettings.fillUp) {
-                    addLog('150 active bets limit (API). Fill Up: Waiting 1–3 min, then re-scanning...', 'warning');
-                    scheduled150Retry = true;
+                    addLog(`Active bets limit (${ACTIVE_SPORT_BETS_MAX_TOTAL}, API). Fill Up: Waiting 1–3 min, then re-scanning...`, 'warning');
+                    scheduledActiveLimitRetry = true;
                     if (timeoutRef.current) clearTimeout(timeoutRef.current);
                     const delayMs = 60000 + Math.random() * 120000;
                     timeoutRef.current = setTimeout(processAutoBet, delayMs);
                     return;
                 } else {
-                    addLog('150 active bets limit reached. Stopping.', 'error');
+                    addLog(`Active bets limit (${ACTIVE_SPORT_BETS_MAX_TOTAL}) reached. Stopping.`, 'error');
                     stop();
                     return;
                 }
@@ -1030,7 +1029,7 @@ export function useAutoBetEngine() {
     } finally {
       processingRef.current = false;
       setIsProcessing(false);
-      if (useAutoBetStore.getState().isRunning && !scheduled150Retry) {
+      if (useAutoBetStore.getState().isRunning && !scheduledActiveLimitRetry) {
         timeoutRef.current = setTimeout(processAutoBet, 30000);
       }
     }

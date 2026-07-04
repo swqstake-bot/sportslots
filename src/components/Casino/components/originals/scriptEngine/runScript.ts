@@ -59,6 +59,12 @@ export function extractConfigFromScript(scriptText: string): Record<string, unkn
     [/targetMultiplier\s*=\s*([\d.]+)/, 'targetMultiplier'],
     [/randomNumbersFrom\s*=\s*(\d+)/, 'randomNumbersFrom'],
     [/randomNumbersTo\s*=\s*(\d+)/, 'randomNumbersTo'],
+    [/heatmapRange\s*=\s*(\d+)/, 'heatmapRange'],
+    [/kenoHeatmapPrerollBets\s*=\s*(\d+)/, 'kenoHeatmapPrerollBets'],
+    [/kenoHeatmapAttackBets\s*=\s*(\d+)/, 'kenoHeatmapAttackBets'],
+    [/kenoHeatmapPrerollBetSize\s*=\s*([\d.]+)/, 'kenoHeatmapPrerollBetSize'],
+    [/kenoHeatmapAttackBetSize\s*=\s*([\d.]+)/, 'kenoHeatmapAttackBetSize'],
+    [/kenoHeatmapPickCount\s*=\s*(\d+)/, 'kenoHeatmapPickCount'],
     [/seedChangeAfterRolls\s*=\s*(\d+)/, 'seedChangeAfterRolls'],
     [/increaseBetAfterSeedReset\s*=\s*([\d.]+)/, 'increaseBetAfterSeedReset'],
     [/mines\s*=\s*(\d+)/, 'mines'],
@@ -68,6 +74,8 @@ export function extractConfigFromScript(scriptText: string): Record<string, unkn
     [/b2bRotateSeedOnTakeProfit\s*=\s*true/i, 'b2bRotateSeedOnTakeProfit'],
     [/resetSeedOnLoss\s*=\s*true/i, 'resetSeedOnLoss'],
     [/isSeedChangeAfterRolls\s*=\s*true/i, 'isSeedChangeAfterRolls'],
+    [/kenoHeatmapCycleEnabled\s*=\s*true/i, 'kenoHeatmapCycleEnabled'],
+    [/isKenoHeatmapCycle\s*=\s*true/i, 'kenoHeatmapCycleEnabled'],
   ]
   for (const [re, key] of patterns) {
     const m = scriptText.match(re)

@@ -66,6 +66,13 @@ export interface ProfileOptions {
   useHeatmapHotNumbers: boolean
   heatmapHotNumbers: number
   heatmapRange: number
+  /** Preroll → Heatmap → Attack wiederholen (Keno). */
+  kenoHeatmapCycleEnabled: boolean
+  kenoHeatmapPrerollBets: number
+  kenoHeatmapAttackBets: number
+  kenoHeatmapPrerollBetSize: number
+  kenoHeatmapAttackBetSize: number
+  kenoHeatmapPickCount: number
   // Mines
   mines: number
   diamonds: number
@@ -134,7 +141,13 @@ export const DEFAULT_PROFILE_OPTIONS: ProfileOptions = {
   randomNumbersTo: 0,
   useHeatmapHotNumbers: false,
   heatmapHotNumbers: 5,
-  heatmapRange: 30,
+  heatmapRange: 39,
+  kenoHeatmapCycleEnabled: false,
+  kenoHeatmapPrerollBets: 100,
+  kenoHeatmapAttackBets: 20,
+  kenoHeatmapPrerollBetSize: 0.01,
+  kenoHeatmapAttackBetSize: 0.1,
+  kenoHeatmapPickCount: 4,
   mines: 3,
   diamonds: 3,
   randomMinesFrom: 0,

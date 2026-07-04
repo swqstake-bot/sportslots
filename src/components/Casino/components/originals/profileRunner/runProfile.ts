@@ -38,6 +38,12 @@ import {
   buildPlacementContext,
   type OriginalsBetApiRow,
 } from '../engine/originalsRoundResult'
+import {
+  createKenoHeatmapCycleRuntime,
+  readKenoHeatmapCycleConfig,
+  resolveKenoCycleRound,
+  tickKenoHeatmapCycle,
+} from '../keno/kenoHeatmapCycle'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -381,6 +387,11 @@ export async function runProfile(
 
   const preRolls = mode === 'wager' ? Math.max(0, optFrom(options, 'preRolls', 0)) : 0
   const preRollsBetSizeUsd = Math.max(0.00000001, optFrom(options, 'preRollsBetSize', 0) || initialBetSizeWager)
+  const kenoHeatmapCycleConfig =
+    mode === 'wager' ? readKenoHeatmapCycleConfig(options, initialBetSizeWager) : null
+  const kenoHeatmapCycleRuntime = kenoHeatmapCycleConfig
+    ? createKenoHeatmapCycleRuntime(kenoHeatmapCycleConfig)
+    : null
 
   const stopOnProfit = optFrom(options, 'stopOnProfit', 0)
   const stopOnLoss = optFrom(options, 'stopOnLoss', 0)
@@ -583,7 +594,7 @@ export async function runProfile(
     }
   }
 
-  if (preRolls > 0) {
+  if (preRolls > 0 && !kenoHeatmapCycleRuntime) {
     callbacks.onLog?.(`Running ${preRolls} pre-roll warmup bet(s) at $${preRollsBetSizeUsd.toFixed(4)}`)
     for (let pr = 0; pr < preRolls && !signal.cancelled; pr++) {
       const preSize = capBetUsd(minBetSizeUsd > 0 ? Math.max(minBetSizeUsd, preRollsBetSizeUsd) : preRollsBetSizeUsd)
@@ -728,6 +739,14 @@ export async function runProfile(
       }
     }
 
+    let roundOpts = currentOpts
+    if (kenoHeatmapCycleRuntime && currentGame === 'keno') {
+      const cycleRound = resolveKenoCycleRound(kenoHeatmapCycleRuntime, currentOpts)
+      betSizeUsdThisRound = cycleRound.betSizeUsd
+      roundOpts = cycleRound.opts
+      if (cycleRound.log) callbacks.onLog?.(cycleRound.log)
+    }
+
     if (minBetSizeUsd > 0) betSizeUsdThisRound = Math.max(minBetSizeUsd, betSizeUsdThisRound)
     betSizeUsdThisRound = capBetUsd(betSizeUsdThisRound)
 
@@ -737,7 +756,7 @@ export async function runProfile(
       game: currentGame,
     })
 
-    const roundResult = await runSingleBetRound(betSizeUsdThisRound, currentOpts, currentGame)
+    const roundResult = await runSingleBetRound(betSizeUsdThisRound, roundOpts, currentGame)
     if (!roundResult) {
       rollNumber--
       continue
@@ -768,6 +787,9 @@ export async function runProfile(
       hiloRank,
       hiloSuit,
     } = roundResult
+    if (kenoHeatmapCycleRuntime && currentGame === 'keno') {
+      tickKenoHeatmapCycle(kenoHeatmapCycleRuntime, kenoDrawn, callbacks.onLog)
+    }
     houseBetBridge.linkBetApiId(toBetListIndex(rollNumber), betApi?.id ?? betApi?.betApiId ?? betIid)
     totalWageredUsd += wageredUsdThisRound
     const roundProfitUsd = payoutUsd - wageredUsdThisRound

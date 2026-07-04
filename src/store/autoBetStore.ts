@@ -57,7 +57,7 @@ export interface AutoBetSettings {
   enabled: boolean;
   
   // New Logic Settings
-  fillUp: boolean; // If true, retry every 3 mins when 150 limit reached
+  fillUp: boolean; // If true, retry every 3 mins when active sport bets limit reached
   coverWithShield: boolean; // If true, place duplicate bet with shield after normal bet
 
   // Stake Shield Settings

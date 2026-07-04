@@ -5,9 +5,13 @@ import { Queries } from '../api/queries';
 import { useUserStore, type SportBet } from '../store/userStore';
 import { setShieldOdds } from '../store/shieldOddsCache';
 import { useSportsFxRates, loadSportsFxRates } from './useSportsFxRates';
+import {
+  ACTIVE_SPORT_BETS_MAX_TOTAL,
+  ACTIVE_SPORT_BETS_PAGE_SIZE,
+} from '../constants/sportsBetLimits';
 
-const BATCH_LIMIT = 50;
-const MAX_BETS_LIMIT = 500;
+const BATCH_LIMIT = ACTIVE_SPORT_BETS_PAGE_SIZE;
+const MAX_BETS_LIMIT = ACTIVE_SPORT_BETS_MAX_TOTAL;
 const FINISHED_STATUSES = [
   'settled',
   'settledManual',
