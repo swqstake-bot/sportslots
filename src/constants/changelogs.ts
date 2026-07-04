@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.207': [
+    '🐛 Sport: aktives Wetten-Limit auf 300 korrigiert (Stake-API)',
+  ],
   '1.0.206': [
     '✨ Sport: aktives Wetten-Limit 150 → 500 (AutoBet Fill-Up, Sidebar, Bet-History)',
     '✨ Sport: zentrale Konstante sportsBetLimits.ts — API-Fehler-Erkennung flexibler',
