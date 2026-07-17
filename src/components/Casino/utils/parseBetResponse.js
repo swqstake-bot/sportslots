@@ -238,14 +238,15 @@ export function parseBetResponse(response, betAmount) {
       : null,
     (r) => {
       const raw = r?._nolimitRaw
-      const mode = String(r?.round?.mode || '').toUpperCase()
+      const mode = String(r?.round?.mode || r?.round?.nextMode || '').toUpperCase()
       const freespinsLeft = Number(r?.round?.freespinsLeft ?? 0)
       const fsRoundWin = raw?.fsRoundWin
+      const freespinTriggered = !!r?.round?.freespinTriggeredThisSpin
       const isBonusMode = !!mode && mode !== 'NORMAL'
       const hasFsLeft = freespinsLeft > 0
       const hasFsWin = typeof fsRoundWin === 'number' && fsRoundWin > 0
       const wasFeatureBuy = !!raw?.wasFeatureBuy
-      if (isBonusMode || hasFsLeft || hasFsWin || wasFeatureBuy) {
+      if (freespinTriggered || isBonusMode || hasFsLeft || hasFsWin || wasFeatureBuy) {
         return { isBonus: true, shouldStopOnBonus: true }
       }
       return null

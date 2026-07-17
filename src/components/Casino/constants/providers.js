@@ -62,7 +62,7 @@ export const PROVIDERS = {
     id: 'nolimit',
     name: 'Nolimit City',
     supportsMultiCurrencySameSlot: true,
-    protocol: '@nolimit/game-communication@0.1.48',
+    protocol: '@nolimitcity/game-communication@0.3.0',
     requiresExtPlayerKey: true,
     modes: { standard: 'CAP_MODE_STANDARD' },
     freeSpinModes: ['NORMAL_AVALANCHE', 'FREESPIN_AVALANCHE', 'FREESPIN_COOL_AVALANCHE'],

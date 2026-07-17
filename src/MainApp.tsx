@@ -5,13 +5,12 @@ import { useState, useEffect, useCallback, Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { StakeApi } from './api/client';
 import { Queries } from './api/queries';
-import { FixtureList } from './components/FixtureList';
-import { RightSidebar } from './components/RightSidebar';
+import { AutoBetManager } from './components/AutoBet/AutoBetManager';
+import { AutoBetView } from './components/AutoBet/AutoBetView';
 import { useUserStore, type SportBet } from './store/userStore';
 import { useAutoBetStore } from './store/autoBetStore';
 import { useUiStore } from './store/uiStore';
 import { useAccentInlineStyle } from './hooks/useAccentInlineStyle';
-import { AutoBetManager } from './components/AutoBet/AutoBetManager';
 import CasinoView from './components/Casino/CasinoView';
 import LoggerView from './components/Logger/LoggerView';
 import { KeyAuthLogin } from './components/KeyAuthLogin';
@@ -21,7 +20,6 @@ import { ChangelogModal } from './components/ui/ChangelogModal';
 import { GlobalToast } from './components/ui/GlobalToast';
 import { getChangelogForVersion } from './constants/changelogs';
 import { AppHeader } from './components/AppShell/AppHeader';
-import { SportsSubbar } from './components/AppShell/SportsSubbar';
 import { AppBrandMark } from './components/AppShell/AppBrandMark';
 import { WindowTitleBar } from './components/AppShell/WindowTitleBar';
 import { APP_NAME, APP_TAGLINE } from './constants/branding';
@@ -59,13 +57,6 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
   }
 }
 
-interface SportMenuItem {
-  id: string;
-  name: string;
-  slug: string;
-  fixtureCount: number;
-}
-
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     // If KeyAuth is not configured, skip login
@@ -79,20 +70,12 @@ function App() {
   const {
     currentView,
     setCurrentView,
-    selectedSportSlug,
-    setSelectedSportSlug,
-    sportFilterType,
-    setSportFilterType,
-    fixtureSearchQuery,
-    setFixtureSearchQuery,
-    isActiveBetsModalOpen,
   } = useUiStore();
 
   const accentInlineStyle = useAccentInlineStyle();
   const [isChallengeRunning, setIsChallengeRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sportsMenu, setSportsMenu] = useState<SportMenuItem[]>([]);
 
   // Changelog State
   const [showChangelog, setShowChangelog] = useState(false);
@@ -116,30 +99,6 @@ function App() {
         }
       }
     });
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchSportsMenu() {
-      try {
-        const response = await StakeApi.query<any>(Queries.SportListMenu, {
-          type: 'upcoming',
-          limit: 100,
-          offset: 0,
-          liveRank: false,
-          sportType: 'sport',
-        });
-        if (cancelled) return;
-        const list = response?.data?.sportList || [];
-        setSportsMenu(Array.isArray(list) ? list : []);
-      } catch {
-        if (!cancelled) setSportsMenu([]);
-      }
-    }
-    fetchSportsMenu();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   const handleKeyAuthSuccess = () => {
@@ -218,8 +177,7 @@ function App() {
   }, [setActiveBets]);
 
   const shouldFetchActiveSportBets = useCallback(() => {
-    const ui = useUiStore.getState();
-    return ui.currentView === 'sports' || ui.isActiveBetsModalOpen;
+    return useUiStore.getState().currentView === 'sports';
   }, []);
 
   const fetchData = useCallback(async (options?: { withActiveBets?: boolean }) => {
@@ -255,7 +213,7 @@ function App() {
     }
   }, [setUser, fetchActiveSportBets, shouldFetchActiveSportBets, isAuthenticated]);
 
-  const needsActiveSportBets = currentView === 'sports' || isActiveBetsModalOpen;
+  const needsActiveSportBets = currentView === 'sports';
 
   // Initial load & polling (balances always; active sport bets only when sports UI needs them)
   useEffect(() => {
@@ -378,36 +336,11 @@ function App() {
           aria-hidden={currentView === 'casino'}
         >
           <AppHeader {...appHeaderProps} />
-          {currentView === 'sports' && (
-            <SportsSubbar
-              sportFilterType={sportFilterType}
-              onChangeFilter={setSportFilterType}
-              selectedSportSlug={selectedSportSlug || 'soccer'}
-              onChangeSportSlug={setSelectedSportSlug}
-              fixtureSearchQuery={fixtureSearchQuery}
-              onChangeSearch={setFixtureSearchQuery}
-              sportsMenu={sportsMenu}
-            />
-          )}
           <div className="app-main-layout flex-1">
             {currentView === 'sports' && (
-              <>
-                <div className="sports-view app-view-sports">
+              <div className="sports-bot-main sports-view sports-bot-main--full">
                   {user ? (
-                    selectedSportSlug ? (
-                      <FixtureList sportSlug={selectedSportSlug} />
-                    ) : (
-                      <div className="flex flex-col items-center justify-center h-full text-center p-12">
-                        <div 
-                          className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6"
-                          style={{ background: 'var(--app-bg-card)', border: '1px solid var(--app-border)', boxShadow: '0 0 24px var(--app-accent-glow)' }}
-                        >
-                          <svg className="w-10 h-10" style={{ color: 'var(--app-accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        </div>
-                        <span className="font-bold text-lg" style={{ color: 'var(--app-text-muted)' }}>Select a sport for fixtures</span>
-                        <span className="text-sm mt-2" style={{ color: 'var(--app-text-muted)', opacity: 0.8 }}>Live events, starting soon, or pick a sport from the list</span>
-                      </div>
-                    )
+                    <AutoBetView layout="wide" />
                   ) : (
                       <div className="flex flex-col items-center justify-center h-full text-center p-8" style={{ background: 'var(--app-bg-deep)' }}>
                       <div className="mb-8">
@@ -417,7 +350,7 @@ function App() {
                         Welcome to {APP_NAME}
                       </h2>
                       <p className="mb-8 max-w-md text-sm leading-relaxed" style={{ color: 'var(--app-text-muted)' }}>
-                        {APP_TAGLINE}. Login with Stake.com to view fixtures, place bets, and manage your portfolio.
+                        {APP_TAGLINE}. Login with Stake.com to configure AutoBet and manage your sport bets.
                       </p>
                       <button 
                         onClick={handleLogin}
@@ -428,10 +361,7 @@ function App() {
                       </button>
                     </div>
                   )}
-                </div>
-                
-                <RightSidebar />
-              </>
+              </div>
             )}
 
             {currentView === 'logger' && (

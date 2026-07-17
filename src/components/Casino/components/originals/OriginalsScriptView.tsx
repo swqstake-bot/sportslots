@@ -25,6 +25,13 @@ import {
   LIMBO_B2B_RANDOM_MULTI_200_PROFILE_JSON,
   LIMBO_B2B_RANDOM_MULTI_200_SCRIPT,
 } from './limbo/limboWageringProfile'
+import {
+  DICE_B2B_WAGER_PROFILE_JSON,
+  DICE_B2B_WAGER_SCRIPT,
+  DICE_RECOVERY_LIMBO_PROFILE_JSON,
+  DICE_ROTATION_HYBRID_PROFILE_JSON,
+  DICE_SELF_RECOVERY_PROFILE_JSON,
+} from './dice/diceWageringProfile'
 import { ALL_CURRENCIES, CURRENCY_GROUPS } from '../../constants/currencies'
 
 type ScriptSubTab = 'run' | 'builder'
@@ -594,6 +601,71 @@ export default function OriginalsScriptView() {
               }}
             >
               Preset: Limbo Script
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={running}
+              onClick={() => {
+                setScriptContent(DICE_B2B_WAGER_SCRIPT)
+                setProfileContent('')
+                setScriptPath('dice-b2b-wager.js')
+                addLog('Preset: Dice B2B Wager Script (2× · Smart TP · 15k)')
+              }}
+            >
+              Preset: Dice Script
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={running}
+              onClick={() => {
+                setProfileContent(DICE_B2B_WAGER_PROFILE_JSON)
+                setScriptContent('')
+                setProfilePath('dice-b2b-wager.json')
+                addLog('Preset: Dice B2B Wager (2× · Smart TP · 15k)')
+              }}
+            >
+              Preset: Dice B2B
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={running}
+              onClick={() => {
+                setProfileContent(DICE_RECOVERY_LIMBO_PROFILE_JSON)
+                setScriptContent('')
+                setProfilePath('dice-recovery-limbo.json')
+                addLog('Preset: Dice → Limbo Recovery (6-loss streak)')
+              }}
+            >
+              Preset: Dice+Recovery
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={running}
+              onClick={() => {
+                setProfileContent(DICE_ROTATION_HYBRID_PROFILE_JSON)
+                setScriptContent('')
+                setProfilePath('dice-rotation-hybrid.json')
+                addLog('Preset: Dice Rotation (Wager → Limbo → Hunt)')
+              }}
+            >
+              Preset: Dice Rotation
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={running}
+              onClick={() => {
+                setProfileContent(DICE_SELF_RECOVERY_PROFILE_JSON)
+                setScriptContent('')
+                setProfilePath('dice-self-recovery.json')
+                addLog('Preset: Dice Self-Recovery (1.5× martingale @ -$12)')
+              }}
+            >
+              Preset: Dice Self-Rec
             </Button>
             <Button onClick={handleStart} disabled={running}>
               Start

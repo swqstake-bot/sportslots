@@ -1,4 +1,11 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.208': [
+    '✨ Sport: Bets-Tab (kein Modal), kompakte Active-Bets-Liste + Preview',
+    '✨ AutoBet: Market-Keyword-Filter (MMA Props), wide Settings/Logs/Bets UI',
+    '✨ Originals: Dice Wager/Recovery-Presets für Script Mode',
+    '🐛 Hacksaw: Stop-on-Bonus Win nicht mehr doppelt (Trigger + Settlement)',
+    '✨ Nolimit: Session/Spin-Flow näher an SSP',
+  ],
   '1.0.207': [
     '🐛 Sport: aktives Wetten-Limit auf 300 korrigiert (Stake-API)',
   ],

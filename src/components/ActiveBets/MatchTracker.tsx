@@ -19,12 +19,45 @@ interface MatchTrackerFixture {
   };
 }
 
-export function MatchTracker({ fixture }: { fixture: MatchTrackerFixture }) {
+function isLiveStatus(eventStatus: MatchTrackerFixture['eventStatus']): boolean {
+  if (!eventStatus) return false;
+  const ms = String(eventStatus.matchStatus ?? '').toLowerCase();
+  return ms === 'live' || ms === 'in_play' || ms === 'inplay' || eventStatus.clock != null;
+}
+
+export function MatchTracker({
+  fixture,
+  compact = false,
+}: {
+  fixture: MatchTrackerFixture;
+  compact?: boolean;
+}) {
   const eventStatus = fixture?.eventStatus;
   const matchData = fixture?.data;
   const competitors = matchData?.competitors || [];
 
   if (!eventStatus) return null;
+
+  const homeName = competitors[0]?.name ?? fixture?.name?.split(' vs ')[0] ?? 'Home';
+  const awayName = competitors[1]?.name ?? fixture?.name?.split(' vs ')[1] ?? 'Away';
+  const homeScore = eventStatus?.homeScore ?? '-';
+  const awayScore = eventStatus?.awayScore ?? '-';
+  const displayTime = eventStatus?.clock?.matchTime ?? eventStatus?.matchStatus ?? 'Upcoming';
+  const live = isLiveStatus(eventStatus);
+
+  if (compact) {
+    return (
+      <div className={`match-tracker-compact ${live ? 'is-live' : ''}`.trim()}>
+        {live && <span className="match-tracker-compact-dot" aria-hidden />}
+        <span className="match-tracker-compact-teams">
+          <span className="match-tracker-compact-team" title={homeName}>{homeName}</span>
+          <span className="match-tracker-compact-score">{homeScore}-{awayScore}</span>
+          <span className="match-tracker-compact-team" title={awayName}>{awayName}</span>
+        </span>
+        <span className="match-tracker-compact-time">{displayTime}</span>
+      </div>
+    );
+  }
 
   const getMatchProgress = (clock: { matchTime?: string } | undefined) => {
     if (!clock?.matchTime) return 0;
@@ -32,10 +65,6 @@ export function MatchTracker({ fixture }: { fixture: MatchTrackerFixture }) {
     const time = parseInt(timeStr, 10) || 0;
     return Math.min(100, (time / 90) * 100);
   };
-
-  const homeScore = eventStatus?.homeScore ?? '-';
-  const awayScore = eventStatus?.awayScore ?? '-';
-  const displayTime = eventStatus?.clock?.matchTime ?? eventStatus?.matchStatus ?? 'Upcoming';
 
   return (
     <div
@@ -56,7 +85,7 @@ export function MatchTracker({ fixture }: { fixture: MatchTrackerFixture }) {
       )}
       <div className="relative z-10 flex justify-between items-center text-xs">
         <div className="flex-1 text-left truncate font-bold pr-2" style={{ color: 'var(--app-text)' }}>
-          {competitors[0]?.name ?? fixture?.name?.split(' vs ')[0] ?? 'Home'}
+          {homeName}
         </div>
         <div className="flex flex-col items-center">
           <div
@@ -78,7 +107,7 @@ export function MatchTracker({ fixture }: { fixture: MatchTrackerFixture }) {
           )}
         </div>
         <div className="flex-1 text-right truncate font-bold pl-2" style={{ color: 'var(--app-text)' }}>
-          {competitors[1]?.name ?? fixture?.name?.split(' vs ')[1] ?? 'Away'}
+          {awayName}
         </div>
       </div>
       <div className="relative z-10 flex justify-center items-center space-x-3 mt-1.5 text-[9px]" style={{ color: 'var(--app-text-muted)' }}>
@@ -115,7 +144,7 @@ export function MatchTracker({ fixture }: { fixture: MatchTrackerFixture }) {
         )}
       </div>
       <div className="relative z-10 text-center text-[9px] mt-1 font-mono uppercase tracking-wider font-bold" style={{ color: 'var(--app-text-muted)' }}>
-        {eventStatus.matchStatus === 'live' || eventStatus.clock ? (
+        {live ? (
           <span className="animate-pulse flex items-center justify-center gap-1" style={{ color: 'var(--app-accent)' }}>
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--app-accent)' }} />
             {displayTime}

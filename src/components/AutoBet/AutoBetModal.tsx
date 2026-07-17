@@ -1,8 +1,12 @@
 import { useState } from 'react';
 import { useAutoBetStore, type AutoBetStrategy } from '../../store/autoBetStore';
 import { TournamentEventPickFields } from './TournamentEventPickFields';
-import { EventMarketsScanner } from './EventMarketsScanner';
 import { hasTournamentScope } from '../../utils/tournamentScope';
+import {
+  MMA_MARKET_TYPE_PRESETS,
+  parseMarketKeywords,
+  toggleExcludeKeyword,
+} from '../../utils/marketKeywordFilter';
 
 interface AutoBetModalProps {
   onClose: () => void;
@@ -165,19 +169,67 @@ export function AutoBetModal({ onClose }: AutoBetModalProps) {
                   />
                 </div>
                 <div className="col-span-2 space-y-2">
+                  <label className="block text-sm font-bold text-gray-400 mb-1">Market include (fighter / prop)</label>
+                  <input
+                    type="text"
+                    value={settings.marketIncludeKeywords || ''}
+                    onChange={(e) => updateSettings({ marketIncludeKeywords: e.target.value })}
+                    className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white focus:border-green-500 outline-none"
+                    placeholder="McKinney, Royval, Sandhagen, Saint Denis"
+                  />
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <label className="block text-sm font-bold text-gray-400 mb-1">Market exclude (prop types)</label>
+                  <input
+                    type="text"
+                    value={settings.marketExcludeKeywords || ''}
+                    onChange={(e) => updateSettings({ marketExcludeKeywords: e.target.value })}
+                    className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white focus:border-green-500 outline-none"
+                    placeholder="total strikes landed, takedown"
+                  />
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <label className="block text-sm font-bold text-gray-400 mb-1">Outcome include (Over / Über)</label>
+                  <input
+                    type="text"
+                    value={settings.outcomeIncludeKeywords || ''}
+                    onChange={(e) => updateSettings({ outcomeIncludeKeywords: e.target.value })}
+                    className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white focus:border-green-500 outline-none"
+                    placeholder="over, über"
+                  />
+                </div>
+                <div className="col-span-2 space-y-2">
+                  <label className="block text-sm font-bold text-gray-400 mb-1">MMA prop types (exclude)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {MMA_MARKET_TYPE_PRESETS.map((preset) => {
+                      const excluded = parseMarketKeywords(settings.marketExcludeKeywords).includes(preset.keyword);
+                      return (
+                        <label key={preset.id} className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!excluded}
+                            onChange={(e) =>
+                              updateSettings({
+                                marketExcludeKeywords: toggleExcludeKeyword(
+                                  settings.marketExcludeKeywords,
+                                  preset.keyword,
+                                  e.target.checked
+                                ),
+                              })
+                            }
+                            className="form-checkbox h-4 w-4 text-green-500 rounded focus:ring-0 bg-gray-900 border-gray-700"
+                          />
+                          {preset.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="col-span-2 space-y-2">
                   <label className="block text-sm font-bold text-gray-400 mb-1">Tournament / Event</label>
                   <TournamentEventPickFields
                     settings={settings}
                     updateSettings={updateSettings}
-                    selectClass="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white focus:border-green-500 outline-none appearance-none cursor-pointer"
-                    inputClass="w-full bg-gray-900 border border-gray-700 rounded p-2 text-xs font-mono text-white focus:border-green-500 outline-none"
-                    inputSelectStyle={{ background: '#111827', border: '1px solid #374151', color: '#fff' }}
-                    labelClass="block text-sm font-bold text-gray-400 mb-2"
-                    labelStyle={{}}
-                    variant="modal"
-                  />
-                  <EventMarketsScanner
-                    settings={settings}
                     selectClass="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white focus:border-green-500 outline-none appearance-none cursor-pointer"
                     inputClass="w-full bg-gray-900 border border-gray-700 rounded p-2 text-xs font-mono text-white focus:border-green-500 outline-none"
                     inputSelectStyle={{ background: '#111827', border: '1px solid #374151', color: '#fff' }}

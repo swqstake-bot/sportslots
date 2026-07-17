@@ -13,6 +13,12 @@ import {
   ACTIVE_SPORT_BETS_MAX_TOTAL,
   isActiveSportBetsLimitError,
 } from '../constants/sportsBetLimits';
+import {
+  marketKeywordHaystack,
+  normalizeMatchText,
+  parseMarketKeywords,
+  passesMarketKeywordFilter,
+} from '../utils/marketKeywordFilter';
 
 // Helper to generate UUID for bets
 const generateUUID = () => {
@@ -361,8 +367,19 @@ export function useAutoBetEngine() {
       const candidates: any[] = [];
 
       // 3. Fetch Fixtures for each sport
-      const rejections = { status: 0, odds: 0, marketStatus: 0, outcomeStatus: 0, noMarkets: 0 };
-      let consecutiveMarketInactive = 0; // Track consecutive inactive markets to trigger reload
+      const marketIncludeKw = parseMarketKeywords(settings.marketIncludeKeywords);
+      const marketExcludeKw = parseMarketKeywords(settings.marketExcludeKeywords);
+      const outcomeIncludeKw = parseMarketKeywords(settings.outcomeIncludeKeywords);
+      const rejections = { status: 0, odds: 0, marketStatus: 0, outcomeStatus: 0, noMarkets: 0, marketFilter: 0 };
+      let consecutiveMarketInactive = 0;
+
+      if (marketIncludeKw.length || marketExcludeKw.length || outcomeIncludeKw.length) {
+        addLog(
+          `Market filters active — include: [${marketIncludeKw.join(', ') || 'any'}], exclude: [${marketExcludeKw.join(', ') || 'none'}], outcomes: [${outcomeIncludeKw.join(', ') || 'any'}]`,
+          'info'
+        );
+      }
+
       let tournamentProcessed = false;
 
       for (const sport of sportsToScan) {
@@ -559,12 +576,36 @@ export function useAutoBetEngine() {
                             
                             // Reset counter if we found an active market
                             consecutiveMarketInactive = 0;
+
+                            const marketHaystack = marketKeywordHaystack([
+                              group.name,
+                              group.translation,
+                              template.name,
+                              market.name,
+                              market.specifiers,
+                              fixture.name,
+                            ]);
+
+                            if (marketExcludeKw.length > 0 && !passesMarketKeywordFilter(marketHaystack, [], marketExcludeKw)) {
+                              rejections.marketFilter++;
+                              continue;
+                            }
                             
                             for (const outcome of market.outcomes) {
                                 // Fix: Check outcome.active (boolean) instead of outcome.status (undefined in fragment)
                                 if (!outcome.active) {
                                     rejections.outcomeStatus++;
                                     continue;
+                                }
+
+                                const outcomeHaystack = marketKeywordHaystack([
+                                  marketHaystack,
+                                  outcome.name,
+                                ]);
+
+                                if (marketIncludeKw.length > 0 && !passesMarketKeywordFilter(outcomeHaystack, marketIncludeKw, [])) {
+                                  rejections.marketFilter++;
+                                  continue;
                                 }
 
                                 // Stake Shield: Quarter Lines Check
@@ -579,6 +620,14 @@ export function useAutoBetEngine() {
                                         // console.log(`Skipping Quarter Line outcome: ${name}`);
                                         continue;
                                     }
+                                }
+
+                                if (outcomeIncludeKw.length > 0) {
+                                  const outcomeName = normalizeMatchText(outcome.name);
+                                  if (!outcomeIncludeKw.some((k) => outcomeName.includes(k))) {
+                                    rejections.marketFilter++;
+                                    continue;
+                                  }
                                 }
                             
                             const odds = outcome.odds;
@@ -625,7 +674,11 @@ export function useAutoBetEngine() {
 
       // 5. Pick (order: upcoming = nächster Anstoß zuerst; live-only = zufällig)
       if (candidates.length === 0) {
-        addLog(`No suitable bets found in this scan. Rejections: Status=${rejections.status}, Market=${rejections.marketStatus}, Outcome=${rejections.outcomeStatus}. Retrying in 30s...`, 'info');
+        const filterHint =
+          rejections.marketFilter > 0 && (marketIncludeKw.length || marketExcludeKw.length || outcomeIncludeKw.length)
+            ? ' Hint: Filter rejections high — try clearing Include/Exclude/Outcome fields or MMA prop chips.'
+            : '';
+        addLog(`No suitable bets found in this scan. Rejections: Status=${rejections.status}, Market=${rejections.marketStatus}, Outcome=${rejections.outcomeStatus}, Filter=${rejections.marketFilter}, Odds=${rejections.odds}.${filterHint} Retrying in 30s...`, 'info');
         
         // If we broke due to consecutive inactive markets, we should probably retry sooner?
         // But 30s is fine.

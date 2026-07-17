@@ -51,6 +51,20 @@ export interface ElectronAPI {
   }>;
   onSlotPopupClosed: (callback: (payload: { popupId: string; slug: string; closedAt: string }) => void) => () => void;
   proxyRequest: (options: { url: string; method?: string; headers?: Record<string, string>; body?: any }) => Promise<{ status: number; statusText: string; headers: any; data: string; finalUrl: string }>;
+  nolimitEvoEntry: (configUrl: string) => Promise<{
+    ok: boolean;
+    status: number;
+    location?: string;
+    tableId?: string | null;
+    evoSessionId?: string | null;
+    cookieString?: string | null;
+    cdn?: string | null;
+    lang?: string | null;
+    locale?: string | null;
+    fingerprint?: string;
+    evoOrigin?: string;
+    error?: string;
+  }>;
   /** Open stakecommunity.com login in an isolated Electron profile (persist:stakecommunity-forum). */
   forumOpenLogin: () => Promise<{ ok: boolean }>;
   forumSessionStatus: () => Promise<{ hasCookies: boolean; hasCf: boolean; cookieCount: number }>;

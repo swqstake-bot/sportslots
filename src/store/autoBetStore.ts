@@ -43,6 +43,12 @@ export interface AutoBetSettings {
   currency: string; // Currency to use
   numberOfBets: number;
   eventFilter: string;
+  /** Comma-separated: market/outcome text must contain at least one (empty = all). */
+  marketIncludeKeywords: string;
+  /** Comma-separated: skip if market/outcome text contains any keyword. */
+  marketExcludeKeywords: string;
+  /** Comma-separated: outcome name must contain at least one (empty = over/under both). */
+  outcomeIncludeKeywords: string;
   /** Picker: sport slug from Sport list — then load tournaments */
   eventTournamentSport: string;
   /** Category slug (e.g. ufc) */
@@ -100,6 +106,9 @@ const DEFAULT_SETTINGS: AutoBetSettings = {
   currency: 'usd',
   numberOfBets: 10,
   eventFilter: '',
+  marketIncludeKeywords: '',
+  marketExcludeKeywords: '',
+  outcomeIncludeKeywords: '',
   eventTournamentSport: '',
   eventTournamentCategory: '',
   eventTournamentSlug: '',

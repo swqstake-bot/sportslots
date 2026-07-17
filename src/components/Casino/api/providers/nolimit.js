@@ -74,12 +74,15 @@ async function safeProxyRequest(options) {
   if (!window.electronAPI?.proxyRequest) {
     throw new Error('Electron API not available')
   }
-  const { method = 'POST', headers = {}, body, url } = options
+  const { method = 'POST', headers = {}, body, url, followRedirects, freshConnection } = options
   const reqHeaders = { ...headers }
   if (method === 'POST' && !reqHeaders['Content-Type']) {
     reqHeaders['Content-Type'] = 'application/json'
   }
-  const res = await window.electronAPI.proxyRequest({ url, method, headers: reqHeaders, body })
+  const proxyOpts = { url, method, headers: reqHeaders, body }
+  if (followRedirects === false) proxyOpts.followRedirects = false
+  if (freshConnection) proxyOpts.freshConnection = true
+  const res = await window.electronAPI.proxyRequest(proxyOpts)
   return {
     ok: res.status >= 200 && res.status < 300,
     status: res.status,
@@ -99,81 +102,6 @@ function parseJsonSafe(text) {
   }
 }
 
-function decodeEntryParams(url) {
-  try {
-    const u = new URL(url)
-    const p = u.searchParams.get('params')
-    if (!p) return null
-    const txt = atob(p)
-    const lines = txt.split('\n').map((s) => s.trim()).filter(Boolean)
-    const map = {}
-    for (const line of lines) {
-      const idx = line.indexOf('=')
-      if (idx <= 0) continue
-      map[line.slice(0, idx)] = line.slice(idx + 1)
-    }
-    return map
-  } catch {
-    return null
-  }
-}
-
-function parseJwtPayload(jwt) {
-  if (!jwt || typeof jwt !== 'string') return null
-  const parts = jwt.split('.')
-  if (parts.length < 2) return null
-  try {
-    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-    const padLen = (4 - (b64.length % 4)) % 4
-    const txt = atob(`${b64}${'='.repeat(padLen)}`)
-    return JSON.parse(txt)
-  } catch {
-    return null
-  }
-}
-
-function normalizePlayMode(value) {
-  if (value == null) return null
-  const v = String(value).trim()
-  if (!v) return null
-  const lower = v.toLowerCase()
-  if (lower === 'real_money') return 'realMoney'
-  if (lower === 'fun_mode' || lower === 'demo' || lower === 'fun') return 'funMode'
-  return v
-}
-
-function parseLoaderInfo(url) {
-  if (!url || typeof url !== 'string') return null
-  try {
-    const u = new URL(url)
-    const extraRaw = u.searchParams.get('extra')
-    let extra = {}
-    if (extraRaw) {
-      try {
-        extra = JSON.parse(extraRaw)
-      } catch {
-        try {
-          extra = JSON.parse(decodeURIComponent(extraRaw))
-        } catch {
-          extra = {}
-        }
-      }
-    }
-    return {
-      loaderUrl: url,
-      origin: `${u.protocol}//${u.host}`,
-      token: u.searchParams.get('token') || null,
-      operator: u.searchParams.get('operator') || null,
-      game: u.searchParams.get('game') || null,
-      language: u.searchParams.get('language') || null,
-      currencyCode: u.searchParams.get('currencyCode') || null,
-      extra,
-    }
-  } catch {
-    return null
-  }
-}
-
 function getHeaderValue(headers, key) {
   if (!headers || typeof headers !== 'object') return null
   const wanted = String(key || '').toLowerCase()
@@ -185,18 +113,225 @@ function getHeaderValue(headers, key) {
   return null
 }
 
-function parseCookieJarValue(cookieJar, name) {
-  const wanted = String(name || '').trim().toLowerCase()
-  if (!wanted || !Array.isArray(cookieJar)) return null
-  for (const entry of cookieJar) {
-    const token = String(entry || '')
-    const idx = token.indexOf('=')
-    if (idx <= 0) continue
-    const k = token.slice(0, idx).trim().toLowerCase()
-    if (k !== wanted) continue
-    return token.slice(idx + 1).trim() || null
+function decodeEntryParams(url) {
+  try {
+    const u = new URL(url)
+    const p = u.searchParams.get('params')
+    if (!p) return null
+    let b64 = decodeURIComponent(p).replace(/-/g, '+').replace(/_/g, '/')
+    const pad = (4 - (b64.length % 4)) % 4
+    b64 += '='.repeat(pad)
+    const txt = atob(b64)
+    const lines = txt.split(/[\n\r]+/).map((s) => s.trim()).filter(Boolean)
+    const map = {}
+    for (const line of lines) {
+      const idx = line.indexOf('=')
+      if (idx <= 0) continue
+      map[line.slice(0, idx)] = line.slice(idx + 1)
+    }
+    for (const key of ['EVOSESSIONID', 'JSESSIONID', 'jwsh', 'table_id', 'cdn', 'lang', 'locale']) {
+      if (map[key]) continue
+      const m = txt.match(new RegExp(`${key}=([^\\s\\n\\r]+)`))
+      if (m?.[1]) map[key] = m[1]
+    }
+    return map
+  } catch {
+    return null
+  }
+}
+
+function extractSessionIdFromText(text) {
+  const raw = String(text || '')
+  if (!raw) return null
+  for (const key of ['EVOSESSIONID', 'JSESSIONID']) {
+    const m = raw.match(new RegExp(`${key}=([A-Za-z0-9._-]+)`))
+    if (m?.[1]) return m[1]
   }
   return null
+}
+
+function extractSessionIdFromConfigUrl(configUrl) {
+  const direct = extractSessionIdFromText(configUrl)
+  if (direct) return direct
+  const entryParams = decodeEntryParams(configUrl) || {}
+  const entryJwt = parseJwtPayload(entryParams.jwsh) || {}
+  return (
+    entryParams.EVOSESSIONID ||
+    entryParams.JSESSIONID ||
+    entryJwt.sid ||
+    entryJwt.sessionId ||
+    null
+  )
+}
+
+function parseJwtPayload(jwt) {
+  if (!jwt || typeof jwt !== 'string') return null
+  const parts = jwt.split('.')
+  if (parts.length < 2) return null
+  try {
+    let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const pad = (4 - (b64.length % 4)) % 4
+    b64 += '='.repeat(pad)
+    return JSON.parse(atob(b64))
+  } catch {
+    return null
+  }
+}
+
+function resolveRedirectUrl(location, baseUrl) {
+  const loc = String(location || '').trim()
+  if (!loc) return ''
+  try {
+    return loc.startsWith('http') ? loc : new URL(loc, baseUrl).href
+  } catch {
+    return loc
+  }
+}
+
+function parseTableIdFromUrl(urlStr) {
+  if (!urlStr || typeof urlStr !== 'string') return null
+  const fromFragment = parseTableIdFromFragment(urlStr)
+  if (fromFragment) return fromFragment
+  const hashMatch = urlStr.match(/[#&?]table_id=([^&#]+)/i)
+  if (hashMatch?.[1]) {
+    try {
+      return decodeURIComponent(hashMatch[1])
+    } catch {
+      return hashMatch[1]
+    }
+  }
+  try {
+    return new URL(urlStr).searchParams.get('table_id')
+  } catch {
+    return null
+  }
+}
+
+function resolveNolimitTableId({ configUrl, redirectLocation, finalUrl, responseBody }) {
+  const entryParams = decodeEntryParams(configUrl) || {}
+  const entryJwt = parseJwtPayload(entryParams.jwsh) || {}
+  const candidates = [
+    redirectLocation,
+    finalUrl,
+    configUrl,
+    String(responseBody || ''),
+  ]
+    .map((v) => String(v || '').trim())
+    .filter(Boolean)
+
+  for (const candidate of candidates) {
+    const resolved = candidate.startsWith('http') ? candidate : resolveRedirectUrl(candidate, configUrl)
+    const fromUrl = parseTableIdFromUrl(resolved || candidate)
+    if (fromUrl) return fromUrl
+  }
+
+  return (
+    entryParams.table_id ||
+    entryParams.tableId ||
+    entryJwt.tid ||
+    entryJwt.table_id ||
+    entryJwt.tableId ||
+    null
+  )
+}
+
+/** SSP performGetRequestFresh: one GET, no redirects, fresh connection. */
+async function performGetRequestFresh(url) {
+  return safeProxyRequest({
+    url,
+    method: 'GET',
+    followRedirects: false,
+    freshConnection: true,
+    headers: {
+      Accept: '*/*',
+      'accept-encoding': 'gzip, deflate, br',
+      'accept-language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+    },
+  })
+}
+
+/** All Set-Cookie header values (Node sends an array; never use getHeaderValue — it keeps only [0]). */
+function readSetCookieRaw(headers) {
+  if (!headers || typeof headers !== 'object') return []
+  const raw = headers['set-cookie'] ?? headers['Set-Cookie']
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw.map((v) => String(v))
+  return [String(raw)]
+}
+
+/** Parse Set-Cookie like SSP (array or comma-separated string). */
+function parseSetCookiesSsp(headers) {
+  const entries = []
+  const pushCookie = (chunk) => {
+    const token = String(chunk || '').trim().split(';')[0]
+    const eq = token.indexOf('=')
+    if (eq <= 0) return
+    entries.push({ name: token.slice(0, eq).trim(), value: token.slice(eq + 1).trim() })
+  }
+  for (const line of readSetCookieRaw(headers)) {
+    if (!line.includes(',')) {
+      pushCookie(line)
+      continue
+    }
+    for (const part of line.split(/,(?=\s*[A-Za-z_][A-Za-z0-9_-]*=)/)) {
+      pushCookie(part)
+    }
+  }
+  return entries
+}
+
+function findCookieValue(cookies, name) {
+  const wanted = String(name || '').trim().toLowerCase()
+  return cookies.find((c) => String(c.name || '').toLowerCase() === wanted)?.value || null
+}
+
+function extractCookieValueFromHeaders(headers, cookieName) {
+  const wanted = String(cookieName || '').trim()
+  const headRe = new RegExp(`^${wanted}=([^;]+)$`, 'i')
+  for (const line of readSetCookieRaw(headers)) {
+    const head = String(line).trim().split(';')[0].trim()
+    const m = head.match(headRe)
+    const value = m?.[1]?.trim().replace(/^"|"$/g, '') || ''
+    if (value) return value
+  }
+  return null
+}
+
+
+function resolveEvoCookieString({ headers, configUrl, requireSetCookie = false }) {
+  const parsed = parseSetCookiesSsp(headers)
+  const hasSetCookie = readSetCookieRaw(headers).length > 0
+  let evoSessionId =
+    extractCookieValueFromHeaders(headers, 'EVOSESSIONID') ||
+    findCookieValue(parsed, 'EVOSESSIONID') ||
+    null
+  if (!evoSessionId && !requireSetCookie) {
+    evoSessionId = extractSessionIdFromConfigUrl(configUrl)
+  }
+  if (!evoSessionId) return null
+
+  const entryParams = decodeEntryParams(configUrl) || {}
+  const entryJwt = parseJwtPayload(entryParams.jwsh) || {}
+  const cdn =
+    findCookieValue(parsed, 'cdn') ||
+    entryParams.cdn ||
+    entryJwt.cdn ||
+    (() => {
+      try {
+        return new URL(configUrl).hostname.split('.')[0] || 'babylonstkn'
+      } catch {
+        return 'babylonstkn'
+      }
+    })()
+  const lang = findCookieValue(parsed, 'lang') || entryParams.lang || entryJwt.lang || 'fr'
+  const locale = findCookieValue(parsed, 'locale') || entryParams.locale || entryJwt.locale || 'en'
+
+  return [
+    `EVOSESSIONID=${evoSessionId}`,
+    `cdn=${cdn}`,
+    `lang=${lang}`,
+    `locale=${locale}`,
+  ].join('; ')
 }
 
 function parseTableIdFromFragment(urlStr) {
@@ -208,16 +343,6 @@ function parseTableIdFromFragment(urlStr) {
   return params.get('table_id') || null
 }
 
-function resolveEvoOrigin(loaderInfo, cookieJar) {
-  const cdnCookie = parseCookieJarValue(cookieJar, 'cdn')
-  if (cdnCookie && /^[a-z0-9-]+$/i.test(cdnCookie)) {
-    return `https://${cdnCookie}.evo-games.com`
-  }
-  const origin = String(loaderInfo?.origin || '')
-  if (origin && origin.includes('evo-games.com')) return origin
-  return DEFAULT_EVO_ORIGIN
-}
-
 function buildFingerprint() {
   try {
     return btoa(Math.random().toString(36).slice(2))
@@ -226,94 +351,25 @@ function buildFingerprint() {
   }
 }
 
-async function performEvoBootstrap({ tableId, cookieJar, evoOrigin }) {
-  if (!tableId) return null
-  const fingerprint = buildFingerprint()
-  const baseHeaders = {
-    Accept: '*/*',
-    ...buildCookieHeader(cookieJar),
-    'accept-encoding': 'gzip, deflate, br, zstd',
-    'accept-language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-    'x-fingerprint': fingerprint,
-    priority: 'u=1, i',
-    Referer: `${evoOrigin}/setup`,
-  }
-
-  let configData = null
-  let setupData = null
-  try {
-    const configUrl = `${evoOrigin}/config?table_id=${encodeURIComponent(tableId)}&client_version=${encodeURIComponent(EVO_CLIENT_VERSION)}`
-    const cfgRes = await safeProxyRequest({
-      url: configUrl,
-      method: 'GET',
-      headers: baseHeaders,
-    })
-    const cfgText = await cfgRes.text()
-    configData = parseJsonSafe(cfgText) || {}
-  } catch {
-    configData = null
-  }
-
-  try {
-    const setupUrl = `${evoOrigin}/setup?device=desktop&wrapped=true&client_version=${encodeURIComponent(EVO_CLIENT_VERSION)}`
-    const setupRes = await safeProxyRequest({
-      url: setupUrl,
-      method: 'GET',
-      headers: baseHeaders,
-    })
-    const setupText = await setupRes.text()
-    setupData = parseJsonSafe(setupText) || {}
-  } catch {
-    setupData = null
-  }
-
-  if (!configData && !setupData) return null
+function buildEvoBootstrapHeaders(cookieStr, evoOrigin = DEFAULT_EVO_ORIGIN, fingerprint = null) {
+  const fp = fingerprint || buildFingerprint()
   return {
-    tokenString: findByKeys(setupData, ['key']),
-    clientString: findByKeys(setupData, ['casino_id', 'casinoId']),
-    language: findByKeys(setupData, ['lang', 'language']),
-    currencyCode: findByKeys(setupData, ['currencyCode', 'currency']),
-    gameName: findByKeys(configData, ['game', 'math_id', 'mathId']),
-    tableName: findByKeys(configData, ['tableName', 'table_name', 'name']),
-    evoToken: findByKeys(configData, ['wrapper_token', 'wrapperToken']),
-    licenseePlayerId: findByKeys(setupData, ['player_id', 'playerId']),
-    externalPlayerId: findByKeys(setupData, ['user_id', 'userId']),
+    Accept: '*/*',
+    Cookie: cookieStr,
+    'accept-encoding': 'gzip, deflate, br',
+    'accept-language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+    'x-fingerprint': fp,
+    priority: 'u=1, i',
+    Referer: `${evoOrigin}/frontend/evo/r2/`,
   }
-}
-
-async function resolveBestEvoBootstrap({ tableId, cookieJar, loaderInfo }) {
-  const origins = [
-    resolveEvoOrigin(loaderInfo, cookieJar),
-    String(loaderInfo?.origin || ''),
-    DEFAULT_EVO_ORIGIN,
-  ]
-    .filter(Boolean)
-    .filter((v, i, arr) => arr.indexOf(v) === i)
-
-  let best = null
-  for (const origin of origins) {
-    const boot = await performEvoBootstrap({ tableId, cookieJar, evoOrigin: origin })
-    if (!boot) continue
-    best = { ...(best || {}), ...boot }
-    const hasCore = !!(best.tokenString && best.clientString && best.evoToken)
-    if (hasCore) break
-  }
-  return best
 }
 
 function addSetCookies(headers, cookieJar) {
   if (!headers) return
-  const setCookie = headers['set-cookie'] || headers['Set-Cookie']
-  if (!setCookie) return
-  const list = Array.isArray(setCookie) ? setCookie : [setCookie]
-  for (const c of list) {
-    const token = String(c).split(';')[0].trim()
+  for (const line of readSetCookieRaw(headers)) {
+    const token = String(line).split(';')[0].trim()
     if (token) cookieJar.push(token)
   }
-}
-
-function buildCookieHeader(cookieJar) {
-  return cookieJar.length ? { Cookie: [...new Set(cookieJar)].join('; ') } : {}
 }
 
 function uniqNumbers(arr) {
@@ -366,8 +422,31 @@ function toChipFromMinor(minorAmount, currencyMult) {
   return Math.max(1, Math.round((Number(minorAmount) / 100) * Number(currencyMult || DEFAULT_CURRENCY_MULT)))
 }
 
+function resolveOpenGameWsCredentials(openData) {
+  const payload =
+    openData?.data && typeof openData.data === 'object' && !Array.isArray(openData.data)
+      ? openData.data
+      : openData
+  const wsKey = String(payload?.key || findByKeys(openData, ['key']) || '').trim()
+  const extPlayerKey = String(payload?.extPlayerKey || findByKeys(openData, ['extPlayerKey']) || '').trim()
+  if (!wsKey) {
+    throw new Error('Nolimit open_game: data.key fehlt (WS-Session).')
+  }
+  return {
+    wsSessionData: wsKey,
+    extPlayerKey: extPlayerKey || wsKey,
+  }
+}
+
 function randomMessagePrefix() {
   return `${Math.random().toString(36).slice(2, 12)}-`
+}
+
+function resolveWsCallbackId(decodedId) {
+  const id = String(decodedId || '')
+  if (!id) return '0'
+  if (!id.includes('-')) return id
+  return id.split('-')[1] || id.split('-').pop() || '0'
 }
 
 function stringToByteArray(value) {
@@ -532,19 +611,41 @@ async function connectNolimitWs(wsState, wsSessionData) {
   await new Promise((resolve, reject) => {
     const ws = new WebSocket(url)
     wsState.socket = ws
+    wsState.sessionSecret = String(wsState.sessionSecret || wsSessionData || '')
+    let settled = false
+    const finish = (fn, value) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      fn(value)
+    }
     const timeout = setTimeout(() => {
       try { ws.close() } catch {}
-      reject(new Error('Nolimit WS open timeout.'))
+      finish(reject, new Error('Nolimit WS open timeout.'))
     }, NLC_WS_TIMEOUT_MS)
 
     ws.onopen = () => {
-      clearTimeout(timeout)
-      resolve()
+      finish(resolve)
     }
     ws.onmessage = (event) => {
-      const decoded = decryptNolimitMessage(event?.data, wsState.sessionSecret)
-      const decodedId = String(decoded?.id || '')
-      const reqId = decodedId.includes('-') ? decodedId.split('-').pop() : decodedId
+      const raw = String(event?.data ?? '')
+      let decoded = decryptNolimitMessage(raw, wsState.sessionSecret)
+      if (!decoded) {
+        try {
+          decoded = JSON.parse(raw)
+        } catch {
+          decoded = null
+        }
+      }
+      if (!decoded) {
+        const cb0 = wsState.callbacks.get('0')
+        if (cb0) {
+          cb0(null)
+          wsState.callbacks.delete('0')
+        }
+        return
+      }
+      const reqId = resolveWsCallbackId(decoded?.id)
       const cb = wsState.callbacks.get(String(reqId || '0'))
       if (cb) {
         cb(decoded)
@@ -552,11 +653,15 @@ async function connectNolimitWs(wsState, wsSessionData) {
       }
     }
     ws.onerror = () => {
-      clearTimeout(timeout)
-      reject(new Error('Nolimit WS Fehler.'))
+      finish(reject, new Error('Nolimit WS Fehler.'))
     }
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       wsState.socket = null
+      if (settled) return
+      const code = event?.code ?? '?'
+      const reason = String(event?.reason || '').trim()
+      const detail = reason ? `${code}: ${reason}` : String(code)
+      finish(reject, new Error(`Nolimit WS geschlossen (${detail}).`))
     }
   })
 }
@@ -604,12 +709,176 @@ function pickNolimitPayload(message) {
 
 function shouldContinueNolimitSpin(parsed, payload) {
   if (!parsed) return false
-  const mode = String(parsed?.mode || 'NORMAL').toUpperCase()
+  const nextMode = String(parsed?.nextMode || parsed?.mode || 'NORMAL').toUpperCase()
+  if (nextMode && nextMode !== 'NORMAL') return true
   const fsLeft = Number(parsed?.freespinsLeft || 0)
   const possibleActions = payload?.possibleActions || payload?.actions || payload?.availableActions
   if (Array.isArray(possibleActions) && possibleActions.length > 0) return true
   if (fsLeft > 0) return true
-  return mode !== 'NORMAL'
+  return false
+}
+
+function shouldGamble(parsed, gambleSettings, chipAmount) {
+  if (!gambleSettings?.enableNolimitGamble) return false
+  const nextMode = String(parsed?.nextMode || '').toUpperCase()
+  if (nextMode !== 'EXTRA_SPIN') return false
+
+  const accumulatedRoundWin = Number(parsed?.accumulatedRoundWin || 0)
+  const extraSpinCost = Number(parsed?.extraSpinCost || 0)
+  const mode = String(parsed?.mode || '').toUpperCase()
+  const isFreeSpinMode = mode === 'FREESPIN' || mode === 'FREESPIN_RESPIN'
+
+  if (isFreeSpinMode && !gambleSettings.allowGambleInFreeSpins) return false
+  if (!isFreeSpinMode && gambleSettings.allowGambleInBaseGame === false) return false
+
+  if (gambleSettings.maxMultiToGamble != null && chipAmount != null && chipAmount > 0) {
+    const multi = accumulatedRoundWin / chipAmount
+    if (multi > gambleSettings.maxMultiToGamble) return false
+  }
+  if (gambleSettings.maxWinToGamble != null && accumulatedRoundWin > gambleSettings.maxWinToGamble) return false
+  if (gambleSettings.stopAtWin != null && accumulatedRoundWin >= gambleSettings.stopAtWin) return false
+  if (gambleSettings.stopAtMulti != null && chipAmount != null && chipAmount > 0) {
+    const multi = accumulatedRoundWin / chipAmount
+    if (multi >= gambleSettings.stopAtMulti) return false
+  }
+  if (gambleSettings.maxRiskPerExtraSpin != null && extraSpinCost > gambleSettings.maxRiskPerExtraSpin) return false
+  return true
+}
+
+async function sendInitialNolimitBet(wsState, sessionSecret, extPlayerKey, chipAmount, featureName) {
+  const payload = featureName
+    ? {
+        type: 'featureBet',
+        content: {
+          type: 'featureBet',
+          bet: String(chipAmount),
+          featureName,
+          playerInteraction: { featureName },
+          data: { balanceId: 'combined' },
+        },
+        protocol: NLC_WS_PROTOCOL,
+        id: 'messageId',
+        data: { extPlayerKey },
+      }
+    : {
+        type: 'normal',
+        content: {
+          type: 'normalBet',
+          bet: String(chipAmount),
+          playerInteraction: { actionSpin: true },
+          data: { balanceId: 'combined' },
+        },
+        protocol: NLC_WS_PROTOCOL,
+        id: 'messageId',
+        data: { extPlayerKey },
+      }
+  return sendNolimitWsRequest(wsState, sessionSecret, payload)
+}
+
+async function continueNolimitBet(wsState, sessionSecret, extPlayerKey) {
+  return sendNolimitWsRequest(wsState, sessionSecret, {
+    type: 'normal',
+    content: {
+      type: 'zeroBet',
+      bet: '0.00',
+      data: { balanceId: 'combined' },
+    },
+    protocol: NLC_WS_PROTOCOL,
+    id: 'messageId',
+    data: { extPlayerKey },
+  })
+}
+
+async function acceptExtraSpin(wsState, sessionSecret, extPlayerKey) {
+  return sendNolimitWsRequest(wsState, sessionSecret, {
+    type: 'normal',
+    content: {
+      type: 'zeroBet',
+      bet: '0.00',
+      playerInteraction: { playExtraSpin: 'true' },
+      data: { balanceId: 'combined' },
+    },
+    protocol: NLC_WS_PROTOCOL,
+    id: `${randomMessagePrefix()}${Date.now()}`,
+    data: { extPlayerKey },
+  })
+}
+
+function isFreespinTriggered(parsed) {
+  return parsed?.freespinTriggeredThisSpin === true || parsed?.nextMode === 'FREESPIN'
+}
+
+async function handleSpin(session, chipAmount, options = {}) {
+  const s = session._internal
+  await ensureNolimitWsReady(session)
+
+  const stopOnBonus = !!(options.stopOnBonus ?? options.skipContinueOnBonus)
+  const featureName = options.featureName || options.bonusGame || null
+  const gambleSettings = options.nolimitGambleSettings || null
+  const sessionSecret = s.wsSessionData || s.extPlayerKey || s.tokenString
+
+  let currentResponse = await sendInitialNolimitBet(s.wsState, sessionSecret, s.extPlayerKey, chipAmount, featureName)
+  let rawPayload = pickNolimitPayload(currentResponse)
+  let parsed = parseNlcSpin(rawPayload || currentResponse)
+
+  const freespinTriggered = isFreespinTriggered(parsed)
+  let payout = Number(parsed?.accumulatedRoundWin || parsed?.win || 0)
+  let gambled = false
+  let loops = 0
+  let sawFreeSpin = freespinTriggered
+
+  if (freespinTriggered && stopOnBonus) {
+    return { rawPayload, parsed, payout, gambled, bonusName: 'FREE_GAME', loops }
+  }
+
+  while (parsed?.nextMode && parsed.nextMode !== 'NORMAL' && loops < NLC_WS_MAX_CONTINUES) {
+    loops += 1
+    if (parsed.nextMode === 'EXTRA_SPIN') {
+      if (shouldGamble(parsed, gambleSettings, chipAmount)) {
+        currentResponse = await acceptExtraSpin(s.wsState, sessionSecret, s.extPlayerKey)
+        rawPayload = pickNolimitPayload(currentResponse)
+        parsed = parseNlcSpin(rawPayload || currentResponse)
+        payout = Number(parsed?.accumulatedRoundWin || payout)
+        gambled = true
+        if (parsed?.nextMode === 'FREESPIN') {
+          sawFreeSpin = true
+          if (stopOnBonus) {
+            return { rawPayload, parsed, payout, gambled, bonusName: 'FREE_GAME', loops }
+          }
+        }
+      } else {
+        currentResponse = await continueNolimitBet(s.wsState, sessionSecret, s.extPlayerKey)
+        rawPayload = pickNolimitPayload(currentResponse)
+        parsed = parseNlcSpin(rawPayload || currentResponse)
+        payout = Number(parsed?.accumulatedRoundWin || payout)
+        break
+      }
+    } else {
+      currentResponse = await continueNolimitBet(s.wsState, sessionSecret, s.extPlayerKey)
+      rawPayload = pickNolimitPayload(currentResponse)
+      parsed = parseNlcSpin(rawPayload || currentResponse)
+      payout = Number(parsed?.accumulatedRoundWin || payout)
+      if (parsed?.nextMode === 'FREESPIN') {
+        sawFreeSpin = true
+        if (stopOnBonus) {
+          return { rawPayload, parsed, payout, gambled, bonusName: 'FREE_GAME', loops }
+        }
+      }
+    }
+  }
+
+  if (loops >= NLC_WS_MAX_CONTINUES) {
+    throw new Error(`Nolimit continue limit erreicht (${NLC_WS_MAX_CONTINUES}).`)
+  }
+
+  return {
+    rawPayload,
+    parsed,
+    payout,
+    gambled,
+    bonusName: sawFreeSpin ? 'FREE_GAME' : null,
+    loops,
+  }
 }
 
 function toProviderSpinResponse(rawPayload, session, winAmount, parsedData, status = 'complete') {
@@ -622,7 +891,10 @@ function toProviderSpinResponse(rawPayload, session, winAmount, parsedData, stat
       events: [{ awa: Number(winAmount || 0) }],
       winAmountDisplay: Number(winAmount || 0),
       freespinsLeft: Number(parsedData?.freespinsLeft || 0),
-      mode: parsedData?.mode || 'NORMAL',
+      mode: parsedData?.nextMode || parsedData?.mode || 'NORMAL',
+      nextMode: parsedData?.nextMode || null,
+      accumulatedRoundWin: Number(parsedData?.accumulatedRoundWin || winAmount || 0),
+      freespinTriggeredThisSpin: !!parsedData?.freespinTriggeredThisSpin,
       isBonus: !!parsedData?.isBonus,
     },
     _nolimitRaw: rawPayload,
@@ -632,10 +904,12 @@ function toProviderSpinResponse(rawPayload, session, winAmount, parsedData, stat
 async function ensureNolimitWsReady(session) {
   const s = session?._internal
   if (!s) throw new Error('Nolimit Session ungueltig.')
-  if (!s.wsState) s.wsState = createNolimitWsState(s.wsSessionData || s.extPlayerKey || s.tokenString)
-  await connectNolimitWs(s.wsState, s.wsSessionData || s.extPlayerKey || s.tokenString)
+  const wsSecret = s.wsSessionData || s.extPlayerKey || s.tokenString
+  if (!s.wsState) s.wsState = createNolimitWsState(wsSecret)
+  else s.wsState.sessionSecret = String(wsSecret || s.wsState.sessionSecret || '')
+  await connectNolimitWs(s.wsState, wsSecret)
   if (s.wsInitialized) return
-  const initResponse = await sendNolimitWsRequest(s.wsState, s.wsSessionData || s.extPlayerKey || s.tokenString, {
+  const initResponse = await sendNolimitWsRequest(s.wsState, wsSecret, {
     type: 'init',
     content: { type: 'init' },
     protocol: NLC_WS_PROTOCOL,
@@ -647,54 +921,16 @@ async function ensureNolimitWsReady(session) {
   s.wsInitialized = true
 }
 
-async function placeBetViaWs(session, chipAmount) {
-  const s = session._internal
-  await ensureNolimitWsReady(session)
-
-  let currentResponse = await sendNolimitWsRequest(s.wsState, s.wsSessionData || s.extPlayerKey || s.tokenString, {
-    type: 'normal',
-    content: {
-      type: 'normalBet',
-      bet: String(chipAmount),
-      playerInteraction: { actionSpin: true },
-      data: { balanceId: 'combined' },
-    },
-    protocol: NLC_WS_PROTOCOL,
-    id: 'messageId',
-    data: { extPlayerKey: s.extPlayerKey },
-  })
-  let rawPayload = pickNolimitPayload(currentResponse)
-  let parsed = parseNlcSpin(rawPayload || currentResponse)
-  let winAmount = Number(parsed?.win || 0)
-  let loops = 0
-
-  while (shouldContinueNolimitSpin(parsed, rawPayload) && loops < NLC_WS_MAX_CONTINUES) {
-    loops += 1
-    currentResponse = await sendNolimitWsRequest(s.wsState, s.wsSessionData || s.extPlayerKey || s.tokenString, {
-      type: 'normal',
-      content: {
-        type: 'continueBet',
-        bet: '0.00',
-        data: { balanceId: 'combined' },
-      },
-      protocol: NLC_WS_PROTOCOL,
-      id: 'messageId',
-      data: { extPlayerKey: s.extPlayerKey },
-    })
-    rawPayload = pickNolimitPayload(currentResponse)
-    parsed = parseNlcSpin(rawPayload || currentResponse)
-    winAmount = Number(parsed?.win || winAmount || 0)
-  }
-
-  if (loops >= NLC_WS_MAX_CONTINUES) {
-    throw new Error(`Nolimit continue limit erreicht (${NLC_WS_MAX_CONTINUES}).`)
-  }
+async function placeBetViaWs(session, chipAmount, options = {}) {
+  const spinResult = await handleSpin(session, chipAmount, options)
+  const { rawPayload, parsed, payout, gambled, bonusName, loops } = spinResult
+  const status = shouldContinueNolimitSpin(parsed, rawPayload) ? 'started' : 'complete'
 
   return {
-    data: toProviderSpinResponse(rawPayload || currentResponse, session, winAmount, parsed, 'complete'),
+    data: toProviderSpinResponse(rawPayload, session, payout, parsed, status),
     nextSeq: (session.seq || 0) + 1,
     session: { ...session, seq: (session.seq || 0) + 1, lastPlayAt: Date.now() },
-    meta: { continueCount: loops, transport: 'ws' },
+    meta: { continueCount: loops, transport: 'ws', gambled, bonusName },
   }
 }
 
@@ -707,10 +943,22 @@ function snapToNearest(amount, levels) {
   return best
 }
 
+function isProbablyBinaryText(text) {
+  if (!text || typeof text !== 'string') return false
+  let weird = 0
+  for (let i = 0; i < Math.min(text.length, 240); i++) {
+    const c = text.charCodeAt(i)
+    if (c < 9 || (c > 13 && c < 32)) weird++
+  }
+  return weird > 12
+}
+
 function extractError(data, fallbackText, status) {
+  let fb = typeof fallbackText === 'string' ? fallbackText.trim() : ''
+  if (isProbablyBinaryText(fb)) fb = `HTTP ${status} (compressed/binary response)`
   const msg =
     findByKeys(data, ['errorMessage', 'errormessage', 'error', 'message', 'reason']) ||
-    (typeof fallbackText === 'string' ? fallbackText.trim() : '') ||
+    fb ||
     `HTTP ${status}`
   return String(msg).slice(0, 500)
 }
@@ -719,7 +967,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const t0 = Date.now()
   let stage = 'start-third-party-session'
   let configUrl = ''
-  const cookieJar = []
+  let cookieJar = []
   try {
     const session = await startThirdPartySession(
       accessToken,
@@ -731,153 +979,181 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     configUrl = resolveNoLimitConfigUrl(session?.config, slotSlug)
 
     stage = 'fetch-config'
-    const firstRes = await safeProxyRequest({
-      url: configUrl,
-      method: 'GET',
-      headers: {
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/144.0.0.0 Safari/537.36',
-      },
-    })
-    addSetCookies(firstRes.headers, cookieJar)
+    let tableId = null
+    let cookieStr = null
+    let evoOrigin = DEFAULT_EVO_ORIGIN
+    let evoFingerprint = buildFingerprint()
 
-    const finalUrl = firstRes.url || configUrl
-    const redirectLocation = String(getHeaderValue(firstRes.headers, 'location') || '')
-    const loaderInfo = parseLoaderInfo(finalUrl) || {}
-    const entryParams = decodeEntryParams(configUrl) || {}
-    const entryJwt = parseJwtPayload(entryParams.jwsh) || {}
-    const tableId =
-      parseTableIdFromFragment(redirectLocation) ||
-      parseTableIdFromFragment(finalUrl) ||
-      loaderInfo?.extra?.table_id ||
-      loaderInfo?.extra?.tableId ||
-      entryJwt.tid ||
-      entryParams.table_id ||
-      null
-    if (!tableId) throw new Error('Nolimit table_id fehlt.')
-
-    stage = 'resolve-bootstrap-inputs'
-    const evoOrigin = resolveEvoOrigin(loaderInfo, cookieJar)
-    stage = 'evo-bootstrap'
-    const evoBootstrap = await resolveBestEvoBootstrap({ tableId, cookieJar, loaderInfo })
-
-    let tokenString = evoBootstrap?.tokenString || loaderInfo.token || entryJwt.sid || null
-    let tokenSource = evoBootstrap?.tokenString ? 'evo.setup.key' : loaderInfo.token ? 'loader' : entryJwt.sid ? 'jwt.sid' : 'none'
-    if (!tokenString) {
-      try {
-        tokenString = new URL(configUrl).searchParams.get('JSESSIONID')
-        if (tokenString) tokenSource = 'entry.jsessionid'
-      } catch {
-        tokenString = null
+    const evoEntry = await window.electronAPI?.nolimitEvoEntry?.(configUrl)
+    if (evoEntry?.ok && evoEntry.cookieString) {
+      tableId =
+        evoEntry.tableId ||
+        resolveNolimitTableId({
+          configUrl,
+          redirectLocation: evoEntry.location || '',
+          finalUrl: evoEntry.location || configUrl,
+        })
+      cookieStr = evoEntry.cookieString
+      evoOrigin = evoEntry.evoOrigin || DEFAULT_EVO_ORIGIN
+      evoFingerprint = evoEntry.fingerprint || evoFingerprint
+    } else {
+      const redirectRes = await performGetRequestFresh(configUrl)
+      const redirectLocation = resolveRedirectUrl(
+        getHeaderValue(redirectRes.headers, 'location') || redirectRes.url || '',
+        configUrl
+      )
+      if (!redirectLocation) {
+        throw new Error(`Nolimit redirect location fehlt (status=${redirectRes.status}).`)
+      }
+      const responseBody = await redirectRes.text().catch(() => '')
+      tableId = resolveNolimitTableId({
+        configUrl,
+        redirectLocation,
+        finalUrl: redirectRes.url || redirectLocation,
+        responseBody,
+      })
+      cookieStr = resolveEvoCookieString({ headers: redirectRes.headers, configUrl, requireSetCookie: true })
+      if (!cookieStr) {
+        throw new Error(
+          evoEntry?.error ||
+            `Nolimit EVOSESSIONID fehlt — status=${redirectRes.status}, main=${evoEntry?.status ?? 'n/a'}`
+        )
       }
     }
-    if (!tokenString) {
-      throw new Error('Nolimit tokenString fehlt.')
+
+    if (!tableId) throw new Error('Nolimit table_id fehlt.')
+    if (!cookieStr) throw new Error(evoEntry?.error || 'Nolimit EVOSESSIONID fehlt.')
+    cookieJar = cookieStr.split('; ').filter(Boolean)
+
+    stage = 'evo-config'
+    const evoHeaders = buildEvoBootstrapHeaders(cookieStr, evoOrigin, evoFingerprint)
+    const evoConfigUrl = `${evoOrigin}/config?table_id=${encodeURIComponent(tableId)}&client_version=${encodeURIComponent(EVO_CLIENT_VERSION)}`
+    const configRes = await safeProxyRequest({
+      url: evoConfigUrl,
+      method: 'GET',
+      headers: evoHeaders,
+    })
+    const configText = await configRes.text()
+    const configData = parseJsonSafe(configText)
+    if (!configRes.ok || !configData) {
+      throw new Error(extractError(configData, configText, configRes.status))
     }
 
-    const gameName = evoBootstrap?.gameName || loaderInfo.game || entryJwt.mid || entryParams.game || slotSlug.replace(/^nolimit-/, '')
-    const language = String(evoBootstrap?.language || loaderInfo.language || entryParams.language || 'fr').slice(0, 2) || 'fr'
-    const clientString = evoBootstrap?.clientString || loaderInfo.operator || entryParams.casino_id || entryJwt.cid || 'BABYLONSTK000002'
-    const currencyCode = String(evoBootstrap?.currencyCode || entryJwt.cur || targetCurrency || loaderInfo.currencyCode || loaderInfo?.extra?.currency || 'eur').toUpperCase()
-    const normalizedPlayMode = normalizePlayMode(loaderInfo?.extra?.playMode || entryParams.play_mode)
-    const licenseePlayerId = evoBootstrap?.licenseePlayerId || loaderInfo?.extra?.licenseePlayerId || entryJwt.pid || tokenString.slice(0, 16)
-    const externalPlayerId = evoBootstrap?.externalPlayerId || loaderInfo?.extra?.externalPlayerId || loaderInfo?.extra?.external_player_id || entryJwt.epid || null
-    const tableName = evoBootstrap?.tableName || loaderInfo?.extra?.table_name || entryJwt.mid || gameName
+    const tableName = configData.tableName
+    const evoToken = configData.wrapper_token
+    const mathId = configData.math_id
+    if (!tableName || !evoToken || !mathId) {
+      throw new Error('Nolimit /config Antwort unvollstaendig (tableName, wrapper_token, math_id).')
+    }
 
+    stage = 'evo-setup'
+    const evoSetupUrl = `${evoOrigin}/setup?device=desktop&wrapped=true&client_version=${encodeURIComponent(EVO_CLIENT_VERSION)}`
+    const setupRes = await safeProxyRequest({
+      url: evoSetupUrl,
+      method: 'GET',
+      headers: evoHeaders,
+    })
+    const setupText = await setupRes.text()
+    const setupData = parseJsonSafe(setupText)
+    if (!setupRes.ok || !setupData) {
+      throw new Error(extractError(setupData, setupText, setupRes.status))
+    }
+
+    const licenseePlayerId = setupData.user_id
+    const externalPlayerId = setupData.player_id
+    const clientString = setupData.casino_id
+    const tokenString = setupData.bare_session_id
+    const currencyCode = String(setupData.currencyCode || targetCurrency || 'eur').toUpperCase()
+    if (!licenseePlayerId || !externalPlayerId || !clientString || !tokenString) {
+      throw new Error('Nolimit /setup Antwort unvollstaendig (user_id, player_id, casino_id, bare_session_id).')
+    }
+
+    const gameCodeString = `${mathId}@desktop`
     const jsonData = {
-      ...(loaderInfo.extra || {}),
+      licenseePlayerId,
       currency: currencyCode,
-      evo_token: evoBootstrap?.evoToken || loaderInfo?.extra?.evo_token || loaderInfo?.extra?.evoToken || entryParams.jwsh || null,
+      evo_token: evoToken,
       table_id: tableId,
       table_name: tableName,
+      screenName: '',
+      externalPlayerId,
+      playMode: 'realMoney',
+      skipInitBalance: 'true',
     }
-    if (!jsonData.licenseePlayerId) jsonData.licenseePlayerId = licenseePlayerId
-    if (!jsonData.externalPlayerId && externalPlayerId) jsonData.externalPlayerId = externalPlayerId
-    if (!jsonData.playMode && normalizedPlayMode) jsonData.playMode = normalizedPlayMode
-    if (jsonData.screenName == null) jsonData.screenName = ''
-    if (jsonData.skipInitBalance == null) jsonData.skipInitBalance = 'true'
-    if (!jsonData.playMode) jsonData.playMode = 'realMoney'
-    if (!jsonData.evo_token) throw new Error('Nolimit evo_token fehlt.')
 
-    const gameCodeString = `${gameName}@desktop`
-    const origin = loaderInfo.origin || 'https://casino.nolimitcdn.com'
-    const referer = loaderInfo.loaderUrl || `${origin}/loader/evo.html`
     stage = 'open-game'
-    const openLangCandidates = [...new Set([language, 'fr', 'en', 'de'].filter(Boolean))]
-    const entrySessionId = (() => {
-      try {
-        return new URL(configUrl).searchParams.get('JSESSIONID')
-      } catch {
-        return null
-      }
-    })()
-    const openTokenCandidates = [...new Set([tokenString, loaderInfo.token, entryJwt.sid, entrySessionId].filter(Boolean))]
-    const openClientCandidates = [...new Set([clientString, loaderInfo.operator, entryParams.casino_id, entryJwt.cid].filter(Boolean))]
+    const openPayload = new URLSearchParams({
+      action: 'open_game',
+      clientString: String(clientString),
+      language: 'fr',
+      gameCodeString,
+      jsonData: JSON.stringify(jsonData),
+      tokenString: String(tokenString),
+    }).toString()
 
-    let openData = null
-    let openText = ''
-    let openOk = false
-    let lastOpenErr = 'Unknown open_game error'
-    let openAttempts = 0
-    const maxOpenAttempts = 12
-    for (const tokenCandidate of openTokenCandidates) {
-      for (const clientCandidate of openClientCandidates) {
-        for (const langCandidate of openLangCandidates) {
-          if (openAttempts >= maxOpenAttempts) break
-          openAttempts += 1
-          const openPayload = new URLSearchParams({
-            action: 'open_game',
-            clientString: String(clientCandidate),
-            language: String(langCandidate),
-            gameCodeString,
-            jsonData: JSON.stringify(jsonData),
-            tokenString: String(tokenCandidate),
-          }).toString()
-
-          const openRes = await safeProxyRequest({
-            url: NLC_FS_URL,
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-              Accept: 'application/json, text/plain, */*',
-              'X-Requested-With': 'XMLHttpRequest',
-              'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-              Origin: origin,
-              Referer: referer,
-              ...buildCookieHeader(cookieJar),
-            },
-            body: openPayload,
-          })
-          addSetCookies(openRes.headers, cookieJar)
-
-          openText = await openRes.text()
-          openData = parseJsonSafe(openText) || {}
-          if (openRes.ok) {
-            tokenString = String(tokenCandidate)
-            openOk = true
-            break
-          }
-          lastOpenErr = extractError(openData, openText, openRes.status)
-        }
-        if (openOk) break
-        if (openAttempts >= maxOpenAttempts) break
-      }
-      if (openOk) break
-      if (openAttempts >= maxOpenAttempts) break
+    const openRes = await safeProxyRequest({
+      url: NLC_FS_URL,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        Accept: 'application/json, text/plain, */*',
+      },
+      body: openPayload,
+    })
+    const openText = await openRes.text()
+    const openData = parseJsonSafe(openText) || {}
+    if (!openRes.ok) {
+      throw new Error(extractError(openData, openText, openRes.status))
     }
-    if (!openOk) {
-      throw new Error(`Nolimit open_game fehlgeschlagen: ${lastOpenErr}`)
-    }
+    addSetCookies(openRes.headers, cookieJar)
 
-    const wsSessionData = String(findByKeys(openData, ['session', 'sessionKey']) || tokenString)
-    const extPlayerKey = String(findByKeys(openData, ['extPlayerKey', 'key']) || wsSessionData)
+    const { wsSessionData, extPlayerKey } = resolveOpenGameWsCredentials(openData)
+    const tokenSource = 'open_game.data.key'
     const currencyMultRaw = Number(findByKeys(openData, ['currencyMult', 'currencymult', 'currency_multiplier']))
     const currencyMult = Number.isFinite(currencyMultRaw) && currencyMultRaw > 0 ? currencyMultRaw : DEFAULT_CURRENCY_MULT
 
-    const chipAmounts =
-      parseChipAmounts(findByKeys(openData, ['chipAmounts', 'chipamounts', 'betLevels'])) ||
-      []
-    const betLevelsRaw = chipAmounts.length ? chipAmounts : DEFAULT_CHIP_AMOUNTS
+    const wsState = createNolimitWsState(wsSessionData)
+    let initBetLevelsRaw = []
+    let bonusGames = []
+    let initSymbol = null
+    let wsInitialized = false
+    stage = 'ws-init'
+    try {
+      await connectNolimitWs(wsState, wsSessionData)
+      await new Promise((r) => setTimeout(r, 500))
+      const initResponse = await sendNolimitWsRequest(wsState, wsSessionData, {
+        type: 'init',
+        content: { type: 'init' },
+        protocol: NLC_WS_PROTOCOL,
+        id: 'messageId',
+        gameClientVersion: NLC_WS_CLIENT_VERSION,
+        data: {},
+      })
+      if (!initResponse) throw new Error('Nolimit WS init ohne Antwort.')
+      wsInitialized = true
+      const initPayload = pickNolimitPayload(initResponse) || initResponse
+      initSymbol = initPayload?.symbol || findByKeys(initPayload, ['symbol']) || null
+      const combined = initPayload?.betLevels?.combined
+      if (Array.isArray(combined) && combined.length > 0) {
+        initBetLevelsRaw = combined.map((v) => parseFloat(v)).filter((v) => Number.isFinite(v) && v > 0)
+      }
+      const buyGames = initPayload?.featureBuyTimesBetValue?.bonusGames
+      if (Array.isArray(buyGames)) {
+        bonusGames = buyGames.map((g) => ({
+          id: g?.name,
+          label: `${g?.name || 'bonus'} (x${g?.price ?? '?'})`,
+        }))
+      }
+    } catch (initErr) {
+      throw new Error(`Nolimit WS init fehlgeschlagen: ${initErr?.message || initErr}`)
+    }
+
+    if (!wsInitialized || initBetLevelsRaw.length === 0) {
+      throw new Error('Nolimit WS init lieferte keine betLevels — Session unvollstaendig.')
+    }
+
+    const chipAmounts = initBetLevelsRaw
+    const betLevelsRaw = chipAmounts
     const betLevels = uniqNumbers(betLevelsRaw.map((v) => toMinorFromChip(v, currencyMult))).sort((a, b) => a - b)
 
     logApiCall({
@@ -893,11 +1169,14 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
       response: {
         ok: true,
         wsSession: !!wsSessionData,
+        wsKeyLen: wsSessionData?.length || 0,
         extPlayerKey: !!extPlayerKey,
+        extPlayerKeyLen: extPlayerKey?.length || 0,
         currencyMult,
         betLevelsCount: betLevels.length,
+        bonusGamesCount: bonusGames.length,
+        initSymbol,
         stage,
-        openAttempts,
       },
       error: null,
       durationMs: Date.now() - t0,
@@ -911,20 +1190,22 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
       currencyMult,
       betLevels,
       betLevelsRaw,
+      bonusGames,
+      symbol: initSymbol,
       seq: 0,
       _internal: {
         cookieJar,
         tokenString,
         clientString,
-        language,
+        language: 'fr',
         gameCodeString,
         tableId,
         extPlayerKey,
         wsSessionData,
-        wsState: createNolimitWsState(wsSessionData || extPlayerKey || tokenString),
-        wsInitialized: false,
-        origin,
-        referer,
+        wsState,
+        wsInitialized,
+        origin: evoOrigin,
+        referer: `${evoOrigin}/frontend/evo/r2/`,
       },
     }
   } catch (e) {
@@ -940,7 +1221,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   }
 }
 
-export async function placeBet(session, betAmount, extraBet, _autoplay = false) {
+export async function placeBet(session, betAmount, extraBet, _autoplay = false, options = {}) {
   const t0 = Date.now()
   const s = session?._internal
   if (!s) throw nolimitError('Nolimit Session ungueltig.')
@@ -951,14 +1232,22 @@ export async function placeBet(session, betAmount, extraBet, _autoplay = false) 
     chipAmount = snapToNearest(chipAmount, session.betLevelsRaw)
   }
 
+  const placeBetOptions = { ...options }
+
   try {
-    const wsResult = await placeBetViaWs(session, chipAmount)
+    const wsResult = await placeBetViaWs(session, chipAmount, placeBetOptions)
     const parsed = parseNlcSpin(wsResult?.data?._nolimitRaw)
     logApiCall({
       type: 'nolimit/spin',
       endpoint: NLC_WS_URL,
-      request: { chipAmount, extraBet: !!extraBet, transport: 'ws' },
-      response: { ok: true, winAmount: Number(parsed?.win || 0), continueCount: wsResult?.meta?.continueCount || 0 },
+      request: { chipAmount, extraBet: !!extraBet, transport: 'ws', stopOnBonus: !!(options.stopOnBonus ?? options.skipContinueOnBonus) },
+      response: {
+        ok: true,
+        winAmount: Number(parsed?.accumulatedRoundWin || parsed?.win || 0),
+        continueCount: wsResult?.meta?.continueCount || 0,
+        gambled: !!wsResult?.meta?.gambled,
+        bonusName: wsResult?.meta?.bonusName || null,
+      },
       error: null,
       durationMs: Date.now() - t0,
     })
@@ -986,17 +1275,7 @@ export async function sendContinue(session) {
   const s = session?._internal
   if (!s) return { ok: true }
   await ensureNolimitWsReady(session)
-  const response = await sendNolimitWsRequest(s.wsState, s.wsSessionData || s.extPlayerKey || s.tokenString, {
-    type: 'normal',
-    content: {
-      type: 'continueBet',
-      bet: '0.00',
-      data: { balanceId: 'combined' },
-    },
-    protocol: NLC_WS_PROTOCOL,
-    id: 'messageId',
-    data: { extPlayerKey: s.extPlayerKey },
-  })
+  const response = await continueNolimitBet(s.wsState, s.wsSessionData || s.extPlayerKey || s.tokenString, s.extPlayerKey)
   const payload = pickNolimitPayload(response) || response
   const parsed = parseNlcSpin(payload)
   return {
@@ -1011,3 +1290,5 @@ export async function sendContinue(session) {
     session: { ...session, seq: (session.seq || 0) + 1, lastPlayAt: Date.now() },
   }
 }
+
+export { handleSpin }

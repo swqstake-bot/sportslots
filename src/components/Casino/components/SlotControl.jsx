@@ -111,10 +111,30 @@ const SESSION_DEPENDENT_BET_LEVELS = [500, 1000, 2000, 5000, 10000, 20000, 50000
 const EMPTY_TARGET_MULTIS = []
 const BET_HISTORY_DEDUP_MAX = 6000
 const FALLBACK_RECONCILE_WINDOW_MS = 60000
+/** Stop-on-bonus: User kann den Bonus länger als 60s spielen — Settlement muss die offene Zeile treffen. */
+const STOPPED_BONUS_RECONCILE_WINDOW_MS = 30 * 60 * 1000
 const PENDING_HOUSE_RECONCILE_SOURCES = new Set(['placebet', 'http_fallback'])
 
 function findPendingRowForHouseReconcile(prev, { betAmount, signature, now, sessionStartAt }) {
-  // FIFO: ältester offener placeBet — Betrag kommt von houseBets (PowerBet: 15c placeBet vs 10c Stake).
+  // 1) Prefer newest unreconciled stop-on-bonus row (Hacksaw: otherwise FIFO steals settlement → duplicate wins).
+  let bonusIdx = -1
+  let bonusAt = -Infinity
+  for (let i = 0; i < prev.length; i++) {
+    const row = prev[i]
+    if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
+    if (!row?.stoppedBonus) continue
+    if (!PENDING_HOUSE_RECONCILE_SOURCES.has(String(row?.source || ''))) continue
+    if (row?.houseBetReconciled) continue
+    if ((now - Number(row?.addedAt || 0)) > STOPPED_BONUS_RECONCILE_WINDOW_MS) continue
+    const at = Number(row?.addedAt) || 0
+    if (at >= bonusAt) {
+      bonusAt = at
+      bonusIdx = i
+    }
+  }
+  if (bonusIdx >= 0) return bonusIdx
+
+  // 2) FIFO: ältester offener placeBet — Betrag kommt von houseBets (PowerBet: 15c placeBet vs 10c Stake).
   let fifoIdx = -1
   let fifoAt = Infinity
   for (let i = 0; i < prev.length; i++) {
@@ -122,6 +142,7 @@ function findPendingRowForHouseReconcile(prev, { betAmount, signature, now, sess
     if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
     if (!PENDING_HOUSE_RECONCILE_SOURCES.has(String(row?.source || ''))) continue
     if (row?.houseBetReconciled) continue
+    if (row?.stoppedBonus) continue
     if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) continue
     const at = Number(row?.addedAt) || 0
     if (at < fifoAt) {
@@ -606,6 +627,12 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           const prevRoundKey = clone[pendingIdx]?.roundId != null
             ? `round:${String(clone[pendingIdx].roundId)}`
             : null
+          const wasStoppedBonus = !!clone[pendingIdx]?.stoppedBonus
+          const settledWin = Number(parsed.winAmount ?? parsedWin) || 0
+          const settledCurr = String(
+            currencyCode ?? clone[pendingIdx]?.currencyCode ?? effectiveTarget ?? 'usd'
+          ).toLowerCase()
+          const settledWinUsd = convertMinorToUsdMajor(settledWin, settledCurr, currencyRates)
           clone[pendingIdx] = {
             ...clone[pendingIdx],
             source,
@@ -613,9 +640,15 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             currencyCode: currencyCode ?? clone[pendingIdx]?.currencyCode,
             // placeBet kennt PowerBet/Extra-Bet; houseBets meldet oft nur Basis-Einsatz.
             betAmount: Math.max(Number(clone[pendingIdx]?.betAmount) || 0, parsedBet) || parsedBet,
-            winAmount: parsedWin,
-            rawWinAmount: parsed.winAmount ?? parsedWin,
+            winAmount: settledWin,
+            rawWinAmount: settledWin,
+            // Stop-on-bonus: erst jetzt realisieren (nicht raw vom Trigger-Spin / Popup-Close).
+            stoppedBonus: false,
+            isBonus: wasStoppedBonus ? true : !!clone[pendingIdx]?.isBonus,
             houseBetReconciled: true,
+            ...(Number.isFinite(Number(settledWinUsd?.usd))
+              ? { winUsdSnapshotMajor: Number(settledWinUsd.usd) }
+              : { winUsdSnapshotMajor: undefined }),
           }
           if (prevRoundKey && prevRoundKey !== `round:${rid}`) {
             seenBetDedupKeysRef.current.delete(prevRoundKey)
@@ -672,16 +705,18 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           return prev
         }
       }
+      const stoppedBonus = !!parsed.stoppedBonus
+      const realizedWin = stoppedBonus ? 0 : (Number(parsed.winAmount ?? 0) || 0)
       const entry = {
         id: now + Math.random(),
         slotSlug: slot.slug,
         slotName: slot.name,
         betAmount: parsed.betAmount,
-        // Bei Stop-on-bonus soll der Bonus-Win nicht in BetList/Stats als "realisiert" auftauchen.
-        winAmount: parsed.stoppedBonus ? 0 : (parsed.winAmount ?? 0),
-        rawWinAmount: parsed.winAmount ?? 0,
-        isBonus: parsed.isBonus,
-        stoppedBonus: !!parsed.stoppedBonus,
+        // Bei Stop-on-bonus: Win erst nach House-Settlement (User spielt Bonus selbst).
+        winAmount: realizedWin,
+        rawWinAmount: Number(parsed.rawWinAmount ?? parsed.winAmount ?? 0) || 0,
+        isBonus: parsed.isBonus || stoppedBonus,
+        stoppedBonus,
         scatterCount: parsed.scatterCount != null ? Number(parsed.scatterCount) : undefined,
         balance: parsed.balance,
         currencyCode,
@@ -695,7 +730,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       const betUsdSnapshotMajor = Number(betConv?.usd)
       const winUsdSnapshotMajor = Number(winConv?.usd)
       if (Number.isFinite(betUsdSnapshotMajor)) entry.betUsdSnapshotMajor = betUsdSnapshotMajor
-      if (Number.isFinite(winUsdSnapshotMajor)) entry.winUsdSnapshotMajor = winUsdSnapshotMajor
+      // Kein Win-USD-Snapshot bei gestopptem Bonus — sonst zählen Stats den Trigger-Win doppelt.
+      if (!stoppedBonus && Number.isFinite(winUsdSnapshotMajor)) entry.winUsdSnapshotMajor = winUsdSnapshotMajor
       if (Number.isFinite(Number(betConv?.fxRate))) entry.fxRateSnapshot = Number(betConv.fxRate)
       appendBet(slot.slug, entry, slot.name).catch(() => {})
       try {
@@ -813,20 +849,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     const unsub = window.electronAPI.onSlotPopupClosed((payload) => {
       const popupId = payload?.popupId
       if (!popupId) return
-      const opened = openedBonusPopupsRef.current.get(popupId)
-      if (!opened?.betId) return
-      setBetHistory((prev) =>
-        prev.map((entry) => {
-          if (entry.id !== opened.betId) return entry
-          if (!entry.stoppedBonus) return entry
-          const realizedWin = Number(entry.rawWinAmount ?? entry.winAmount ?? 0)
-          return {
-            ...entry,
-            winAmount: Number.isFinite(realizedWin) ? realizedWin : 0,
-            stoppedBonus: false,
-          }
-        })
-      )
+      // Stop-on-bonus: Win kommt von houseBets nach Settlement — nicht aus rawWinAmount des Trigger-Spins
+      // (sonst doppelter Win: einmal „vor Open“, einmal nach House-Settlement).
       openedBonusPopupsRef.current.delete(popupId)
     })
     return () => {
@@ -1013,10 +1037,12 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           spinsSinceRefresh = 0
         }
 
+        const isNolimit = effectiveProviderId === 'nolimit' || String(slot?.slug || '').toLowerCase().startsWith('nolimit-')
         const placeBetOpts = {
           slotSlug: slot.slug,
           fastPath: true,
           ...(autospinStopOnBonus ? { skipContinueOnBonus: true } : {}),
+          ...(isNolimit && autospinStopOnBonus ? { stopOnBonus: true } : {}),
           ...(autospinStopOnBonus && autospinMinScatter >= 1
             ? { skipContinueIfBonusMinScatter: autospinMinScatter }
             : {}),
@@ -1029,7 +1055,23 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         spinsSinceRefresh += 1
         const effectiveBet = getEffectiveBetAmount(betAmount, extraBet, slot.slug)
         const parsed = parseBetResponse(data, effectiveBet)
-        appendSpinHistoryFromPlaceBet(parsed)
+        const bonusMeetsScatter = autospinMinScatter <= 0 ||
+          (parsed.scatterCount != null && parsed.scatterCount >= autospinMinScatter) ||
+          (parsed.scatterCount == null && parsed.isBonus)
+        const stopForBonus = !!(autospinStopOnBonus && (parsed.shouldStopOnBonus ?? parsed.isBonus) && bonusMeetsScatter)
+
+        // Atomar mit stoppedBonus anlegen — kein Win vor Bonus-Open, kein späteres Patch-Race.
+        appendSpinHistoryFromPlaceBet(
+          stopForBonus
+            ? {
+                ...parsed,
+                isBonus: true,
+                stoppedBonus: true,
+                winAmount: 0,
+                rawWinAmount: parsed.winAmount ?? 0,
+              }
+            : parsed
+        )
 
         if (isSaveBonusLogsEnabled() && parsed.isBonus) {
           saveBonusLog({
@@ -1048,7 +1090,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         }
         if (parsed.isBonus) saveBonusSpinSample({ slotSlug: slot.slug, slotName: slot.name, providerId: slot.providerId, request: { betAmount, extraBet, ...placeBetOpts }, response: data })
 
-        let winAmount = parsed.winAmount
+        let winAmount = stopForBonus ? 0 : parsed.winAmount
         // Kein Balance-Delta-Fallback: Vault-Auszahlungen würden als Win erscheinen
 
         const betCurr = (parsed.currencyCode || effectiveTarget || 'usd').toLowerCase()
@@ -1062,11 +1104,10 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         const profitThresholdUsd = Math.max(0, autospinStopProfitValue)
         const lossThresholdUsd = Math.max(0, autospinStopLossValue)
 
-        const bonusMeetsScatter = autospinMinScatter <= 0 ||
-          (parsed.scatterCount != null && parsed.scatterCount >= autospinMinScatter) ||
-          (parsed.scatterCount == null && parsed.isBonus)
-        if (autospinStopOnBonus && (parsed.shouldStopOnBonus ?? parsed.isBonus) && bonusMeetsScatter) {
-          recordAutospinStopBet({ ...parsed, winAmount }, { stoppedBonus: true })
+        if (stopForBonus) {
+          if (isStakeEngine) {
+            recordAutospinStopBet({ ...parsed, winAmount: 0, stoppedBonus: true }, { stoppedBonus: true })
+          }
           setError(`Autospin stopped: bonus${parsed.scatterCount != null ? ` (${parsed.scatterCount} scatters)` : ''} hit after ${spinsDone + 1} spin(s)`)
           notifyBonusHit(slot.name, spinsDone + 1)
           triggerLogRefresh()

@@ -52,6 +52,7 @@ interface UiState {
   /** Suchbegriff für Fixture-Namen (Sports) */
   fixtureSearchQuery: string;
   rightSidebarTab: 'autobet' | 'activebets';
+  sportsCenterTab: 'settings' | 'logs' | 'bets';
   isActiveBetsModalOpen: boolean;
   activeBetsPreviewBetId: string | null;
   /** User accent override (null = use CSS defaults per `data-app-mode`). */
@@ -70,6 +71,7 @@ interface UiState {
   setSelectedSportSlug: (sportSlug: string | null) => void;
   setSportFilterType: (type: 'live' | 'upcoming') => void;
   setRightSidebarTab: (tab: 'autobet' | 'activebets') => void;
+  setSportsCenterTab: (tab: 'settings' | 'logs' | 'bets') => void;
   toggleActiveBetsModal: () => void;
   openActiveBetsModal: (previewBetId?: string | null) => void;
   closeActiveBetsModal: () => void;
@@ -95,6 +97,7 @@ export const useUiStore = create<UiState>()(
       sportFilterType: 'upcoming',
       fixtureSearchQuery: '',
       rightSidebarTab: 'autobet',
+      sportsCenterTab: 'settings',
       isActiveBetsModalOpen: false,
       activeBetsPreviewBetId: null,
       accentCustomHex: null,
@@ -109,9 +112,26 @@ export const useUiStore = create<UiState>()(
       setSelectedSportSlug: (sportSlug) => set({ selectedSportSlug: sportSlug }),
       setSportFilterType: (type) => set({ sportFilterType: type }),
       setRightSidebarTab: (tab) => set({ rightSidebarTab: tab }),
-      toggleActiveBetsModal: () => set((state) => ({ isActiveBetsModalOpen: !state.isActiveBetsModalOpen })),
-      openActiveBetsModal: (previewBetId = null) => set({ isActiveBetsModalOpen: true, activeBetsPreviewBetId: previewBetId }),
-      closeActiveBetsModal: () => set({ isActiveBetsModalOpen: false, activeBetsPreviewBetId: null }),
+      setSportsCenterTab: (tab) => set({ sportsCenterTab: tab }),
+      toggleActiveBetsModal: () =>
+        set((state) =>
+          state.sportsCenterTab === 'bets'
+            ? { sportsCenterTab: 'settings', activeBetsPreviewBetId: null, isActiveBetsModalOpen: false }
+            : {
+                currentView: 'sports',
+                sportsCenterTab: 'bets',
+                activeBetsPreviewBetId: null,
+                isActiveBetsModalOpen: false,
+              }
+        ),
+      openActiveBetsModal: (previewBetId = null) =>
+        set({
+          currentView: 'sports',
+          sportsCenterTab: 'bets',
+          activeBetsPreviewBetId: previewBetId,
+          isActiveBetsModalOpen: false,
+        }),
+      closeActiveBetsModal: () => set({ activeBetsPreviewBetId: null, isActiveBetsModalOpen: false }),
       showToast: (message, type = 'info') => set({ toast: { message, type } }),
       clearToast: () => set({ toast: { message: null, type: 'info' } }),
       setAccentCustomHex: (hex) => set({ accentCustomHex: hex }),

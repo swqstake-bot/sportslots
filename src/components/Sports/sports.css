@@ -93,8 +93,8 @@
 }
 
 .sports-right-rail {
-  width: clamp(320px, 25vw, 360px);
-  min-width: 320px;
+  width: clamp(300px, 22vw, 340px);
+  min-width: 300px;
   flex-shrink: 0;
   height: 100%;
   overflow: hidden;
@@ -162,4 +162,33 @@
     width: 310px;
     min-width: 310px;
   }
+}
+
+.sports-bot-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.sports-bot-main--full {
+  width: 100%;
+}
+
+.sports-right-rail-header {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--app-border-subtle);
+  background:
+    linear-gradient(135deg, rgba(var(--app-accent-rgb), 0.14) 0%, transparent 60%),
+    color-mix(in srgb, var(--app-bg-card) 90%, transparent);
+}
+
+.sports-right-rail-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--app-text);
 }

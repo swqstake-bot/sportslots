@@ -23,18 +23,68 @@ function pick(obj, keys, depth = 0) {
   return null
 }
 
+function resolveGameObject(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const nested = raw.game
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) return nested
+  return null
+}
+
 export function parseNlcSpin(raw) {
   if (!raw || typeof raw !== 'object') return null
 
-  const win = Number(pick(raw, ['win', 'winamount', 'spinwin', 'totalwin']) ?? 0)
+  const game = resolveGameObject(raw)
+
+  const nextMode = String(
+    game?.nextMode ??
+    pick(raw, ['nextmode', 'nextMode']) ??
+    pick(raw, ['mode', 'gamemode']) ??
+    'NORMAL'
+  ).toUpperCase()
+
+  const mode = String(
+    game?.mode ??
+    pick(raw, ['mode', 'gamemode']) ??
+    nextMode
+  ).toUpperCase()
+
+  const accumulatedRoundWin = Number(
+    game?.accumulatedRoundWin ??
+    pick(raw, ['accumulatedroundwin', 'accumulatedRoundWin']) ??
+    pick(raw, ['win', 'winamount', 'spinwin', 'totalwin']) ??
+    0
+  )
+
+  const freespinTriggeredThisSpin = Boolean(
+    game?.freespinTriggeredThisSpin ??
+    pick(raw, ['freespintriggeredthisspin', 'freespinTriggeredThisSpin']) ??
+    false
+  )
+
+  const extraSpinCost = Number(
+    game?.extraSpinCost ??
+    pick(raw, ['extraspincost', 'extraSpinCost']) ??
+    0
+  )
+
+  const win = accumulatedRoundWin || Number(pick(raw, ['win', 'winamount', 'spinwin', 'totalwin']) ?? 0)
   const freespinsLeft = Number(pick(raw, ['freespinsleft', 'remainingfreespins', 'freespinleft']) ?? 0)
-  const mode = String(pick(raw, ['mode', 'gamemode']) ?? 'NORMAL').toUpperCase()
   const fsRoundWin = Number(pick(raw, ['fsroundwin', 'freespinwin']) ?? 0)
   const wasFeatureBuy = Boolean(pick(raw, ['wasfeaturebuy', 'featurebuy', 'bonusbuy']) ?? false)
-  const isBonus = mode !== 'NORMAL' || wasFeatureBuy || fsRoundWin > 0
+  const isBonus =
+    freespinTriggeredThisSpin ||
+    nextMode === 'FREESPIN' ||
+    nextMode === 'FREESPIN_RESPIN' ||
+    mode !== 'NORMAL' ||
+    wasFeatureBuy ||
+    fsRoundWin > 0
 
   return {
     win,
+    accumulatedRoundWin,
+    freespinTriggeredThisSpin,
+    nextMode,
+    extraSpinCost,
     freespinsLeft,
     mode,
     isBonus,

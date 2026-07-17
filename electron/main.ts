@@ -5,10 +5,13 @@ const { autoUpdater } = updaterModule;
 import logger from 'electron-log';
 import https from 'node:https';
 import http from 'node:http';
+import type { IncomingHttpHeaders } from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'crypto';
 import os from 'os';
+import zlib from 'node:zlib';
+import { promisify } from 'node:util';
 import {
   DIST,
   VITE_PUBLIC,
@@ -2081,7 +2084,263 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = {}, body = null }) => {
+/** Preserve Set-Cookie array values across IPC (plain object, no IncomingHttpHeaders prototype). */
+function normalizeOutgoingProxyHeaders(headers: IncomingHttpHeaders): Record<string, string | string[]> {
+    const out: Record<string, string | string[]> = {};
+    const setCookies = headers['set-cookie'];
+    if (setCookies) {
+        out['set-cookie'] = Array.isArray(setCookies) ? setCookies.map(String) : [String(setCookies)];
+    }
+    for (const [key, val] of Object.entries(headers)) {
+        if (key.toLowerCase() === 'set-cookie' || val === undefined) continue;
+        out[key] = Array.isArray(val) ? val.join(', ') : String(val);
+    }
+    return out;
+}
+
+const gunzipAsync = promisify(zlib.gunzip);
+const inflateAsync = promisify(zlib.inflate);
+const brotliDecompressAsync = promisify(zlib.brotliDecompress);
+
+async function decodeProxyResponseBody(
+    chunks: Buffer[],
+    contentEncoding: string | string[] | undefined
+): Promise<string> {
+    const raw = Buffer.concat(chunks);
+    const enc = (Array.isArray(contentEncoding) ? contentEncoding.join(',') : String(contentEncoding || '')).toLowerCase();
+    try {
+        if (enc.includes('gzip')) return (await gunzipAsync(raw)).toString('utf8');
+        if (enc.includes('br')) return (await brotliDecompressAsync(raw)).toString('utf8');
+        if (enc.includes('deflate')) return (await inflateAsync(raw)).toString('utf8');
+    } catch (err) {
+        console.warn('[proxy-request] decompress failed, using raw body', err);
+    }
+    return raw.toString('utf8');
+}
+
+type NolimitEvoEntryResult = {
+    ok: boolean;
+    status: number;
+    location?: string;
+    tableId?: string | null;
+    evoSessionId?: string | null;
+    cookieString?: string | null;
+    cdn?: string | null;
+    lang?: string | null;
+    locale?: string | null;
+    fingerprint?: string;
+    evoOrigin?: string;
+    error?: string;
+};
+
+function parseTableIdFromEvoLocation(location: string): string | null {
+    const hash = location.indexOf('#');
+    if (hash < 0) return null;
+    try {
+        return new URLSearchParams(location.slice(hash + 1)).get('table_id');
+    } catch {
+        return null;
+    }
+}
+
+function buildNolimitEvoFingerprint(): string {
+    return crypto.randomBytes(12).toString('base64');
+}
+
+function readSetCookieLines(headers: IncomingHttpHeaders): string[] {
+    const raw = headers['set-cookie'];
+    if (!raw) return [];
+    return Array.isArray(raw) ? raw.map(String) : [String(raw)];
+}
+
+function mergeEvoCookiesFromHeaders(headers: IncomingHttpHeaders, into: Map<string, string>) {
+    for (const line of readSetCookieLines(headers)) {
+        const chunks = line.includes(',')
+            ? line.split(/,(?=\s*[A-Za-z_][A-Za-z0-9_-]*=)/)
+            : [line];
+        for (const chunk of chunks) {
+            const head = chunk.trim().split(';')[0]?.trim() || '';
+            const eq = head.indexOf('=');
+            if (eq <= 0) continue;
+            const name = head.slice(0, eq).trim();
+            const value = head.slice(eq + 1).trim().replace(/^"|"$/g, '');
+            if (name && value) into.set(name, value);
+        }
+    }
+}
+
+function extractEvoSessionIdFromHeaders(headers: IncomingHttpHeaders): string | null {
+    for (const line of readSetCookieLines(headers)) {
+        const m = line.match(/(?:^|[;,]\s*)EVOSESSIONID=([^;,\s]+)/i);
+        if (m?.[1]) return m[1];
+    }
+    return null;
+}
+
+function buildNolimitCookieString(cookieMap: Map<string, string>, fallbackCdn: string): string | null {
+    const evoSessionId = cookieMap.get('EVOSESSIONID');
+    if (!evoSessionId) return null;
+    const cdn = cookieMap.get('cdn') || fallbackCdn;
+    const lang = cookieMap.get('lang') || 'fr';
+    const locale = cookieMap.get('locale') || 'en';
+    return `EVOSESSIONID=${evoSessionId}; cdn=${cdn}; lang=${lang}; locale=${locale}`;
+}
+
+function evoEntryRequestOnce(
+    url: string,
+    cookieMap: Map<string, string>,
+    userAgent: string,
+    referer?: string
+): Promise<{ status: number; headers: IncomingHttpHeaders; location: string }> {
+    return new Promise((resolve, reject) => {
+        let parsedUrl: URL;
+        try {
+            parsedUrl = new URL(url);
+        } catch (err) {
+            reject(err);
+            return;
+        }
+
+        const isHttps = parsedUrl.protocol === 'https:';
+        const client = isHttps ? https : http;
+        const agent = isHttps
+            ? new https.Agent({ keepAlive: false, maxSockets: 1, maxFreeSockets: 0 })
+            : new http.Agent({ keepAlive: false, maxSockets: 1, maxFreeSockets: 0 });
+
+        const cookieParts: string[] = [];
+        if (cookieMap.get('EVOSESSIONID')) cookieParts.push(`EVOSESSIONID=${cookieMap.get('EVOSESSIONID')}`);
+        if (cookieMap.get('cdn')) cookieParts.push(`cdn=${cookieMap.get('cdn')}`);
+        if (cookieMap.get('lang')) cookieParts.push(`lang=${cookieMap.get('lang')}`);
+        if (cookieMap.get('locale')) cookieParts.push(`locale=${cookieMap.get('locale')}`);
+
+        const headers: Record<string, string> = {
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'accept-encoding': 'gzip, deflate, br',
+            'accept-language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+            'User-Agent': userAgent,
+        };
+        if (cookieParts.length) headers.Cookie = cookieParts.join('; ');
+        if (referer) headers.Referer = referer;
+
+        const opts: https.RequestOptions = {
+            method: 'GET',
+            hostname: parsedUrl.hostname,
+            port: parsedUrl.port || (isHttps ? 443 : 80),
+            path: parsedUrl.pathname + parsedUrl.search,
+            headers,
+            agent,
+        };
+
+        const destroyAgent = () => {
+            try { agent.destroy(); } catch { /* ignore */ }
+        };
+
+        const req = client.request(opts, (res) => {
+            res.resume();
+            res.on('end', () => {
+                destroyAgent();
+                const locRaw = res.headers.location as string | undefined;
+                const location = locRaw
+                    ? (locRaw.startsWith('http') ? locRaw : new URL(locRaw, url).href)
+                    : '';
+                resolve({ status: res.statusCode || 0, headers: res.headers, location });
+            });
+        });
+        req.on('error', (err) => {
+            destroyAgent();
+            reject(err);
+        });
+        req.end();
+    });
+}
+
+async function nolimitFetchEvoEntry(configUrl: string): Promise<NolimitEvoEntryResult> {
+    const startUrl = String(configUrl || '').trim();
+    if (!startUrl) return { ok: false, status: 0, error: 'configUrl missing' };
+
+    const fingerprint = buildNolimitEvoFingerprint();
+    const userAgent = sessionData.userAgent || STAKE_BROWSER_USER_AGENT;
+    const cookieMap = new Map<string, string>();
+    let url = startUrl;
+    let referer = '';
+    let lastStatus = 0;
+    let lastLocation = '';
+    let tableId: string | null = null;
+    let lastCookieNames: string[] = [];
+    let fallbackCdn = 'babylonstkn';
+    try {
+        fallbackCdn = new URL(startUrl).hostname.split('.')[0] || 'babylonstkn';
+    } catch { /* ignore */ }
+
+    try {
+        for (let hop = 0; hop < 6; hop++) {
+            const res = await evoEntryRequestOnce(url, cookieMap, userAgent, referer || undefined);
+            lastStatus = res.status;
+            mergeEvoCookiesFromHeaders(res.headers, cookieMap);
+            const sessionFromRegex = extractEvoSessionIdFromHeaders(res.headers);
+            if (sessionFromRegex) cookieMap.set('EVOSESSIONID', sessionFromRegex);
+            lastCookieNames = readSetCookieLines(res.headers)
+                .map((line) => line.split(';')[0]?.split('=')[0]?.trim())
+                .filter((name): name is string => !!name);
+
+            if (res.location) {
+                lastLocation = res.location;
+                if (!tableId) tableId = parseTableIdFromEvoLocation(res.location);
+            }
+
+            const evoSessionId = cookieMap.get('EVOSESSIONID') || null;
+            const cookieString = buildNolimitCookieString(cookieMap, fallbackCdn);
+            const cdn = cookieMap.get('cdn') || fallbackCdn;
+            const evoOrigin = `https://${cdn}.evo-games.com`;
+
+            if (evoSessionId && tableId && cookieString) {
+                return {
+                    ok: true,
+                    status: lastStatus,
+                    location: lastLocation,
+                    tableId,
+                    evoSessionId,
+                    cookieString,
+                    cdn,
+                    lang: cookieMap.get('lang') || 'fr',
+                    locale: cookieMap.get('locale') || 'en',
+                    fingerprint,
+                    evoOrigin,
+                };
+            }
+
+            if (res.status >= 300 && res.status < 400 && res.location) {
+                referer = url;
+                url = res.location;
+                continue;
+            }
+            break;
+        }
+
+        const setCookieCount = lastCookieNames.length;
+        return {
+            ok: false,
+            status: lastStatus,
+            location: lastLocation,
+            tableId,
+            evoSessionId: cookieMap.get('EVOSESSIONID') || null,
+            fingerprint,
+            evoOrigin: `https://${cookieMap.get('cdn') || fallbackCdn}.evo-games.com`,
+            error: !cookieMap.get('EVOSESSIONID')
+                ? `EVOSESSIONID missing (set-cookie=${setCookieCount}, names=${lastCookieNames.join('|') || 'none'}, map=${[...cookieMap.keys()].join(',') || 'empty'})`
+                : !tableId
+                  ? `table_id missing (location=${lastLocation.slice(0, 120)})`
+                  : `unexpected status ${lastStatus}`,
+        };
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'request failed';
+        return { ok: false, status: lastStatus, error: message };
+    }
+}
+
+ipcMain.handle('nolimit-evo-entry', async (_event, configUrl: string) => nolimitFetchEvoEntry(configUrl));
+
+ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = {}, body = null, followRedirects = true, freshConnection = false }) => {
     const stakeOrigin = await resolveStakeOrigin();
     return new Promise((resolve, reject) => {
         // Validation logic from SwaqSlotbot (Hauptslotprojekt)
@@ -2233,13 +2492,25 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
             const urlParsed = new URL(targetUrl);
             const isHttps = urlParsed.protocol === 'https:';
             const client = isHttps ? https : http;
+            const useFreshAgent = freshConnection && redirectCount === 0;
+            const freshHttpAgent = useFreshAgent ? new http.Agent({ keepAlive: false, maxSockets: 1, maxFreeSockets: 0 }) : null;
+            const freshHttpsAgent = useFreshAgent ? new https.Agent({ keepAlive: false, maxSockets: 1, maxFreeSockets: 0 }) : null;
+            const requestAgent = useFreshAgent
+                ? (isHttps ? freshHttpsAgent! : freshHttpAgent!)
+                : (isHttps ? PROXY_HTTPS_AGENT : PROXY_HTTP_AGENT);
             const opts: https.RequestOptions = {
                 method: redirectCount > 0 ? 'GET' : method,
                 hostname: urlParsed.hostname,
                 port: urlParsed.port || (isHttps ? 443 : 80),
                 path: urlParsed.pathname + urlParsed.search,
                 headers: redirectCount > 0 ? { ...requestHeaders, Origin: urlParsed.origin, Referer: targetUrl } : requestHeaders,
-                agent: isHttps ? PROXY_HTTPS_AGENT : PROXY_HTTP_AGENT,
+                agent: requestAgent,
+            };
+
+            const destroyFreshAgents = () => {
+                if (!useFreshAgent) return;
+                try { freshHttpAgent?.destroy(); } catch { /* ignore */ }
+                try { freshHttpsAgent?.destroy(); } catch { /* ignore */ }
             };
 
             const req = client.request(opts, (res) => {
@@ -2257,48 +2528,71 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                 });
                 res.on('end', () => {
                     if (abortedForSize) return;
-                    const data = Buffer.concat(chunks).toString();
+                    void (async () => {
+                    const data = await decodeProxyResponseBody(chunks, res.headers['content-encoding']);
                     const loc = res.headers['location'] as string | undefined;
-                    if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && loc && redirectCount < 5) {
-                        const nextUrl = loc.startsWith('http') ? loc : new URL(loc, targetUrl).href;
-                        return doRequest(nextUrl, redirectCount + 1);
+                    if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && loc) {
+                        const resolvedLoc = loc.startsWith('http') ? loc : new URL(loc, targetUrl).href;
+                        if (!followRedirects) {
+                            destroyFreshAgents();
+                            resolve({
+                                status: res.statusCode || 0,
+                                statusText: res.statusMessage || '',
+                                headers: normalizeOutgoingProxyHeaders(res.headers),
+                                data,
+                                finalUrl: resolvedLoc,
+                            });
+                            return;
+                        }
+                        if (redirectCount < 5) {
+                            destroyFreshAgents();
+                            return doRequest(resolvedLoc, redirectCount + 1);
+                        }
                     }
                     if (res.statusCode === 403 && isStakeOriginUrl(targetUrl)) {
                         stakeBrowserGetText(targetUrl, requestHeaders)
                             .then((fallback) => {
+                                destroyFreshAgents();
                                 resolve({
                                     status: fallback.status || 403,
                                     statusText: fallback.status === 200 ? 'OK (browser-fallback)' : (res.statusMessage || ''),
-                                    headers: res.headers,
+                                    headers: normalizeOutgoingProxyHeaders(res.headers),
                                     data: fallback.body,
                                     finalUrl: fallback.finalUrl || targetUrl,
                                 });
                             })
                             .catch((fallbackErr) => {
                                 console.warn('[StakeSession] proxy-request 403 fallback failed', fallbackErr);
+                                destroyFreshAgents();
                                 resolve({
                                     status: res.statusCode || 0,
                                     statusText: res.statusMessage || '',
-                                    headers: res.headers,
+                                    headers: normalizeOutgoingProxyHeaders(res.headers),
                                     data,
                                     finalUrl: targetUrl,
                                 });
                             });
                         return;
                     }
+                    destroyFreshAgents();
                     resolve({
                         status: res.statusCode || 0,
                         statusText: res.statusMessage || '',
-                        headers: res.headers,
+                        headers: normalizeOutgoingProxyHeaders(res.headers),
                         data,
                         finalUrl: loc && res.statusCode && res.statusCode >= 300 && res.statusCode < 400
                             ? (loc.startsWith('http') ? loc : new URL(loc, targetUrl).href)
                             : targetUrl,
                     });
+                    })().catch((err) => {
+                        destroyFreshAgents();
+                        reject(err);
+                    });
                 });
             });
 
             req.on('error', (err) => {
+                destroyFreshAgents();
                 console.error('Proxy Request Error:', err);
                 reject(err);
             });

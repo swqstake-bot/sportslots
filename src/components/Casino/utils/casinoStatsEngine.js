@@ -114,7 +114,10 @@ export function applyCasinoSpinToAggregate(prev, entry, rates = {}) {
   const winMinor = isStoppedBonus ? 0 : winMinorRaw
   const currencyCode = String(entry?.currencyCode || 'usd').toLowerCase()
   const betUsd = resolveUsdMajor(betMinor, currencyCode, rates, entry?.betUsdSnapshotMajor)
-  const winUsd = resolveUsdMajor(winMinor, currencyCode, rates, entry?.winUsdSnapshotMajor)
+  // Stop-on-bonus: nie Win-USD aus altem Snapshot zählen (Trigger-Spin raw win).
+  const winUsd = isStoppedBonus
+    ? 0
+    : resolveUsdMajor(winMinor, currencyCode, rates, entry?.winUsdSnapshotMajor)
 
   next.spins += 1
 
