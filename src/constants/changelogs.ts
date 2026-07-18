@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.209': [
+    '✨ Sport Active Bets: Top-15-Tab + Copy Top 15 (Share-IDs)',
+  ],
   '1.0.208': [
     '✨ Sport: Bets-Tab (kein Modal), kompakte Active-Bets-Liste + Preview',
     '✨ AutoBet: Market-Keyword-Filter (MMA Props), wide Settings/Logs/Bets UI',

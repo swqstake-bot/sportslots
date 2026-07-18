@@ -10,13 +10,14 @@ import {
   computeCashoutFromPreview,
   getCashoutValue,
   getEffectiveOdds,
-  getClosedLegsCount,
+  getOpenLegsCount,
   isCashoutDisabledByCustomPrices,
   resolveCashoutMultiplierForBet,
 } from '../../services/cashoutService';
 import { useCashoutOffers } from '../../hooks/useCashoutOffers';
 import { useAutoCashout } from '../../hooks/useAutoCashout';
 import { useBetHistory } from '../../hooks/useBetHistory';
+import { rankActiveBetsByCashoutUsd, useTopActiveBetsCashout } from '../../hooks/useTopActiveBetsCashout';
 import { BetPreviewModal } from './BetPreviewModal';
 import { BetPreviewPanel } from './BetPreviewPanel';
 import { AutoCashoutControls } from './AutoCashoutControls';
@@ -25,8 +26,14 @@ import { CollapsibleSection } from './CollapsibleSection';
 import { BetListCard } from './BetListCard';
 import { extractSportBetFromPreviewResponse, logPreviewCashoutDebug } from '../../utils/previewCashoutResponse';
 import { toUsd } from '../Logger/loggerUtils';
-import { formatSportBetShareIdForCopy } from '../../utils/stakeSportsUrl';
+import {
+  collectSportBetShareIds,
+  formatSportBetShareIdForCopy,
+  joinSportBetShareIds,
+} from '../../utils/stakeSportsUrl';
 import './active-bets-panel.css';
+
+const TOP_N = 15;
 
 function hasLiveLeg(bet: SportBet): boolean {
   return (bet.outcomes ?? []).some((o: any) => {
@@ -89,13 +96,42 @@ export function ActiveBetsPanel({
   const [sortField, setSortField] = useState<string>('createdAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'active' | 'finished'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'finished' | 'top15'>('active');
+  const [top15Copied, setTop15Copied] = useState(false);
   const [autoCashoutEnabled, setAutoCashoutEnabled] = useState(false);
   const [autoCashoutTargetUsd, setAutoCashoutTargetUsd] = useState(500);
   const [selectedBetIds, setSelectedBetIds] = useState<Set<string>>(new Set());
   const [previewBet, setPreviewBet] = useState<SportBet | null>(null);
   const didOpenInitialPreviewRef = useRef(false);
   const autoCashoutFxWarningRef = useRef<Set<string>>(new Set());
+
+  useTopActiveBetsCashout({
+    usdRates,
+    enabled: activeTab === 'top15' && activeBets.length > 0,
+    topN: TOP_N,
+  });
+
+  const top15Bets = useMemo(
+    () => rankActiveBetsByCashoutUsd(activeBets, usdRates).slice(0, TOP_N),
+    [activeBets, usdRates]
+  );
+  const top15ShareIds = useMemo(() => collectSportBetShareIds(top15Bets), [top15Bets]);
+
+  const copyTop15Ids = useCallback(() => {
+    const text = joinSportBetShareIds(top15ShareIds);
+    if (!text) {
+      showToast('No bet IDs in Top 15', 'info');
+      return;
+    }
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setTop15Copied(true);
+        setTimeout(() => setTop15Copied(false), 2000);
+        showToast(`Copied ${top15ShareIds.length} bet ID(s)`, 'success');
+      })
+      .catch(() => showToast('Copy failed', 'error'));
+  }, [top15ShareIds, showToast]);
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -256,7 +292,7 @@ export function ActiveBetsPanel({
   };
 
   const sortedBets = useMemo(() => {
-    const source = activeTab === 'active' ? activeBets : finishedBets;
+    const source = activeTab === 'finished' ? finishedBets : activeBets;
     const deduped = Array.from(new Map(source.map((b) => [b.id, b])).values());
     return [...deduped].sort((a, b) => {
       let valA: any = a;
@@ -297,8 +333,9 @@ export function ActiveBetsPanel({
           valB = toUsd(getCashoutValue(b), b.currency, usdRates);
           break;
         case 'openLegs':
-          valA = getClosedLegsCount(a);
-          valB = getClosedLegsCount(b);
+          // Mehr offene Legs zuerst bei desc
+          valA = getOpenLegsCount(a);
+          valB = getOpenLegsCount(b);
           break;
         case 'createdAt':
         default:
@@ -323,7 +360,7 @@ export function ActiveBetsPanel({
       if (activeTab === 'active') {
         if (hasLiveLeg(b)) live.push(b);
         else upcoming.push(b);
-      } else {
+      } else if (activeTab === 'finished') {
         const s = String(b.status ?? '').toLowerCase();
         if (s === 'won') won.push(b);
         else if (s === 'cashout' || s === 'cashoutpending') cashout.push(b);
@@ -346,7 +383,79 @@ export function ActiveBetsPanel({
     />
   );
 
+  const renderTop15 = () => {
+    if (activeBets.length === 0) {
+      return (
+        <div className="active-bets-panel-empty">
+          <p className="font-bold uppercase tracking-wide">No active bets</p>
+        </div>
+      );
+    }
+
+    if (top15Bets.length === 0) {
+      return (
+        <div className="active-bets-panel-empty">
+          <p className="font-bold uppercase tracking-wide">No Top 15 bets</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="top15-table-wrap">
+        <table className="top15-table">
+          <thead>
+            <tr>
+              <th className="top15-th top15-th--rank">#</th>
+              <th className="top15-th">Fixture</th>
+              <th className="top15-th top15-th--num">Odds</th>
+              <th className="top15-th top15-th--num">Cashout</th>
+              <th className="top15-th top15-th--center">Legs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {top15Bets.map((bet, i) => {
+              const fixtureName = bet.outcomes?.[0]?.fixture?.name ?? '–';
+              const cashout = getCashoutValue(bet);
+              const open = getOpenLegsCount(bet);
+              const total = bet.outcomes?.length ?? 0;
+              const odds = getEffectiveOdds(bet);
+              const legsTone =
+                open <= 1 ? 'is-danger' : open <= 3 ? 'is-warn' : '';
+              return (
+                <tr
+                  key={bet.id}
+                  className={`top15-row ${previewBet?.id === bet.id ? 'is-selected' : ''}`.trim()}
+                  onClick={() => handlePreviewBet(bet)}
+                >
+                  <td className="top15-td top15-td--rank">{i + 1}</td>
+                  <td className="top15-td top15-td--fixture" title={fixtureName}>
+                    {fixtureName}
+                  </td>
+                  <td className="top15-td top15-td--num top15-td--accent">
+                    {odds > 0 ? `${odds.toFixed(1)}x` : '–'}
+                  </td>
+                  <td className="top15-td top15-td--num top15-td--accent">
+                    {cashout > 0 ? formatCurrencyUsd(cashout, bet.currency) : '–'}
+                  </td>
+                  <td className="top15-td top15-td--center">
+                    <span className={`top15-legs ${legsTone}`.trim()}>
+                      {open}/{total}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   const renderBetSections = () => {
+    if (activeTab === 'top15') {
+      return renderTop15();
+    }
+
     if (activeTab === 'active') {
       return (
         <>
@@ -393,10 +502,36 @@ export function ActiveBetsPanel({
     );
   };
 
-  const isLoading = activeTab === 'active' ? isLoadingActive : isLoadingFinished;
-  const totalCount = activeTab === 'active' ? activeBets.length : finishedBets.length;
+  const isLoading = activeTab === 'finished' ? isLoadingFinished : isLoadingActive;
+  const totalCount =
+    activeTab === 'finished'
+      ? finishedBets.length
+      : activeTab === 'top15'
+        ? top15Bets.length
+        : activeBets.length;
   const showInlinePreview = embedded && previewBet;
   const showModalPreview = !embedded && previewBet;
+
+  const headerTitle =
+    activeTab === 'top15' ? 'Top 15' : activeTab === 'active' ? 'Active Bets' : 'Finished Bets';
+  const headerCount =
+    activeTab === 'top15'
+      ? top15Bets.length
+      : activeTab === 'active'
+        ? activeBets.length
+        : finishedBets.length;
+  const footerLabel =
+    activeTab === 'top15'
+      ? `Top ${top15Bets.length} of ${activeBets.length} active`
+      : activeTab === 'active'
+        ? `Total Active: ${activeBets.length}`
+        : `Total Finished: ${finishedBets.length}`;
+  const emptyLabel =
+    activeTab === 'top15'
+      ? 'No Top 15 bets'
+      : activeTab === 'active'
+        ? 'No active bets'
+        : 'No finished bets';
 
   return (
     <div className={`active-bets-panel ${embedded ? 'active-bets-panel--embedded' : ''}`.trim()}>
@@ -413,18 +548,16 @@ export function ActiveBetsPanel({
 
       <div className="active-bets-panel-header">
         <h2 className="active-bets-panel-title">
-          {activeTab === 'active' ? 'Active Bets' : 'Finished Bets'}
-          <span className="active-bets-panel-count">
-            {activeTab === 'active' ? activeBets.length : finishedBets.length}
-          </span>
+          {headerTitle}
+          <span className="active-bets-panel-count">{headerCount}</span>
         </h2>
         <div className="active-bets-panel-actions">
           <button
             type="button"
-            onClick={activeTab === 'active' ? fetchActiveBets : fetchFinishedBets}
+            onClick={activeTab === 'finished' ? fetchFinishedBets : fetchActiveBets}
             disabled={isLoading}
             className="active-bets-panel-icon-btn"
-            title={activeTab === 'active' ? 'Refresh Active Bets' : 'Refresh Finished Bets'}
+            title={activeTab === 'finished' ? 'Refresh Finished Bets' : 'Refresh Active Bets'}
           >
             {isLoading ? <span className="animate-spin block">↻</span> : <span>↻</span>}
           </button>
@@ -445,6 +578,14 @@ export function ActiveBetsPanel({
           Active
         </button>
 
+        <button
+          type="button"
+          onClick={() => setActiveTab('top15')}
+          className={`active-bets-panel-subtab ${activeTab === 'top15' ? 'is-active' : ''}`.trim()}
+        >
+          Top 15
+        </button>
+
         <AutoCashoutControls
           enabled={autoCashoutEnabled}
           targetUsd={autoCashoutTargetUsd}
@@ -463,34 +604,43 @@ export function ActiveBetsPanel({
         </button>
       </div>
 
-      <div className="active-bets-panel-sort">
-        <span className="active-bets-panel-sort-label">Sort:</span>
-        <div className="flex flex-wrap gap-1">
-          {[
-            { key: 'createdAt', label: 'Date' },
-            { key: 'cashout', label: 'Cashout' },
-            { key: 'openLegs', label: 'Legs' },
-            { key: 'payoutMultiplier', label: 'Odds' },
-          ].map(({ key, label }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => handleSort(key)}
-              className={`active-bets-panel-sort-btn ${sortField === key ? 'is-active' : ''}`.trim()}
-            >
-              {label}
-            </button>
-          ))}
+      {activeTab === 'top15' ? (
+        <div className="active-bets-panel-sort active-bets-panel-sort--top15">
+          <span className="active-bets-panel-sort-label">Cashout → Legs</span>
           <button
             type="button"
-            onClick={() => setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'))}
-            className="active-bets-panel-sort-btn"
-            title={sortDirection === 'asc' ? 'Ascending (oldest first)' : 'Descending (newest first)'}
+            onClick={copyTop15Ids}
+            disabled={top15ShareIds.length === 0}
+            className={`active-bets-panel-copy-top15 ${top15Copied ? 'is-copied' : ''}`.trim()}
+            title={top15ShareIds.length ? top15ShareIds.join(' ') : 'No sport: IDs'}
           >
-            {sortDirection === 'asc' ? '↑' : '↓'}
+            {top15Copied ? 'Copied' : 'Copy Top 15'}
           </button>
         </div>
-      </div>
+      ) : (
+        <div className="active-bets-panel-sort">
+          <span className="active-bets-panel-sort-label">Sort:</span>
+          <div className="flex flex-wrap gap-1">
+            {[
+              { key: 'createdAt', label: 'Date' },
+              { key: 'amount', label: 'Stake' },
+              { key: 'payoutMultiplier', label: 'Odds' },
+              { key: 'openLegs', label: 'Legs' },
+              { key: 'cashout', label: 'Cashout' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => handleSort(key)}
+                className={`active-bets-panel-sort-btn ${sortField === key ? 'is-active' : ''}`.trim()}
+              >
+                {label}
+                {sortField === key ? (sortDirection === 'asc' ? ' ↑' : ' ↓') : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className={`active-bets-panel-body ${showInlinePreview ? 'active-bets-split' : ''}`.trim()}>
         {isLoading && totalCount === 0 ? (
@@ -498,18 +648,49 @@ export function ActiveBetsPanel({
         ) : (
           <>
             <div className="active-bets-list-pane scrollbar-thin">
-              {totalCount > 0 && (
-                <div className="bet-list-table-head" aria-hidden>
+              {activeTab !== 'top15' && totalCount > 0 && (
+                <div className="bet-list-table-head">
                   <span />
-                  <span>Event</span>
-                  <span>Stake</span>
-                  <span>Odds</span>
-                  <span>Cashout</span>
+                  <button
+                    type="button"
+                    className={`bet-list-th ${sortField === 'createdAt' ? 'is-sorted' : ''}`.trim()}
+                    onClick={() => handleSort('createdAt')}
+                  >
+                    Event{sortField === 'createdAt' ? (sortDirection === 'asc' ? ' ↑' : ' ↓') : ''}
+                  </button>
+                  <button
+                    type="button"
+                    className={`bet-list-th bet-list-th--num ${sortField === 'amount' ? 'is-sorted' : ''}`.trim()}
+                    onClick={() => handleSort('amount')}
+                  >
+                    Stake{sortField === 'amount' ? (sortDirection === 'asc' ? ' ↑' : ' ↓') : ''}
+                  </button>
+                  <button
+                    type="button"
+                    className={`bet-list-th bet-list-th--num ${sortField === 'payoutMultiplier' ? 'is-sorted' : ''}`.trim()}
+                    onClick={() => handleSort('payoutMultiplier')}
+                  >
+                    Odds{sortField === 'payoutMultiplier' ? (sortDirection === 'asc' ? ' ↑' : ' ↓') : ''}
+                  </button>
+                  <button
+                    type="button"
+                    className={`bet-list-th bet-list-th--num ${sortField === 'openLegs' ? 'is-sorted' : ''}`.trim()}
+                    onClick={() => handleSort('openLegs')}
+                  >
+                    Legs{sortField === 'openLegs' ? (sortDirection === 'asc' ? ' ↑' : ' ↓') : ''}
+                  </button>
+                  <button
+                    type="button"
+                    className={`bet-list-th bet-list-th--num ${sortField === 'cashout' ? 'is-sorted' : ''}`.trim()}
+                    onClick={() => handleSort('cashout')}
+                  >
+                    Cashout{sortField === 'cashout' ? (sortDirection === 'asc' ? ' ↑' : ' ↓') : ''}
+                  </button>
                   <span />
                 </div>
               )}
               {renderBetSections()}
-              {totalCount === 0 && !isLoading && (
+              {activeTab !== 'top15' && totalCount === 0 && !isLoading && (
                 <div className="active-bets-panel-empty">
                   <svg
                     className="w-14 h-14 mx-auto mb-3 opacity-50"
@@ -524,9 +705,7 @@ export function ActiveBetsPanel({
                       d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
                     />
                   </svg>
-                  <p className="font-bold uppercase tracking-wide">
-                    {activeTab === 'active' ? 'No active bets' : 'No finished bets'}
-                  </p>
+                  <p className="font-bold uppercase tracking-wide">{emptyLabel}</p>
                 </div>
               )}
             </div>
@@ -547,7 +726,7 @@ export function ActiveBetsPanel({
       </div>
 
       <div className="active-bets-panel-footer">
-        <span>{activeTab === 'active' ? `Total Active: ${activeBets.length}` : `Total Finished: ${finishedBets.length}`}</span>
+        <span>{footerLabel}</span>
         {!embedded && onClose && (
           <button type="button" onClick={onClose} className="active-bets-panel-close-btn">
             Close

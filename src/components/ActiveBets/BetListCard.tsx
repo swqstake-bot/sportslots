@@ -70,8 +70,15 @@ export function BetListCard({
   const effectiveOdds = getEffectiveOdds(bet);
   const { label: statusLabel, tone: statusTone } = resolveDisplayStatus(bet);
   const showStatus = String(bet.status ?? '').toLowerCase() !== 'confirmed';
-  const isActiveBet = bet.status === 'active' || bet.active;
+  const isActiveBet = bet.status === 'active' || !!bet.active;
   const canCashout = isActiveBet && !bet.cashoutDisabled && currentCashoutValue > 0;
+  const cashoutDisplay =
+    isActiveBet && !bet.cashoutDisabled && currentCashoutValue > 0
+      ? formatCurrency(currentCashoutValue, bet.currency)
+      : !isActiveBet && bet.payout != null && Number(bet.payout) > 0
+        ? formatCurrency(Number(bet.payout), bet.currency)
+        : null;
+  const legsLabel = legsTotal > 0 ? `${openLegsCount}/${legsTotal}` : '–';
 
   const handleCashout = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -85,13 +92,6 @@ export function BetListCard({
       setIsCashingOut(false);
     }
   };
-
-  const legsMeta =
-    legsTotal > 0
-      ? legsTotal > 1
-        ? `${legsTotal} legs · ${openLegsCount} open`
-        : 'Single'
-      : null;
 
   return (
     <div
@@ -121,13 +121,7 @@ export function BetListCard({
             {firstPick && legsTotal === 1 ? (
               <>
                 <span className="bet-list-pick" title={firstPick}>{firstPick}</span>
-                <span className="bet-list-sep">·</span>
-              </>
-            ) : null}
-            {legsMeta ? (
-              <>
-                <span>{legsMeta}</span>
-                <span className="bet-list-sep">·</span>
+                {dateLabel ? <span className="bet-list-sep">·</span> : null}
               </>
             ) : null}
             {dateLabel && <span>{dateLabel}</span>}
@@ -146,10 +140,20 @@ export function BetListCard({
           </span>
         </div>
 
+        <div className="bet-list-stat bet-list-stat--legs">
+          <span className="bet-list-stat-label">Legs</span>
+          <span
+            className={`bet-list-stat-value ${openLegsCount <= 1 && isActiveBet && legsTotal > 1 ? 'bet-list-stat-value--warn' : ''}`.trim()}
+            title={legsTotal > 0 ? `${openLegsCount} open / ${legsTotal} total` : undefined}
+          >
+            {legsLabel}
+          </span>
+        </div>
+
         <div className="bet-list-stat bet-list-stat--cashout">
-          <span className="bet-list-stat-label">Cashout</span>
-          <span className={`bet-list-stat-value ${canCashout ? 'bet-list-stat-value--accent' : ''}`.trim()}>
-            {canCashout ? formatCurrency(currentCashoutValue, bet.currency) : '–'}
+          <span className="bet-list-stat-label">{isActiveBet ? 'Cashout' : 'Payout'}</span>
+          <span className={`bet-list-stat-value ${cashoutDisplay ? 'bet-list-stat-value--accent' : ''}`.trim()}>
+            {cashoutDisplay ?? '–'}
           </span>
         </div>
 

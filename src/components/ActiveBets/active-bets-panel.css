@@ -103,6 +103,141 @@
   box-shadow: inset 0 -2px 0 0 var(--app-accent);
 }
 
+.active-bets-panel-sort--top15 {
+  justify-content: space-between;
+}
+
+.active-bets-panel-copy-top15 {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid var(--app-border);
+  background: var(--app-bg-deep);
+  color: var(--app-text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.active-bets-panel-copy-top15:hover:not(:disabled) {
+  color: var(--app-text);
+  border-color: var(--app-accent);
+}
+
+.active-bets-panel-copy-top15:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.active-bets-panel-copy-top15.is-copied {
+  color: var(--app-accent);
+}
+
+.top15-table-wrap {
+  padding: 0.35rem 0.5rem 0.75rem;
+}
+
+.top15-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--app-bg-card);
+}
+
+.top15-th {
+  text-align: left;
+  padding: 0.45rem 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--app-text-muted);
+  background: var(--app-bg-deep);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.top15-th--rank {
+  width: 2rem;
+}
+
+.top15-th--num {
+  text-align: right;
+}
+
+.top15-th--center {
+  text-align: center;
+}
+
+.top15-row {
+  cursor: pointer;
+  border-bottom: 1px solid var(--app-border);
+  color: var(--app-text-muted);
+  transition: background 0.12s;
+}
+
+.top15-row:hover,
+.top15-row.is-selected {
+  background: rgba(var(--app-accent-rgb), 0.08);
+}
+
+.top15-td {
+  padding: 0.4rem 0.5rem;
+  vertical-align: middle;
+}
+
+.top15-td--rank {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.top15-td--fixture {
+  color: var(--app-text);
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top15-td--num {
+  text-align: right;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.top15-td--center {
+  text-align: center;
+}
+
+.top15-td--accent {
+  color: var(--app-accent);
+}
+
+.top15-legs {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  background: var(--app-bg-elevated);
+  color: var(--app-text-muted);
+  border: 1px solid transparent;
+}
+
+.top15-legs.is-warn {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.5);
+}
+
+.top15-legs.is-danger {
+  background: rgba(255, 51, 102, 0.2);
+  color: var(--app-error);
+  border-color: rgba(255, 51, 102, 0.5);
+}
+
 .active-bets-panel-sort {
   display: flex;
   align-items: center;
@@ -173,10 +308,10 @@
 /* ─── Compact bet list ─── */
 .bet-list-table-head {
   display: grid;
-  grid-template-columns: 1.6rem minmax(0, 1fr) 4.5rem 3.5rem 4.5rem 4.5rem;
-  gap: 0.5rem 0.65rem;
+  grid-template-columns: 1.4rem minmax(7rem, 1.4fr) minmax(4.2rem, 0.7fr) minmax(3.4rem, 0.55fr) minmax(3.2rem, 0.5fr) minmax(4.6rem, 0.75fr) 3.6rem;
+  gap: 0.35rem 0.5rem;
   align-items: center;
-  padding: 0.45rem 0.85rem;
+  padding: 0.4rem 0.75rem;
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -189,8 +324,38 @@
   z-index: 2;
 }
 
-.bet-list-table-head span:nth-child(n + 3) {
+.bet-list-th {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  opacity: 0.85;
+  transition: color 0.12s, opacity 0.12s;
+}
+
+.bet-list-th:hover,
+.bet-list-th.is-sorted {
+  color: var(--app-accent);
+  opacity: 1;
+}
+
+.bet-list-th--num {
   text-align: right;
+}
+
+.bet-list-row-main {
+  display: grid;
+  grid-template-columns: 1.4rem minmax(7rem, 1.4fr) minmax(4.2rem, 0.7fr) minmax(3.4rem, 0.55fr) minmax(3.2rem, 0.5fr) minmax(4.6rem, 0.75fr) 3.6rem;
+  gap: 0.35rem 0.5rem;
+  align-items: center;
+  padding: 0.55rem 0.75rem;
+  min-height: 2.65rem;
 }
 
 .bet-group {
@@ -299,15 +464,6 @@
 .bet-list-row.is-selected {
   background: rgba(var(--app-accent-rgb), 0.1);
   box-shadow: inset 3px 0 0 var(--app-accent);
-}
-
-.bet-list-row-main {
-  display: grid;
-  grid-template-columns: 1.6rem minmax(0, 1fr) 4.5rem 3.5rem 4.5rem 4.5rem;
-  gap: 0.5rem 0.65rem;
-  align-items: center;
-  padding: 0.55rem 0.85rem;
-  min-height: 2.65rem;
 }
 
 .bet-list-dot {
@@ -427,6 +583,17 @@
   color: var(--app-accent);
 }
 
+.bet-list-stat-value--warn {
+  color: #fbbf24;
+}
+
+.bet-list-stat--odds,
+.bet-list-stat--legs,
+.bet-list-stat--cashout,
+.bet-list-stat--stake {
+  text-align: right;
+}
+
 .bet-list-actions {
   display: flex;
   align-items: center;
@@ -485,9 +652,9 @@
   }
 
   .bet-list-row-main {
-    grid-template-columns: 1.4rem minmax(0, 1fr) auto;
+    grid-template-columns: 1.4rem minmax(0, 1fr) auto auto;
     grid-template-rows: auto auto;
-    gap: 0.35rem 0.5rem;
+    gap: 0.3rem 0.45rem;
     padding: 0.65rem 0.75rem;
   }
 
@@ -511,20 +678,28 @@
 
   .bet-list-stat--stake {
     grid-column: 2;
+    grid-row: 2;
   }
 
   .bet-list-stat--odds {
     grid-column: 3;
+    grid-row: 2;
+  }
+
+  .bet-list-stat--legs {
+    grid-column: 4;
+    grid-row: 2;
   }
 
   .bet-list-stat--cashout {
-    grid-column: 2;
-    grid-row: 2;
+    grid-column: 2 / 4;
+    grid-row: 3;
+    justify-self: start;
   }
 
   .bet-list-actions {
-    grid-column: 3;
-    grid-row: 2;
+    grid-column: 4;
+    grid-row: 3;
   }
 }
 
