@@ -228,10 +228,13 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
   const showSessionLog = showAutomatic || showConditions
   const statsVisible = statsOpen && wbSettings.showStatsPanel
   const turboOk = isTurboCompatibleGame(gameSlug)
+  // Code / Dice Runner have no sidebar — still force single-column grid, otherwise
+  // main content sits in the empty sidebar track and looks pinned to the left.
+  const singleColumnBody = !showSidebar || sidebarCollapsed
 
   return (
     <div
-      className={`originals-workbench${statsVisible ? ' has-stats-open' : ''}${wbSettings.statsFloating ? ' has-stats-float' : ''}${sidebarCollapsed && showSidebar ? ' is-sidebar-collapsed' : ''}${logOpen && showSessionLog ? ' has-log-open' : ''}`}
+      className={`originals-workbench${statsVisible ? ' has-stats-open' : ''}${wbSettings.statsFloating ? ' has-stats-float' : ''}${singleColumnBody ? ' is-sidebar-collapsed' : ''}${logOpen && showSessionLog ? ' has-log-open' : ''}`}
       style={{ ['--originals-sidebar-w' as string]: `${wbSettings.sidebarWidth}px` }}
     >
       <OriginalsModeHeader
@@ -311,7 +314,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
           {showDiceRunner && <DiceRunnerTab />}
 
           {showCode && (
-            <div className="casino-card">
+            <div className="originals-code-panel">
               <OriginalsScriptView />
             </div>
           )}

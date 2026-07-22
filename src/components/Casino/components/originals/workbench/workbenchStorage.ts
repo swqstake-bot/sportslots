@@ -118,10 +118,14 @@ function migrateSettings(raw: Partial<WorkbenchSettings>): WorkbenchSettings {
   if (merged.turboFireIntervalMs === 0) {
     merged.turboFireIntervalMs = DEFAULT_TURBO_FIRE_INTERVAL_MS
   }
-  if (!merged.forceRestartDelaySeconds || merged.forceRestartDelaySeconds <= 0) {
+  if (!Number.isFinite(merged.forceRestartDelaySeconds) || merged.forceRestartDelaySeconds <= 0) {
     merged.forceRestartDelaySeconds = DEFAULT_SETTINGS.forceRestartDelaySeconds
   }
-  if (!merged.requestIntervalRateLimitIncrement || merged.requestIntervalRateLimitIncrement < 0) {
+  if (
+    merged.requestIntervalRateLimitIncrement == null ||
+    !Number.isFinite(merged.requestIntervalRateLimitIncrement) ||
+    merged.requestIntervalRateLimitIncrement < 0
+  ) {
     merged.requestIntervalRateLimitIncrement = DEFAULT_SETTINGS.requestIntervalRateLimitIncrement
   }
   const normalized = normalizeTurboSettings({
@@ -130,8 +134,10 @@ function migrateSettings(raw: Partial<WorkbenchSettings>): WorkbenchSettings {
   })
   merged.turboFireIntervalMs = normalized.fireIntervalMs
   merged.turboMaxInFlight = normalized.maxInFlight
-  if (merged.sidebarWidth > 0 && merged.sidebarWidth < 340) {
+  if (!Number.isFinite(merged.sidebarWidth) || merged.sidebarWidth < 300) {
     merged.sidebarWidth = DEFAULT_SETTINGS.sidebarWidth
+  } else if (merged.sidebarWidth > 520) {
+    merged.sidebarWidth = 520
   }
   return merged
 }

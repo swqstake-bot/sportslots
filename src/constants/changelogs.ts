@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.212': [
+    '🐛 Originals Settings: Zahlenfelder tippbar (kein Snap/Fokusverlust)',
+    '🐛 Originals Code Mode: Layout volle Breite (nicht mehr links in Sidebar-Spalte)',
+  ],
   '1.0.211': [
     '✨ Originals Code Mode: bei API 429 automatisch langsameres Bet-Pacing (+10ms, max +500ms)',
   ],

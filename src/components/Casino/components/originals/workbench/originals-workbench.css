@@ -348,6 +348,7 @@
   background: rgba(0, 0, 0, 0.55);
   cursor: pointer;
   pointer-events: auto;
+  z-index: 0;
 }
 
 .casino-root .originals-settings-modal.casino-card {
@@ -858,6 +859,12 @@
 
 .originals-workbench.is-sidebar-collapsed .originals-workbench-left {
   display: none;
+}
+
+.originals-code-panel {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .originals-workbench.has-stats-open .originals-workbench-body {
