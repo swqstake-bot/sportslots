@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.213': [
+    '🐛 Originals Settings: Fokus/Klicks wieder nutzbar (casino-root::before Hit-Test Fix)',
+  ],
   '1.0.212': [
     '🐛 Originals Settings: Zahlenfelder tippbar (kein Snap/Fokusverlust)',
     '🐛 Originals Code Mode: Layout volle Breite (nicht mehr links in Sidebar-Spalte)',

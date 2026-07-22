@@ -91,6 +91,8 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
     return true
   })
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const closeSettings = useCallback(() => setSettingsOpen(false), [])
+  const openSettings = useCallback(() => setSettingsOpen(true), [])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed)
   const [logOpen, setLogOpen] = useState(loadLogDockOpen)
   const [wbSettings, setWbSettings] = useState<WorkbenchSettings>(() => loadWorkbenchSettingsForGame(gameSlug))
@@ -245,7 +247,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
         onBack={onBack}
         statsOpen={statsVisible}
         onToggleStats={toggleStats}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={openSettings}
         currency={wbSettings.currency}
         onCurrencyChange={handleCurrencyChange}
         currencyDisabled={session.running}
@@ -391,7 +393,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
 
       <OriginalsSettingsModal
         open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={closeSettings}
         settings={wbSettings}
         onChange={applySettings}
       />

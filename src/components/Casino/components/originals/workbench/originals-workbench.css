@@ -332,39 +332,48 @@
 .originals-settings-overlay {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 10000;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: max(1.25rem, env(safe-area-inset-top, 0px)) 1rem max(1rem, env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
-  pointer-events: none;
-}
-
-.originals-settings-backdrop {
-  position: absolute;
-  inset: 0;
-  border: none;
   background: rgba(0, 0, 0, 0.55);
-  cursor: pointer;
   pointer-events: auto;
-  z-index: 0;
+  isolation: isolate;
 }
 
-.casino-root .originals-settings-modal.casino-card {
+.originals-settings-modal {
   position: relative;
-  top: auto;
-  left: auto;
-  transform: none;
   z-index: 1;
   width: min(420px, 94vw);
   max-height: min(88vh, calc(100vh - 2rem));
-  margin: 0;
+  margin: auto;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  border-radius: var(--radius-lg, 0.75rem);
+  border: 1px solid var(--surface-border, var(--border-subtle, var(--border)));
+  background: var(--panel-bg, var(--bg-deep, #0b0f14));
+  color: var(--text, #e8eef5);
   box-shadow: var(--shadow-card, 0 10px 30px rgba(0, 0, 0, 0.34));
   pointer-events: auto;
+  isolation: isolate;
+  outline: none;
+}
+
+/* casino-root brings design tokens; its global grain ::before is fixed fullscreen and
+   steals / passes through clicks in Chromium — disable it on the settings panel only. */
+.originals-settings-modal.casino-root::before,
+.originals-settings-modal.casino-root::after {
+  content: none !important;
+  display: none !important;
+  pointer-events: none !important;
+}
+
+.originals-settings-modal:focus,
+.originals-settings-modal:focus-visible {
+  outline: none;
 }
 
 .originals-settings-form {

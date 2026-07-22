@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { ALL_CURRENCIES, CURRENCY_GROUPS } from '../../../constants/currencies'
 import type { WorkbenchSettings, BetListColumnId } from './workbenchStorage'
@@ -96,13 +96,12 @@ function SettingsForm({
   onChange: (next: WorkbenchSettings) => void
 }) {
   const [draft, setDraft] = useState(initial)
+  const inputCls = 'originals-field-input'
 
   const save = useCallback(() => {
     onChange(draft)
     onClose()
   }, [draft, onChange, onClose])
-
-  const inputCls = 'originals-field-input'
 
   return (
     <div className="originals-settings-form">
@@ -381,42 +380,66 @@ export default function OriginalsSettingsModal({
   settings,
   onChange,
 }: OriginalsSettingsModalProps) {
+  const titleId = useId()
+  const panelRef = useRef<HTMLElement | null>(null)
+
   useEffect(() => {
     if (!open) return
+
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+      }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+
+    // Focus the dialog shell once — not a field — so the first click can enter inputs normally.
+    const t = window.setTimeout(() => {
+      panelRef.current?.focus({ preventScroll: true })
+    }, 0)
+
+    return () => {
+      document.body.style.overflow = prevOverflow
+      window.removeEventListener('keydown', onKey)
+      window.clearTimeout(t)
+    }
   }, [open, onClose])
 
   if (!open) return null
 
+  // Use casino-root for design tokens, but NEVER leave its fullscreen ::before active
+  // (see CSS: .originals-settings-modal.casino-root::before { display: none }).
+  // That fixed grain layer was letting clicks fall through so focus vanished instantly.
   return createPortal(
-    <div className="originals-settings-overlay" role="presentation">
-      <div
-        className="originals-settings-backdrop"
-        aria-hidden="true"
-        onMouseDown={(e) => {
-          // Prevent focus steal from inputs before close; close on primary click only.
-          e.preventDefault()
-          if (e.button === 0) onClose()
-        }}
-      />
+    <div
+      className="originals-settings-overlay"
+      role="presentation"
+      onMouseDown={(e) => {
+        // Close only when pressing the dimmed overlay itself (not the panel).
+        if (e.target === e.currentTarget && e.button === 0) onClose()
+      }}
+    >
       <aside
-        className="casino-root originals-settings-modal casino-card"
+        ref={panelRef}
+        className="casino-root originals-settings-modal"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="originals-settings-title"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="originals-stats-drawer-header">
-          <h3 id="originals-settings-title">Workbench settings</h3>
-          <button type="button" onClick={onClose} className="originals-stats-close">
+          <h3 id={titleId}>Workbench settings</h3>
+          <button type="button" onClick={onClose} className="originals-stats-close" aria-label="Close settings">
             ×
           </button>
         </div>
-        <SettingsForm key="settings-draft" initial={settings} onClose={onClose} onChange={onChange} />
+        <SettingsForm initial={settings} onClose={onClose} onChange={onChange} />
       </aside>
     </div>,
     document.body
