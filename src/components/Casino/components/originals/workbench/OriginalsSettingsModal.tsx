@@ -158,12 +158,12 @@ function SettingsForm({
             onChange={(e) =>
               setDraft((d) => ({
                 ...d,
-                requestIntervalRateLimitIncrement: Math.max(0, Number(e.target.value) || 25),
+                requestIntervalRateLimitIncrement: Math.max(0, Number(e.target.value) || 50),
               }))
             }
             className={inputCls}
           />
-          <span className="originals-field-hint">Adds this many ms to request interval on each 429. Default 25.</span>
+          <span className="originals-field-hint">Adds this many ms to request interval on each 429. Default 50. Caps at 500ms extra.</span>
         </label>
       </SettingsSection>
 

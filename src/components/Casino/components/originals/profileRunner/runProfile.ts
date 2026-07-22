@@ -31,6 +31,13 @@ import { applyConditionBlocks } from '../engine/conditionsRunner'
 import { waitWhilePaused, type SessionSignal } from '../engine/sessionSignal'
 import { createVaultDeposit } from '../../../api/vaultApi'
 import { isRateLimitError, TURBO_RATE_LIMIT_INTERVAL_BUMP_MS } from '../engine/turboConfig'
+
+/** Cap for adaptive inter-bet delay added after 429s (sequential / Code Mode). */
+const SEQ_RATE_LIMIT_EXTRA_CAP_MS = 500
+/** Default ms added to pacing per 429 when settings omit the bump. */
+const SEQ_RATE_LIMIT_DEFAULT_BUMP_MS = 50
+/** After this many clean bets, ease one bump so pacing can recover. */
+const SEQ_RATE_LIMIT_DECAY_AFTER_CLEAN_BETS = 40
 import {
   resolveOriginalsRoundUsd,
   isB2bWinMode,
@@ -358,18 +365,51 @@ export async function runProfile(
     clientSeed?: string
     maxFiatBetSize?: number
     requestIntervalAsyncMode?: number
+    requestInterval?: number
+    requestIntervalRateLimitIncrement?: number
   }
+  const rateLimitBumpMs = (() => {
+    const raw = wbSessionSettings.requestIntervalRateLimitIncrement
+    if (raw == null || !Number.isFinite(Number(raw))) return SEQ_RATE_LIMIT_DEFAULT_BUMP_MS
+    return Math.max(0, Number(raw))
+  })()
+  let adaptiveExtraDelayMs = 0
+  let cleanBetsSinceRateLimit = 0
   const capBetUsd = (usd: number): number => {
     const max = wbSessionSettings.maxFiatBetSize ?? 0
     if (max > 0 && usd > max) return max
     return usd
   }
   const rotateSeed = () => rotateSeedPair(wbSessionSettings.clientSeed?.trim() || undefined)
-  const getRequestDelayMs = (): number => {
+  const getBaseRequestDelayMs = (): number => {
     if (workbenchOptions.asyncMode) {
       return wbSessionSettings.requestIntervalAsyncMode ?? workbenchOptions.requestInterval ?? 0
     }
-    return workbenchOptions.requestInterval ?? 0
+    return workbenchOptions.requestInterval ?? wbSessionSettings.requestInterval ?? 0
+  }
+  const getRequestDelayMs = (): number => getBaseRequestDelayMs() + adaptiveExtraDelayMs
+  const noteRateLimitHit = () => {
+    if (rateLimitBumpMs <= 0) return
+    const prev = adaptiveExtraDelayMs
+    adaptiveExtraDelayMs = Math.min(SEQ_RATE_LIMIT_EXTRA_CAP_MS, adaptiveExtraDelayMs + rateLimitBumpMs)
+    cleanBetsSinceRateLimit = 0
+    if (adaptiveExtraDelayMs !== prev) {
+      callbacks.onLog?.(
+        `Rate limit — pacing +${rateLimitBumpMs}ms (delay now ${getRequestDelayMs()}ms)`
+      )
+    }
+  }
+  const noteSuccessfulBetForPacing = () => {
+    if (adaptiveExtraDelayMs <= 0 || rateLimitBumpMs <= 0) return
+    cleanBetsSinceRateLimit += 1
+    if (cleanBetsSinceRateLimit < SEQ_RATE_LIMIT_DECAY_AFTER_CLEAN_BETS) return
+    cleanBetsSinceRateLimit = 0
+    adaptiveExtraDelayMs = Math.max(0, adaptiveExtraDelayMs - rateLimitBumpMs)
+    callbacks.onLog?.(
+      adaptiveExtraDelayMs > 0
+        ? `Rate limit ease — delay now ${getRequestDelayMs()}ms`
+        : 'Rate limit ease — back to base delay'
+    )
   }
   const comboEngine: ComboEngineState | null = workbenchEnabled ? createComboEngine(workbenchOptions) : null
   const b2bRuntime: B2bRuntimeState | null = workbenchEnabled ? createB2bRuntime() : null
@@ -501,8 +541,11 @@ export async function runProfile(
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       if (isRetryableOriginalsScriptError(e) && !signal.cancelled) {
-        const retryDelay = isRateLimitError(e) ? Math.min(30000, ORIGINALS_SCRIPT_RETRY_DELAY_MS + TURBO_RATE_LIMIT_INTERVAL_BUMP_MS * 4) : ORIGINALS_SCRIPT_RETRY_DELAY_MS
-        callbacks.onLog?.(`Fehler — retry in ${Math.round(retryDelay/1000)}s: ${msg.slice(0, 120)}`)
+        if (isRateLimitError(e)) noteRateLimitHit()
+        const retryDelay = isRateLimitError(e)
+          ? Math.min(30000, ORIGINALS_SCRIPT_RETRY_DELAY_MS + TURBO_RATE_LIMIT_INTERVAL_BUMP_MS * 4)
+          : ORIGINALS_SCRIPT_RETRY_DELAY_MS
+        callbacks.onLog?.(`Fehler — retry in ${Math.round(retryDelay / 1000)}s: ${msg.slice(0, 120)}`)
         await sleep(retryDelay)
         return null
       }
@@ -510,6 +553,7 @@ export async function runProfile(
       callbacks.onBetPlaced?.({ error: msg })
       return { cancelled: true, payout: 0, payoutUsd: 0, wageredUsdThisRound: 0, placedAmountMajor: amountToPlace, multi: 0, win: false, betApi: null }
     }
+    noteSuccessfulBetForPacing()
     let payoutUsd: number
     let multi: number
     let placedAmountMajor = amountToPlace

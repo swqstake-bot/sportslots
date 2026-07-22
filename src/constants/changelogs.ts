@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.210': [
+    '✨ Originals Code Mode: bei API 429 automatisch langsameres Bet-Pacing (+50ms, max +500ms)',
+  ],
   '1.0.209': [
     '✨ Sport Active Bets: Top-15-Tab + Copy Top 15 (Share-IDs)',
   ],

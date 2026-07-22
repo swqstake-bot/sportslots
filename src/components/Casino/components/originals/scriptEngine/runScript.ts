@@ -3,6 +3,7 @@
  */
 
 import { runProfile } from '../profileRunner/runProfile'
+import { loadWorkbenchSettings } from '../workbench/workbenchStorage'
 import type { ScriptSessionStats } from './scriptSessionStats'
 
 export interface ScriptRunCallbacks {
@@ -130,6 +131,40 @@ export function normalizeProfileOptions(options: Record<string, unknown>): Recor
 }
 
 /**
+ * Code Mode has no workbench session wrapper — inject pacing settings so 429
+ * auto-slowdown still works (same knobs as Automatic settings).
+ */
+function withCodeModePacing(options: Record<string, unknown>): Record<string, unknown> {
+  if (options._workbenchSettings && typeof options._workbenchSettings === 'object') {
+    return options
+  }
+  try {
+    const wb = loadWorkbenchSettings()
+    const rawBump = wb.requestIntervalRateLimitIncrement
+    const bump =
+      rawBump == null || !Number.isFinite(Number(rawBump))
+        ? 50
+        : Math.max(0, Number(rawBump))
+    return {
+      ...options,
+      requestInterval:
+        options.requestInterval != null ? options.requestInterval : (wb.requestInterval ?? 0),
+      _workbenchSettings: {
+        requestInterval: wb.requestInterval ?? 0,
+        requestIntervalRateLimitIncrement: bump,
+      },
+    }
+  } catch {
+    return {
+      ...options,
+      _workbenchSettings: {
+        requestIntervalRateLimitIncrement: 50,
+      },
+    }
+  }
+}
+
+/**
  * Führt ein Profil (options-Objekt) aus. Gibt eine Stop-Funktion zurück.
  * Einsatz in options (initialBetSize/betSize) = USD; usdRates wird zur Umrechnung in die gewählte Währung genutzt.
  */
@@ -141,7 +176,7 @@ export function runProfileSession(
   accessToken?: string
 ): () => void {
   const signal = { cancelled: false, paused: false }
-  runProfile(normalizeProfileOptions(options), currency, callbacks, signal, usdRates, accessToken).finally(() =>
+  runProfile(withCodeModePacing(normalizeProfileOptions(options)), currency, callbacks, signal, usdRates, accessToken).finally(() =>
     callbacks.onStopped?.()
   )
   return () => {
