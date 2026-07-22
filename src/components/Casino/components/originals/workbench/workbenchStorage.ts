@@ -65,7 +65,7 @@ export type WorkbenchSettings = {
   forceRestartBetting: boolean
   /** Delay in seconds before auto-restart after session ends. Default 15. */
   forceRestartDelaySeconds: number
-  /** How many ms to add to requestInterval on each 429. Default 50. */
+  /** How many ms to add to requestInterval on each 429. Default 10. */
   requestIntervalRateLimitIncrement: number
   sidebarWidth: number
   showBetList: boolean
@@ -92,7 +92,7 @@ const DEFAULT_SETTINGS: WorkbenchSettings = {
   soundOnLoss: false,
   forceRestartBetting: false,
   forceRestartDelaySeconds: 15,
-  requestIntervalRateLimitIncrement: 50,
+  requestIntervalRateLimitIncrement: 10,
   sidebarWidth: 320,
   showBetList: true,
   showStatsPanel: true,

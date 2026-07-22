@@ -35,7 +35,7 @@ import { isRateLimitError, TURBO_RATE_LIMIT_INTERVAL_BUMP_MS } from '../engine/t
 /** Cap for adaptive inter-bet delay added after 429s (sequential / Code Mode). */
 const SEQ_RATE_LIMIT_EXTRA_CAP_MS = 500
 /** Default ms added to pacing per 429 when settings omit the bump. */
-const SEQ_RATE_LIMIT_DEFAULT_BUMP_MS = 50
+const SEQ_RATE_LIMIT_DEFAULT_BUMP_MS = 10
 /** After this many clean bets, ease one bump so pacing can recover. */
 const SEQ_RATE_LIMIT_DECAY_AFTER_CLEAN_BETS = 40
 import {

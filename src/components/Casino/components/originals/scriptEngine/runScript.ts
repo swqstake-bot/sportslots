@@ -143,7 +143,7 @@ function withCodeModePacing(options: Record<string, unknown>): Record<string, un
     const rawBump = wb.requestIntervalRateLimitIncrement
     const bump =
       rawBump == null || !Number.isFinite(Number(rawBump))
-        ? 50
+        ? 10
         : Math.max(0, Number(rawBump))
     return {
       ...options,
@@ -158,7 +158,7 @@ function withCodeModePacing(options: Record<string, unknown>): Record<string, un
     return {
       ...options,
       _workbenchSettings: {
-        requestIntervalRateLimitIncrement: 50,
+        requestIntervalRateLimitIncrement: 10,
       },
     }
   }
