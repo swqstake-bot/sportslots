@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.214': [
+    '✨ Originals Limbo: max Target-Multi 1.000.000× (nicht mehr 9900× wie Dice)',
+  ],
   '1.0.213': [
     '🐛 Originals Settings: Fokus/Klicks wieder nutzbar (casino-root::before Hit-Test Fix)',
   ],

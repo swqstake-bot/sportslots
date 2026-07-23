@@ -32,6 +32,7 @@ import {
 } from '../../../api/stakeOriginalsBets'
 import { playBlackjackScriptRound } from '../blackjack/blackjackScriptRound'
 import { eggLevelsToApi, normalizeEggLevels } from '../games/DragonTowerEggGrid'
+import { clampLimboMultiplier } from '../games/targetMath'
 import type { OriginalsBetApiRow } from './originalsRoundResult'
 
 const GRID_SIZE = 25
@@ -139,7 +140,7 @@ export async function placeOriginalsBet(
   }
 
   if (g === 'limbo') {
-    const mult = Math.max(1.01, optFrom(opts, 'targetMultiplier', 2))
+    const mult = clampLimboMultiplier(optFrom(opts, 'targetMultiplier', 2))
     const res = await placeLimboBet({ amount: amountMajor, currency: cur, targetMultiplier: mult })
     return resultFromApi(res, amountMajor, g)
   }

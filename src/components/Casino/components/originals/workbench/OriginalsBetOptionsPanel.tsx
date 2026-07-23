@@ -17,7 +17,7 @@ import {
 import OriginalsStrategyManager from './OriginalsStrategyManager'
 import DiceChanceControl from '../games/DiceChanceControl'
 import { gameUsesMultiplierStrategy } from '../registry/gameApiSchema'
-import { clampMultiplier, DICE_MAX_MULTIPLIER } from '../games/targetMath'
+import { clampMultiplier, clampLimboMultiplier, DICE_MAX_MULTIPLIER, LIMBO_MAX_MULTIPLIER } from '../games/targetMath'
 import { fieldInputCls } from '../games/gamePanelFields'
 import ActiveTargetSummary from './ActiveTargetSummary'
 import BetSizeSlider from './BetSizeSlider'
@@ -177,12 +177,14 @@ export default function OriginalsBetOptionsPanel({
                   <input
                     type="number"
                     min={1.01}
-                    max={DICE_MAX_MULTIPLIER}
+                    max={LIMBO_MAX_MULTIPLIER}
                     step={0.01}
                     disabled={disabled}
                     className={fieldInputCls}
-                    value={clampMultiplier(o.targetMultiplier ?? 2)}
-                    onChange={(e) => patch({ targetMultiplier: clampMultiplier(Number(e.target.value) || 2) })}
+                    value={clampLimboMultiplier(o.targetMultiplier ?? 2)}
+                    onChange={(e) =>
+                      patch({ targetMultiplier: clampLimboMultiplier(Number(e.target.value) || 2) })
+                    }
                   />
                 </label>
               )
@@ -193,11 +195,19 @@ export default function OriginalsBetOptionsPanel({
                   <input
                     type="number"
                     min={1.01}
+                    max={gameSlug === 'limbo' ? LIMBO_MAX_MULTIPLIER : DICE_MAX_MULTIPLIER}
                     step={0.01}
                     disabled={disabled}
                     className={inputCls}
                     value={o.targetMultiplierFrom ?? 2}
-                    onChange={(e) => patch({ targetMultiplierFrom: clampMultiplier(Number(e.target.value) || 2) })}
+                    onChange={(e) =>
+                      patch({
+                        targetMultiplierFrom:
+                          gameSlug === 'limbo'
+                            ? clampLimboMultiplier(Number(e.target.value) || 2)
+                            : clampMultiplier(Number(e.target.value) || 2),
+                      })
+                    }
                   />
                 </label>
                 <label className="block">
@@ -205,11 +215,19 @@ export default function OriginalsBetOptionsPanel({
                   <input
                     type="number"
                     min={1.01}
+                    max={gameSlug === 'limbo' ? LIMBO_MAX_MULTIPLIER : DICE_MAX_MULTIPLIER}
                     step={0.01}
                     disabled={disabled}
                     className={inputCls}
                     value={o.targetMultiplierTo ?? 10}
-                    onChange={(e) => patch({ targetMultiplierTo: clampMultiplier(Number(e.target.value) || 10) })}
+                    onChange={(e) =>
+                      patch({
+                        targetMultiplierTo:
+                          gameSlug === 'limbo'
+                            ? clampLimboMultiplier(Number(e.target.value) || 10)
+                            : clampMultiplier(Number(e.target.value) || 10),
+                      })
+                    }
                   />
                 </label>
               </div>

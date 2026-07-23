@@ -1,7 +1,7 @@
 import type { OriginalsWorkbenchOptions } from '../schema/workbenchOptions'
 import { computeComboMultiplier } from '../schema/workbenchOptions'
 import { gameUsesMultiplierStrategy } from '../registry/gameApiSchema'
-import { clampMultiplier, diceRollThreshold, diceWinChance } from '../games/targetMath'
+import { clampMultiplier, clampLimboMultiplier, diceRollThreshold, diceWinChance } from '../games/targetMath'
 import { roundMultiplierFor } from '../games/roundMultiplierTables'
 import { formatPayoutMulti } from '../games/payoutTables/formatPayoutMulti'
 import {
@@ -48,7 +48,7 @@ export function buildActiveTargetItems(
       break
     }
     case 'limbo': {
-      const mult = clampMultiplier(options.targetMultiplier ?? 2)
+      const mult = clampLimboMultiplier(options.targetMultiplier ?? 2)
       const mode = options.targetSelectionMode ?? 'static'
       if (mode === 'combo' && (options.comboParts?.length ?? 0) > 0) {
         items.push({ label: 'Combo', value: `${options.comboParts!.length} legs · ${computeComboMultiplier(options.comboParts!).toFixed(2)}×` })

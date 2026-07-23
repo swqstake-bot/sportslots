@@ -408,7 +408,7 @@ export default function OriginalsScriptBuilder() {
           <div className={sectionCls}>
             <div>
               <label className={labelCls}>Target multiplier</label>
-              <input type="number" min="1.01" step="0.01" value={opts.targetMultiplier} onChange={(e) => updateOpt('targetMultiplier', Number(e.target.value))} className={inputCls} />
+              <input type="number" min="1.01" max="1000000" step="0.01" value={opts.targetMultiplier} onChange={(e) => updateOpt('targetMultiplier', Number(e.target.value))} className={inputCls} />
             </div>
           </div>
         </AccordionSection>

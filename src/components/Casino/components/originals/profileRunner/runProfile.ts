@@ -12,7 +12,7 @@ import {
 import { createScriptHouseBetIdBridge } from '../scriptEngine/scriptHouseBetIdBridge'
 import type { ScriptSessionStats } from '../scriptEngine/scriptSessionStats'
 import type { OriginalsWorkbenchOptions } from '../schema/workbenchOptions'
-import { clampMultiplier } from '../games/targetMath'
+import { clampMultiplier, clampLimboMultiplier, LIMBO_MAX_MULTIPLIER } from '../games/targetMath'
 import {
   advanceComboAfterRound,
   comboEngineControlsBetSize,
@@ -113,24 +113,38 @@ function pickLimboTargetMultiplier(opts: Record<string, unknown>): number {
     const lo = Math.min(from, to)
     const hi = Math.max(from, to)
     const raw = lo + Math.random() * (hi - lo)
-    return Math.round(clampMultiplier(raw) * 100) / 100
+    return Math.round(clampLimboMultiplier(raw) * 100) / 100
   }
-  return clampMultiplier(optFrom(opts, 'targetMultiplier', 2))
+  return clampLimboMultiplier(optFrom(opts, 'targetMultiplier', 2))
 }
 
-function pickWorkbenchTargetMultiplier(opts: Record<string, unknown>): number {
+function pickWorkbenchTargetMultiplier(
+  opts: Record<string, unknown>,
+  maxMultiplier = 9900
+): number {
+  const clamp = (n: number) =>
+    maxMultiplier >= LIMBO_MAX_MULTIPLIER ? clampLimboMultiplier(n) : clampMultiplier(n, maxMultiplier)
   if (optBoolFrom(opts, 'isRandomMultiplier', false)) {
     const m1 = optFrom(opts, 'randomMultiplier1', 2)
     const m2 = optFrom(opts, 'randomMultiplier2', 10)
     const lo = Math.min(m1, m2)
     const hi = Math.max(m1, m2)
     if (lo > 0 && hi > 0) {
-      return Math.round((lo + Math.random() * (hi - lo)) * 100) / 100
+      return Math.round(clamp(lo + Math.random() * (hi - lo)) * 100) / 100
     }
   }
   const mode = String(opts.targetSelectionMode ?? 'static')
-  if (mode === 'random') return pickLimboTargetMultiplier(opts)
-  return clampMultiplier(optFrom(opts, 'targetMultiplier', 2))
+  if (mode === 'random') {
+    if (maxMultiplier >= LIMBO_MAX_MULTIPLIER) return pickLimboTargetMultiplier(opts)
+    const from = optFrom(opts, 'targetMultiplierFrom', 0)
+    const to = optFrom(opts, 'targetMultiplierTo', 0)
+    if (from > 0 && to > 0) {
+      const lo = Math.min(from, to)
+      const hi = Math.max(from, to)
+      return Math.round(clamp(lo + Math.random() * (hi - lo)) * 100) / 100
+    }
+  }
+  return clamp(optFrom(opts, 'targetMultiplier', 2))
 }
 
 function applyDiceTargetFromMultiplier(opts: Record<string, unknown>, mult: number): Record<string, unknown> {
@@ -516,7 +530,7 @@ export async function runProfile(
     let localOpts = { ...optsRound }
     try {
       if (gameRound === 'limbo') {
-        localOpts = { ...localOpts, targetMultiplier: pickWorkbenchTargetMultiplier(localOpts) }
+        localOpts = { ...localOpts, targetMultiplier: pickWorkbenchTargetMultiplier(localOpts, LIMBO_MAX_MULTIPLIER) }
       } else if (gameRound === 'dice') {
         const modeSel = String(localOpts.targetSelectionMode ?? 'static')
         if (modeSel === 'random' || optBoolFrom(localOpts, 'isRandomMultiplier', false)) {
