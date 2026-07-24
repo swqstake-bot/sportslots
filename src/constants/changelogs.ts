@@ -1,4 +1,9 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.215': [
+    '✨ Originals Workbench: schlankeres UX (Automatic + More, Advanced strategy, kein Manual)',
+    '🐛 Originals Packs: kein Difficulty-Feld (nur Cases hat Difficulty)',
+    '✨ Originals: Base-Bet 0 erlaubt (ohne Einsatz)',
+  ],
   '1.0.214': [
     '✨ Originals Limbo: max Target-Multi 1.000.000× (nicht mehr 9900× wie Dice)',
   ],
