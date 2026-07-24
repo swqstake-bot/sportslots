@@ -47,7 +47,7 @@ export function getComboBetParams(
 ): { targetMultiplier: number; betSizeUsd: number; rollUnder?: number } {
   const base = (() => {
     for (const v of [options.initialBetSize, options.betSize]) {
-      if (v === undefined || v === null || (v as string) === '') continue
+      if (v === undefined || v === null) continue
       const n = Number(v)
       if (Number.isFinite(n) && n >= 0) return n
     }
