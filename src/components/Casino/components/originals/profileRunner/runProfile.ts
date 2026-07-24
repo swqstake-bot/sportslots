@@ -181,6 +181,16 @@ function currencyAmountToUsd(amount: number, currency: string, usdRates?: Record
 function optFrom(o: Record<string, unknown>, key: string, def: number): number {
   return (o[key] as number) ?? def
 }
+
+/** Bet size in USD — allows 0. `||` must not be used (0 is valid). */
+function readBetUsd(primary: unknown, secondary?: unknown, fallback = 0.01): number {
+  for (const v of [primary, secondary]) {
+    if (v === undefined || v === null || v === '') continue
+    const n = Number(v)
+    if (Number.isFinite(n) && n >= 0) return n
+  }
+  return fallback
+}
 function optBoolFrom(o: Record<string, unknown>, key: string, def: boolean): boolean {
   return (o[key] as boolean) ?? def
 }
@@ -334,8 +344,10 @@ export async function runProfile(
   let currentOpts = options
   let currentGame = (currentOpts.game as string) || 'dice'
 
-  const initialBetSizeWager = Math.max(0.00000001, Number(options.initialBetSize) || Number(options.betSize) || 0.01)
-  const initialBetSizeRec = recoveryOptions ? Math.max(0.00000001, Number(recoveryOptions.initialBetSize) || Number(recoveryOptions.betSize) || 0.01) : 0.01
+  const initialBetSizeWager = readBetUsd(options.initialBetSize, options.betSize, 0.01)
+  const initialBetSizeRec = recoveryOptions
+    ? readBetUsd(recoveryOptions.initialBetSize, recoveryOptions.betSize, 0.01)
+    : 0.01
 
   let betSizeUsd = initialBetSizeWager
   let currentBlockBase = initialBetSizeWager
@@ -440,7 +452,12 @@ export async function runProfile(
   let vaultDeposited = false
 
   const preRolls = mode === 'wager' ? Math.max(0, optFrom(options, 'preRolls', 0)) : 0
-  const preRollsBetSizeUsd = Math.max(0.00000001, optFrom(options, 'preRollsBetSize', 0) || initialBetSizeWager)
+  const preRollsBetSizeUsd = (() => {
+    const raw = options.preRollsBetSize
+    if (raw === undefined || raw === null || raw === '') return initialBetSizeWager
+    const n = Number(raw)
+    return Number.isFinite(n) && n >= 0 ? n : initialBetSizeWager
+  })()
   const kenoHeatmapCycleConfig =
     mode === 'wager' ? readKenoHeatmapCycleConfig(options, initialBetSizeWager) : null
   const kenoHeatmapCycleRuntime = kenoHeatmapCycleConfig
@@ -476,7 +493,7 @@ export async function runProfile(
     currentGame = stage.game
     currentOpts = { ...options, ...(stage.options ?? {}), game: stage.game }
     // Einsatz pro Stage resetten (damit jede Stage „sauber“ startet)
-    const stageInitial = Math.max(0.00000001, Number(currentOpts.initialBetSize) || Number(currentOpts.betSize) || initialBetSizeWager)
+    const stageInitial = readBetUsd(currentOpts.initialBetSize, currentOpts.betSize, initialBetSizeWager)
     betSizeUsd = stageInitial
     currentBlockBase = stageInitial
     effectiveBaseUsd = stageInitial
@@ -687,7 +704,7 @@ export async function runProfile(
           ? lastPayoutUsd
           : currencyAmountToUsd(lastPayoutCurrency, cur, usdRates)
       if (Number.isFinite(nextUsd) && nextUsd > 0) {
-        betSizeUsd = Math.max(0.00000001, nextUsd)
+        betSizeUsd = Math.max(0, nextUsd)
       }
     }
   }

@@ -120,7 +120,7 @@ export default function OriginalsBetOptionsPanel({
       <section className="originals-options-section">
         <h4 className="originals-section-title">Bet size</h4>
         <BetSizeSlider
-          value={o.initialBetSize ?? 0.01}
+          value={o.initialBetSize ?? o.betSize ?? 0.01}
           currency={currency}
           disabled={disabled}
           onChange={(v) => patch({ initialBetSize: v, betSize: v })}

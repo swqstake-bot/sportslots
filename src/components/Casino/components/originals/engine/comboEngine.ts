@@ -45,7 +45,14 @@ export function getComboBetParams(
   options: OriginalsWorkbenchOptions,
   state: ComboEngineState
 ): { targetMultiplier: number; betSizeUsd: number; rollUnder?: number } {
-  const base = Math.max(0.00000001, Number(options.initialBetSize) || Number(options.betSize) || 0.01)
+  const base = (() => {
+    for (const v of [options.initialBetSize, options.betSize]) {
+      if (v === undefined || v === null || (v as string) === '') continue
+      const n = Number(v)
+      if (Number.isFinite(n) && n >= 0) return n
+    }
+    return 0.01
+  })()
   const parts = resolveComboParts(options)
 
   if (state.phase === 'hunt' && options.huntEnabled) {

@@ -59,7 +59,14 @@ export async function runTurboProfile(
     return max > 0 && usd > max ? max : usd
   }
 
-  const initialBetUsd = Math.max(0.00000001, Number(options.initialBetSize) || Number(options.betSize) || 0.01)
+  const initialBetUsd = (() => {
+    for (const v of [options.initialBetSize, options.betSize]) {
+      if (v === undefined || v === null || v === '') continue
+      const n = Number(v)
+      if (Number.isFinite(n) && n >= 0) return n
+    }
+    return 0.01
+  })()
   const numberOfBets = Math.max(0, optFrom(options, 'numberOfBets', 0))
   const stopOnProfit = optFrom(options, 'stopOnProfit', 0)
   const stopOnLoss = optFrom(options, 'stopOnLoss', 0)
