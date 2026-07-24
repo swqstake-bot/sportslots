@@ -14,7 +14,7 @@ export type WorkbenchOnWinLoss = 'reset' | 'increase' | 'decrease' | 'martingale
 
 
 
-export type OriginalsBettingMode = 'manual' | 'automatic' | 'conditions' | 'code' | 'dice-runner'
+export type OriginalsBettingMode = 'automatic' | 'conditions' | 'code' | 'dice-runner'
 
 
 

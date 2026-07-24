@@ -146,11 +146,6 @@ export default function OriginalsBetOptionsPanel({
         <h4 className="originals-section-title">
           Target {gameSlug === 'dice' ? '(chance)' : '(multiplier)'}
         </h4>
-        <p className="originals-game-api-hint originals-game-api-hint--inline">
-          {gameSlug === 'dice'
-            ? 'Dice: diceRoll(condition, target) — only dice & limbo use profile targets'
-            : 'Limbo: limboBet(multiplierTarget)'}
-        </p>
 
         <div className="flex flex-wrap gap-1 mb-2">
           {(['static', 'random', 'combo'] as const).map((m) => (
@@ -244,103 +239,83 @@ export default function OriginalsBetOptionsPanel({
         </p>
       )}
 
+      {isProfile && (
+        <div className="originals-quick-start">
+          <div className="originals-quick-start-title">Quick start</div>
+          <ol className="originals-quick-start-steps">
+            <li>Set bet size{usesMultiplierProfile ? ' and target' : ''} above</li>
+            {!usesMultiplierProfile && gameSlug ? <li>Open the Game tab for picks / rows / risk</li> : null}
+            <li>Optional: On win/loss under Advanced strategy</li>
+            <li>Optional: Stop profit/loss under Stops &amp; rules</li>
+            <li>Press Start in the center</li>
+          </ol>
+        </div>
+      )}
 
+      <details
+        className="originals-strategy-advanced"
+        open={!isProfile && (comboMode || !!o.huntEnabled || (o.onWin ?? 'reset') === 'b2b')}
+      >
+        <summary className="originals-strategy-advanced-toggle">
+          Advanced strategy
+          <span aria-hidden>▾</span>
+        </summary>
+        <div className="originals-strategy-advanced-body">
+          <OriginalsWinLossFields options={o} patch={patch} disabled={disabled} inputCls={inputCls} />
 
-      <OriginalsWinLossFields options={o} patch={patch} disabled={disabled} inputCls={inputCls} />
-      <OriginalsB2bResetPanel options={o} patch={patch} disabled={disabled} inputCls={inputCls} compact={isProfile} />
+          <OriginalsB2bResetPanel options={o} patch={patch} disabled={disabled} inputCls={inputCls} compact={isProfile} />
 
-      {supportsCombo && (
-
-        <section className="originals-options-section">
-
-          <div className="flex flex-wrap gap-2 mb-2">
-
-            <button
-
-              type="button"
-
-              disabled={disabled}
-
-              className="originals-mini-btn"
-
-              onClick={() => patch(createHuntMoonshotPreset())}
-
-            >
-
-              Hunt→Moonshot preset
-            </button>
-            <p className="text-[10px] text-[var(--text-muted)] w-full">
-              Hunt waits for a high multiplier; moonshot chains smaller targets after a hit.
-            </p>
-            <label className="flex items-center gap-2 cursor-pointer">
-
-              <input
-
-                type="checkbox"
-
-                disabled={disabled}
-
-                checked={!!o.huntEnabled}
-
-                onChange={(e) => patch({ huntEnabled: e.target.checked })}
-
-                className="accent-[var(--accent)]"
-
-              />
-
-              <span className="text-xs">Hunt phase</span>
-
-            </label>
-
-          </div>
-
-          {o.huntEnabled && (
-
-            <input
-
-              type="number"
-
-              min="1.01"
-
-              disabled={disabled}
-
-              className={inputCls}
-
-              placeholder="Hunt multiplier"
-
-              value={o.huntMultiplier ?? 30}
-
-              onChange={(e) => patch({ huntMultiplier: Number(e.target.value) || 30 })}
-
-            />
-
+          {supportsCombo && (
+            <section className="originals-options-section" style={{ margin: 0, padding: 0, border: 'none' }}>
+              <div className="flex flex-wrap gap-2 mb-2">
+                <button
+                  type="button"
+                  disabled={disabled}
+                  className="originals-mini-btn"
+                  onClick={() => patch(createHuntMoonshotPreset())}
+                >
+                  Hunt→Moonshot preset
+                </button>
+                <p className="text-[10px] text-[var(--text-muted)] w-full">
+                  Replaces legacy Dice Runner: hunt for a multi, then chain moonshot targets (Combo + B2B).
+                </p>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    disabled={disabled}
+                    checked={!!o.huntEnabled}
+                    onChange={(e) => patch({ huntEnabled: e.target.checked })}
+                    className="accent-[var(--accent)]"
+                  />
+                  <span className="text-xs">Hunt phase</span>
+                </label>
+              </div>
+              {o.huntEnabled && (
+                <input
+                  type="number"
+                  min="1.01"
+                  disabled={disabled}
+                  className={inputCls}
+                  placeholder="Hunt multiplier"
+                  value={o.huntMultiplier ?? 30}
+                  onChange={(e) => patch({ huntMultiplier: Number(e.target.value) || 30 })}
+                />
+              )}
+            </section>
           )}
 
-        </section>
-
-      )}
-
-
-
-      {comboMode && supportsCombo && (
-
-        <ComboBuilderSection
-
-          parts={parts}
-
-          disabled={disabled}
-
-          inputCls={inputCls}
-
-          isStopOnComboHit={!!o.isStopOnComboHit}
-
-          onStopComboChange={(v) => patch({ isStopOnComboHit: v })}
-
-          onPartsChange={updateParts}
-
-        />
-
-      )}
+          {comboMode && supportsCombo && (
+            <ComboBuilderSection
+              parts={parts}
+              disabled={disabled}
+              inputCls={inputCls}
+              isStopOnComboHit={!!o.isStopOnComboHit}
+              onStopComboChange={(v) => patch({ isStopOnComboHit: v })}
+              onPartsChange={updateParts}
+            />
+          )}
+        </div>
+      </details>
 
 
 

@@ -3,7 +3,7 @@
  * Komplett unabhängig von Slots / RGS. Nutzt Stake GraphQL; Mutations-Namen/Schema
  * ggf. aus Stake Network-Tab beim Platzieren einer Wette ermitteln.
  *
- * FRIDA BetData: diceRoll, limboBet, minesBet, plinkoBet, kenoBet; Packs (UI) = GraphQL casesBet.
+ * FRIDA BetData: diceRoll, limboBet, minesBet, plinkoBet, kenoBet; Packs = REST packs/bet.
  */
 
 import { StakeApi } from '../../../api/client'
@@ -166,7 +166,7 @@ function toCasesDifficultyEnum(difficulty) {
   return 'medium'
 }
 
-/** Packs (Stake UI „Packs“) = Mutation casesBet; state nur über Fragment CasinoGamePacks. */
+/** Legacy GraphQL casesBet — used by Cases historically; Packs uses REST placePacksRestBet. */
 const CASES_BET_MUTATION = `mutation CasesBet($amount: Float!, $currency: CurrencyEnum!, $identifier: String!, $difficulty: CasesDifficultyEnum!) {
   casesBet(amount: $amount, currency: $currency, identifier: $identifier, difficulty: $difficulty) {
     id
@@ -339,7 +339,8 @@ export async function placeKenoBet({ amount, currency, picks, risk }) {
 }
 
 /**
- * Packs (Stake Original) – GraphQL casesBet (slug „packs“ im Kurator).
+ * @deprecated Packs uses REST placePacksRestBet (no difficulty). This GraphQL path is Cases, not Packs.
+ * Packs (Stake Original) – GraphQL casesBet (slug „packs“ im Kurator) — incorrect; keep for telegramHunter legacy.
  * @param {number} amount – Einsatz in Währungseinheiten (Float)
  * @param {string} currency – z. B. usdt
  * @param {string} identifier – aus casesBet-Variables im Network (Session/Kette)
@@ -853,7 +854,7 @@ export async function placeSamuraiBet({ amount, currency, identifier }) {
   return normalizeCasinoBetRow(bet)
 }
 
-/** Packs — REST (auto identifier). GraphQL casesBet: use placePacksBet. */
+/** Packs — REST packs/bet (amount + currency; optional identifier). No difficulty. */
 export async function placePacksRestBet({ amount, currency, identifier }) {
   const res = await stakeCasinoRestPost('/_api/casino/packs/bet', {
     amount: Number(amount),

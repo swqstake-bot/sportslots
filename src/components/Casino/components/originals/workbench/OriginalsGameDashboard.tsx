@@ -49,7 +49,6 @@ function GameTile({
         {!disabled && (
           <div className="originals-game-tile-pills">
             {game.supportsCombo && <span className="originals-pill originals-pill--combo">Combo</span>}
-            {game.supportsManual && <span className="originals-pill">Manual</span>}
             {game.supportsAsync && <span className="originals-pill">Async</span>}
           </div>
         )}
@@ -89,7 +88,7 @@ export default function OriginalsGameDashboard({ selectedSlug, onSelect }: Origi
         <div className="originals-dashboard-hero-text">
           <h2 className="originals-dashboard-title">Originals Workbench</h2>
           <p className="originals-dashboard-subtitle">
-            {playable.length} games ready · automatic, manual, and profile strategies
+            {playable.length} games ready · automatic & profile strategies
           </p>
         </div>
         <div className="originals-dashboard-hero-stats">

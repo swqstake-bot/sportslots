@@ -27,7 +27,6 @@ import {
   placeScarabSpinBet,
   placeSamuraiBet,
   placePacksRestBet,
-  placePacksBet,
   placeUnsupportedOriginalsBet,
 } from '../../../api/stakeOriginalsBets'
 import { playBlackjackScriptRound } from '../blackjack/blackjackScriptRound'
@@ -400,14 +399,11 @@ export async function placeOriginalsBet(
 
   if (g === 'packs') {
     const identifier = optStrFrom(opts, 'casesIdentifier', '').trim()
-    const res = identifier
-      ? await placePacksBet({
-          amount: amountMajor,
-          currency: cur,
-          identifier,
-          difficulty: optStrFrom(opts, 'difficulty', 'medium'),
-        })
-      : await placePacksRestBet({ amount: amountMajor, currency: cur })
+    const res = await placePacksRestBet({
+      amount: amountMajor,
+      currency: cur,
+      ...(identifier ? { identifier } : {}),
+    })
     return resultFromApi(res, amountMajor, g)
   }
 

@@ -1,7 +1,5 @@
 import type { ReactNode } from 'react'
 import type { OriginalsWorkbenchOptions } from '../schema/workbenchOptions'
-import DiceTargetControl from './DiceTargetControl'
-import LimboTargetControl from './LimboTargetControl'
 import PlinkoTargetControl from './PlinkoTargetControl'
 import WheelTargetControl from './WheelTargetControl'
 import RoundMultiplierPicker from './RoundMultiplierPicker'
@@ -18,6 +16,7 @@ import DragonTowerTargetControl from './DragonTowerTargetControl'
 import PacksTargetControl from './PacksTargetControl'
 import NoParamsGameControl from './NoParamsGameControl'
 import GamePanelShell from './GamePanelShell'
+import GameTargetSummary from './GameTargetSummary'
 import { getGameMeta } from '../registry/gameMeta'
 
 interface OriginalsGamePanelProps {
@@ -73,11 +72,16 @@ export default function OriginalsGamePanel({ slug, options, onOptionsPatch, read
 
   switch (g) {
     case 'dice':
-      body = <DiceTargetControl options={options} onPatch={patch} readOnly={readOnly} />
-      break
     case 'limbo':
-      body = <LimboTargetControl options={options} onPatch={patch} readOnly={readOnly} />
-      break
+      return (
+        <GamePanelShell slug={g} title={title} bare>
+          <div className="originals-game-strategy-redirect">
+            Target / chance is set in the <strong>Strategy</strong> tab (Static / Random / Combo).
+            This Game tab stays for games with board parameters (Keno, Mines, Plinko…).
+          </div>
+          <GameTargetSummary gameSlug={g} options={options} gameOnly />
+        </GamePanelShell>
+      )
     case 'mines':
       return (
         <GamePanelShell slug={g} title={title} bare>

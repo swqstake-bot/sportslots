@@ -831,6 +831,179 @@
   cursor: not-allowed;
 }
 
+.originals-mode-advanced {
+  position: relative;
+}
+
+.originals-mode-tab--advanced {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.originals-mode-advanced-caret {
+  font-size: 0.65rem;
+  opacity: 0.75;
+}
+
+.originals-mode-advanced-menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  min-width: 11.5rem;
+  padding: 0.35rem;
+  border-radius: 0.65rem;
+  border: 1px solid var(--border-subtle, var(--border));
+  background: var(--panel-bg, var(--bg-deep));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.originals-mode-advanced-hint {
+  margin: 0;
+  padding: 0.35rem 0.55rem 0.25rem;
+  font-size: 0.65rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.originals-mode-advanced-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.55rem;
+  border: none;
+  border-radius: 0.45rem;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.originals-mode-advanced-item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.originals-mode-advanced-item.is-active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.originals-mode-advanced-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.originals-mode-advanced-item--back {
+  margin-top: 0.15rem;
+  border-top: 1px solid var(--border-subtle, var(--border));
+  border-radius: 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.originals-mode-legacy-tag {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 999px;
+  padding: 0.1rem 0.35rem;
+}
+
+.originals-strategy-advanced {
+  margin-top: 0.35rem;
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 0.65rem;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg-deep) 55%, transparent);
+}
+
+.originals-strategy-advanced-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.originals-strategy-advanced-toggle:hover {
+  color: var(--text);
+}
+
+.originals-strategy-advanced-body {
+  padding: 0 0.65rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  border-top: 1px solid var(--border-subtle, var(--border));
+}
+
+.originals-quick-start {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.55rem 0.65rem;
+  margin-bottom: 0.5rem;
+  border-radius: 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border-subtle, var(--border)));
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.originals-quick-start-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.originals-quick-start-steps {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.originals-game-strategy-redirect {
+  padding: 0.75rem;
+  border-radius: 0.65rem;
+  border: 1px dashed var(--border-subtle, var(--border));
+  background: color-mix(in srgb, var(--bg-deep) 70%, transparent);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.originals-legacy-banner {
+  margin-bottom: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.65rem;
+  border: 1px solid color-mix(in srgb, #fbbf24 40%, transparent);
+  background: color-mix(in srgb, #fbbf24 10%, transparent);
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 .originals-stats-toggle {
   font-size: 0.75rem;
   padding: 0.4rem 0.75rem;

@@ -32,8 +32,8 @@ export default function OriginalsSidebar({
   const [tab, setTab] = useState<SidebarTab>('profile')
 
   const tabs: { id: SidebarTab; label: string; show: boolean }[] = [
-    { id: 'profile', label: 'Profile', show: true },
-    { id: 'conditions', label: 'Conditions', show: true },
+    { id: 'profile', label: 'Strategy', show: true },
+    { id: 'conditions', label: 'Stops & rules', show: true },
     { id: 'game', label: 'Game', show: gameUiReady },
   ]
 

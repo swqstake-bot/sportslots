@@ -200,8 +200,10 @@ export function saveSelectedGame(slug: string): void {
 
 export function loadBettingMode(): OriginalsBettingMode {
   try {
-    const v = localStorage.getItem(KEY_MODE) as OriginalsBettingMode | null
-    if (v === 'manual' || v === 'automatic' || v === 'conditions' || v === 'code' || v === 'dice-runner') {
+    const v = localStorage.getItem(KEY_MODE)
+    // Legacy: Manual mode removed from UI
+    if (v === 'manual') return 'automatic'
+    if (v === 'automatic' || v === 'conditions' || v === 'code' || v === 'dice-runner') {
       return v
     }
   } catch {
@@ -226,7 +228,8 @@ export function loadStatsDrawerOpen(): boolean {
   } catch {
     /* ignore */
   }
-  return true
+  // Quieter default: stats closed until the user opens them
+  return false
 }
 
 export function saveStatsDrawerOpen(open: boolean): void {

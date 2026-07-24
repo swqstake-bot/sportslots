@@ -176,10 +176,10 @@ export function buildActiveTargetItems(
       break
     }
     case 'packs':
-      items.push(
-        { label: 'Pack ID', value: options.casesIdentifier?.trim() || 'REST auto' },
-        { label: 'Difficulty', value: (options.difficulty ?? 'medium').toUpperCase() }
-      )
+      items.push({
+        label: 'Pack ID',
+        value: options.casesIdentifier?.trim() || 'auto',
+      })
       break
     case 'tome-of-life':
     case 'slots-scarab':

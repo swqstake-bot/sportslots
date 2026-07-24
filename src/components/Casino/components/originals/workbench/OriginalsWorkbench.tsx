@@ -17,9 +17,6 @@ import { useUserStore } from '../../../../../store/userStore'
 import OriginalsAutomaticPanel from './OriginalsAutomaticPanel'
 
 import OriginalsConditionsPanel from './OriginalsConditionsPanel'
-import { getGameMeta } from '../registry/gameMeta'
-import OriginalsManualPanel from './OriginalsManualPanel'
-
 import OriginalsModeHeader from './OriginalsModeHeader'
 
 import OriginalsSettingsModal from './OriginalsSettingsModal'
@@ -28,7 +25,7 @@ import OriginalsStatsDrawer from './OriginalsStatsDrawer'
 import OriginalsLogDock from './OriginalsLogDock'
 import OriginalsSidebar from './OriginalsSidebar'
 import OriginalsBetBrowser from './OriginalsBetBrowser'
-import OriginalsLastResultVisual, { betRowToVisual, type OriginalsLastBetVisual } from './OriginalsLastResultVisual'
+import OriginalsLastResultVisual, { betRowToVisual } from './OriginalsLastResultVisual'
 import ActiveTargetSummary from './ActiveTargetSummary'
 
 import {
@@ -36,6 +33,7 @@ import {
   loadProfilesOnStart,
   loadWorkbenchSettings,
   saveBettingMode,
+  loadStatsDrawerOpen,
   saveStatsDrawerOpen,
   loadSidebarCollapsed,
   saveSidebarCollapsed,
@@ -57,11 +55,10 @@ interface OriginalsWorkbenchProps {
 function normalizeModeForGame(
   mode: OriginalsBettingMode,
   slug: string,
-  gameEntry: ReturnType<typeof getOriginalsGame>
+  _gameEntry: ReturnType<typeof getOriginalsGame>
 ): OriginalsBettingMode {
   if (mode === 'dice-runner' && slug !== 'dice') return 'automatic'
   if (mode === 'conditions' && slug !== 'dice') return 'automatic'
-  if (mode === 'manual' && gameEntry && !gameEntry.supportsManual) return 'automatic'
   return mode
 }
 
@@ -80,16 +77,7 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
   const [mode, setMode] = useState<OriginalsBettingMode>(() =>
     normalizeModeForGame(loadBettingMode(), gameSlug, getOriginalsGame(gameSlug))
   )
-  const [statsOpen, setStatsOpen] = useState(() => {
-    try {
-      const v = localStorage.getItem('originalsWorkbenchStatsOpen')
-      if (v === '0') return false
-      if (v === '1') return true
-    } catch {
-      /* ignore */
-    }
-    return true
-  })
+  const [statsOpen, setStatsOpen] = useState(loadStatsDrawerOpen)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
   const openSettings = useCallback(() => setSettingsOpen(true), [])
@@ -130,8 +118,6 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
   )
 
   const session = useOriginalsSession(accessToken, wbSettings)
-  const gameMeta = getGameMeta(gameSlug)
-  const [manualLastResult, setManualLastResult] = useState<OriginalsLastBetVisual | null>(null)
 
   const automaticLastResult = useMemo(() => {
     const row = session.betList[0]
@@ -147,7 +133,6 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
   const handleModeChange = useCallback(
     (next: OriginalsBettingMode) => {
       if (session.running) return
-      setManualLastResult(null)
       setMode(next)
       saveBettingMode(next)
     },
@@ -220,11 +205,9 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
   const showDiceRunner = mode === 'dice-runner' && game.slug === 'dice'
   const showCode = mode === 'code'
   const showAutomatic = mode === 'automatic'
-  const showManual = mode === 'manual' && game.supportsManual && game.uiReady
   const showConditions = mode === 'conditions' && game.slug === 'dice'
-  const showSidebar = showAutomatic || showManual || showConditions
-  const centerLastResult =
-    mode === 'automatic' ? automaticLastResult : mode === 'manual' && game.supportsManual && game.uiReady ? manualLastResult : null
+  const showSidebar = showAutomatic || showConditions
+  const centerLastResult = showAutomatic ? automaticLastResult : null
 
   const showBetHistory = (showAutomatic || showConditions) && wbSettings.showBetList
   const showSessionLog = showAutomatic || showConditions
@@ -279,16 +262,12 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
         )}
 
         <main className="originals-workbench-main">
-          {(showAutomatic || showManual) && (
+          {showAutomatic && (
             <div className="originals-center-stage">
               <OriginalsLastResultVisual
                 result={centerLastResult}
                 gameSlug={gameSlug}
-                idleHint={
-                  showManual
-                    ? 'Place a manual bet to see the result here.'
-                    : 'Start betting — the latest result appears here.'
-                }
+                idleHint="Start betting — the latest result appears here."
               />
 
               <ActiveTargetSummary
@@ -296,24 +275,18 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
                 options={resolvedAutoOptions}
                 currency={wbSettings.currency}
               />
-
-              <div className="originals-game-context casino-card">
-                <p className="originals-game-hero-tagline">{gameMeta.tagline}</p>
-                <div className="originals-game-hero-pills">
-                  {game.supportsCombo && <span className="originals-pill originals-pill--combo">Combo</span>}
-                  {game.supportsManual && <span className="originals-pill">Manual</span>}
-                  {wbSettings.turboMode && turboOk && (
-                    <span className="originals-pill originals-pill--turbo">Turbo</span>
-                  )}
-                  {game.supportsAsync && !wbSettings.turboMode && (
-                    <span className="originals-pill">Fast</span>
-                  )}
-                </div>
-              </div>
             </div>
           )}
 
-          {showDiceRunner && <DiceRunnerTab />}
+          {showDiceRunner && (
+            <>
+              <div className="originals-legacy-banner">
+                <strong>Legacy Dice Runner.</strong> Prefer Automatic → Strategy → Advanced strategy →
+                Hunt→Moonshot preset (same idea, unified with Combo/B2B).
+              </div>
+              <DiceRunnerTab />
+            </>
+          )}
 
           {showCode && (
             <div className="originals-code-panel">
@@ -340,18 +313,6 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
             />
           )}
 
-          {showManual && (
-            <div className="casino-card">
-              <OriginalsManualPanel
-                gameSlug={gameSlug}
-                options={resolvedAutoOptions}
-                currency={wbSettings.currency}
-                accessToken={accessToken}
-                onResult={setManualLastResult}
-              />
-            </div>
-          )}
-
           {showConditions && (
             <OriginalsConditionsPanel
               gameSlug={gameSlug}
@@ -360,12 +321,6 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
               currency={wbSettings.currency}
               session={session}
             />
-          )}
-
-          {mode === 'manual' && !showManual && (
-            <div className="casino-card p-6 text-center text-sm text-[var(--text-muted)]">
-              Manual bet not available for {game.name} yet.
-            </div>
           )}
         </main>
 

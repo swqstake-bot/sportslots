@@ -1,6 +1,6 @@
 import type { OriginalsWorkbenchOptions } from '../schema/workbenchOptions'
 import GameTargetSummary from './GameTargetSummary'
-import { DifficultyField, TextField } from './gamePanelFields'
+import { TextField } from './gamePanelFields'
 
 interface PacksTargetControlProps {
   options: OriginalsWorkbenchOptions
@@ -9,25 +9,18 @@ interface PacksTargetControlProps {
 }
 
 export default function PacksTargetControl({ options, onPatch, readOnly }: PacksTargetControlProps) {
-  const hasId = !!options.casesIdentifier?.trim()
-
   return (
     <>
       <GameTargetSummary gameSlug="packs" options={options} gameOnly />
       <TextField
         label="Pack identifier"
-        placeholder="empty = REST packs/bet"
+        placeholder="empty = auto"
         readOnly={readOnly}
         value={options.casesIdentifier ?? ''}
         onChange={(v) => onPatch({ casesIdentifier: v })}
       />
-      <DifficultyField
-        value={options.difficulty ?? 'medium'}
-        readOnly={readOnly}
-        onChange={(d) => onPatch({ difficulty: d as OriginalsWorkbenchOptions['difficulty'] })}
-      />
       <p className="originals-target-slider-hint">
-        {hasId ? 'Uses GraphQL casesBet(identifier, difficulty)' : 'Uses REST /packs/bet'}
+        Packs has no difficulty — amount + currency only (optional identifier).
       </p>
     </>
   )

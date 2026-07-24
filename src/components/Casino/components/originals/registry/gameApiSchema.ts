@@ -52,7 +52,7 @@ export const GAME_API_PROFILES: Record<string, GameApiProfile> = {
   cases: profile('cases', 'REST cases/bet', ['difficulty']),
   bars: profile('bars', 'REST bars/bet', ['difficulty', 'tiles[]']),
   tarot: profile('tarot', 'REST tarot/bet', ['difficulty']),
-  packs: profile('packs', 'casesBet | REST packs/bet', ['identifier?', 'difficulty']),
+  packs: profile('packs', 'REST packs/bet', ['identifier?']),
   'rock-paper-scissors': profile('rock-paper-scissors', 'REST rock-paper-scissors/bet', ['guesses[]']),
   diamonds: profile('diamonds', 'diamondsBet', ['amount', 'currency']),
   'tome-of-life': profile('tome-of-life', 'slotsTomeOfLifeBet', ['lines']),

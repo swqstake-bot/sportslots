@@ -27,7 +27,7 @@ export const GAME_META: Record<string, OriginalsGameMeta> = {
   chicken: { category: 'action', tagline: 'Cross rounds safely', optionsHint: 'Difficulty and target round.' },
   tarot: { category: 'action', tagline: 'Card draw difficulty', optionsHint: 'Medium is a common default for tarot bets.' },
   cases: { category: 'action', tagline: 'Open case by difficulty', optionsHint: 'Difficulty selects case tier.' },
-  packs: { category: 'action', tagline: 'Pack open (REST or GraphQL)', optionsHint: 'Optional pack identifier; difficulty for GraphQL path.' },
+  packs: { category: 'action', tagline: 'Pack open', optionsHint: 'Amount + currency only; optional pack identifier.' },
   'rock-paper-scissors': { category: 'action', tagline: 'Multi-round RPS guesses', optionsHint: 'Guesses list and number of rounds.' },
   'slots-scarab': { category: 'slots', tagline: 'Scarab spin lines', optionsHint: 'Active paylines per spin.' },
   'slots-samurai': { category: 'slots', tagline: 'Blue Samurai spins', optionsHint: 'Single spin per bet; optional next-spin flow in API.' },
