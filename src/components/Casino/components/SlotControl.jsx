@@ -170,7 +170,7 @@ function formatTargetMultiLabel(n) {
   return Number.isInteger(x) ? String(x) : x.toFixed(2).replace(/\.?0+$/, '')
 }
 
-const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact = false, onLogUpdate, useSharedCurrency = false, sharedSourceCurrency, sharedTargetCurrency, initialTargetCurrency, initialBetHint, initialMinBetUsd, initialExpanded = false, sharedCryptoOnly = false, challengeTargetMultipliers }, ref) {
+const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact = false, onLogUpdate, useSharedCurrency = false, sharedSourceCurrency, sharedTargetCurrency, initialTargetCurrency, initialBetHint, initialMinBetUsd, initialExpanded = false, sharedCryptoOnly = false, challengeTargetMultipliers, layout = 'card', workbenchActive = true }, ref) {
   const hunterBridgeTargets = useSyncExternalStore(
     subscribeHunterSlotTargets,
     () => getHunterSlotTargetsSnapshot()[slot.slug] ?? EMPTY_TARGET_MULTIS,
@@ -365,10 +365,74 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     () => (sessionStartAt ? betHistory.filter((b) => (b.addedAt ?? 0) >= sessionStartAt) : betHistory),
     [betHistory, sessionStartAt]
   )
+  const sessionBetsDeduped = useMemo(
+    () => dedupeBetHistoryForAggregate(sessionBets),
+    [sessionBets]
+  )
+  const betListDisplayRows = useMemo(() => {
+    const rows = sessionBetsDeduped.slice(-40)
+    return rows.map((b) => {
+      const curr = String(b.currencyCode || effectiveTarget || 'usd').toLowerCase()
+      let betUsd = Number(b.betUsdSnapshotMajor)
+      let winUsd = Number(b.winUsdSnapshotMajor)
+      if (!Number.isFinite(betUsd)) betUsd = Number(toUsdMajor(b.betAmount, curr))
+      if (!Number.isFinite(winUsd)) winUsd = Number(toUsdMajor(b.winAmount, curr))
+      // Rates missing: only treat raw minor as USD for USD-like currencies — never flash SOL/etc.
+      if (!Number.isFinite(betUsd)) {
+        betUsd = (curr === 'usd' || curr === 'usdc' || curr === 'usdt') ? (Number(b.betAmount) || 0) / 100 : 0
+      }
+      if (!Number.isFinite(winUsd)) {
+        winUsd = (curr === 'usd' || curr === 'usdc' || curr === 'usdt') ? (Number(b.winAmount) || 0) / 100 : 0
+      }
+      return {
+        ...b,
+        betAmount: Math.round(betUsd * 100),
+        winAmount: Math.round(winUsd * 100),
+        currencyCode: 'USD',
+      }
+    })
+  }, [sessionBetsDeduped, toUsdMajor, effectiveTarget])
+  const chartCumUsdMajors = useMemo(() => {
+    const list = sessionBetsDeduped || []
+    if (!list.length) return null
+    let cum = 0
+    const cumNets = []
+    for (const b of list) {
+      const curr = String(b.currencyCode || effectiveTarget || 'usd').toLowerCase()
+      const winMinor = (b.isBonus && b.stoppedBonus) ? 0 : (Number(b.winAmount) || 0)
+      const betMinor = Number(b.betAmount) || 0
+      let betUsd = Number(b.betUsdSnapshotMajor)
+      let winUsd = Number(b.winUsdSnapshotMajor)
+      // Prefer frozen snapshots so live FX/currency flips don't reshape the whole series.
+      if (!Number.isFinite(betUsd)) {
+        betUsd = Number(toUsdMajor(betMinor, curr))
+        if (!Number.isFinite(betUsd)) {
+          betUsd = (curr === 'usd' || curr === 'usdc' || curr === 'usdt') ? betMinor / 100 : 0
+        }
+      }
+      if (!Number.isFinite(winUsd)) {
+        winUsd = Number(toUsdMajor(winMinor, curr))
+        if (!Number.isFinite(winUsd)) {
+          winUsd = (curr === 'usd' || curr === 'usdc' || curr === 'usdt') ? winMinor / 100 : 0
+        }
+      }
+      cum += winUsd - betUsd
+      cumNets.push(Math.round(cum * 100) / 100)
+    }
+    return cumNets
+  }, [sessionBetsDeduped, toUsdMajor, effectiveTarget])
+  const chartValuesStable = useMemo(() => {
+    if (!chartCumUsdMajors?.length) return null
+    return [0, ...chartCumUsdMajors]
+  }, [chartCumUsdMajors])
+  const chartDataStable = useMemo(
+    () => (chartValuesStable ? profitsToChartData(chartValuesStable) : null),
+    [chartValuesStable]
+  )
   const [statsAgg, setStatsAgg] = useState(() => createEmptyCasinoAggregate())
 
   useEffect(() => {
-    const list = sessionBets || []
+    const list = sessionBetsDeduped || []
     const sessionChanged = statsAggSessionStartRef.current !== sessionStartAt
     statsAggSessionStartRef.current = sessionStartAt
 
@@ -414,7 +478,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     } catch {
       setStatsAgg(recomputeCasinoAggregate(list, currencyRates))
     }
-  }, [sessionBets, sessionStartAt, currencyRates])
+  }, [sessionBetsDeduped, sessionStartAt, currencyRates])
 
   useEffect(() => {
     return () => {
@@ -585,21 +649,23 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     const rid = roundId != null ? String(roundId) : null
     const source = String(parsed?.source || 'unknown')
     const isHouseSettlement = source === 'housebets' || source === 'mybetupdated'
-    const currencyCode = parsed.currencyCode
-    const normCurr = String(currencyCode || effectiveTarget || 'usd').toLowerCase()
+    // FX must follow the bet's real currency (house/API). Session target is fallback only.
+    // Forcing effectiveTarget caused EUR stakes to be valued as SOL/ARS → ~10× USD vs Stake.
+    const apiCurr = String(parsed.currencyCode || '').toLowerCase()
+    const currencyCode = String(apiCurr || effectiveTarget || 'usd').toLowerCase()
     const parsedBet = Number(parsed.betAmount) || 0
     const parsedWin = Number(parsed.stoppedBonus ? 0 : (parsed.winAmount ?? 0)) || 0
-    const signature = `${normCurr}|${parsedBet}|${parsedWin}|${parsed.isBonus ? 1 : 0}`
+    const signature = `${currencyCode}|${parsedBet}|${parsedWin}|${parsed.isBonus ? 1 : 0}`
     setBetHistory((prev) => {
       const last = prev[prev.length - 1]
-      // Stake houseBets-IDs sind global eindeutig; Provider-roundIds (z. B. Playnetic `n`) nicht deduplizieren.
+      // Stake houseBets-IDs sind global eindeutig; Provider-roundIds (z. B. Playnetic `n`) nicht in den Seen-Set.
       if (rid && source === 'placebet') {
-        const roundKey = `round:${rid}`
-        if (seenBetDedupKeysRef.current.has(roundKey)) {
-          recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-placebet-roundId-set', roundId: rid })
-          return prev
-        }
-        if (last && String(last.roundId ?? '') === rid) {
+        if (
+          last &&
+          String(last.roundId ?? '') === rid &&
+          String(last.source || '') === 'placebet' &&
+          (now - Number(last.addedAt || 0)) < 150
+        ) {
           recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-placebet-roundId', roundId: rid })
           return prev
         }
@@ -629,23 +695,31 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             : null
           const wasStoppedBonus = !!clone[pendingIdx]?.stoppedBonus
           const settledWin = Number(parsed.winAmount ?? parsedWin) || 0
+          // House/Stake history is source of truth (matches bet list on stake.com). Do not Math.max
+          // with placeBet — that kept provider-scaled stakes and blew USD up (~10×).
+          const settledBet = parsedBet > 0
+            ? parsedBet
+            : (Math.max(Number(clone[pendingIdx]?.betAmount) || 0, 0) || 0)
           const settledCurr = String(
-            currencyCode ?? clone[pendingIdx]?.currencyCode ?? effectiveTarget ?? 'usd'
+            apiCurr || clone[pendingIdx]?.currencyCode || effectiveTarget || 'usd'
           ).toLowerCase()
           const settledWinUsd = convertMinorToUsdMajor(settledWin, settledCurr, currencyRates)
+          const settledBetUsd = convertMinorToUsdMajor(settledBet, settledCurr, currencyRates)
           clone[pendingIdx] = {
             ...clone[pendingIdx],
             source,
             roundId: rid ?? clone[pendingIdx]?.roundId,
-            currencyCode: currencyCode ?? clone[pendingIdx]?.currencyCode,
-            // placeBet kennt PowerBet/Extra-Bet; houseBets meldet oft nur Basis-Einsatz.
-            betAmount: Math.max(Number(clone[pendingIdx]?.betAmount) || 0, parsedBet) || parsedBet,
+            currencyCode: settledCurr,
+            betAmount: settledBet,
             winAmount: settledWin,
             rawWinAmount: settledWin,
             // Stop-on-bonus: erst jetzt realisieren (nicht raw vom Trigger-Spin / Popup-Close).
             stoppedBonus: false,
             isBonus: wasStoppedBonus ? true : !!clone[pendingIdx]?.isBonus,
             houseBetReconciled: true,
+            ...(Number.isFinite(Number(settledBetUsd?.usd))
+              ? { betUsdSnapshotMajor: Number(settledBetUsd.usd) }
+              : {}),
             ...(Number.isFinite(Number(settledWinUsd?.usd))
               ? { winUsdSnapshotMajor: Number(settledWinUsd.usd) }
               : { winUsdSnapshotMajor: undefined }),
@@ -664,6 +738,68 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           }
           recordBetHistoryAudit({ slotSlug: slot.slug, event: 'reconcile-placebet-with-housebets', roundId: rid ?? null })
           return clone
+        }
+        // No open placeBet via FIFO: skip only true echoes (open placeBet or <2.5s duplicate delivery).
+        // Do not skip later same-stake losses — those are real consecutive spins.
+        for (let i = prev.length - 1; i >= 0; i--) {
+          const row = prev[i]
+          const age = now - Number(row?.addedAt || 0)
+          if (age > FALLBACK_RECONCILE_WINDOW_MS) break
+          if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
+          const rowCurr = String(row?.currencyCode || effectiveTarget || 'usd').toLowerCase()
+          const rowWin = Number(row?.stoppedBonus ? 0 : (row?.winAmount ?? 0)) || 0
+          const rowSig = `${rowCurr}|${Number(row?.betAmount) || 0}|${rowWin}|${row?.isBonus ? 1 : 0}`
+          if (rowSig !== signature) continue
+          const rowSource = String(row?.source || '')
+          const isOpenPlace = PENDING_HOUSE_RECONCILE_SOURCES.has(rowSource) && !row?.houseBetReconciled
+          const isRecentEcho = age <= 2500
+          if (!isOpenPlace && !isRecentEcho) continue
+          recordBetHistoryAudit({
+            slotSlug: slot.slug,
+            event: 'dedup-house-settlement-signature',
+            roundId: rid ?? null,
+            source,
+          })
+          if (rid) {
+            const roundKey = `round:${rid}`
+            seenBetDedupKeysRef.current.add(roundKey)
+            seenBetDedupOrderRef.current.push(roundKey)
+            while (seenBetDedupOrderRef.current.length > BET_HISTORY_DEDUP_MAX) {
+              const old = seenBetDedupOrderRef.current.shift()
+              if (old) seenBetDedupKeysRef.current.delete(old)
+            }
+          }
+          return prev
+        }
+        // Already reconciled this spin via placeBet FIFO — a second house/myBetUpdated
+        // (net vs gross payout) must not append or the chart flips length/net every event.
+        for (let i = prev.length - 1; i >= 0; i--) {
+          const row = prev[i]
+          const age = now - Number(row?.addedAt || 0)
+          if (age > FALLBACK_RECONCILE_WINDOW_MS) break
+          if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
+          if (!row?.houseBetReconciled) continue
+          const rowBet = Number(row?.betAmount) || 0
+          if (parsedBet > 0 && rowBet > 0) {
+            const tol = Math.max(1, rowBet * 0.08)
+            if (Math.abs(rowBet - parsedBet) > tol) continue
+          }
+          recordBetHistoryAudit({
+            slotSlug: slot.slug,
+            event: 'dedup-house-after-reconcile',
+            roundId: rid ?? null,
+            source,
+          })
+          if (rid) {
+            const roundKey = `round:${rid}`
+            seenBetDedupKeysRef.current.add(roundKey)
+            seenBetDedupOrderRef.current.push(roundKey)
+            while (seenBetDedupOrderRef.current.length > BET_HISTORY_DEDUP_MAX) {
+              const old = seenBetDedupOrderRef.current.shift()
+              if (old) seenBetDedupKeysRef.current.delete(old)
+            }
+          }
+          return prev
         }
       } else if (source === 'placebet') {
         for (let i = prev.length - 1; i >= 0; i--) {
@@ -1317,46 +1453,17 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     )
   }
 
-  const settingsCollapsed = compact && isAutospinning
+  const isWorkbench = layout === 'workbench'
+  const wbCompact = isWorkbench ? false : compact
+  const settingsCollapsed = wbCompact && isAutospinning
   const providerId = slot.providerId
   const providerMeta = PROVIDERS_META[providerId] || {}
   const providerBasic = PROVIDERS_BASIC[providerId] || {}
-  const runtimeBadgeStyle = useMemo(() => {
-    if (providerRuntimeState === 'ok') {
-      return { color: 'var(--accent)', background: 'rgba(0,231,170,0.12)', border: '1px solid rgba(0,231,170,0.35)' }
-    }
-    if (providerRuntimeState === 'retrying') {
-      return { color: 'var(--warning, #f59e0b)', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)' }
-    }
-    if (providerRuntimeState === 'failed') {
-      return { color: 'var(--error)', background: 'rgba(255,82,82,0.12)', border: '1px solid rgba(255,82,82,0.35)' }
-    }
-    if (providerRuntimeState === 'running') {
-      return { color: 'var(--text)', background: 'rgba(125,125,125,0.12)', border: '1px solid var(--border)' }
-    }
-    return { color: 'var(--text-muted)', background: 'rgba(125,125,125,0.08)', border: '1px solid var(--border)' }
-  }, [providerRuntimeState])
 
-  return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: compact ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))',
-      gap: settingsCollapsed ? '0.17rem' : (compact ? '0.28rem' : '1.5rem'),
-      alignItems: 'start',
-    }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: settingsCollapsed ? '0.12rem' : (compact ? '0.28rem' : '1rem'), minWidth: 0, color: 'var(--text)' }}>
-      {settingsCollapsed && challengeTargetLabels.length > 0 && (
-        <div
-          style={{ fontSize: '0.58rem', fontWeight: 600, color: 'var(--accent)', lineHeight: 1.2 }}
-          title="Challenge target multiplier (Auto Hunter / selection)"
-        >
-          {slot.name} · Target {challengeTargetLabels.join(' · ')}x
-        </div>
-      )}
-      {!settingsCollapsed && (
+  const titleBlock = !settingsCollapsed && (
       <>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', marginBottom: compact ? '0.25rem' : '0.4rem' }}>
-        <span style={{ fontWeight: 700, fontSize: compact ? '0.88rem' : '1.02rem', lineHeight: 1.2, color: 'var(--text)' }}>{slot.name}</span>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', marginBottom: wbCompact ? '0.25rem' : '0.4rem' }}>
+        <span style={{ fontWeight: 700, fontSize: wbCompact ? '0.88rem' : '1.02rem', lineHeight: 1.2, color: 'var(--text)' }}>{slot.name}</span>
         {challengeTargetLabels.length > 0 && (
           <span
             title="Challenge target multiplier (Auto Hunter / selection)"
@@ -1395,6 +1502,11 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           </button>
         )}
       </div>
+      </>
+  )
+
+  const currencyStakeBlock = !settingsCollapsed && (
+      <>
       <div style={{ ...STYLES.section, display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'flex-end' }}>
         {!useSharedCurrency && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -1440,7 +1552,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         </div>
       </details>
 
-      <div style={{ ...STYLES.section, marginTop: compact ? '0.2rem' : '0.75rem', marginBottom: compact ? '0.3rem' : '1rem' }}>
+      <div style={{ ...STYLES.section, marginTop: wbCompact ? '0.2rem' : '0.75rem', marginBottom: wbCompact ? '0.3rem' : '1rem' }}>
         <div style={{ ...STYLES.row, flexWrap: 'wrap', gap: '0.4rem' }}>
           <input
             type="number"
@@ -1456,12 +1568,19 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             <input type="checkbox" checked={autospinStopOnBonus} onChange={(e) => setAutospinStopOnBonus(e.target.checked)} style={STYLES.checkbox} />
             On bonus
           </label>
-          <select value={autospinMinScatter} onChange={(e) => setAutospinMinScatter(Number(e.target.value))} style={{ ...STYLES.select, width: 72 }} disabled={!autospinStopOnBonus} title="Only at >=X scatters">
-            <option value={0}>Any</option>
-            <option value={3}>3+</option>
-            <option value={4}>4+</option>
-            <option value={5}>5</option>
-          </select>
+        </div>
+        <details style={{ marginTop: '0.35rem', fontSize: '0.8rem' }}>
+          <summary style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>Advanced stop options ▾</summary>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.35rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--border)' }}>
+          <label style={{ ...STYLES.checkboxRow, cursor: 'pointer', fontSize: '0.8rem' }} title="Only stop on bonus with at least this many scatters">
+            Scatter
+            <select value={autospinMinScatter} onChange={(e) => setAutospinMinScatter(Number(e.target.value))} style={{ ...STYLES.select, width: 72, marginLeft: '0.2rem' }} disabled={!autospinStopOnBonus}>
+              <option value={0}>Any</option>
+              <option value={3}>3+</option>
+              <option value={4}>4+</option>
+              <option value={5}>5</option>
+            </select>
+          </label>
           <label style={{ ...STYLES.checkboxRow, cursor: 'pointer', fontSize: '0.8rem' }} title="Stop only when target multiplier is reached at around 0.10 USD stake (not at higher stakes)">
             <input type="checkbox" checked={autospinStopOnMulti} onChange={(e) => setAutospinStopOnMulti(e.target.checked)} style={STYLES.checkbox} />
             Multi
@@ -1486,10 +1605,6 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             />
             only ~$0.10
           </label>
-        </div>
-        <details style={{ marginTop: '0.35rem', fontSize: '0.8rem' }}>
-          <summary style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>Advanced stop options</summary>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.35rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--border)' }}>
             <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }}>
               <input type="checkbox" checked={autospinStopOnWin} onChange={(e) => setAutospinStopOnWin(e.target.checked)} style={STYLES.checkbox} />
               Stop Win
@@ -1521,19 +1636,22 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           </div>
         </details>
       </div>
+      </>
+  )
 
-      <div style={{ ...STYLES.row, marginTop: '0.5rem', gap: '0.4rem' }}>
+  const runButtonsBlock = !settingsCollapsed && (
+      <div style={{ ...STYLES.row, marginTop: isWorkbench ? 0 : '0.5rem', gap: '0.4rem', flexWrap: 'wrap' }}>
         <button
           onClick={handleStartSession}
           disabled={loading}
-          style={compact ? { ...STYLES.btn, padding: '0.35rem 0.6rem', fontSize: '0.75rem' } : STYLES.btn}
+          style={wbCompact ? { ...STYLES.btn, padding: '0.35rem 0.6rem', fontSize: '0.75rem' } : STYLES.btn}
         >
           {loading ? 'Starting...' : 'Start session'}
         </button>
         <button
           onClick={handleSpin}
           disabled={!session || spinLoading || isAutospinning}
-          style={compact ? { ...STYLES.btn, padding: '0.35rem 0.6rem', fontSize: '0.75rem' } : STYLES.btn}
+          style={wbCompact ? { ...STYLES.btn, padding: '0.35rem 0.6rem', fontSize: '0.75rem' } : STYLES.btn}
         >
           {spinLoading ? 'Spin…' : 'Spin'}
         </button>
@@ -1541,7 +1659,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           onClick={isAutospinning ? handleStopAutospin : handleAutospin}
           disabled={!session || loading}
           style={{
-            ...(compact ? { padding: '0.35rem 0.6rem', fontSize: '0.75rem' } : {}),
+            ...(wbCompact ? { padding: '0.35rem 0.6rem', fontSize: '0.75rem' } : {}),
             ...STYLES.btn,
             ...(isAutospinning
               ? { background: 'var(--error)', color: '#fff' }
@@ -1571,15 +1689,14 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             URL.revokeObjectURL(url)
           }}
           disabled={betHistory.length === 0}
-          style={compact ? { ...STYLES.btnSecondary, padding: '0.35rem 0.6rem', fontSize: '0.75rem' } : STYLES.btnSecondary}
+          style={wbCompact ? { ...STYLES.btnSecondary, padding: '0.35rem 0.6rem', fontSize: '0.75rem' } : STYLES.btnSecondary}
         >
           Export CSV
         </button>
       </div>
-      </>
-      )}
+  )
 
-      {settingsCollapsed && (
+  const collapsedRunBar = settingsCollapsed && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.58rem', color: 'var(--text-muted)', fontWeight: 500 }}>
             {formatBetLabel(getEffectiveBetAmount(betAmount, extraBet, slot.slug), effectiveTarget, (providerMeta?.betDisplayDivisor && (!Array.isArray(providerMeta?.betDisplayDivisorSlots) || providerMeta.betDisplayDivisorSlots.includes(slot?.slug))) ? { displayDivisor: providerMeta.betDisplayDivisor } : undefined)}
@@ -1597,10 +1714,12 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             {autospinProgress != null ? `Stop (${autospinProgress}/${autospinCount})` : 'Stop'}
           </button>
         </div>
-      )}
+  )
 
+  const sessionStatusBlock = (
+    <>
       {session && !settingsCollapsed && (
-        <p style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+        <p style={{ marginTop: isWorkbench ? 0 : '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
           Session aktiv{session.seq != null ? ` (seq: ${session.seq})` : session.index != null ? ` (idx: ${session.index})` : ''}
           {isAutospinning && autospinProgress != null && (
             <span style={{ marginLeft: '0.5rem', color: 'var(--accent)' }}>
@@ -1614,12 +1733,13 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           )}
         </p>
       )}
-
       {error && <div style={STYLES.error}>{error}</div>}
       {providerWarning && <div style={STYLES.warning}>{providerWarning}</div>}
-      </div>
+    </>
+  )
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: settingsCollapsed ? '0.17rem' : (compact ? '0.35rem' : '0.5rem'), minWidth: 0, color: 'var(--text)' }}>
+  const statsBlock = (
+    <>
       {!session && betHistory.length === 0 && (
         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
           Start a session, then spin or autospin - statistics and spins appear here.
@@ -1627,7 +1747,6 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       )}
       <StatsDisplay
         stats={(() => {
-          // Höchster Multi: auch aus betHistory ableiten, damit er mit der BetList übereinstimmt
           const sessionBets = sessionStartAt ? betHistory.filter((b) => (b.addedAt ?? 0) >= sessionStartAt) : betHistory
           let biggestMultiFromHistory = 0
           for (const b of sessionBets) {
@@ -1644,51 +1763,25 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           return enrichedStats
         })()}
         currencyCode="usd"
-        compact={compact}
+        compact={wbCompact}
         minimal={settingsCollapsed}
       />
-      {betHistory.length > 0 && (() => {
-        // Chart nur aus aktueller Session (sessionStartAt), sonst passt es nicht zu Stats
-        const sessionBetsRaw = sessionStartAt ? betHistory.filter((b) => (b.addedAt ?? 0) >= sessionStartAt) : betHistory
-        const sessionBets = dedupeBetHistoryForAggregate(sessionBetsRaw)
-        if (sessionBets.length === 0) return null
-        let cum = 0
-        const cumNets = sessionBets.map((b) => {
-          const win = (b.isBonus && b.stoppedBonus) ? 0 : (Number(b.winAmount) || 0)
-          const bet = Number(b.betAmount) || 0
-          const curr = (b.currencyCode || 'usd').toLowerCase()
-          const winUsdMajor =
-            Number.isFinite(Number(b.winUsdSnapshotMajor))
-              ? Number(b.winUsdSnapshotMajor)
-              : (toUsdMajor(win, curr) ?? 0)
-          const betUsdMajor =
-            Number.isFinite(Number(b.betUsdSnapshotMajor))
-              ? Number(b.betUsdSnapshotMajor)
-              : (toUsdMajor(bet, curr) ?? 0)
-          const netUsdMajor = winUsdMajor - betUsdMajor
-          cum += netUsdMajor
-          return Math.round(cum * 100)
-        })
-        if (cumNets.length === 0) return null
-        const lastNet = cumNets[cumNets.length - 1]
-        const statsNet = (stats.totalWon ?? 0) - (stats.totalWagered ?? 0)
-        const useStatsAsReference = sessionStartAt && Math.abs(lastNet - statsNet) > Math.max(1, Math.abs(statsNet) * 0.01)
-        const currencyCode = 'usd'
-        const chartValues = [0, ...cumNets.map((c) => c / 100)]
-        const chartHeight = settingsCollapsed ? 24 : (compact ? 38 : 80)
-        const innerChartH = Math.max(16, chartHeight - (settingsCollapsed ? 18 : (compact ? 22 : 36)))
+      {chartDataStable && chartDataStable.length >= 2 && (() => {
+        const lastMajor = chartCumUsdMajors[chartCumUsdMajors.length - 1]
+        const lastNetCents = Math.round(lastMajor * 100)
+        const chartHeight = isWorkbench ? 100 : (wbCompact ? 38 : 80)
+        const innerChartH = Math.max(28, chartHeight - (wbCompact ? 22 : 36))
         return (
-          <div style={{ marginTop: settingsCollapsed ? '0.12rem' : (compact ? '0.2rem' : '0.5rem'), padding: settingsCollapsed ? '0.12rem 0.2rem' : (compact ? '0.25rem 0.35rem' : '0.75rem'), background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: settingsCollapsed ? 4 : 6, minHeight: chartHeight, color: 'var(--text)' }}>
-            <div style={{ fontSize: settingsCollapsed ? '0.5rem' : (compact ? '0.58rem' : '0.85rem'), fontWeight: 600, marginBottom: settingsCollapsed ? '0.1rem' : '0.2rem', color: 'var(--text-muted)' }}>
-              Session Netto · {slot.name}
-              {useStatsAsReference && lastNet !== statsNet && <span style={{ marginLeft: '0.5rem', color: 'var(--text-muted)', fontWeight: 400 }}>(Chart ≠ Stats)</span>}
+          <div style={{ marginTop: wbCompact ? '0.2rem' : '0.5rem', padding: wbCompact ? '0.25rem 0.35rem' : '0.75rem', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, minHeight: chartHeight, color: 'var(--text)' }}>
+            <div style={{ fontSize: wbCompact ? '0.58rem' : '0.85rem', fontWeight: 600, marginBottom: '0.2rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
+              <span>Session Netto (USD) · {slot.name}</span>
+              <span className="tabular-nums" style={{ fontWeight: 500 }}>
+                {lastMajor >= 0 ? '+' : ''}{formatAmount(lastNetCents, 'usd')} · {chartCumUsdMajors.length} spins
+              </span>
             </div>
-            <div
-              style={{ width: '100%', height: innerChartH }}
-              title={`Session-Netto (letzter Punkt): ${formatAmount(lastNet, currencyCode)} · ${cumNets.length} Spins`}
-            >
+            <div style={{ width: '100%', height: innerChartH }}>
               <OriginalsProfitChart
-                chartData={profitsToChartData(chartValues)}
+                chartData={chartDataStable}
                 height={innerChartH}
                 domainResetKey={sessionStartAt ?? 'default'}
                 compact
@@ -1697,30 +1790,21 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           </div>
         )
       })()}
-      <BetList bets={betHistory.slice(-30).map((b) => {
-          const curr = (b.currencyCode || 'usd').toLowerCase()
-          const betUsd = Number.isFinite(Number(b.betUsdSnapshotMajor))
-            ? Number(b.betUsdSnapshotMajor)
-            : toUsdMajor(b.betAmount, curr)
-          const winUsd = Number.isFinite(Number(b.winUsdSnapshotMajor))
-            ? Number(b.winUsdSnapshotMajor)
-            : toUsdMajor(b.winAmount, curr)
-          const hasUsd = Number.isFinite(betUsd) && Number.isFinite(winUsd)
-          return {
-            ...b,
-            betAmount: hasUsd ? Math.round(betUsd * 100) : b.betAmount,
-            winAmount: hasUsd ? Math.round(winUsd * 100) : b.winAmount,
-            currencyCode: hasUsd ? 'USD' : (b.currencyCode || effectiveTarget || 'USD'),
-          }
-        })}
-        totalCount={betHistory.length}
-        currencyCode={effectiveTarget || 'usd'}
-        compact={compact}
+    </>
+  )
+
+  const betListBlock = (
+      <BetList
+        bets={betListDisplayRows}
+        totalCount={sessionBetsDeduped.length}
+        currencyCode="usd"
+        compact={wbCompact}
         minimal={settingsCollapsed}
         onOpenSlot={handleOpenSlotFromBet}
       />
+  )
 
-      {!compact && (
+  const logsBlock = !wbCompact && (
       <details style={{ marginTop: '0.5rem' }}>
         <summary style={{ fontSize: '0.85rem', color: 'var(--text-muted)', cursor: 'pointer' }}>
           API logs (coding / debug)
@@ -1739,7 +1823,68 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           )}
         </div>
       </details>
+  )
+
+  if (isWorkbench) {
+    return (
+      <div className="slot-wb-instance" hidden={!workbenchActive} aria-hidden={!workbenchActive}>
+        <div className="slot-wb-body">
+          <aside className="slot-wb-left">
+            <div className="slot-wb-col-title">Settings</div>
+            {settingsCollapsed && challengeTargetLabels.length > 0 && (
+              <div style={{ fontSize: '0.58rem', fontWeight: 600, color: 'var(--accent)', lineHeight: 1.2 }}>
+                {slot.name} · Target {challengeTargetLabels.join(' · ')}x
+              </div>
+            )}
+            {titleBlock}
+            {currencyStakeBlock}
+            {collapsedRunBar}
+          </aside>
+          <main className="slot-wb-main">
+            <div className="slot-wb-col-title">Run & bets</div>
+            <div className="slot-wb-run-card">
+              {runButtonsBlock}
+              {sessionStatusBlock}
+            </div>
+            {betListBlock}
+            {logsBlock}
+          </main>
+          <aside className="slot-wb-right">
+            <div className="slot-wb-col-title">Statistics</div>
+            {statsBlock}
+          </aside>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: wbCompact ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))',
+      gap: settingsCollapsed ? '0.17rem' : (wbCompact ? '0.28rem' : '1.5rem'),
+      alignItems: 'start',
+    }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: settingsCollapsed ? '0.12rem' : (wbCompact ? '0.28rem' : '1rem'), minWidth: 0, color: 'var(--text)' }}>
+      {settingsCollapsed && challengeTargetLabels.length > 0 && (
+        <div
+          style={{ fontSize: '0.58rem', fontWeight: 600, color: 'var(--accent)', lineHeight: 1.2 }}
+          title="Challenge target multiplier (Auto Hunter / selection)"
+        >
+          {slot.name} · Target {challengeTargetLabels.join(' · ')}x
+        </div>
       )}
+      {titleBlock}
+      {currencyStakeBlock}
+      {runButtonsBlock}
+      {collapsedRunBar}
+      {sessionStatusBlock}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: settingsCollapsed ? '0.17rem' : (wbCompact ? '0.35rem' : '0.5rem'), minWidth: 0, color: 'var(--text)' }}>
+      {statsBlock}
+      {betListBlock}
+      {logsBlock}
       </div>
     </div>
   )

@@ -9,7 +9,14 @@ import {
   saveProviderFavorites,
   loadSlotViewPreset,
   saveSlotViewPreset,
+  loadRecentSlots,
+  pushRecentSlot,
+  pushRecentSlots,
+  subscribeRecentSlots,
 } from '../utils/slotDiscoveryPreferences'
+import { loadRecentBets } from '../utils/betHistoryDb'
+
+const BROWSE_SOFT_CAP = 72
 
 const SearchIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -145,6 +152,8 @@ function slotMatchesSearch(slot, q) {
  * @param {string} [props.sharedSourceCurrency]
  * @param {string} [props.sharedTargetCurrency]
  * @param {boolean} [props.loading] - show skeleton grid when catalog is loading and list is still empty
+ * @param {boolean} [props.discoveryLanding=true] - Recents/Favorites first; full grid only in Browse
+ * @param {boolean} [props.hideInstanceTray=false] - hide selected chips (parent renders tray)
  */
 export function SlotSelectMulti({
   slots,
@@ -160,6 +169,8 @@ export function SlotSelectMulti({
   sharedTargetCurrency,
   hasBonusSlugs = [],
   loading = false,
+  discoveryLanding = true,
+  hideInstanceTray = false,
 }) {
   const isInstanceMode = !!onAddInstance
   const groups = getSlotsGroupedByProvider(slots)
@@ -168,9 +179,13 @@ export function SlotSelectMulti({
   const [providerFilter, setProviderFilter] = useState(initialPreset.providerFilter || '')
   const [onlyFavoriteProviders, setOnlyFavoriteProviders] = useState(Boolean(initialPreset.onlyFavoriteProviders))
   const [favoriteProviders, setFavoriteProviders] = useState(() => loadProviderFavorites())
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState(initialPreset.search || '')
+  const [browseOpen, setBrowseOpen] = useState(() =>
+    Boolean(initialPreset.search?.trim() || initialPreset.providerFilter || initialPreset.onlyFavoriteProviders)
+  )
+  const [showAllCap, setShowAllCap] = useState(BROWSE_SOFT_CAP)
+  const [recentSlugs, setRecentSlugs] = useState(() => loadRecentSlots())
 
-  // Debounce-Suche für bessere Performance
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(search)
@@ -178,8 +193,45 @@ export function SlotSelectMulti({
     return () => clearTimeout(timer)
   }, [search])
 
+  useEffect(() => subscribeRecentSlots(setRecentSlugs), [])
+
+  // Seed Last played from bet history when local recents are empty (no-op if session-only bets).
+  useEffect(() => {
+    if (!discoveryLanding) return
+    if (loadRecentSlots().length > 0) return
+    let cancelled = false
+    loadRecentBets(80)
+      .then((bets) => {
+        if (cancelled || !Array.isArray(bets) || bets.length === 0) return
+        const ordered = []
+        const seen = new Set()
+        for (const bet of bets) {
+          const slug = String(bet?.slotSlug || '').trim()
+          if (!slug || seen.has(slug)) continue
+          seen.add(slug)
+          ordered.push(slug)
+          if (ordered.length >= 12) break
+        }
+        if (ordered.length === 0) return
+        // bets are newest-first; pushRecentSlots makes last input most recent — reverse so newest wins.
+        const next = pushRecentSlots([...ordered].reverse())
+        if (!cancelled) setRecentSlugs(next)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [discoveryLanding])
+
+  useEffect(() => {
+    if (debouncedSearch?.trim() || providerFilter || onlyFavoriteProviders) {
+      setBrowseOpen(true)
+    }
+  }, [debouncedSearch, providerFilter, onlyFavoriteProviders])
+
+  useEffect(() => {
+    setShowAllCap(BROWSE_SOFT_CAP)
+  }, [providerFilter, debouncedSearch, onlyFavoriteProviders, browseOpen])
+
   const filteredGroups = useMemo(() => {
-    // Erst Provider-Filter anwenden (schneller)
     let out = groups
     if (onlyFavoriteProviders) {
       const favoriteSet = new Set(favoriteProviders)
@@ -188,21 +240,17 @@ export function SlotSelectMulti({
     if (providerFilter && out[providerFilter]) {
       out = { [providerFilter]: groups[providerFilter] }
     }
-    
-    // Dann Such-Filter anwenden
+
     if (!debouncedSearch?.trim()) return out
-    
-    const q = debouncedSearch.trim().toLowerCase()
+
     const searchOut = {}
-    
     for (const [providerId, data] of Object.entries(out)) {
-      if (!data) continue // Provider könnte undefined sein
-      const matched = (data.slots || []).filter((s) => slotMatchesSearch(s, q))
+      if (!data) continue
+      const matched = (data.slots || []).filter((s) => slotMatchesSearch(s, debouncedSearch))
       if (matched.length > 0) {
         searchOut[providerId] = { ...data, slots: matched }
       }
     }
-    
     return searchOut
   }, [groups, debouncedSearch, providerFilter, onlyFavoriteProviders, favoriteProviders])
 
@@ -218,6 +266,7 @@ export function SlotSelectMulti({
       return an.localeCompare(bn, 'de')
     })
   }, [groups, favoriteProviders])
+
   const allSlotsFlat = useMemo(() => {
     const list = []
     for (const [, data] of Object.entries(filteredGroups)) {
@@ -239,6 +288,31 @@ export function SlotSelectMulti({
         return 0
       })
     : allSlotsFlat
+
+  const slotsBySlug = useMemo(() => {
+    const map = new Map()
+    for (const s of slots || []) {
+      if (s?.slug) map.set(s.slug, s)
+    }
+    return map
+  }, [slots])
+
+  const recentSlots = useMemo(
+    () => recentSlugs.map((slug) => slotsBySlug.get(slug)).filter(Boolean).slice(0, 12),
+    [recentSlugs, slotsBySlug]
+  )
+
+  const favoriteSlots = useMemo(
+    () => (favorites || []).map((slug) => slotsBySlug.get(slug)).filter(Boolean).slice(0, 24),
+    [favorites, slotsBySlug]
+  )
+
+  const showBrowseGrid = !discoveryLanding || browseOpen
+  const applySoftCap = discoveryLanding && showBrowseGrid && !providerFilter && !debouncedSearch?.trim()
+  const cappedSlots = applySoftCap
+    ? displaySlots.slice(0, showAllCap)
+    : displaySlots
+  const hasMoreSoftCap = applySoftCap && displaySlots.length > showAllCap
 
   const chipsRef = useRef(null)
   const hasBonusLookup = useMemo(() => {
@@ -264,11 +338,162 @@ export function SlotSelectMulti({
     })
   }
 
+  const selectSlot = (slot) => {
+    if (disabled || !slot?.slug) return
+    setRecentSlugs(pushRecentSlot(slot.slug))
+    if (isInstanceMode) {
+      const alreadyHas = selectedInstances.some((i) => i.slug === slot.slug)
+      const supportsMulti = supportsMultiCurrencySameSlot(slot.providerId || slot.provider)
+      if (alreadyHas && !supportsMulti) {
+        onAddInstance?.(slot.slug, null, null, true)
+      } else {
+        onAddInstance?.(slot.slug, sharedSourceCurrency, sharedTargetCurrency, false)
+      }
+    } else {
+      onToggle(slot.slug)
+    }
+  }
+
+  const openBrowseAll = () => {
+    setProviderFilter('')
+    setBrowseOpen(true)
+  }
+
+  const closeBrowseToLanding = () => {
+    setSearch('')
+    setDebouncedSearch('')
+    setProviderFilter('')
+    setOnlyFavoriteProviders(false)
+    setBrowseOpen(false)
+  }
+
   const showSlotSkeleton = Boolean(loading && (!slots || slots.length === 0))
+
+  const renderSlotTile = (slot) => {
+    const selected = isInstanceMode ? selectedInstances.some((i) => i.slug === slot.slug) : selectedSlugs.includes(slot.slug)
+    const instanceCount = isInstanceMode ? selectedInstances.filter((i) => i.slug === slot.slug).length : (selected ? 1 : 0)
+    const isFav = favorites.includes(slot.slug)
+    const hasBonus = hasBonusLookup.has(slot.slug)
+    const initials = (slot.name || '?').split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase().slice(0, 2)
+    const providerColor = getProviderColor(slot.providerId || slot.provider || 'default')
+    const hasThumbnail = !!slot.thumbnailUrl
+    return (
+      <div
+        key={slot.slug}
+        role="button"
+        tabIndex={0}
+        onClick={() => selectSlot(slot)}
+        onKeyDown={(e) => e.key === 'Enter' && selectSlot(slot)}
+        className="slot-pill"
+        data-selected={selected}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'stretch',
+          padding: '0.5rem',
+          borderRadius: 'var(--radius-md)',
+          fontSize: '0.75rem',
+          cursor: 'pointer',
+          color: 'var(--text)',
+          border: `1px solid ${selected ? 'var(--accent)' : 'var(--border-subtle)'}`,
+          background: selected
+            ? 'linear-gradient(180deg, rgba(var(--accent-rgb), 0.1) 0%, rgba(var(--accent-rgb), 0.03) 48%, rgba(8,8,12,0.94) 100%)'
+            : 'linear-gradient(180deg, rgba(var(--accent-rgb), 0.05) 0%, rgba(var(--accent-rgb), 0.015) 42%, rgba(8,8,12,0.94) 100%)',
+          minHeight: '4.5rem',
+          transition: 'all 0.2s',
+          position: 'relative',
+          ...(disabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}),
+        }}
+        title={slot.name}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.25rem', marginBottom: '0.35rem' }}>
+          <div style={{
+            width: 42, height: 42, borderRadius: 8,
+            background: hasThumbnail
+              ? 'color-mix(in srgb, var(--bg-elevated) 90%, rgba(var(--accent-rgb), 0.08))'
+              : `${providerColor}33`,
+            border: `1px solid ${hasThumbnail ? 'var(--border-subtle)' : `${providerColor}66`}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: hasThumbnail ? 0 : '0.7rem', fontWeight: 700, color: providerColor, flexShrink: 0,
+            overflow: 'hidden',
+          }}>
+            {hasThumbnail ? (
+              <img src={slot.thumbnailUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
+            ) : (
+              initials
+            )}
+          </div>
+          <div style={{
+            width: 14, height: 14, borderRadius: 3,
+            border: `1px solid ${selected ? 'var(--accent)' : 'var(--text-muted)'}`,
+            background: selected ? 'var(--accent)' : 'transparent',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '0.6rem', color: '#000', flexShrink: 0,
+          }}>
+            {selected && '✓'}
+          </div>
+        </div>
+        {hasBonus && (
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              alignSelf: 'flex-start',
+              marginBottom: '0.25rem',
+              padding: '0.1rem 0.35rem',
+              borderRadius: 999,
+              border: '1px solid rgba(var(--accent-rgb), 0.35)',
+              background: 'rgba(var(--accent-rgb), 0.08)',
+              color: 'var(--accent)',
+              fontSize: '0.62rem',
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+            }}
+          >
+            HAS BONUS
+          </div>
+        )}
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: 1.25, fontWeight: selected ? 600 : 400 }}>
+          {slot.name}
+          {instanceCount > 1 && <span style={{ marginLeft: '0.2rem', opacity: 0.8 }}>({instanceCount})</span>}
+        </span>
+        {onToggleFavorite && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onToggleFavorite(slot.slug) }}
+            style={{ position: 'absolute', bottom: '0.35rem', right: '0.35rem', background: 'none', border: 'none', cursor: 'pointer', padding: '0.15rem', fontSize: '0.75rem', color: isFav ? 'var(--warning)' : 'var(--text-muted)', opacity: isFav ? 1 : 0.4 }}
+            title={isFav ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            {isFav ? '★' : '☆'}
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  const renderQuickRow = (label, rowSlots, emptyHint) => (
+    <div style={{ marginBottom: '0.85rem' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '0.4rem' }}>
+        <span style={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{label}</span>
+        {rowSlots.length > 0 && (
+          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{rowSlots.length}</span>
+        )}
+      </div>
+      {rowSlots.length === 0 ? (
+        <div style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', color: 'var(--text-muted)', border: '1px dashed var(--border-subtle)', borderRadius: 'var(--radius-md)', background: 'var(--bg-deep)' }}>
+          {emptyHint}
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '0.45rem' }}>
+          {rowSlots.map(renderSlotTile)}
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <div className="slot-select-cyber" style={{ marginBottom: '1rem' }}>
-      {isInstanceMode && selectedInstances.length > 0 && (
+      {isInstanceMode && !hideInstanceTray && selectedInstances.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
           {selectedInstances.map((inst) => {
             const slot = slots?.find((s) => s.slug === inst.slug)
@@ -298,280 +523,307 @@ export function SlotSelectMulti({
         </div>
       )}
 
-      {/* Sticky Such- und Filter-Bar */}
-      <div 
-        style={{ 
-          position: 'sticky', 
-          top: 0, 
-          zIndex: 10, 
-          padding: '0.5rem 0', 
-          background: 'linear-gradient(180deg, rgba(var(--accent-rgb), 0.06) 0%, rgba(var(--accent-rgb), 0.015) 42%, rgba(8,8,12,0.92) 100%)', 
-          marginBottom: '0.75rem',
-          borderBottom: '1px solid var(--border-subtle)',
-        }}
-      >
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.65rem', flexWrap: 'wrap' }}>
-          <div style={{ position: 'relative', flex: 1, minWidth: 160 }}>
-            <span style={{ position: 'absolute', left: '0.7rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}><SearchIcon /></span>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search slot..."
-              style={{
-                width: '100%',
-                padding: '0.45rem 0.7rem 0.45rem 2rem',
-                background: 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.05))',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-md)',
-                color: 'var(--text)',
-                fontSize: '0.8rem',
-                transition: 'border-color 0.2s, box-shadow 0.2s',
-              }}
-            />
+      {discoveryLanding && !showBrowseGrid && (
+        <div style={{ marginBottom: '0.75rem' }}>
+          {showSlotSkeleton ? (
+            <div
+              className="slot-grid-skeleton"
+              style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '0.45rem', marginBottom: '0.85rem' }}
+              aria-busy="true"
+              aria-label="Loading games"
+            >
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="slot-skeleton-tile" />
+              ))}
+            </div>
+          ) : (
+            <>
+              {renderQuickRow('Last played', recentSlots, 'No recent slots yet — pick a provider or browse.')}
+              {renderQuickRow('Favorites', favoriteSlots, 'Star slots in Browse to pin them here.')}
+            </>
+          )}
+
+          <div style={{ marginBottom: '0.55rem' }}>
+            <div style={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>
+              Providers
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+              {providerIds.map((pid) => {
+                const count = groups[pid]?.slots?.length || 0
+                const color = getProviderColor(pid)
+                return (
+                  <button
+                    key={pid}
+                    type="button"
+                    onClick={() => {
+                      setProviderFilter(pid)
+                      setBrowseOpen(true)
+                    }}
+                    style={{
+                      padding: '0.4rem 0.7rem',
+                      borderRadius: 'var(--radius-md)',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      border: `1px solid ${color}55`,
+                      background: `${color}14`,
+                      color: 'var(--text)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {PROVIDERS_META[pid]?.name || PROVIDERS_BASIC[pid]?.name || pid}
+                    <span style={{ marginLeft: '0.35rem', color: 'var(--text-muted)', fontWeight: 500 }}>{count}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setOnlyFavoriteProviders((v) => !v)}
-            style={{
-              padding: '0.4rem 0.6rem',
-              borderRadius: 'var(--radius-md)',
-              border: `1px solid ${onlyFavoriteProviders ? 'var(--accent)' : 'var(--border-subtle)'}`,
-              background: onlyFavoriteProviders ? 'rgba(var(--accent-rgb), 0.1)' : 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.05))',
-              color: onlyFavoriteProviders ? 'var(--accent)' : 'var(--text-muted)',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-            title="Show only favorite providers"
-          >
-            Fav Providers
-          </button>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: 160 }}>
+              <span style={{ position: 'absolute', left: '0.7rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}><SearchIcon /></span>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                  if (e.target.value.trim()) setBrowseOpen(true)
+                }}
+                placeholder="Search slot…"
+                style={{
+                  width: '100%',
+                  padding: '0.45rem 0.7rem 0.45rem 2rem',
+                  background: 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.05))',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-md)',
+                  color: 'var(--text)',
+                  fontSize: '0.8rem',
+                }}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={openBrowseAll}
+              style={{
+                padding: '0.45rem 0.85rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--accent)',
+                background: 'rgba(var(--accent-rgb), 0.12)',
+                color: 'var(--accent)',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Browse all
+            </button>
+          </div>
         </div>
-        {/* Horizontale Provider-Chips */}
-        <div 
-          ref={chipsRef}
-          style={{ 
-            display: 'flex', 
-            gap: '0.4rem', 
-            overflowX: 'auto', 
-            paddingBottom: '0.35rem',
-            scrollbarGutter: 'stable',
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setProviderFilter('')}
+      )}
+
+      {showBrowseGrid && (
+        <>
+          <div
             style={{
-              flexShrink: 0,
-              padding: '0.4rem 0.75rem',
-              borderRadius: 'var(--radius-md)',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              border: `1px solid ${!providerFilter ? 'var(--accent)' : 'var(--border-subtle)'}`,
-              background: !providerFilter ? 'rgba(var(--accent-rgb), 0.1)' : 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.05))',
-              color: !providerFilter ? 'var(--accent)' : 'var(--text-muted)',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              boxShadow: !providerFilter ? '0 0 8px rgba(var(--accent-rgb), 0.12)' : 'none',
+              position: 'sticky',
+              top: 0,
+              zIndex: 10,
+              padding: '0.5rem 0',
+              background: 'linear-gradient(180deg, rgba(var(--accent-rgb), 0.06) 0%, rgba(var(--accent-rgb), 0.015) 42%, rgba(8,8,12,0.92) 100%)',
+              marginBottom: '0.75rem',
+              borderBottom: '1px solid var(--border-subtle)',
             }}
           >
-            All
-          </button>
-          {providerIds.map((pid) => {
-            const count = groups[pid]?.slots?.length || 0
-            const color = getProviderColor(pid)
-            const isActive = providerFilter === pid
-            return (
-              <div key={pid} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.65rem', flexWrap: 'wrap' }}>
+              {discoveryLanding && (
                 <button
                   type="button"
-                  onClick={() => setProviderFilter(pid)}
+                  onClick={closeBrowseToLanding}
                   style={{
-                    flexShrink: 0,
-                    padding: '0.4rem 0.75rem',
+                    padding: '0.4rem 0.65rem',
                     borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.05))',
+                    color: 'var(--text-muted)',
                     fontSize: '0.75rem',
                     fontWeight: 600,
-                    border: `1px solid ${isActive ? color : 'var(--border-subtle)'}`,
-                    background: isActive ? `${color}1f` : 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.045))',
-                    color: isActive ? color : 'var(--text-muted)',
                     cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    boxShadow: isActive ? `0 0 7px ${color}24` : 'none',
                   }}
                 >
-                  {PROVIDERS_META[pid]?.name || PROVIDERS_BASIC[pid]?.name || pid} ({count})
+                  ← Quick pick
                 </button>
-                <button
-                  type="button"
-                  onClick={() => toggleProviderFavorite(pid)}
+              )}
+              <div style={{ position: 'relative', flex: 1, minWidth: 160 }}>
+                <span style={{ position: 'absolute', left: '0.7rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}><SearchIcon /></span>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search slot..."
                   style={{
+                    width: '100%',
+                    padding: '0.45rem 0.7rem 0.45rem 2rem',
+                    background: 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.05))',
                     border: '1px solid var(--border-subtle)',
-                    background: 'transparent',
-                    color: favoriteProviders.includes(pid) ? 'var(--warning)' : 'var(--text-muted)',
                     borderRadius: 'var(--radius-md)',
-                    padding: '0.3rem 0.4rem',
-                    fontSize: '0.75rem',
-                    cursor: 'pointer',
-                  }}
-                  title={favoriteProviders.includes(pid) ? 'Remove provider favorite' : 'Add provider favorite'}
-                >
-                  {favoriteProviders.includes(pid) ? '★' : '☆'}
-                </button>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Kompaktes Slot-Grid 3-5 Spalten */}
-      <div style={{ maxHeight: '55vh', overflowY: 'auto', paddingRight: '0.35rem' }}>
-        {showSlotSkeleton ? (
-          <div
-            className="slot-grid-skeleton"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
-              gap: '0.5rem',
-            }}
-            aria-busy="true"
-            aria-label="Loading games"
-          >
-            {Array.from({ length: 12 }).map((_, i) => (
-              <div key={i} className="slot-skeleton-tile" />
-            ))}
-          </div>
-        ) : displaySlots.length === 0 ? (
-          <div style={{ padding: '2.5rem', color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-            {debouncedSearch?.trim() ? 'No slots found.' : 'No slots available.'}
-          </div>
-        ) : (
-          <div 
-            style={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
-              gap: '0.5rem',
-            }}
-          >
-            {displaySlots.map((slot) => {
-              const selected = isInstanceMode ? selectedInstances.some((i) => i.slug === slot.slug) : selectedSlugs.includes(slot.slug)
-              const instanceCount = isInstanceMode ? selectedInstances.filter((i) => i.slug === slot.slug).length : (selected ? 1 : 0)
-              const isFav = favorites.includes(slot.slug)
-              const hasBonus = hasBonusLookup.has(slot.slug)
-              const handleClick = () => {
-                if (disabled) return
-                if (isInstanceMode) {
-                  const alreadyHas = selectedInstances.some((i) => i.slug === slot.slug)
-                  const supportsMulti = supportsMultiCurrencySameSlot(slot.providerId || slot.provider)
-                  if (alreadyHas && !supportsMulti) {
-                    onAddInstance?.(slot.slug, null, null, true)
-                  } else {
-                    onAddInstance?.(slot.slug, sharedSourceCurrency, sharedTargetCurrency, false)
-                  }
-                } else {
-                  onToggle(slot.slug)
-                }
-              }
-              const initials = (slot.name || '?').split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase().slice(0, 2)
-              const providerColor = getProviderColor(slot.providerId || slot.provider || 'default')
-              const hasThumbnail = !!slot.thumbnailUrl
-              return (
-                <div
-                  key={slot.slug}
-                  role="button"
-                  tabIndex={0}
-                  onClick={handleClick}
-                  onKeyDown={(e) => e.key === 'Enter' && handleClick()}
-                  className="slot-pill"
-                  data-selected={selected}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'stretch',
-                    padding: '0.5rem',
-                    borderRadius: 'var(--radius-md)',
-                    fontSize: '0.75rem',
-                    cursor: 'pointer',
                     color: 'var(--text)',
-                    border: `1px solid ${selected ? 'var(--accent)' : 'var(--border-subtle)'}`,
-                    background: selected
-                      ? 'linear-gradient(180deg, rgba(var(--accent-rgb), 0.1) 0%, rgba(var(--accent-rgb), 0.03) 48%, rgba(8,8,12,0.94) 100%)'
-                      : 'linear-gradient(180deg, rgba(var(--accent-rgb), 0.05) 0%, rgba(var(--accent-rgb), 0.015) 42%, rgba(8,8,12,0.94) 100%)',
-                    minHeight: '4.5rem',
-                    transition: 'all 0.2s',
-                    position: 'relative',
-                    ...(disabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}),
+                    fontSize: '0.8rem',
+                    transition: 'border-color 0.2s, box-shadow 0.2s',
                   }}
-                  title={slot.name}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.25rem', marginBottom: '0.35rem' }}>
-                    <div style={{ 
-                      width: 42, height: 42, borderRadius: 8, 
-                      background: hasThumbnail
-                        ? 'color-mix(in srgb, var(--bg-elevated) 90%, rgba(var(--accent-rgb), 0.08))'
-                        : `${providerColor}33`, 
-                      border: `1px solid ${hasThumbnail ? 'var(--border-subtle)' : `${providerColor}66`}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: hasThumbnail ? 0 : '0.7rem', fontWeight: 700, color: providerColor, flexShrink: 0,
-                      overflow: 'hidden',
-                    }}>
-                      {hasThumbnail ? (
-                        <img src={slot.thumbnailUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
-                      ) : (
-                        initials
-                      )}
-                    </div>
-                    <div style={{ 
-                      width: 14, height: 14, borderRadius: 3, 
-                      border: `1px solid ${selected ? 'var(--accent)' : 'var(--text-muted)'}`,
-                      background: selected ? 'var(--accent)' : 'transparent',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '0.6rem', color: '#000', flexShrink: 0,
-                    }}>
-                      {selected && '✓'}
-                    </div>
-                  </div>
-                  {hasBonus && (
-                    <div
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        alignSelf: 'flex-start',
-                        marginBottom: '0.25rem',
-                        padding: '0.1rem 0.35rem',
-                        borderRadius: 999,
-                        border: '1px solid rgba(var(--accent-rgb), 0.35)',
-                        background: 'rgba(var(--accent-rgb), 0.08)',
-                        color: 'var(--accent)',
-                        fontSize: '0.62rem',
-                        fontWeight: 700,
-                        letterSpacing: '0.04em',
-                      }}
-                    >
-                      HAS BONUS
-                    </div>
-                  )}
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: 1.25, fontWeight: selected ? 600 : 400 }}>
-                    {slot.name}
-                    {instanceCount > 1 && <span style={{ marginLeft: '0.2rem', opacity: 0.8 }}>({instanceCount})</span>}
-                  </span>
-                  {onToggleFavorite && (
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setOnlyFavoriteProviders((v) => !v)}
+                style={{
+                  padding: '0.4rem 0.6rem',
+                  borderRadius: 'var(--radius-md)',
+                  border: `1px solid ${onlyFavoriteProviders ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                  background: onlyFavoriteProviders ? 'rgba(var(--accent-rgb), 0.1)' : 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.05))',
+                  color: onlyFavoriteProviders ? 'var(--accent)' : 'var(--text-muted)',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+                title="Show only favorite providers"
+              >
+                Fav Providers
+              </button>
+            </div>
+            <div
+              ref={chipsRef}
+              style={{
+                display: 'flex',
+                gap: '0.4rem',
+                overflowX: 'auto',
+                paddingBottom: '0.35rem',
+                scrollbarGutter: 'stable',
+              }}
+            >
+              <button
+                type="button"
+                onClick={openBrowseAll}
+                style={{
+                  flexShrink: 0,
+                  padding: '0.4rem 0.75rem',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  border: `1px solid ${!providerFilter ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                  background: !providerFilter ? 'rgba(var(--accent-rgb), 0.1)' : 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.05))',
+                  color: !providerFilter ? 'var(--accent)' : 'var(--text-muted)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  boxShadow: !providerFilter ? '0 0 8px rgba(var(--accent-rgb), 0.12)' : 'none',
+                }}
+              >
+                All
+              </button>
+              {providerIds.map((pid) => {
+                const count = groups[pid]?.slots?.length || 0
+                const color = getProviderColor(pid)
+                const isActive = providerFilter === pid
+                return (
+                  <div key={pid} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
                     <button
                       type="button"
-                      onClick={(e) => { e.stopPropagation(); onToggleFavorite(slot.slug) }}
-                      style={{ position: 'absolute', bottom: '0.35rem', right: '0.35rem', background: 'none', border: 'none', cursor: 'pointer', padding: '0.15rem', fontSize: '0.75rem', color: isFav ? 'var(--warning)' : 'var(--text-muted)', opacity: isFav ? 1 : 0.4 }}
-                      title={isFav ? 'Remove from favorites' : 'Add to favorites'}
+                      onClick={() => {
+                        setProviderFilter(pid)
+                        setBrowseOpen(true)
+                      }}
+                      style={{
+                        flexShrink: 0,
+                        padding: '0.4rem 0.75rem',
+                        borderRadius: 'var(--radius-md)',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        border: `1px solid ${isActive ? color : 'var(--border-subtle)'}`,
+                        background: isActive ? `${color}1f` : 'color-mix(in srgb, var(--bg-elevated) 92%, rgba(var(--accent-rgb), 0.045))',
+                        color: isActive ? color : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        boxShadow: isActive ? `0 0 7px ${color}24` : 'none',
+                      }}
                     >
-                      {isFav ? '★' : '☆'}
+                      {PROVIDERS_META[pid]?.name || PROVIDERS_BASIC[pid]?.name || pid} ({count})
                     </button>
-                  )}
-                </div>
-              )
-            })}
+                    <button
+                      type="button"
+                      onClick={() => toggleProviderFavorite(pid)}
+                      style={{
+                        border: '1px solid var(--border-subtle)',
+                        background: 'transparent',
+                        color: favoriteProviders.includes(pid) ? 'var(--warning)' : 'var(--text-muted)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '0.3rem 0.4rem',
+                        fontSize: '0.75rem',
+                        cursor: 'pointer',
+                      }}
+                      title={favoriteProviders.includes(pid) ? 'Remove provider favorite' : 'Add provider favorite'}
+                    >
+                      {favoriteProviders.includes(pid) ? '★' : '☆'}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
           </div>
-        )}
-      </div>
+
+          <div style={{ maxHeight: '45vh', overflowY: 'auto', paddingRight: '0.35rem' }}>
+            {showSlotSkeleton ? (
+              <div
+                className="slot-grid-skeleton"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+                  gap: '0.5rem',
+                }}
+                aria-busy="true"
+                aria-label="Loading games"
+              >
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <div key={i} className="slot-skeleton-tile" />
+                ))}
+              </div>
+            ) : cappedSlots.length === 0 ? (
+              <div style={{ padding: '2.5rem', color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', background: 'var(--bg-card)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                {debouncedSearch?.trim() ? 'No slots found.' : 'No slots available.'}
+              </div>
+            ) : (
+              <>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+                    gap: '0.5rem',
+                  }}
+                >
+                  {cappedSlots.map(renderSlotTile)}
+                </div>
+                {hasMoreSoftCap && (
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.75rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowAllCap((n) => n + BROWSE_SOFT_CAP)}
+                      style={{
+                        padding: '0.45rem 0.9rem',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border-subtle)',
+                        background: 'var(--bg-elevated)',
+                        color: 'var(--text)',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Show more ({displaySlots.length - showAllCap} left)
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }

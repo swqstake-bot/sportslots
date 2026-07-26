@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import clsx from 'clsx'
 import { formatAmount } from '../utils/formatAmount'
 import { formatStakeShareBetId } from '../utils/stakeBetShareId'
@@ -33,6 +33,9 @@ export default function BetList({
   emptyMessage,
   onOpenSlot = null,
 }) {
+  const scrollRef = useRef(null)
+  const lastHeadKeyRef = useRef('')
+
   const displayBets = useMemo(() => {
     const nonZero = (bets || []).filter((b) => (b.betAmount ?? 0) !== 0 || (b.winAmount ?? 0) !== 0)
     const sorted = [...nonZero].sort((a, b) => {
@@ -43,6 +46,17 @@ export default function BetList({
     })
     return Number.isFinite(Number(maxRows)) && Number(maxRows) > 0 ? sorted.slice(0, Number(maxRows)) : sorted
   }, [bets, maxRows])
+
+  const headKey = displayBets[0]
+    ? `${displayBets[0].id ?? ''}|${displayBets[0].addedAt ?? ''}|${displayBets[0].roundId ?? ''}|${displayBets[0].winAmount ?? ''}`
+    : ''
+
+  useEffect(() => {
+    if (!headKey || headKey === lastHeadKeyRef.current) return
+    lastHeadKeyRef.current = headKey
+    const el = scrollRef.current
+    if (el) el.scrollTop = 0
+  }, [headKey])
 
   const panelClass = clsx('terminal-panel', minimal && 'terminal-panel--minimal', compact && 'terminal-panel--compact')
   const scrollClass = clsx(
@@ -74,7 +88,7 @@ export default function BetList({
           {totalCount != null ? totalCount : bets.length} entries
         </span>
       </div>
-      <div className={scrollClass}>
+      <div className={scrollClass} ref={scrollRef}>
         <table className="terminal-table">
           <thead>
             <tr>

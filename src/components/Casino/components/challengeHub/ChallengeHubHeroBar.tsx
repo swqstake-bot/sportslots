@@ -64,8 +64,9 @@ export const ChallengeHubHeroBar = memo(function ChallengeHubHeroBar({ aggregate
         </button>
         {showHelp ? (
           <p className="text-[0.7rem] text-[var(--text-muted)] mt-2 leading-relaxed">
-            Hub feed shows in-progress hub bets (casino / autorun / telegram). <b>Bonus Hunt</b> (manual) is under{' '}
-            <b>Slots → Bonus Hunt</b>. The autorun queue clears on app restart; filters and presets are kept.
+            Hub feed shows in-progress hub bets (Stake Challenges / Balance rules / Telegram).{' '}
+            <b>Bonus Hunt</b> is under <b>Casino → Bonus Hunt</b> (not under Slots). Balance-rules queue
+            clears on app restart; filters and presets are kept.
           </p>
         ) : null}
       </div>

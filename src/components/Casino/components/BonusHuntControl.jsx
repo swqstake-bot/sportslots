@@ -1562,6 +1562,7 @@ export default function BonusHuntControl({
           favorites={favorites}
           onToggleFavorite={onToggleFavorite}
           disabled={isRunning}
+          discoveryLanding={false}
         />
         </div>
 
@@ -1583,44 +1584,6 @@ export default function BonusHuntControl({
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
             <input type="checkbox" checked={extraBet} onChange={(e) => setExtraBet(e.target.checked)} disabled={isRunning} />
             Extra
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
-            <input type="checkbox" checked={saveBonusLogs} onChange={(e) => handleToggleBonusLogs(e.target.checked)} disabled={isRunning} />
-            Bonus log
-          </label>
-          <button type="button" onClick={() => exportBonusLogsAsFile()} className={styles.btnSecondary} disabled={isRunning}>Export</button>
-          <button type="button" onClick={() => { if (window.confirm('Delete bonus logs?')) clearBonusLogs() }} className={styles.btnSecondary} style={{ color: 'var(--error)' }} disabled={isRunning}>Delete</button>
-        </div>
-        <div className={styles.row} style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
-            Max Spins: <input type="number" min={0} value={maxSpinsPerSlot || ''} onChange={(e) => setMaxSpinsPerSlot(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0=∞" className={styles.select} style={{ width: 52 }} disabled={isRunning} title="0 = unlimited" />
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Stop after loss limit in selected currency">
-            Loss: <input type="number" min={0} value={maxLossLimit || ''} onChange={(e) => setMaxLossLimit(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 52 }} disabled={isRunning} />
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
-            <input type="checkbox" checked={stopOnMulti} onChange={(e) => setStopOnMulti(e.target.checked)} disabled={isRunning} />
-            Multi <input type="number" min={2} value={stopOnMultiplier} onChange={(e) => setStopOnMultiplier(Math.max(2, parseInt(e.target.value) || 2))} className={styles.select} style={{ width: 44 }} disabled={isRunning || !stopOnMulti} />×
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Minimum scatter count to stop on bonus">
-            Scatter: <select value={minScatterForStop} onChange={(e) => setMinScatterForStop(Number(e.target.value))} className={styles.select} style={{ width: 90 }} disabled={isRunning}>
-              <option value={0}>Any</option>
-              <option value={3}>3+</option>
-              <option value={4}>4+</option>
-              <option value={5}>5</option>
-            </select>
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Gamble when bonus triggers">
-            <input type="checkbox" checked={gambleOption} onChange={(e) => setGambleOption(e.target.checked)} disabled={isRunning} />
-            Gamble
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
-            Refresh: <input type="number" min={0} value={sessionRefreshSpins || ''} onChange={(e) => setSessionRefreshSpins(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 48 }} disabled={isRunning} />
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Run multiple slots in parallel">
-            <input type="checkbox" checked={parallelHuntEnabled} onChange={(e) => setParallelHuntEnabled(e.target.checked)} disabled={isRunning} />
-            <input type="range" min={2} value={maxParallelSlots} onChange={(e) => setMaxParallelSlots(Math.max(2, parseInt(e.target.value) || 2))} style={{ width: 80 }} disabled={isRunning || !parallelHuntEnabled} />
-            <span style={{ minWidth: 16 }}>{maxParallelSlots}</span> parallel
           </label>
         </div>
         </div>
@@ -1644,9 +1607,47 @@ export default function BonusHuntControl({
           )}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <details style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              <summary style={{ cursor: 'pointer', listStyle: 'none', userSelect: 'none' }}>Advanced</summary>
-              <div style={{ marginTop: '0.5rem', padding: '0.5rem', border: '1px solid var(--border-subtle)', borderRadius: 8, background: 'var(--bg-deep)' }}>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }} title="Verbose console-style logs; toggling reloads the app">
+              <summary style={{ cursor: 'pointer', listStyle: 'none', userSelect: 'none' }}>
+                Advanced ▾
+              </summary>
+              <div style={{ marginTop: '0.5rem', padding: '0.5rem', border: '1px solid var(--border-subtle)', borderRadius: 8, background: 'var(--bg-deep)', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', maxWidth: 520 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
+                  Max Spins: <input type="number" min={0} value={maxSpinsPerSlot || ''} onChange={(e) => setMaxSpinsPerSlot(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0=∞" className={styles.select} style={{ width: 52 }} disabled={isRunning} title="0 = unlimited" />
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Stop after loss limit in selected currency">
+                  Loss: <input type="number" min={0} value={maxLossLimit || ''} onChange={(e) => setMaxLossLimit(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 52 }} disabled={isRunning} />
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={stopOnMulti} onChange={(e) => setStopOnMulti(e.target.checked)} disabled={isRunning} />
+                  Multi <input type="number" min={2} value={stopOnMultiplier} onChange={(e) => setStopOnMultiplier(Math.max(2, parseInt(e.target.value) || 2))} className={styles.select} style={{ width: 44 }} disabled={isRunning || !stopOnMulti} />×
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Minimum scatter count to stop on bonus">
+                  Scatter: <select value={minScatterForStop} onChange={(e) => setMinScatterForStop(Number(e.target.value))} className={styles.select} style={{ width: 90 }} disabled={isRunning}>
+                    <option value={0}>Any</option>
+                    <option value={3}>3+</option>
+                    <option value={4}>4+</option>
+                    <option value={5}>5</option>
+                  </select>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Gamble when bonus triggers">
+                  <input type="checkbox" checked={gambleOption} onChange={(e) => setGambleOption(e.target.checked)} disabled={isRunning} />
+                  Gamble
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
+                  Refresh: <input type="number" min={0} value={sessionRefreshSpins || ''} onChange={(e) => setSessionRefreshSpins(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 48 }} disabled={isRunning} />
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Run multiple slots in parallel">
+                  <input type="checkbox" checked={parallelHuntEnabled} onChange={(e) => setParallelHuntEnabled(e.target.checked)} disabled={isRunning} />
+                  <input type="range" min={2} value={maxParallelSlots} onChange={(e) => setMaxParallelSlots(Math.max(2, parseInt(e.target.value) || 2))} style={{ width: 80 }} disabled={isRunning || !parallelHuntEnabled} />
+                  <span style={{ minWidth: 16 }}>{maxParallelSlots}</span> parallel
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={saveBonusLogs} onChange={(e) => handleToggleBonusLogs(e.target.checked)} disabled={isRunning} />
+                  Bonus log
+                </label>
+                <button type="button" onClick={() => exportBonusLogsAsFile()} className={styles.btnSecondary} disabled={isRunning}>Export</button>
+                <button type="button" onClick={() => { if (window.confirm('Delete bonus logs?')) clearBonusLogs() }} className={styles.btnSecondary} style={{ color: 'var(--error)' }} disabled={isRunning}>Delete</button>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', width: '100%' }} title="Verbose console-style logs; toggling reloads the app">
                   <input
                     type="checkbox"
                     checked={BONUS_HUNT_DEBUG}

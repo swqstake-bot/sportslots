@@ -580,7 +580,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
   return (
     <div className="hunter-dashboard" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <div className="hunter-header">
-        <div className="hunter-title">Telegram Challenge Hunter</div>
+        <div className="hunter-title">Telegram Challenges</div>
         <p className="hunter-meta" style={{ maxWidth: '56rem', lineHeight: 1.45 }}>
           Runs <strong>standalone</strong> like the auto-hunter: queue, parallel runs, target multiplier —{' '}
           <strong>without</strong> switching to the Slots tab. Telegram supplies new challenges (live or paste text into the queue).

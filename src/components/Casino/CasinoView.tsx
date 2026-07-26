@@ -9,6 +9,7 @@ import { useCasinoBetSessionLifecycle } from './utils/casinoBetSession'
 import { ALL_CURRENCIES } from './constants/currencies'
 import { isFiat, isStable } from './utils/formatAmount'
 import { CASINO_STORAGE_KEYS } from './utils/storageRegistry'
+import { pushRecentSlots } from './utils/slotDiscoveryPreferences'
 import './bridge/slotbotBridge'
 import { useUiStore } from '../../store/uiStore'
 import { useCasinoSession } from './hooks/useCasinoSession'
@@ -132,6 +133,7 @@ export default function CasinoView() {
   */
 
   const handleStartAll = useCallback(() => {
+    pushRecentSlots(selectedSlotInstances.map((inst) => inst.slug))
     selectedSlotInstances.forEach((inst) => {
       const ref = slotControlRefsMap.current.get(inst.id)
       if (ref) ref.startAutospin()

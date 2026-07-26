@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { SvgCumulativeProfitLineChart } from '../../charts/SvgCumulativeCharts'
 import { formatBetUsd } from './originals/workbench/betDisplayUtils'
 import './OriginalsProfitChart.css'
@@ -37,7 +38,7 @@ export default function OriginalsProfitChart({
   betIndexStart,
   betIndexEnd,
 }: OriginalsProfitChartProps) {
-  const profits = chartData.map((d) => d.profit)
+  const profits = useMemo(() => chartData.map((d) => d.profit), [chartData])
   const lastProfit = profits.length ? profits[profits.length - 1]! : 0
   const betCount = Math.max(0, chartData.length - 1)
   const stroke = lastProfit >= 0 ? 'rgb(52, 211, 153)' : 'rgb(248, 113, 113)'
@@ -65,7 +66,8 @@ export default function OriginalsProfitChart({
         fillArea={fillArea}
         stableYDomain
         domainResetKey={domainResetKey}
-        betIndexStart={betIndexStart ?? 0}
+        compact={!!compact}
+        betIndexStart={betIndexStart ?? 1}
         betIndexEnd={betIndexEnd ?? betCount}
       />
     </div>

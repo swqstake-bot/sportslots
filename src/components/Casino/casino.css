@@ -478,10 +478,186 @@ html[data-theme='light'] .casino-root {
     align-items: stretch;
   }
 
+  .casino-root .challenge-hub-workbench.is-side-collapsed {
+    grid-template-columns: 1fr;
+  }
+
   .casino-root .challenge-hub-side-column {
     border-left: 1px solid color-mix(in srgb, var(--border-subtle) 88%, transparent);
     background: color-mix(in srgb, var(--bg-deep) 35%, transparent);
   }
+}
+
+.casino-root .challenge-hub-more {
+  position: relative;
+}
+
+.casino-root .challenge-hub-more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  min-width: 180px;
+  padding: 0.35rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.casino-root .challenge-hub-more-item {
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.casino-root .challenge-hub-more-item:hover,
+.casino-root .challenge-hub-more-item.is-active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.casino-root .challenge-hub-more-item--back {
+  margin-top: 0.2rem;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.casino-root .hunter-collapse {
+  margin-top: 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 90%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-elevated) 55%, transparent);
+  overflow: hidden;
+}
+
+.casino-root .hunter-collapse-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+  list-style: none;
+  padding: 0.5rem 0.65rem;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  user-select: none;
+}
+
+.casino-root .hunter-collapse-summary::-webkit-details-marker {
+  display: none;
+}
+
+.casino-root .hunter-collapse-summary > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.casino-root .hunter-collapse-summary::after {
+  content: '▾';
+  flex: none;
+  opacity: 0.55;
+  font-size: 0.7rem;
+  transition: transform 0.15s ease;
+}
+
+.casino-root .hunter-collapse[open] > .hunter-collapse-summary::after {
+  transform: rotate(-180deg);
+}
+
+.casino-root .hunter-collapse-hint {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.casino-root .hunter-collapse > .hunter-kpi-segments,
+.casino-root .hunter-collapse > .hunter-log,
+.casino-root .hunter-collapse > .hunter-net-chart {
+  margin: 0 0.55rem 0.55rem;
+}
+
+.casino-root .hunter-ops-panel.hunter-collapse {
+  border: 1px solid var(--border-subtle);
+}
+
+.casino-root .hunter-ops-panel.hunter-collapse > .hunter-collapse-summary {
+  border-bottom: 1px solid transparent;
+}
+
+.casino-root .hunter-ops-panel.hunter-collapse[open] > .hunter-collapse-summary {
+  border-bottom-color: var(--border-subtle);
+}
+
+.casino-root .hunter-found-panel.hunter-collapse:not([open]) {
+  min-height: 0;
+  max-height: none;
+}
+
+.casino-root .hunter-found-summary {
+  border-bottom: 1px solid transparent;
+}
+
+.casino-root .hunter-found-panel.hunter-collapse[open] > .hunter-found-summary {
+  border-bottom-color: var(--border-subtle);
+}
+
+.casino-root .hunter-found-summary-title {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.72rem;
+}
+
+.casino-root .hunter-found-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.casino-root .hunter-header-tools {
+  position: relative;
+}
+
+.casino-root .hunter-header-tools > summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  user-select: none;
+}
+
+.casino-root .hunter-header-tools > summary::-webkit-details-marker {
+  display: none;
+}
+
+.casino-root .hunter-header-tools-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 150px;
+  padding: 0.45rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
 }
 
 /* Drop nested “cards on card” inside the hub canvas */

@@ -32,6 +32,13 @@ export function ChallengeHubView({
 }: ChallengeHubViewProps) {
   const [tab, setTab] = useState<HubTab>('casino')
   const [, setHubStatsBySource] = useState<Record<string, HubStatsPayload>>({})
+  const [sideCollapsed, setSideCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('challengeHubBetSideCollapsed') === '1'
+    } catch {
+      return false
+    }
+  })
   const [telegramEnabled, setTelegramEnabled] = useState<boolean>(() => {
     try {
       return localStorage.getItem(TELEGRAM_GATE_KEY) === '1'
@@ -56,6 +63,14 @@ export function ChallengeHubView({
       return 0
     }
   })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('challengeHubBetSideCollapsed', sideCollapsed ? '1' : '0')
+    } catch {
+      // ignore
+    }
+  }, [sideCollapsed])
 
   useEffect(() => {
     try {
@@ -127,13 +142,23 @@ export function ChallengeHubView({
       <div className="challenge-hub-topbar">
         <ChallengeHubTabStrip tab={tab} onTabChange={handleTabChange} />
         <div className="challenge-hub-topbar-inbox">
+          <button
+            type="button"
+            className="challenge-hub-action"
+            title={sideCollapsed ? 'Show bet feed' : 'Hide bet feed'}
+            onClick={() => setSideCollapsed((c) => !c)}
+          >
+            {sideCollapsed ? 'Show feed' : 'Hide feed'}
+          </button>
           <ChallengeHubNotificationCenter />
         </div>
       </div>
 
       <ChallengeHubBetListProvider>
         <div className="challenge-hub-canvas">
-          <div className="challenge-hub-workbench">
+          <div
+            className={`challenge-hub-workbench${sideCollapsed ? ' is-side-collapsed' : ''}`}
+          >
             <div className="min-w-0">
               <ChallengeHubTabContent
                 tab={tab}
@@ -148,9 +173,11 @@ export function ChallengeHubView({
               />
             </div>
 
-            <div className="challenge-hub-side-column">
-              <ChallengeHubBetListPanel accessToken={accessToken} />
-            </div>
+            {!sideCollapsed && (
+              <div className="challenge-hub-side-column">
+                <ChallengeHubBetListPanel accessToken={accessToken} />
+              </div>
+            )}
           </div>
         </div>
       </ChallengeHubBetListProvider>

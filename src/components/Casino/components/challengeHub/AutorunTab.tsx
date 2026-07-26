@@ -165,7 +165,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
       ratesRef.current = null
       setRunStartedAt(null)
       pushLog(`Stopped: ${reason}`)
-      notify('Autorun', reason)
+      notify('Balance rules', reason)
       onHubStatsChange?.({
         source: 'autorun',
         queued: 0,
@@ -563,7 +563,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     runningRef.current = true
     setIsRunning(true)
     setSessionSpinCount(0)
-    pushLog('Autorun started')
+    pushLog('Balance rules started')
     onHubStatsChange?.({
       source: 'autorun',
       queued: 0,
@@ -579,7 +579,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     spinContextRef.current = null
     setIsRunning(false)
     setRunStartedAt(null)
-    pushLog('Autorun stopped manually')
+    pushLog('Balance rules stopped manually')
     onHubStatsChange?.({
       source: 'autorun',
       queued: 0,

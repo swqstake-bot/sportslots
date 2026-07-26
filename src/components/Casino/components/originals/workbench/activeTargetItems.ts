@@ -79,10 +79,26 @@ export function buildActiveTargetItems(
       break
     }
     case 'keno': {
-      const n = options.useHeatmapHotNumbers ? options.heatmapHotNumbers ?? 5 : options.numbers?.length ?? 0
+      const from = options.randomNumbersFrom ?? 0
+      const to = options.randomNumbersTo ?? 0
+      const useRandom = from > 0 || to > 0
+      const n = options.useHeatmapHotNumbers
+        ? options.heatmapHotNumbers ?? 5
+        : useRandom
+          ? from === to || to === 0 || from === 0
+            ? Math.max(from, to)
+            : `${Math.min(from, to)}–${Math.max(from, to)}`
+          : options.numbers?.length ?? 0
       items.push(
         { label: 'Risk', value: (options.risk ?? 'medium').toUpperCase() },
-        { label: 'Numbers', value: options.useHeatmapHotNumbers ? `heatmap ${n}` : String(n) }
+        {
+          label: 'Numbers',
+          value: options.useHeatmapHotNumbers
+            ? `heatmap ${n}`
+            : useRandom
+              ? `random ${n}`
+              : String(n),
+        }
       )
       break
     }

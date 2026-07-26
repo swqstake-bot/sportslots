@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { toMinor } from '../../utils/formatAmount'
 import { isDebugHouseBetsEnabled } from '../../api/stakeBalanceSubscription'
 import { subscribeToHouseBets } from '../../api/stakeRealtimeFacade'
@@ -15,6 +15,10 @@ export function useSlotRealtime({
 }) {
   const targetCur = String(effectiveTarget || '').toLowerCase()
   const storeBalanceMajor = useUserStore((s) => s.balances[targetCur])
+  const addToBetHistoryRef = useRef(addToBetHistory)
+  addToBetHistoryRef.current = addToBetHistory
+  const slotRef = useRef(slot)
+  slotRef.current = slot
 
   useEffect(() => {
     if (!accessToken || !targetCur) return
@@ -40,15 +44,16 @@ export function useSlotRealtime({
     let cancelled = false
     let sub = null
     subscribeToHouseBets(accessToken, (b) => {
-      const matches = houseBetMatchesSessionSlot(b, slot.slug, slot.name)
+      const currentSlot = slotRef.current
+      const matches = houseBetMatchesSessionSlot(b, currentSlot.slug, currentSlot.name)
       const shouldLog = isDebugHouseBetsEnabled() && matches && slotMatchDebugCount < 20
       if (shouldLog) {
         slotMatchDebugCount += 1
         console.warn('[houseBets→SlotControl]', {
           gameSlug: b?.gameSlug,
           gameName: b?.gameName,
-          slotSlug: slot.slug,
-          slotName: slot.name,
+          slotSlug: currentSlot.slug,
+          slotName: currentSlot.name,
           matches,
           addToBet: subscribeHouseBetsForHistory,
           amount: b?.amount,
@@ -63,6 +68,9 @@ export function useSlotRealtime({
       const payoutMajorRaw = Number(b?.payoutMajor ?? b?.payout) || 0
       const payoutMultiplier = Number(b?.payoutMultiplier) || 0
 
+      // Stake sometimes sends payout as net, sometimes as gross. Prefer the interpretation
+      // that matches payoutMultiplier — and always use that for history (never raw payoutMinor
+      // alone), otherwise chart/stats flip between two USD nets on houseBets vs myBetUpdated.
       let payoutMajorToUse = payoutMajorRaw
       if (betAmountMajor > 0 && payoutMultiplier > 0 && payoutMajorRaw >= 0) {
         const derivedFromRaw = payoutMajorRaw / betAmountMajor
@@ -75,7 +83,7 @@ export function useSlotRealtime({
         if (isDebugHouseBetsEnabled() && shouldLog) {
           const chosenDerived = betAmountMajor > 0 ? payoutMajorToUse / betAmountMajor : null
           console.warn('[houseBets→SlotControl][dbg-multi]', {
-            slotSlug: slot.slug,
+            slotSlug: currentSlot.slug,
             gameSlug: b?.gameSlug,
             currency: b?.currency,
             id: b?.id,
@@ -92,14 +100,18 @@ export function useSlotRealtime({
         }
       }
 
-      const betAmount = Number.isFinite(Number(b?.amountMinor))
-        ? Number(b.amountMinor)
-        : toMinor(betAmountMajor, curr)
-      const winAmount = Number.isFinite(Number(b?.payoutMinor))
-        ? Number(b.payoutMinor)
-        : toMinor(payoutMajorToUse, curr)
+      const betAmount = toMinor(betAmountMajor, curr)
+      const winAmount = toMinor(payoutMajorToUse, curr)
       const currencyCode = (b?.currency || '').toUpperCase() || null
-      addToBetHistory({ betAmount, winAmount, isBonus: false, balance: undefined, currencyCode, roundId: b?.id, source: b?.source || 'housebets' })
+      addToBetHistoryRef.current({
+        betAmount,
+        winAmount,
+        isBonus: false,
+        balance: undefined,
+        currencyCode,
+        roundId: b?.id,
+        source: b?.source || 'housebets',
+      })
     }).then((s) => {
       if (cancelled) {
         try {
@@ -115,5 +127,5 @@ export function useSlotRealtime({
         sub?.disconnect?.()
       } catch (_) {}
     }
-  }, [accessToken, slot.slug, slot.name, slot.providerId, effectiveTarget, addToBetHistory, subscribeHouseBetsForHistory])
+  }, [accessToken, slot.slug, slot.name, slot.providerId, effectiveTarget, subscribeHouseBetsForHistory])
 }

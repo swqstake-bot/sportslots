@@ -11,9 +11,10 @@ const MODES: { id: CasinoMode; label: string; title: string }[] = [
   {
     id: 'challengeHub',
     label: 'Challenge Hub',
-    title: 'Challenge bet feeds, autorun, Telegram, forum — not the same as Bonus Hunt',
+    title:
+      'Stake Challenges, Balance rules, Telegram, Forum — not the same as Bonus Hunt (Casino → Bonus Hunt)',
   },
-  { id: 'bonushunt', label: 'Bonus Hunt', title: 'Manual bonus hunt on slots (hunt logic)' },
+  { id: 'bonushunt', label: 'Bonus Hunt', title: 'Pick slots and hunt until bonus triggers (Casino → Bonus Hunt)' },
   { id: 'logs', label: 'Logs', title: 'Internal casino logs / diagnostics' },
 ]
 

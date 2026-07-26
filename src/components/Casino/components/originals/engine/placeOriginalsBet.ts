@@ -159,11 +159,22 @@ export async function placeOriginalsBet(
   if (g === 'keno') {
     const useHeatmap = optBoolFrom(opts, 'useHeatmapHotNumbers', false) && optFrom(opts, 'heatmapHotNumbers', 0) > 0
     const fixedNumbers = (opts.numbers as number[]) || []
+    const fromRaw = Math.floor(optFrom(opts, 'randomNumbersFrom', 0))
+    const toRaw = Math.floor(optFrom(opts, 'randomNumbersTo', 0))
+    const useRandomCount = fromRaw > 0 || toRaw > 0
     let numbers: number[]
     if (useHeatmap) {
       const hotCount = Math.max(1, Math.min(10, optFrom(opts, 'heatmapHotNumbers', 5)))
       const range = Math.max(1, Math.min(39, optFrom(opts, 'heatmapRange', 30)))
       numbers = shuffle(Array.from({ length: range }, (_, i) => i + 1)).slice(0, hotCount)
+    } else if (useRandomCount) {
+      // randomNumbersFrom/To = pick count range (Antebot); 10–10 → always 10 picks
+      const a = Math.max(1, Math.min(10, fromRaw > 0 ? fromRaw : toRaw))
+      const b = Math.max(1, Math.min(10, toRaw > 0 ? toRaw : fromRaw))
+      const lo = Math.min(a, b)
+      const hi = Math.max(a, b)
+      const count = lo + Math.floor(Math.random() * (hi - lo + 1))
+      numbers = shuffle(Array.from({ length: 39 }, (_, i) => i + 1)).slice(0, count)
     } else if (Array.isArray(fixedNumbers) && fixedNumbers.length > 0) {
       numbers = fixedNumbers.filter((n) => n >= 1 && n <= 39).slice(0, 10)
     } else {

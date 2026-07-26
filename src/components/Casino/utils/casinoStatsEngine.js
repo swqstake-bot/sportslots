@@ -55,9 +55,36 @@ export function dedupeBetHistoryForAggregate(entries) {
   const list = Array.isArray(entries) ? entries : []
   const result = []
   const roundIndex = new Map()
+  /** placeBet→house echo window — keep real consecutive same-stake losses apart. */
+  const SIG_WINDOW_MS = 2500
 
   for (const entry of list) {
     const rid = entry?.roundId != null ? String(entry.roundId).trim() : ''
+    const sig = betEntrySpinSignature(entry)
+    const ts = Number(entry?.addedAt) || 0
+    const entrySource = String(entry?.source || '').toLowerCase()
+
+    let sigDupIdx = -1
+    for (let i = result.length - 1; i >= 0; i--) {
+      const row = result[i]
+      if (ts - (Number(row?.addedAt) || 0) > SIG_WINDOW_MS) break
+      if (betEntrySpinSignature(row) !== sig) continue
+      const rowSource = String(row?.source || '').toLowerCase()
+      // Never collapse two placeBets (consecutive same-stake losses).
+      if (entrySource === 'placebet' && rowSource === 'placebet') continue
+      sigDupIdx = i
+      break
+    }
+    if (sigDupIdx >= 0) {
+      if (betEntrySourceRank(entry) >= betEntrySourceRank(result[sigDupIdx])) {
+        const prevRid = result[sigDupIdx]?.roundId != null ? String(result[sigDupIdx].roundId).trim() : ''
+        result[sigDupIdx] = entry
+        if (prevRid) roundIndex.delete(prevRid)
+        if (rid) roundIndex.set(rid, sigDupIdx)
+      }
+      continue
+    }
+
     if (rid) {
       const existingIdx = roundIndex.get(rid)
       if (existingIdx != null) {
@@ -67,26 +94,6 @@ export function dedupeBetHistoryForAggregate(entries) {
         continue
       }
       roundIndex.set(rid, result.length)
-      result.push(entry)
-      continue
-    }
-
-    const sig = betEntrySpinSignature(entry)
-    const ts = Number(entry?.addedAt) || 0
-    let dupIdx = -1
-    for (let i = result.length - 1; i >= 0; i--) {
-      const row = result[i]
-      if (ts - (Number(row?.addedAt) || 0) > 150) break
-      if (betEntrySpinSignature(row) === sig) {
-        dupIdx = i
-        break
-      }
-    }
-    if (dupIdx >= 0) {
-      if (betEntrySourceRank(entry) >= betEntrySourceRank(result[dupIdx])) {
-        result[dupIdx] = entry
-      }
-      continue
     }
     result.push(entry)
   }
@@ -97,7 +104,9 @@ function resolveUsdMajor(minorAmount, currencyCode, rates, snapshotMajor) {
   if (snapshotMajor != null && Number.isFinite(Number(snapshotMajor))) {
     return Number(snapshotMajor)
   }
-  return null
+  const conv = convertMinorToUsdMajor(minorAmount, currencyCode, rates || {})
+  const usd = Number(conv?.usd)
+  return Number.isFinite(usd) ? usd : null
 }
 
 function resolveLiveUsdMajor(minorAmount, currencyCode, rates) {
@@ -165,12 +174,13 @@ export function aggregateToStatsSnapshot(agg, balanceView = {}) {
   const a = agg || createEmptyCasinoAggregate()
   const currentBalanceRaw =
     balanceView?.balanceFromPlaceBet ?? a.lastBalance ?? balanceView?.wsBalance ?? null
-  const currentBalanceCurrency = a.lastCurrency || balanceView?.effectiveTarget || 'usd'
+  // Session target only — never last spin currency (ARS↔SOL flicker on live balance FX).
+  const balanceCurrency = String(balanceView?.effectiveTarget || a.lastCurrency || 'usd').toLowerCase()
   const currentBalanceUsd = currentBalanceRaw != null
-    ? resolveLiveUsdMajor(currentBalanceRaw, currentBalanceCurrency, balanceView?.rates || {})
+    ? resolveLiveUsdMajor(currentBalanceRaw, balanceCurrency, balanceView?.rates || {})
     : null
   const sessionStartBalanceUsd = balanceView?.sessionStartBalance != null
-    ? resolveLiveUsdMajor(balanceView.sessionStartBalance, balanceView?.effectiveTarget || 'usd', balanceView?.rates || {})
+    ? resolveLiveUsdMajor(balanceView.sessionStartBalance, balanceCurrency, balanceView?.rates || {})
     : null
   return {
     spins: a.spins,
@@ -188,7 +198,7 @@ export function aggregateToStatsSnapshot(agg, balanceView = {}) {
     currentBalance: currentBalanceUsd != null ? Math.round(currentBalanceUsd * 100) : null,
     sessionStartBalance: sessionStartBalanceUsd != null ? Math.round(sessionStartBalanceUsd * 100) : null,
     currentBalanceRaw,
-    currentBalanceCurrency,
+    currentBalanceCurrency: 'usd',
   }
 }
 

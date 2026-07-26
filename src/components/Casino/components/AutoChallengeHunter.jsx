@@ -721,9 +721,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const [localChallengeExpanded, setLocalChallengeExpanded] = useState(false)
   const [localChallengeSlotSearch, setLocalChallengeSlotSearch] = useState('')
   const [opsSectionsOpen, setOpsSectionsOpen] = useState({
-    presets: true,
+    presets: false,
     local: false,
-    runtime: true,
+    runtime: false,
   })
   const [challengeSearch, setChallengeSearch] = useState('')
   const [challengeSort, setChallengeSort] = useState('prize-desc')
@@ -1218,7 +1218,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       } catch {
         // ignore discovery sync errors
       }
-      // Promo-queued items should appear as cards only; start remains manual (Start Next / Auto Hunt).
+      // Promo-queued items should appear as cards only; start remains manual (Start Next / Start auto).
       setAutoStart(false)
       setLastRefresh(Date.now())
       log(
@@ -3575,26 +3575,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   return (
     <div className="hunter-dashboard" style={STYLES.container}>
       <div className="hunter-header">
-        <div className="hunter-title">Casino Challenge Ops</div>
+        <div className="hunter-title">Stake Challenges</div>
         <div className="hunter-controls">
-           <div className="hunter-meta" style={{ marginRight: '1rem' }}>
+           <div className="hunter-meta" style={{ marginRight: '0.5rem' }}>
              {lastRefresh ? `Updated: ${new Date(lastRefresh).toLocaleTimeString()}` : ''}
            </div>
-           <Button onClick={clearLogs} variant="outline">Clear</Button>
-           <Button
-             onClick={resetSession}
-             variant="outline"
-             title="Reset queue, session stats, and scan state"
-           >
-             Reset
-           </Button>
-           <Button
-             onClick={exportHubSession}
-             variant="outline"
-             title="Export hub feed as JSONL — import in Logger tab to review or CSV export"
-           >
-             Export session
-           </Button>
            <Button onClick={refreshChallenges} variant="primary" disabled={!accessToken} title="Reload challenge list now">
              Refresh
            </Button>
@@ -3603,7 +3588,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
              onClick={() => setHuntEnabled(!huntEnabled)}
              title={huntEnabled ? 'Stop automatic challenge scanning' : 'Enable automatic challenge scanning'}
            >
-             {huntEnabled ? 'Scan On' : 'Scan Off'}
+             {huntEnabled ? 'Scan' : 'Scan off'}
            </Button>
            {huntEnabled && (
              <Button
@@ -3611,9 +3596,29 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                onClick={() => setAutoStart(!autoStart)}
                title={autoStart ? 'Pause queue auto-start' : 'Process queue automatically when a slot is free'}
              >
-               {autoStart ? 'Auto On' : 'Auto Off'}
+               {autoStart ? 'Queue auto' : 'Queue paused'}
              </Button>
            )}
+           <details className="hunter-header-tools">
+             <summary title="Clear, reset, export">Tools</summary>
+             <div className="hunter-header-tools-menu">
+               <Button onClick={clearLogs} variant="outline">Clear log</Button>
+               <Button
+                 onClick={resetSession}
+                 variant="outline"
+                 title="Reset queue, session stats, and scan state"
+               >
+                 Reset
+               </Button>
+               <Button
+                 onClick={exportHubSession}
+                 variant="outline"
+                 title="Export hub feed as JSONL — import in Logger tab to review or CSV export"
+               >
+                 Export session
+               </Button>
+             </div>
+           </details>
            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
              <TipMenu />
            </div>
@@ -3623,9 +3628,27 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       <div className="hunter-grid">
         <div className="hunter-sidebar">
           <div className="hunter-ops-surface">
-          <div className="hunter-card hunter-ops-panel">
-            <div className="hunter-ops-shell-head">
-              <h3 className="hunter-section-title" style={{ marginBottom: '0.35rem' }}>Settings</h3>
+          <div className="hunter-card hunter-ops-queue" style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', minHeight: 160, maxHeight: 360 }}>
+            <h3 className="hunter-section-title" style={{ marginBottom: '0.5rem' }}>Queue ({queue.length})</h3>
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {queue.map((item) => {
+                const q = normalizeQueueItem(item)
+                const c = challenges.find((ch) => ch.id === q.challengeId)
+                return c ? renderChallengeCard(c, true, null, true, item) : null
+              })}
+              {queue.length === 0 && (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                  Empty — open Found Challenges and click a row to queue
+                </div>
+              )}
+            </div>
+          </div>
+          <details className="hunter-card hunter-ops-panel hunter-collapse">
+            <summary className="hunter-collapse-summary">
+              <span className="hunter-section-title" style={{ marginBottom: 0 }}>Settings</span>
+              <span className="hunter-collapse-hint">Filters · runtime · local</span>
+            </summary>
+            <div className="hunter-ops-shell-head" style={{ paddingTop: '0.35rem' }}>
               <p className="hunter-ops-shell-copy">
                 Local settings are saved on this device.
               </p>
@@ -3946,25 +3969,14 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 ) : null}
               </section>
             </div>
-          </div>
-          <div className="hunter-card hunter-ops-queue" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            <h3 className="hunter-section-title" style={{ marginBottom: '0.5rem' }}>Queue ({queue.length})</h3>
-            <div style={{overflowY: 'auto', flex: 1}}>
-              {queue.map((item) => {
-                const q = normalizeQueueItem(item)
-                const c = challenges.find((ch) => ch.id === q.challengeId)
-                return c ? renderChallengeCard(c, true, null, true, item) : null
-              })}
-              {queue.length === 0 && <div style={{color: 'var(--text-muted)', fontSize: '0.8rem'}}>Empty</div>}
-            </div>
-          </div>
+          </details>
           </div>
         </div>
 
         <div className="hunter-main">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
             <div className="hunter-help-bar">
-              Refresh list · queue target runs · Start Next for one run · Auto Hunt for continuous queue processing.
+              Queue on the left · Start Next for one run · Start auto for continuous Scan + Queue.
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
               <div className="hunter-meta" style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
@@ -3982,9 +3994,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 <Button
                   onClick={startAllRunners}
                   variant="primary"
-                  title="Enable scan + auto-start and reload challenges when needed"
+                  title="Enable scan + queue auto and reload challenges when needed"
                 >
-                  Auto Hunt
+                  Start auto
                 </Button>
                 <Button
                   onClick={stopAllRunners}
@@ -4001,6 +4013,72 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               </div>
             </div>
           </div>
+          <div className="hunter-status-bar">
+            <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem'}}>
+              <span style={{color: 'var(--text-muted)'}}>Running</span>
+              <span className="hunter-meta">{runningCount} / {maxParallelClamped}</span>
+            </div>
+            <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem'}}>
+              <span style={{color: 'var(--text-muted)'}}>Queue</span>
+              <span className="hunter-meta">{queue.length}</span>
+            </div>
+            <div style={{display: 'flex', flexWrap: 'wrap', gap: '0.35rem'}}>
+              {activeRunList.slice(0, 6).map((run) => (
+                <span
+                  key={run.id}
+                  className="hunter-pill"
+                  title={run.runCurrency ? `${run.slotName} · ${run.runCurrency}` : run.slotName}
+                >
+                  {run.runCurrency ? `${run.slotName} · ${String(run.runCurrency).toUpperCase()}` : run.slotName}
+                </span>
+              ))}
+              {activeRunList.length > 6 && (
+                <span style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>+{activeRunList.length - 6}</span>
+              )}
+            </div>
+          </div>
+          {activeRunList.length === 0 ? (
+            <div className="hunter-empty">
+              No active challenge. <br/>
+              Fill the Queue (left), then press <strong>Start Next</strong> or <strong>Start auto</strong>.
+            </div>
+          ) : (
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem'}}>
+              {activeRunList.map((run) => {
+                const ch = challenges.find((x) => x.id === run.challengeId)
+                const prizeLine = ch ? formatChallengePrize(ch) : { main: run.prizeDisplay ?? '—', hint: run.prizeHint ?? null }
+                return (
+                  <HunterRunCard
+                    key={run.id}
+                    run={run}
+                    prizeLine={prizeLine}
+                    targetCurrency={targetCurrency}
+                    rates={rates}
+                    bestMultiBySlot={bestMultiBySlot}
+                    onLog={log}
+                    onSeedResetChange={(runId, n) => {
+                      setActiveRuns((prev) => {
+                        const cur = prev[runId]
+                        if (!cur) return prev
+                        return { ...prev, [runId]: { ...cur, stakeRgsSeedResetEvery: n } }
+                      })
+                    }}
+                    onStopRun={stopRunByRunId}
+                    onRestartRun={restartRunByRunId}
+                    onRemoveRun={removeRun}
+                  />
+                )
+              })}
+            </div>
+          )}
+
+          <details className="hunter-collapse">
+            <summary className="hunter-collapse-summary">
+              <span>Session stats</span>
+              <span className="hunter-collapse-hint">
+                P/L ${totalSessionStats.profit.toFixed(2)}
+              </span>
+            </summary>
           <div className="hunter-kpi-segments">
             <div className="hunter-kpi-segment">
               <div className="hunter-kpi-label">Wagered (USD)</div>
@@ -4071,113 +4149,63 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               </div>
             </div>
           )}
+          </details>
 
-          <div className="hunter-status-bar">
-            <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem'}}>
-              <span style={{color: 'var(--text-muted)'}}>Running</span>
-              <span className="hunter-meta">{runningCount} / {maxParallelClamped}</span>
-            </div>
-            <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem'}}>
-              <span style={{color: 'var(--text-muted)'}}>Queue</span>
-              <span className="hunter-meta">{queue.length}</span>
-            </div>
-            <div style={{display: 'flex', flexWrap: 'wrap', gap: '0.35rem'}}>
-              {activeRunList.slice(0, 6).map((run) => (
-                <span
-                  key={run.id}
-                  className="hunter-pill"
-                  title={run.runCurrency ? `${run.slotName} · ${run.runCurrency}` : run.slotName}
-                >
-                  {run.runCurrency ? `${run.slotName} · ${String(run.runCurrency).toUpperCase()}` : run.slotName}
-                </span>
-              ))}
-              {activeRunList.length > 6 && (
-                <span style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>+{activeRunList.length - 6}</span>
-              )}
-            </div>
-          </div>
-          {activeRunList.length === 0 ? (
-            <div className="hunter-empty">
-              No active challenge. <br/>
-              Add items to queue below, then press <strong>Start Next</strong> or run Auto Hunt.
-            </div>
-          ) : (
-            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem'}}>
-              {activeRunList.map((run) => {
-                const ch = challenges.find((x) => x.id === run.challengeId)
-                const prizeLine = ch ? formatChallengePrize(ch) : { main: run.prizeDisplay ?? '—', hint: run.prizeHint ?? null }
-                return (
-                  <HunterRunCard
-                    key={run.id}
-                    run={run}
-                    prizeLine={prizeLine}
-                    targetCurrency={targetCurrency}
-                    rates={rates}
-                    bestMultiBySlot={bestMultiBySlot}
-                    onLog={log}
-                    onSeedResetChange={(runId, n) => {
-                      setActiveRuns((prev) => {
-                        const cur = prev[runId]
-                        if (!cur) return prev
-                        return { ...prev, [runId]: { ...cur, stakeRgsSeedResetEvery: n } }
-                      })
-                    }}
-                    onStopRun={stopRunByRunId}
-                    onRestartRun={restartRunByRunId}
-                    onRemoveRun={removeRun}
-                  />
-                )
-              })}
-            </div>
-          )}
-          
+          <details className="hunter-collapse">
+            <summary className="hunter-collapse-summary">
+              <span>Log</span>
+              <span className="hunter-collapse-hint">{logs.length} lines</span>
+            </summary>
           <div className="hunter-log">
             {logs.map((l, i) => (
               <div key={i} className="hunter-log-line">{l}</div>
             ))}
           </div>
+          </details>
         </div>
       </div>
 
-      <div className="hunter-found-panel">
-        <div className="hunter-found-head">
-          Found Challenges
-          <span style={{ display: 'block', fontWeight: 400, fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-            Slot, Target, Min Bet, Prize, Difficulty (StakeCruncher), Status. Click row to queue — difficulty loads on queue or via Analyze.
-          </span>
-          <div style={{ marginTop: '0.55rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <input
-              type="search"
-              value={challengeSearch}
-              onChange={(e) => setChallengeSearch(e.target.value)}
-              placeholder="Search slot by name or slug"
-              style={{ ...STYLES.input, minWidth: 220, flex: '1 1 280px' }}
-              aria-label="Search challenge slot"
-            />
-            <select
-              value={challengeSort}
-              onChange={(e) => setChallengeSort(e.target.value)}
-              style={{ ...STYLES.input, minWidth: 200, flex: '0 0 auto' }}
-              aria-label="Sort found challenges"
-            >
-              <option value="prize-desc">Prize: high to low</option>
-              <option value="prize-asc">Prize: low to high</option>
-              <option value="stake-desc">Stake: high to low</option>
-              <option value="stake-asc">Stake: low to high</option>
-              <option value="target-desc">Target: high to low</option>
-              <option value="target-asc">Target: low to high</option>
-              <option value="difficulty-easy">Difficulty: easy first</option>
-              <option value="difficulty-hard">Difficulty: hard first</option>
-            </select>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+      <details className="hunter-found-panel hunter-collapse">
+        <summary className="hunter-collapse-summary hunter-found-summary">
+          <span className="hunter-found-summary-title">
+            Found Challenges
+            <span className="hunter-collapse-hint" style={{ marginLeft: '0.5rem' }}>
               {visibleChallenges.length} / {challenges.length}
             </span>
-          </div>
+          </span>
+          <span className="hunter-collapse-hint">Click row to queue</span>
+        </summary>
+        <div className="hunter-found-toolbar">
+          <input
+            type="search"
+            value={challengeSearch}
+            onChange={(e) => setChallengeSearch(e.target.value)}
+            placeholder="Search slot by name or slug"
+            style={{ ...STYLES.input, minWidth: 220, flex: '1 1 280px' }}
+            aria-label="Search challenge slot"
+          />
+          <select
+            value={challengeSort}
+            onChange={(e) => setChallengeSort(e.target.value)}
+            style={{ ...STYLES.input, minWidth: 200, flex: '0 0 auto' }}
+            aria-label="Sort found challenges"
+          >
+            <option value="prize-desc">Prize: high to low</option>
+            <option value="prize-asc">Prize: low to high</option>
+            <option value="stake-desc">Stake: high to low</option>
+            <option value="stake-asc">Stake: low to high</option>
+            <option value="target-desc">Target: high to low</option>
+            <option value="target-asc">Target: low to high</option>
+            <option value="difficulty-easy">Difficulty: easy first</option>
+            <option value="difficulty-hard">Difficulty: hard first</option>
+          </select>
         </div>
         <div className="hunter-found-body" ref={foundScrollRef}>
           {sortedFoundChallenges.length === 0 ? (
             <div style={{ padding: '0.75rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              No challenges match "{challengeSearch}".
+              {challengeSearch.trim()
+                ? `No challenges match "${challengeSearch}".`
+                : 'No challenges yet — press Refresh or enable Scan.'}
             </div>
           ) : (
             <div
@@ -4210,7 +4238,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             </div>
           )}
         </div>
-      </div>
+      </details>
     </div>
   )
 }

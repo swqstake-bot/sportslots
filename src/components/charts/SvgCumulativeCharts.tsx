@@ -193,6 +193,7 @@ export function SvgCumulativeProfitLineChart({
   stableYDomain = true,
   domainResetKey,
   fillArea = false,
+  compact = false,
 }: {
   profits: number[]
   height?: number
@@ -207,12 +208,18 @@ export function SvgCumulativeProfitLineChart({
   domainResetKey?: number | string
   /** Gefüllte Fläche zwischen Linie und Null-Linie. */
   fillArea?: boolean
+  /** Hide axis labels — avoids a second “chart chrome” that rewrites Bet # on every spin. */
+  compact?: boolean
 }) {
   const pathValues = useMemo(() => chartPathValues(profits), [profits])
+  const profitsKey = useMemo(() => profits.join('\0'), [profits])
   const last = profits.length ? profits[profits.length - 1]! : 0
   const title = `Kumulativer Profit: ${last >= 0 ? '+' : ''}${last.toFixed(4)}`
   const [yDomain, setYDomain] = useState({ lo: 0, hi: 0 })
   const domainResetRef = useRef(domainResetKey)
+  const pad = compact
+    ? { l: 6, r: 6, t: 6, b: 6 }
+    : PROFIT_PAD
 
   /* eslint-disable react-hooks/set-state-in-effect -- Y-domain muss zwischen Profit-Ticks akkumulieren */
   useLayoutEffect(() => {
@@ -237,14 +244,14 @@ export function SvgCumulativeProfitLineChart({
       if (lo === prev.lo && hi === prev.hi) return prev
       return { lo, hi }
     })
-  }, [profits, stableYDomain, domainResetKey])
+  }, [profitsKey, profits, stableYDomain, domainResetKey])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const geom = useMemo(() => {
-    const plotL = PROFIT_PAD.l
-    const plotR = PROFIT_VIEW_W - PROFIT_PAD.r
-    const plotT = PROFIT_PAD.t
-    const plotB = PROFIT_VIEW_H - PROFIT_PAD.b
+    const plotL = pad.l
+    const plotR = PROFIT_VIEW_W - pad.r
+    const plotT = pad.t
+    const plotB = PROFIT_VIEW_H - pad.b
     const ph = plotB - plotT
     if (profits.length === 0) {
       return {
@@ -290,11 +297,12 @@ export function SvgCumulativeProfitLineChart({
       d += `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`
     }
     const zeroGy = plotT + ph * (1 - (0 - lo) / span2)
-    const yVals = [min, 0, max]
-    const yLabels = yVals.map((v) => ({
-      py: plotT + ph * (1 - (v - lo) / span2),
-      text: v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2),
-    }))
+    const yLabels = compact
+      ? []
+      : [min, 0, max].map((v) => ({
+          py: plotT + ph * (1 - (v - lo) / span2),
+          text: v >= 0 ? `+${v.toFixed(2)}` : v.toFixed(2),
+        }))
     const firstX = plotL
     const lastX = plotR
     const fillD =
@@ -302,12 +310,12 @@ export function SvgCumulativeProfitLineChart({
         ? `${d} L ${lastX.toFixed(1)} ${zeroGy.toFixed(1)} L ${firstX.toFixed(1)} ${zeroGy.toFixed(1)} Z`
         : ''
     return { pathD: d, fillD, zeroGy, lo, hi, plotL, plotR, plotT, plotB, ph, yLabels }
-  }, [profits, pathValues, yDomain, fillArea])
+  }, [profits, pathValues, yDomain, fillArea, compact, pad.l, pad.r, pad.t, pad.b])
 
   const { pathD, fillD, zeroGy, plotL, plotR, plotT, plotB, ph, yLabels } = geom
   const dataPoints = Math.max(0, profits.length > 0 ? profits.length - 1 : 0)
-  const xStart = betIndexStart ?? 1
-  const xEnd = betIndexEnd ?? (dataPoints > 0 ? dataPoints : xStart)
+  const xStart = betIndexStart != null && betIndexStart > 0 ? betIndexStart : 1
+  const xEnd = betIndexEnd != null && betIndexEnd > 0 ? betIndexEnd : (dataPoints > 0 ? dataPoints : xStart)
   const fillColor =
     stroke.startsWith('rgb') || stroke.startsWith('#')
       ? stroke.includes('248, 113') || stroke.includes('f43f5e') || stroke.includes('F43F5E')
@@ -353,12 +361,13 @@ export function SvgCumulativeProfitLineChart({
           strokeOpacity={0.9}
         />
       )}
-      {yLabels.map((row, i) => (
-        <text key={i} x={4} y={Math.min(plotB + 8, Math.max(plotT + 8, row.py + 4))} fontSize={9} fill="var(--text-muted)" className="tabular-nums">
-          {row.text}
-        </text>
-      ))}
-      {dataPoints > 0 && (
+      {!compact &&
+        yLabels.map((row, i) => (
+          <text key={i} x={4} y={Math.min(plotB + 8, Math.max(plotT + 8, row.py + 4))} fontSize={9} fill="var(--text-muted)" className="tabular-nums">
+            {row.text}
+          </text>
+        ))}
+      {!compact && dataPoints > 0 && (
         <>
           <text x={plotL} y={PROFIT_VIEW_H - 4} fontSize={9} fill="var(--text-muted)">
             Bet #{xStart}
