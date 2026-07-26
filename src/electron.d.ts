@@ -68,7 +68,7 @@ export interface ElectronAPI {
   /** Open stakecommunity.com login in an isolated Electron profile (persist:stakecommunity-forum). */
   forumOpenLogin: () => Promise<{ ok: boolean }>;
   forumSessionStatus: () => Promise<{ hasCookies: boolean; hasCf: boolean; cookieCount: number }>;
-  forumFetchTopicHtml: (payload: { url: string; referer?: string }) => Promise<{
+  forumFetchTopicHtml: (payload: { url: string; referer?: string; allowChallenge?: boolean }) => Promise<{
     ok: boolean;
     skipped: boolean;
     status: number;
@@ -76,6 +76,7 @@ export interface ElectronAPI {
     data: string;
     finalUrl: string;
     error?: string;
+    cloudflare?: boolean;
   }>;
   saveSlotSpinSample: (payload: { slotSlug: string; slotName?: string; providerId?: string; request: any; response: any }) => Promise<void>;
   getSlotSpinSamples: () => Promise<Record<string, any[]>>;

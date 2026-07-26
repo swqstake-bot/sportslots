@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.218': [
+    '✨ Slots: Stake-RGS Seed-Optionen (After spins / Multi / Wins / Losses / Streaks / Reset on loss) im Autospin',
+    '🐛 Forum-Scraper: Cloudflare/403 Fix via BrowserWindow + Challenge-Fenster (Appeals-Monitor-Pattern)',
+  ],
   '1.0.217': [
     '✨ Slots Workbench: gemeinsames Stats-Panel mit Filter All | Slot (unabhängig vom aktiven Tab)',
     '✨ Slots Workbench: Running-Dots in Tabs + Hinweis „Start all runs in parallel“',

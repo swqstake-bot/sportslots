@@ -71,7 +71,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     forumOpenLogin: () => ipcRenderer.invoke('forum-open-login') as Promise<{ ok: boolean }>,
     forumSessionStatus: () =>
         ipcRenderer.invoke('forum-session-status') as Promise<{ hasCookies: boolean; hasCf: boolean; cookieCount: number }>,
-    forumFetchTopicHtml: (payload: { url: string; referer?: string }) =>
+    forumFetchTopicHtml: (payload: { url: string; referer?: string; allowChallenge?: boolean }) =>
         ipcRenderer.invoke('forum-fetch-topic-html', payload) as Promise<{
             ok: boolean;
             skipped: boolean;
@@ -80,6 +80,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
             data: string;
             finalUrl: string;
             error?: string;
+            cloudflare?: boolean;
         }>,
     extractClawbusterSecret: (configUrl: string) => ipcRenderer.invoke('clawbuster-extract-secret', configUrl),
     resolvePlayneticLaunch: (configUrl: string) => ipcRenderer.invoke('playnetic-resolve-launch', configUrl),

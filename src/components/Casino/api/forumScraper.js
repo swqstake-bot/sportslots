@@ -239,66 +239,57 @@ function parseTotalPages(html) {
   return null
 }
 
-function buildForumBrowserHeaders(referer) {
-  const ref = referer && referer.startsWith('http') ? referer : 'https://stakecommunity.com/'
-  return {
-    'User-Agent':
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9,de;q=0.8',
-    Referer: ref,
-    Origin: 'https://stakecommunity.com',
-    DNT: '1',
-    'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'same-origin',
-  }
-}
-
-async function fetchForumPageViaSession(pageUrl, referer) {
-  if (!window.electronAPI?.forumFetchTopicHtml) return null
-  const r = await window.electronAPI.forumFetchTopicHtml({ url: pageUrl, referer })
-  if (!r.ok || r.skipped) return null
-  return {
-    status: r.status,
-    statusText: r.statusText || '',
-    headers: {},
-    data: r.data,
-    finalUrl: r.finalUrl || pageUrl,
-  }
+function isCloudflareChallengeHtml(html) {
+  const h = String(html || '').toLowerCase()
+  if (!h) return false
+  return (
+    h.includes('<title>just a moment...</title>')
+    || h.includes('just a moment...')
+    || h.includes('cf-browser-verification')
+    || h.includes('cf-challenge')
+    || h.includes('challenge-platform')
+    || (h.includes('cdn-cgi/challenge-platform') && h.includes('cloudflare'))
+  )
 }
 
 /**
- * GET forum HTML; bei 404 auf /topic/slug/page/N/ alternativ ?page=N versuchen (IPS-Konfigurationen).
+ * Fetch via Electron BrowserWindow + persist:stakecommunity-forum (Appeals Monitor pattern).
+ * Never use Node proxyRequest for forum HTML — Cloudflare always 403s non-browser TLS/JA3.
  */
-async function fetchForumPage(proxyRequest, pageUrl, headers) {
-  let res = await proxyRequest({ url: pageUrl, method: 'GET', headers })
-  if (res.status === 404 && /\/page\/\d+\/?(\?.*)?$/.test(pageUrl)) {
-    const alt = pageUrl.replace(/\/page\/(\d+)\/?(\?.*)?$/i, (_, n) => `/?page=${n}`)
-    const res2 = await proxyRequest({ url: alt, method: 'GET', headers })
-    if (res2.status === 200) return { ...res2, finalUrl: res2.finalUrl || alt }
+async function fetchForumPageViaSession(pageUrl, referer, allowChallenge = true) {
+  if (!window.electronAPI?.forumFetchTopicHtml) return null
+  const r = await window.electronAPI.forumFetchTopicHtml({ url: pageUrl, referer, allowChallenge })
+  if (!r || r.skipped) return null
+  if (!r.ok && !r.data) return null
+  const data = typeof r.data === 'string' ? r.data : ''
+  const cloudflare = Boolean(r.cloudflare) || isCloudflareChallengeHtml(data)
+  return {
+    status: cloudflare ? 403 : (r.status || 0),
+    statusText: r.statusText || '',
+    headers: {},
+    data,
+    finalUrl: r.finalUrl || pageUrl,
+    cloudflare,
+    error: r.error,
   }
-  return res
 }
 
-async function tryForumPageSessionThen404Fallback(pageUrl, referer) {
-  let res = await fetchForumPageViaSession(pageUrl, referer)
+async function tryForumPageSessionThen404Fallback(pageUrl, referer, allowChallenge = true) {
+  let res = await fetchForumPageViaSession(pageUrl, referer, allowChallenge)
   if (res && res.status === 404 && /\/page\/\d+\/?(\?.*)?$/.test(pageUrl)) {
     const alt = pageUrl.replace(/\/page\/(\d+)\/?(\?.*)?$/i, (_, n) => `/?page=${n}`)
-    const res2 = await fetchForumPageViaSession(alt, referer)
+    const res2 = await fetchForumPageViaSession(alt, referer, allowChallenge)
     if (res2 && res2.status === 200) return { ...res2, finalUrl: res2.finalUrl || alt }
   }
   return res
 }
 
-async function fetchForumPageSmart(proxyRequest, pageUrl, referer, useForumSession) {
-  if (useForumSession) {
-    const res = await tryForumPageSessionThen404Fallback(pageUrl, referer)
-    if (res && res.status === 200) return res
-  }
-  const headers = buildForumBrowserHeaders(referer)
-  return fetchForumPage(proxyRequest, pageUrl, headers)
+async function fetchForumPageSmart(pageUrl, referer, allowChallenge = true) {
+  const res = await tryForumPageSessionThen404Fallback(pageUrl, referer, allowChallenge)
+  if (res) return res
+  throw new Error(
+    'Forum BrowserWindow scrape is unavailable. Restart the app, or use Stake Community login then Load again.'
+  )
 }
 
 /**
@@ -320,15 +311,9 @@ export async function scrapeForumBets(forumUrl, accessToken, opts = {}) {
     throw new Error('Electron proxy is not available.')
   }
 
-  const proxyRequest = (opts) => window.electronAPI.proxyRequest(opts)
-
-  let forumUseSession = false
-  try {
-    if (window.electronAPI?.forumSessionStatus) {
-      const st = await window.electronAPI.forumSessionStatus()
-      forumUseSession = Boolean(st?.hasCookies)
-    }
-  } catch (_) {}
+  if (!window.electronAPI?.forumFetchTopicHtml) {
+    throw new Error('Forum scraper requires Electron BrowserWindow fetch (forumFetchTopicHtml).')
+  }
 
   let referer = 'https://stakecommunity.com/'
 
@@ -340,6 +325,8 @@ export async function scrapeForumBets(forumUrl, accessToken, opts = {}) {
   const maxPages = 100
   const startedAt = Date.now()
   let forum403Logged = false
+  /** Only auto-open the CF challenge window on the first page. */
+  let allowChallenge = true
 
   while (page < maxPages && currentUrl) {
     if (visited.has(currentUrl)) break
@@ -347,7 +334,9 @@ export async function scrapeForumBets(forumUrl, accessToken, opts = {}) {
     page += 1
 
     try {
-      const res = await fetchForumPageSmart(proxyRequest, currentUrl, referer, forumUseSession)
+      const res = await fetchForumPageSmart(currentUrl, referer, allowChallenge)
+      allowChallenge = false
+
       if (res.status === 404 || res.status >= 500) {
         logApiCall({
           type: 'forum/scrape/page',
@@ -360,7 +349,10 @@ export async function scrapeForumBets(forumUrl, accessToken, opts = {}) {
         break
       }
 
-      if (res.status === 403 && !forum403Logged) {
+      const html = typeof res.data === 'string' ? res.data : String(res.data ?? '')
+      const cloudflare = Boolean(res.cloudflare) || isCloudflareChallengeHtml(html)
+
+      if ((res.status === 403 || cloudflare) && !forum403Logged) {
         forum403Logged = true
         logApiCall({
           type: 'forum/scrape/page',
@@ -369,14 +361,20 @@ export async function scrapeForumBets(forumUrl, accessToken, opts = {}) {
           response: {
             status: res.status,
             finalUrl: res.finalUrl || '',
-            htmlPreview: (typeof res.data === 'string' ? res.data : '').slice(0, 400),
+            htmlPreview: html.slice(0, 400),
+            cloudflare: true,
           },
           error: 'Forum page HTTP 403 (blocked / Cloudflare / login wall?)',
           durationMs: null,
         })
       }
 
-      const html = typeof res.data === 'string' ? res.data : String(res.data ?? '')
+      if (res.status === 403 || cloudflare) {
+        throw new Error(
+          'Forum blocked by Cloudflare. Complete the challenge window (or use Stake Community login), then Load again.'
+        )
+      }
+
       const resolvedBase = res.finalUrl || currentUrl
       referer = resolvedBase
 

@@ -233,8 +233,8 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
       <p style={STYLES.help}>
         Paste a forum thread URL to load and verify all casino bets from the thread. Bets are fetched via the Stake API.
         {' '}
-        HTTP 403 on page 2+ usually means Cloudflare or login: use <strong>Stake Community login</strong> below (same idea
-        as the Appeals Monitor — isolated profile with real cookies), then <strong>Load</strong> again.
+        HTTP 403 usually means Cloudflare: the app loads pages in a Chromium window (same as Appeals Monitor).
+        If a challenge window appears, complete it; or use <strong>Stake Community login</strong> below, then <strong>Load</strong> again.
       </p>
 
       {typeof window !== 'undefined' && window.electronAPI?.forumOpenLogin ? (
@@ -243,7 +243,7 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
             Stake Community login…
           </button>
           {forumSession.hasCookies ? (
-            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--accent)' }} title="Forum HTML is loaded via Chromium session.fetch with these cookies">
+            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--accent)' }} title="Forum HTML is loaded via a Chromium BrowserWindow using this session partition">
               Forum cookies: {forumSession.cookieCount}
               {forumSession.hasCf ? ' · cf' : ''}
             </span>

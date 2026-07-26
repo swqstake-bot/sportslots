@@ -33,6 +33,13 @@ import OriginalsProfitChart, { profitsToChartData } from './OriginalsProfitChart
 import { useSlotRealtime } from './hooks/useSlotRealtime'
 import { getProviderSessionState } from '../api/providers/providerRuntime'
 import { startThirdPartySession } from '../api/stake'
+import {
+  hasAnyStakeRgsSeedOption,
+  resolveStakeRgsGameId,
+  rotateStakeRgsSeedAndRefreshSession,
+  shouldDeferStakeRgsSeedReset,
+  shouldTriggerStakeRgsSeedReset,
+} from '../utils/stakeRgsSeedRotate'
 
 const DEFAULT_BET_LEVELS = [
   1100, 2200, 4400, 6600, 8800, 11000, 13200, 15400, 17600, 19800,
@@ -255,6 +262,15 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const [autospinStopStreakCount, setAutospinStopStreakCount] = useState(3)
   const [autospinStopStreakType, setAutospinStopStreakType] = useState('win') // 'win' | 'loss'
   const [sessionRefreshSpins, setSessionRefreshSpins] = useState(0) // 0 = nie, Session nach X Spins neu starten
+  // Stake-RGS seed rotate (autospin only; >0 / true = enabled)
+  const [seedChangeAfterSpins, setSeedChangeAfterSpins] = useState(0)
+  const [seedChangeOnMultiplier, setSeedChangeOnMultiplier] = useState(0)
+  const [seedChangeAfterWins, setSeedChangeAfterWins] = useState(0)
+  const [seedChangeAfterLosses, setSeedChangeAfterLosses] = useState(0)
+  const [seedChangeAfterWinStreak, setSeedChangeAfterWinStreak] = useState(0)
+  const [seedChangeAfterLossStreak, setSeedChangeAfterLossStreak] = useState(0)
+  const [seedResetOnLoss, setSeedResetOnLoss] = useState(false)
+  const [rgsClientSeed, setRgsClientSeed] = useState('') // optional 8 alnum; empty = random
   const [autospinStopOnProfit, setAutospinStopOnProfit] = useState(false)
   const [autospinStopProfitValue, setAutospinStopProfitValue] = useState(0)
   const [autospinStopOnNetLoss, setAutospinStopOnNetLoss] = useState(false)
@@ -1173,10 +1189,29 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     let spinsSinceRefresh = 0
     let winStreak = 0
     let lossStreak = 0
+    let spinsSinceSeed = 0
+    let winsSinceSeed = 0
+    let lossesSinceSeed = 0
     // Summen in USD-Cent (wie stats.totalWagered / totalWon) – konsistent mit Autospin Profit/Loss-Schwellen (ganze USD × 100)
     let aggWageredUsd = (stats.totalWagered ?? 0) / 100
     let aggWonUsd = (stats.totalWon ?? 0) / 100
     let lastAutospinData = null
+    const seedOptsActive =
+      isStakeEngine &&
+      hasAnyStakeRgsSeedOption({
+        seedChangeAfterSpins,
+        seedChangeOnMultiplier,
+        seedChangeAfterWins,
+        seedChangeAfterLosses,
+        seedChangeAfterWinStreak,
+        seedChangeAfterLossStreak,
+        seedResetOnLoss,
+      })
+    const resetSeedCounters = () => {
+      spinsSinceSeed = 0
+      winsSinceSeed = 0
+      lossesSinceSeed = 0
+    }
     const recordAutospinStopBet = (payload, { stoppedBonus = false } = {}) => {
       lastBalanceRef.current = payload.balance ?? lastBalanceRef.current
       if (isStakeEngine) {
@@ -1358,6 +1393,79 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           aggWageredUsd += betUsd
           aggWonUsd += winUsd
         }
+
+        if (seedOptsActive && !autospinCancelRef.current) {
+          spinsSinceSeed += 1
+          if (isWin) winsSinceSeed += 1
+          else lossesSinceSeed += 1
+          const multi = effectiveBet > 0 && winAmount > 0 ? winAmount / effectiveBet : 0
+          const seedTrigger = shouldTriggerStakeRgsSeedReset({
+            spinsSinceSeed,
+            winsSinceSeed,
+            lossesSinceSeed,
+            winStreak,
+            lossStreak,
+            isWin,
+            multi,
+            seedChangeAfterSpins,
+            seedChangeOnMultiplier,
+            seedChangeAfterWins,
+            seedChangeAfterLosses,
+            seedChangeAfterWinStreak,
+            seedChangeAfterLossStreak,
+            seedResetOnLoss,
+          })
+          if (seedTrigger) {
+            const rawRound = data?._stakeEngine?.raw?.round
+            if (shouldDeferStakeRgsSeedReset(rawRound)) {
+              spinsSinceSeed -= 1
+              if (isWin) winsSinceSeed -= 1
+              else lossesSinceSeed -= 1
+              logApiCall({
+                type: `${slot.providerId}/seed`,
+                endpoint: 'deferSeedReset',
+                request: { reason: 'open_bonus_or_fs' },
+                response: null,
+                error: null,
+                durationMs: null,
+              })
+            } else {
+              const rotated = await rotateStakeRgsSeedAndRefreshSession({
+                gameId: resolveStakeRgsGameId(slot, currentSession),
+                clientSeed: rgsClientSeed,
+                slug: slot.slug,
+                slotName: slot.name,
+                startSession: (token, slug, source, target) =>
+                  provider.startSession(token, slug, source, target),
+                accessToken,
+                sourceCurrency: effectiveSource,
+                targetCurrency: effectiveTarget,
+                log: (msg) => {
+                  logApiCall({
+                    type: `${slot.providerId}/seed`,
+                    endpoint: 'rotateSeed',
+                    request: { msg },
+                    response: null,
+                    error: null,
+                    durationMs: null,
+                  })
+                },
+              })
+              if (rotated?.ok && rotated.session) {
+                currentSession = rotated.session
+                sessionRef.current = currentSession
+                setSession(rotated.session)
+                spinsSinceRefresh = 0
+                resetSeedCounters()
+              } else if (rotated?.error) {
+                setProviderWarning(`Seed reset failed: ${rotated.error}`)
+                resetSeedCounters()
+              }
+              triggerLogRefresh()
+            }
+          }
+        }
+
         if (spinsDone % 4 === 0 || (autospinCount > 0 && spinsDone === autospinCount)) {
           setSession(currentSession)
           setAutospinProgress(spinsDone)
@@ -1428,6 +1536,14 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       autospinStopLossValue,
       autospinStopOnMinutes,
       autospinStopMinutes,
+      seedChangeAfterSpins,
+      seedChangeOnMultiplier,
+      seedChangeAfterWins,
+      seedChangeAfterLosses,
+      seedChangeAfterWinStreak,
+      seedChangeAfterLossStreak,
+      seedResetOnLoss,
+      rgsClientSeed,
     }
   }
 
@@ -1467,6 +1583,19 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     if (s.autospinStopLossValue != null) setAutospinStopLossValue(s.autospinStopLossValue)
     if (s.autospinStopOnMinutes != null) setAutospinStopOnMinutes(!!s.autospinStopOnMinutes)
     if (s.autospinStopMinutes != null) setAutospinStopMinutes(s.autospinStopMinutes)
+    if (s.seedChangeAfterSpins != null) setSeedChangeAfterSpins(Math.max(0, Math.floor(Number(s.seedChangeAfterSpins) || 0)))
+    if (s.seedChangeOnMultiplier != null) {
+      const v = Number(s.seedChangeOnMultiplier)
+      setSeedChangeOnMultiplier(Number.isFinite(v) && v > 0 ? v : 0)
+    }
+    if (s.seedChangeAfterWins != null) setSeedChangeAfterWins(Math.max(0, Math.floor(Number(s.seedChangeAfterWins) || 0)))
+    if (s.seedChangeAfterLosses != null) setSeedChangeAfterLosses(Math.max(0, Math.floor(Number(s.seedChangeAfterLosses) || 0)))
+    if (s.seedChangeAfterWinStreak != null) setSeedChangeAfterWinStreak(Math.max(0, Math.floor(Number(s.seedChangeAfterWinStreak) || 0)))
+    if (s.seedChangeAfterLossStreak != null) setSeedChangeAfterLossStreak(Math.max(0, Math.floor(Number(s.seedChangeAfterLossStreak) || 0)))
+    if (s.seedResetOnLoss != null) setSeedResetOnLoss(!!s.seedResetOnLoss)
+    if (s.rgsClientSeed != null) {
+      setRgsClientSeed(String(s.rgsClientSeed || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8))
+    }
   }
 
   useImperativeHandle(ref, () => ({
@@ -1476,7 +1605,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     getSettings,
     applySettings,
     getWorkbenchSession: buildWorkbenchSessionPayload,
-  }), [accessToken, slot.slug, effectiveSource, effectiveTarget, provider, betLevels, baseBetLevels, session?.betLevels, sourceCurrency, targetCurrency, betAmount, extraBet, autospinCount, autospinStopOnBonus, autospinMinScatter, autospinStopOnMulti, autospinStopMultiOnlyAt010Usd, autospinStopMultiplier, autospinStopOnWin, autospinStopOnLoss, autospinStopOnStreak, autospinStopStreakCount, autospinStopStreakType, sessionRefreshSpins, buildWorkbenchSessionPayload])
+  }), [accessToken, slot.slug, effectiveSource, effectiveTarget, provider, betLevels, baseBetLevels, session?.betLevels, sourceCurrency, targetCurrency, betAmount, extraBet, autospinCount, autospinStopOnBonus, autospinMinScatter, autospinStopOnMulti, autospinStopMultiOnlyAt010Usd, autospinStopMultiplier, autospinStopOnWin, autospinStopOnLoss, autospinStopOnStreak, autospinStopStreakCount, autospinStopStreakType, sessionRefreshSpins, seedChangeAfterSpins, seedChangeOnMultiplier, seedChangeAfterWins, seedChangeAfterLosses, seedChangeAfterWinStreak, seedChangeAfterLossStreak, seedResetOnLoss, rgsClientSeed, buildWorkbenchSessionPayload])
 
   if (!provider) {
     return (
@@ -1669,6 +1798,107 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             </label>
           </div>
         </details>
+        {isStakeEngine && (
+          <details style={{ marginTop: '0.35rem', fontSize: '0.8rem' }}>
+            <summary style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>Seeds (Stake RGS) ▾</summary>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.35rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--border)' }}>
+              <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }} title="0 = off">
+                After spins
+                <input
+                  type="number"
+                  min={0}
+                  value={seedChangeAfterSpins || ''}
+                  onChange={(e) => setSeedChangeAfterSpins(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  placeholder="0"
+                  style={{ ...STYLES.select, width: 56, marginLeft: '0.2rem' }}
+                />
+              </label>
+              <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }} title="0 = off">
+                Multi ≥
+                <input
+                  type="number"
+                  min={0}
+                  step="0.1"
+                  value={seedChangeOnMultiplier || ''}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value)
+                    setSeedChangeOnMultiplier(Number.isFinite(v) && v > 0 ? v : 0)
+                  }}
+                  placeholder="0"
+                  style={{ ...STYLES.select, width: 56, marginLeft: '0.2rem' }}
+                />
+                ×
+              </label>
+              <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }} title="0 = off">
+                After wins
+                <input
+                  type="number"
+                  min={0}
+                  value={seedChangeAfterWins || ''}
+                  onChange={(e) => setSeedChangeAfterWins(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  placeholder="0"
+                  style={{ ...STYLES.select, width: 48, marginLeft: '0.2rem' }}
+                />
+              </label>
+              <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }} title="0 = off">
+                After losses
+                <input
+                  type="number"
+                  min={0}
+                  value={seedChangeAfterLosses || ''}
+                  onChange={(e) => setSeedChangeAfterLosses(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  placeholder="0"
+                  style={{ ...STYLES.select, width: 48, marginLeft: '0.2rem' }}
+                />
+              </label>
+              <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }} title="0 = off">
+                Win streak
+                <input
+                  type="number"
+                  min={0}
+                  value={seedChangeAfterWinStreak || ''}
+                  onChange={(e) => setSeedChangeAfterWinStreak(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  placeholder="0"
+                  style={{ ...STYLES.select, width: 48, marginLeft: '0.2rem' }}
+                />
+              </label>
+              <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }} title="0 = off">
+                Loss streak
+                <input
+                  type="number"
+                  min={0}
+                  value={seedChangeAfterLossStreak || ''}
+                  onChange={(e) => setSeedChangeAfterLossStreak(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  placeholder="0"
+                  style={{ ...STYLES.select, width: 48, marginLeft: '0.2rem' }}
+                />
+              </label>
+              <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={seedResetOnLoss}
+                  onChange={(e) => setSeedResetOnLoss(e.target.checked)}
+                  style={STYLES.checkbox}
+                />
+                Reset on loss
+              </label>
+              <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }} title="Optional 8 alphanumeric; empty = random">
+                Client seed
+                <input
+                  type="text"
+                  value={rgsClientSeed}
+                  maxLength={8}
+                  placeholder="random"
+                  onChange={(e) => {
+                    const next = String(e.target.value || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8)
+                    setRgsClientSeed(next)
+                  }}
+                  style={{ ...STYLES.select, width: 88, marginLeft: '0.2rem', fontFamily: 'monospace' }}
+                />
+              </label>
+            </div>
+          </details>
+        )}
       </div>
       </>
   )

@@ -84,9 +84,13 @@ let stakeLoginPromise: Promise<void> | null = null;
 let stakeBridgeWin: BrowserWindow | null = null;
 let withdrawPrefillWin: BrowserWindow | null = null;
 let forumLoginWin: BrowserWindow | null = null;
+/** Hidden BrowserWindow reused for forum scrapes (Appeals Monitor createSessionFetcher pattern). */
+let forumScrapeWin: BrowserWindow | null = null;
+let forumChallengeWin: BrowserWindow | null = null;
+let forumChallengeInFlight: Promise<boolean> | null = null;
 let slotPopupSeq = 0;
 
-/** Stake Community forum (IPS) – same pattern as Appeals Monitor: isolated partition + session.fetch. */
+/** Stake Community forum (IPS) – same pattern as Appeals Monitor: isolated partition + BrowserWindow loadURL. */
 const FORUM_ORIGIN = 'https://stakecommunity.com';
 const FORUM_SESSION_PARTITION = 'persist:stakecommunity-forum';
 
@@ -105,6 +109,199 @@ function forumDefaultFetchHeaders(referer: string): Record<string, string> {
     'Sec-Fetch-Mode': 'navigate',
     'Sec-Fetch-Site': 'same-origin',
   };
+}
+
+function isCloudflareChallengeHtml(html: string): boolean {
+  const h = String(html || '').toLowerCase();
+  if (!h) return false;
+  return (
+    h.includes('<title>just a moment...</title>') ||
+    h.includes('just a moment...') ||
+    h.includes('cf-browser-verification') ||
+    h.includes('cf-challenge') ||
+    h.includes('challenge-platform') ||
+    (h.includes('cdn-cgi/challenge-platform') && h.includes('cloudflare'))
+  );
+}
+
+function ensureForumScrapeWindow(): BrowserWindow {
+  if (forumScrapeWin && !forumScrapeWin.isDestroyed()) return forumScrapeWin;
+  forumScrapeWin = new BrowserWindow({
+    show: false,
+    width: 1280,
+    height: 900,
+    webPreferences: {
+      partition: FORUM_SESSION_PARTITION,
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+  forumScrapeWin.on('closed', () => {
+    forumScrapeWin = null;
+  });
+  return forumScrapeWin;
+}
+
+/**
+ * Load a forum URL in the shared Chromium session (cookies + TLS fingerprint).
+ * session.fetch / Node https cannot pass Cloudflare JS challenges — this can.
+ */
+function loadForumUrlInScrapeWindow(url: string): Promise<{ html: string; finalUrl: string }> {
+  const w = ensureForumScrapeWindow();
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Forum page load timeout')), 45000);
+    const grabHtml = () => {
+      if (!w || w.isDestroyed()) {
+        clearTimeout(timeout);
+        reject(new Error('Forum scrape window closed'));
+        return;
+      }
+      w.webContents
+        .executeJavaScript('document.documentElement.outerHTML')
+        .then((html) => {
+          clearTimeout(timeout);
+          resolve({
+            html: String(html ?? ''),
+            finalUrl: w.webContents.getURL() || url,
+          });
+        })
+        .catch((e) => {
+          clearTimeout(timeout);
+          reject(e);
+        });
+    };
+
+    const waitForContentOrCf = () => {
+      w.webContents
+        .executeJavaScript(`
+          new Promise((res) => {
+            const isCf = () => {
+              const t = (document.title || '').toLowerCase();
+              return t.includes('just a moment')
+                || !!document.querySelector('#challenge-form, .cf-browser-verification, #cf-challenge-running, #challenge-body-text');
+            };
+            const hasTopic = () => !!document.querySelector(
+              '[data-role="commentContent"], .cPost_contentWrap, #comments .ipsComment_content, article.ipsComment, .ipsType_pageTitle'
+            );
+            if (hasTopic()) return res('ok');
+            if (isCf()) {
+              const start = Date.now();
+              const checkCf = () => {
+                if (hasTopic()) return res('ok');
+                if (!isCf()) return res('passed');
+                if (Date.now() - start > 14000) return res('cf');
+                setTimeout(checkCf, 250);
+              };
+              return checkCf();
+            }
+            const start = Date.now();
+            const check = () => {
+              if (hasTopic()) return res('ok');
+              if (isCf()) return res('cf');
+              if (Date.now() - start > 6000) return res('timeout');
+              setTimeout(check, 150);
+            };
+            check();
+          });
+        `)
+        .then(() => grabHtml())
+        .catch(() => grabHtml());
+    };
+
+    w.webContents.once('did-finish-load', () => {
+      waitForContentOrCf();
+    });
+    w.loadURL(url).catch((e) => {
+      clearTimeout(timeout);
+      reject(e);
+    });
+  });
+}
+
+/** Visible window so the user (or Chromium) can complete Cloudflare / login — SSP openForumChallengeWindow. */
+function openForumCloudflareChallenge(startUrl?: string): Promise<boolean> {
+  if (forumChallengeInFlight) return forumChallengeInFlight;
+  forumChallengeInFlight = new Promise<boolean>((resolve) => {
+    if (forumChallengeWin && !forumChallengeWin.isDestroyed()) {
+      forumChallengeWin.focus();
+    } else {
+      forumChallengeWin = new BrowserWindow({
+        width: 1000,
+        height: 700,
+        title: 'Stake Community – Cloudflare / login',
+        webPreferences: {
+          partition: FORUM_SESSION_PARTITION,
+          nodeIntegration: false,
+          contextIsolation: true,
+        },
+      });
+      forumChallengeWin.on('closed', () => {
+        forumChallengeWin = null;
+      });
+    }
+    const target = startUrl && startUrl.startsWith('http') ? startUrl : `${FORUM_ORIGIN}/`;
+    void forumChallengeWin.loadURL(target);
+
+    const ses = session.fromPartition(FORUM_SESSION_PARTITION);
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(poll);
+      if (forumChallengeWin && !forumChallengeWin.isDestroyed()) {
+        try {
+          forumChallengeWin.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      resolve(ok);
+    };
+
+    const poll = setInterval(async () => {
+      try {
+        const cookies = await ses.cookies.get({ url: FORUM_ORIGIN });
+        const hasCf = cookies.some(
+          (c) => c.name === 'cf_clearance' || c.name === '__cf_bm' || c.name.startsWith('cf_')
+        );
+        if (!forumChallengeWin || forumChallengeWin.isDestroyed()) {
+          finish(hasCf || cookies.length > 0);
+          return;
+        }
+        let title = '';
+        try {
+          title = String((await forumChallengeWin.webContents.executeJavaScript('document.title')) || '');
+        } catch {
+          /* ignore */
+        }
+        const stillCf = title.toLowerCase().includes('just a moment');
+        if (!stillCf && title && (hasCf || cookies.length > 0)) {
+          // Let cookies propagate (SSP waits ~2s)
+          clearInterval(poll);
+          setTimeout(() => finish(true), 2000);
+        }
+      } catch {
+        /* ignore poll errors */
+      }
+    }, 1000);
+
+    forumChallengeWin.once('closed', () => {
+      void (async () => {
+        try {
+          const cookies = await ses.cookies.get({ url: FORUM_ORIGIN });
+          const hasCf = cookies.some((c) => c.name === 'cf_clearance' || c.name.startsWith('cf_'));
+          finish(hasCf || cookies.length > 0);
+        } catch {
+          finish(false);
+        }
+      })();
+    });
+
+    setTimeout(() => finish(false), 120000);
+  }).finally(() => {
+    forumChallengeInFlight = null;
+  });
+  return forumChallengeInFlight;
 }
 
 function isSafeExternalUrl(url: string): boolean {
@@ -177,6 +374,30 @@ function destroyAuxiliaryBrowserWindows(): void {
       /* ignore */
     }
     withdrawPrefillWin = null;
+  }
+  if (forumScrapeWin && !forumScrapeWin.isDestroyed()) {
+    try {
+      forumScrapeWin.destroy();
+    } catch {
+      /* ignore */
+    }
+    forumScrapeWin = null;
+  }
+  if (forumChallengeWin && !forumChallengeWin.isDestroyed()) {
+    try {
+      forumChallengeWin.destroy();
+    } catch {
+      /* ignore */
+    }
+    forumChallengeWin = null;
+  }
+  if (forumLoginWin && !forumLoginWin.isDestroyed()) {
+    try {
+      forumLoginWin.destroy();
+    } catch {
+      /* ignore */
+    }
+    forumLoginWin = null;
   }
 }
 
@@ -2027,7 +2248,7 @@ ipcMain.handle('forum-session-status', async () => {
 
 ipcMain.handle(
   'forum-fetch-topic-html',
-  async (_event, payload: { url: string; referer?: string }) => {
+  async (_event, payload: { url: string; referer?: string; allowChallenge?: boolean }) => {
     const url = String(payload?.url || '').trim();
     if (!url.includes('stakecommunity.com/topic/')) {
       return {
@@ -2038,36 +2259,43 @@ ipcMain.handle(
         statusText: '',
         data: '',
         finalUrl: '',
+        cloudflare: false as const,
       };
     }
-    const ses = session.fromPartition(FORUM_SESSION_PARTITION);
-    const cookies = await ses.cookies.get({ url: FORUM_ORIGIN });
-    if (!cookies.length) {
-      return {
-        ok: false as const,
-        skipped: true as const,
-        error: 'no_forum_session',
-        status: 0,
-        statusText: '',
-        data: '',
-        finalUrl: '',
-      };
-    }
-    const referer =
-      typeof payload?.referer === 'string' && payload.referer.startsWith('http') ? payload.referer : `${FORUM_ORIGIN}/`;
+    const allowChallenge = payload?.allowChallenge !== false;
     try {
-      const res = await ses.fetch(url, {
-        method: 'GET',
-        headers: forumDefaultFetchHeaders(referer),
-      });
-      const data = await res.text();
+      let loaded = await loadForumUrlInScrapeWindow(url);
+      let cloudflare = isCloudflareChallengeHtml(loaded.html);
+
+      // Interactive CF: open visible window once (SSP), then retry via same partition.
+      if (cloudflare && allowChallenge) {
+        console.warn('[forum-scraper] Cloudflare challenge detected — opening challenge window');
+        await openForumCloudflareChallenge(url);
+        loaded = await loadForumUrlInScrapeWindow(url);
+        cloudflare = isCloudflareChallengeHtml(loaded.html);
+      }
+
+      if (cloudflare) {
+        return {
+          ok: true as const,
+          skipped: false as const,
+          status: 403,
+          statusText: 'Cloudflare challenge',
+          data: loaded.html,
+          finalUrl: loaded.finalUrl || url,
+          cloudflare: true as const,
+          error: 'cloudflare_challenge',
+        };
+      }
+
       return {
         ok: true as const,
         skipped: false as const,
-        status: res.status,
-        statusText: res.statusText || '',
-        data,
-        finalUrl: res.url || url,
+        status: 200,
+        statusText: 'OK',
+        data: loaded.html,
+        finalUrl: loaded.finalUrl || url,
+        cloudflare: false as const,
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -2079,6 +2307,7 @@ ipcMain.handle(
         statusText: '',
         data: '',
         finalUrl: '',
+        cloudflare: false as const,
       };
     }
   }
