@@ -1,4 +1,10 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.216': [
+    '✨ Slots: Discovery-Landing (Last played / Favorites) + Workbench L/C/R nach Auswahl',
+    '🐛 Slots: Bet-Liste, Stats und Chart nur noch in USD (kein SOL/ARS-Flicker)',
+    '🐛 Slots: Chart stabiler (House-Settlement/Payout-Normierung, keine doppelten Events, ruhigere Labels)',
+    '🐛 Keno: randomNumbers From/To werden für die Pick-Anzahl genutzt (nicht mehr fest auf 8)',
+  ],
   '1.0.215': [
     '✨ Originals Workbench: schlankeres UX (Automatic + More, Advanced strategy, kein Manual)',
     '🐛 Originals Packs: kein Difficulty-Feld (nur Cases hat Difficulty)',
