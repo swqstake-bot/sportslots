@@ -170,7 +170,7 @@ function formatTargetMultiLabel(n) {
   return Number.isInteger(x) ? String(x) : x.toFixed(2).replace(/\.?0+$/, '')
 }
 
-const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact = false, onLogUpdate, useSharedCurrency = false, sharedSourceCurrency, sharedTargetCurrency, initialTargetCurrency, initialBetHint, initialMinBetUsd, initialExpanded = false, sharedCryptoOnly = false, challengeTargetMultipliers, layout = 'card', workbenchActive = true }, ref) {
+const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact = false, onLogUpdate, useSharedCurrency = false, sharedSourceCurrency, sharedTargetCurrency, initialTargetCurrency, initialBetHint, initialMinBetUsd, initialExpanded = false, sharedCryptoOnly = false, challengeTargetMultipliers, layout = 'card', workbenchActive = true, workbenchInstanceId = null, onWorkbenchSessionPublish = null }, ref) {
   const hunterBridgeTargets = useSyncExternalStore(
     subscribeHunterSlotTargets,
     () => getHunterSlotTargetsSnapshot()[slot.slug] ?? EMPTY_TARGET_MULTIS,
@@ -500,6 +500,39 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       rates: currencyRates,
     })
   }, [statsAgg, balanceFromPlaceBet, wsBalance, sessionStartBalance, effectiveTarget, currencyRates])
+
+  const enrichedStats = useMemo(() => {
+    let biggestMultiFromHistory = 0
+    for (const b of sessionBetsDeduped || []) {
+      const bet = Number(b.betAmount) || 0
+      const win = Number(b.winAmount) || 0
+      if (bet > 0 && win > 0) {
+        const m = win / bet
+        if (m > biggestMultiFromHistory) biggestMultiFromHistory = m
+      }
+    }
+    if (biggestMultiFromHistory > (stats.biggestMultiplier || 0)) {
+      return { ...stats, biggestMultiplier: biggestMultiFromHistory }
+    }
+    return stats
+  }, [stats, sessionBetsDeduped])
+
+  const buildWorkbenchSessionPayload = useCallback(() => ({
+    instanceId: workbenchInstanceId || slot.slug,
+    slug: slot.slug,
+    name: slot.name,
+    sessionStartAt,
+    sessionBetsDeduped,
+    stats: enrichedStats,
+    isRunning: !!isAutospinning,
+  }), [workbenchInstanceId, slot.slug, slot.name, sessionStartAt, sessionBetsDeduped, enrichedStats, isAutospinning])
+
+  const onWorkbenchSessionPublishRef = useRef(onWorkbenchSessionPublish)
+  onWorkbenchSessionPublishRef.current = onWorkbenchSessionPublish
+  useEffect(() => {
+    if (layout !== 'workbench' || typeof onWorkbenchSessionPublishRef.current !== 'function') return
+    onWorkbenchSessionPublishRef.current(buildWorkbenchSessionPayload())
+  }, [layout, buildWorkbenchSessionPayload])
 
   const allowedCurrencies = filterCurrenciesByProvider(supportedCurrencies, [slot]) || supportedCurrencies
   const cryptoOpts = allowedCurrencies.filter((c) => !isFiat(c.value) || isStable(c.value))
@@ -1442,7 +1475,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     startAutospin: handleAutospin,
     getSettings,
     applySettings,
-  }), [accessToken, slot.slug, effectiveSource, effectiveTarget, provider, betLevels, baseBetLevels, session?.betLevels, sourceCurrency, targetCurrency, betAmount, extraBet, autospinCount, autospinStopOnBonus, autospinMinScatter, autospinStopOnMulti, autospinStopMultiOnlyAt010Usd, autospinStopMultiplier, autospinStopOnWin, autospinStopOnLoss, autospinStopOnStreak, autospinStopStreakCount, autospinStopStreakType, sessionRefreshSpins])
+    getWorkbenchSession: buildWorkbenchSessionPayload,
+  }), [accessToken, slot.slug, effectiveSource, effectiveTarget, provider, betLevels, baseBetLevels, session?.betLevels, sourceCurrency, targetCurrency, betAmount, extraBet, autospinCount, autospinStopOnBonus, autospinMinScatter, autospinStopOnMulti, autospinStopMultiOnlyAt010Usd, autospinStopMultiplier, autospinStopOnWin, autospinStopOnLoss, autospinStopOnStreak, autospinStopStreakCount, autospinStopStreakType, sessionRefreshSpins, buildWorkbenchSessionPayload])
 
   if (!provider) {
     return (
@@ -1746,22 +1780,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         </p>
       )}
       <StatsDisplay
-        stats={(() => {
-          const sessionBets = sessionStartAt ? betHistory.filter((b) => (b.addedAt ?? 0) >= sessionStartAt) : betHistory
-          let biggestMultiFromHistory = 0
-          for (const b of sessionBets) {
-            const bet = Number(b.betAmount) || 0
-            const win = Number(b.winAmount) || 0
-            if (bet > 0 && win > 0) {
-              const m = win / bet
-              if (m > biggestMultiFromHistory) biggestMultiFromHistory = m
-            }
-          }
-          const enrichedStats = biggestMultiFromHistory > (stats.biggestMultiplier || 0)
-            ? { ...stats, biggestMultiplier: biggestMultiFromHistory }
-            : stats
-          return enrichedStats
-        })()}
+        stats={enrichedStats}
         currencyCode="usd"
         compact={wbCompact}
         minimal={settingsCollapsed}
@@ -1828,7 +1847,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   if (isWorkbench) {
     return (
       <div className="slot-wb-instance" hidden={!workbenchActive} aria-hidden={!workbenchActive}>
-        <div className="slot-wb-body">
+        <div className="slot-wb-body slot-wb-body--controls">
           <aside className="slot-wb-left">
             <div className="slot-wb-col-title">Settings</div>
             {settingsCollapsed && challengeTargetLabels.length > 0 && (
@@ -1849,10 +1868,6 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             {betListBlock}
             {logsBlock}
           </main>
-          <aside className="slot-wb-right">
-            <div className="slot-wb-col-title">Statistics</div>
-            {statsBlock}
-          </aside>
         </div>
       </div>
     )

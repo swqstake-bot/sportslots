@@ -1,15 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import SlotControlJS from '../SlotControl'
 import { SlotSelectMulti } from '../SlotSelectGrouped'
 import { Button } from '../ui/Button'
 import { SectionCard } from '../ui/SectionCard'
 import { SlotWorkbench } from '../slots/workbench/SlotWorkbench'
+import {
+  SlotWorkbenchStatsPanel,
+  type WorkbenchSessionPublish,
+} from '../slots/workbench/SlotWorkbenchStatsPanel'
 import type { CasinoSlotInstance, SlotSet } from '../../types'
 import { getProvider } from '../../api/providers'
 import { getMinorFactor } from '../../../../utils/monetaryContract'
 import { getApiLogs } from '../../utils/apiLogger'
 
 const SlotControl = SlotControlJS as any
+const STATS_FILTER_KEY = 'slotbot_workbench_stats_filter'
 
 interface PlayModeContentProps {
   webSlots: any[]
@@ -94,6 +99,15 @@ export function PlayModeContent(props: PlayModeContentProps) {
   const [smokeParallelism, setSmokeParallelism] = useState(5)
   const [smokeOnlyNoLimit, setSmokeOnlyNoLimit] = useState(true)
   const [activeInstanceId, setActiveInstanceId] = useState('')
+  const [statsFilterId, setStatsFilterId] = useState(() => {
+    try {
+      const raw = localStorage.getItem(STATS_FILTER_KEY)
+      return raw && raw.trim() ? raw : 'all'
+    } catch {
+      return 'all'
+    }
+  })
+  const [sessionsById, setSessionsById] = useState<Record<string, WorkbenchSessionPublish>>({})
 
   const instanceIds = useMemo(
     () => selectedSlotInstances.map((i) => i.id),
@@ -110,6 +124,48 @@ export function PlayModeContent(props: PlayModeContentProps) {
     }
   }, [instanceIds, activeInstanceId])
 
+  useEffect(() => {
+    setSessionsById((prev) => {
+      const next: Record<string, WorkbenchSessionPublish> = {}
+      let changed = false
+      for (const id of instanceIds) {
+        if (prev[id]) next[id] = prev[id]
+        else changed = true
+      }
+      if (Object.keys(prev).length !== Object.keys(next).length) changed = true
+      return changed ? next : prev
+    })
+    if (statsFilterId !== 'all' && !instanceIds.includes(statsFilterId)) {
+      setStatsFilterId('all')
+    }
+  }, [instanceIds, statsFilterId])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STATS_FILTER_KEY, statsFilterId)
+    } catch {
+      /* ignore */
+    }
+  }, [statsFilterId])
+
+  const handleWorkbenchSessionPublish = useCallback((payload: WorkbenchSessionPublish) => {
+    const id = String(payload?.instanceId || '')
+    if (!id) return
+    setSessionsById((prev) => {
+      const prevRow = prev[id]
+      if (
+        prevRow &&
+        prevRow.sessionStartAt === payload.sessionStartAt &&
+        prevRow.isRunning === payload.isRunning &&
+        prevRow.sessionBetsDeduped === payload.sessionBetsDeduped &&
+        prevRow.stats === payload.stats
+      ) {
+        return prev
+      }
+      return { ...prev, [id]: payload }
+    })
+  }, [])
+
   const workbenchInstances = useMemo(
     () =>
       selectedSlotInstances.map((inst) => {
@@ -118,9 +174,10 @@ export function PlayModeContent(props: PlayModeContentProps) {
           id: inst.id,
           slug: inst.slug,
           label: slot?.name || inst.slug,
+          running: !!sessionsById[inst.id]?.isRunning,
         }
       }),
-    [selectedSlotInstances, webSlots]
+    [selectedSlotInstances, webSlots, sessionsById]
   )
 
   const hasSelection = selectedSlotInstances.length > 0
@@ -579,6 +636,14 @@ export function PlayModeContent(props: PlayModeContentProps) {
           onActiveInstanceChange={setActiveInstanceId}
           onRemoveInstance={handleRemoveInstance}
           fleet={fleetBar}
+          stats={
+            <SlotWorkbenchStatsPanel
+              instances={workbenchInstances.map((i) => ({ id: i.id, label: i.label }))}
+              sessionsById={sessionsById}
+              filterId={statsFilterId}
+              onFilterChange={setStatsFilterId}
+            />
+          }
         >
           {selectedSlotInstances.map((inst) => {
             const slot = webSlots.find((s: any) => s.slug === inst.slug)
@@ -591,7 +656,9 @@ export function PlayModeContent(props: PlayModeContentProps) {
                 accessToken={token}
                 onLogUpdate={handlePlayLogUpdate}
                 layout="workbench"
+                workbenchInstanceId={inst.id}
                 workbenchActive={inst.id === (activeInstanceId || workbenchInstances[0]?.id)}
+                onWorkbenchSessionPublish={handleWorkbenchSessionPublish}
                 useSharedCurrency={useSharedCurrency}
                 sharedSourceCurrency={inst.sourceCurrency || sharedSourceCurrency}
                 sharedTargetCurrency={inst.targetCurrency || sharedTargetCurrency}

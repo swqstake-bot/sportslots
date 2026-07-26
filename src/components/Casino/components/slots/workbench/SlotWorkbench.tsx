@@ -14,6 +14,7 @@ type SlotWorkbenchProps = {
   onActiveInstanceChange: (id: string) => void
   onRemoveInstance: (id: string) => void
   fleet: ReactNode
+  stats: ReactNode
   children: ReactNode
 }
 
@@ -23,6 +24,7 @@ export function SlotWorkbench({
   onActiveInstanceChange,
   onRemoveInstance,
   fleet,
+  stats,
   children,
 }: SlotWorkbenchProps) {
   return (
@@ -64,9 +66,19 @@ export function SlotWorkbench({
             )
           })}
         </div>
-        <div className="slot-wb-fleet">{fleet}</div>
+        <div className="slot-wb-fleet">
+          {fleet}
+          {instances.length >= 2 && (
+            <span className="slot-wb-fleet-hint">
+              {instances.length} slots · Start all runs in parallel
+            </span>
+          )}
+        </div>
       </div>
-      <div className="slot-wb-canvas">{children}</div>
+      <div className="slot-wb-shell">
+        <div className="slot-wb-canvas">{children}</div>
+        {stats}
+      </div>
     </div>
   )
 }

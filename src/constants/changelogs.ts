@@ -1,4 +1,9 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.217': [
+    '✨ Slots Workbench: gemeinsames Stats-Panel mit Filter All | Slot (unabhängig vom aktiven Tab)',
+    '✨ Slots Workbench: Running-Dots in Tabs + Hinweis „Start all runs in parallel“',
+    '🐛 Slots Workbench: All-Aggregate ohne Cross-Slot-Dedup (gleiche Einsätze bleiben getrennt)',
+  ],
   '1.0.216': [
     '✨ Slots: Discovery-Landing (Last played / Favorites) + Workbench L/C/R nach Auswahl',
     '🐛 Slots: Bet-Liste, Stats und Chart nur noch in USD (kein SOL/ARS-Flicker)',
