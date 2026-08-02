@@ -104,10 +104,9 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
   const kpiWorkerReqIdRef = useRef(0)
 
   useEffect(() => {
-    configRef.current = config
     accessTokenRef.current = accessToken
     webSlotsRef.current = webSlots
-  }, [config, accessToken, webSlots])
+  }, [accessToken, webSlots])
 
   const euWalletCurrency = useMemo(() => {
     if (!isEuGoldCoins) return null
@@ -116,21 +115,22 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     return 'sweeps'
   }, [isEuGoldCoins, config.sourceCurrency, config.targetCurrency])
 
-  // After switching .eu → .com, drop leftover GC/SC from persisted autorun config.
-  useEffect(() => {
+  /** Site-aware currencies (no setState-in-effect): .com strips leftover GC/SC after .eu. */
+  const effectiveConfig = useMemo(() => {
     if (isEuGoldCoins) {
       const coin = euWalletCurrency || 'sweeps'
-      if (config.sourceCurrency !== coin || config.targetCurrency !== coin) {
-        setConfig((c) => ({ ...c, sourceCurrency: coin, targetCurrency: coin }))
-      }
-      return
+      if (config.sourceCurrency === coin && config.targetCurrency === coin) return config
+      return { ...config, sourceCurrency: coin, targetCurrency: coin }
     }
     const src = isEuGoldCoinCode(config.sourceCurrency) ? 'usdc' : config.sourceCurrency
     const tgt = isEuGoldCoinCode(config.targetCurrency) ? 'usd' : config.targetCurrency
-    if (src !== config.sourceCurrency || tgt !== config.targetCurrency) {
-      setConfig((c) => ({ ...c, sourceCurrency: src, targetCurrency: tgt }))
-    }
-  }, [isEuGoldCoins, euWalletCurrency, config.sourceCurrency, config.targetCurrency])
+    if (src === config.sourceCurrency && tgt === config.targetCurrency) return config
+    return { ...config, sourceCurrency: src, targetCurrency: tgt }
+  }, [config, isEuGoldCoins, euWalletCurrency])
+
+  useEffect(() => {
+    configRef.current = effectiveConfig
+  }, [effectiveConfig])
 
   const applySessionTotals = useCallback((totals: { wagered: number; payout: number; profit: number; bestMulti: number }) => {
     sessionKpiRef.current = {
@@ -373,7 +373,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
       setActiveBetLabel(`~$${chosen.rule.betUsd.toFixed(2)}`)
     }
     return false
-  }, [pushLog, walletUsd, checkGlobalStops])
+  }, [pushLog, walletUsd, checkGlobalStops, isEuGoldCoins])
 
   useEffect(() => {
     if (!isRunning) return
@@ -553,9 +553,9 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
   }, [isRunning, runRuleScan, pushLog, stopAll, walletUsd, checkGlobalStops, applySessionTotals, postKpiWorker, onHubStatsChange])
 
   useEffect(() => {
-    const t = window.setTimeout(() => saveAutorunConfigToStorage(config), 400)
+    const t = window.setTimeout(() => saveAutorunConfigToStorage(effectiveConfig), 400)
     return () => clearTimeout(t)
-  }, [config])
+  }, [effectiveConfig])
 
   const runtimeLabel = useMemo(() => {
     if (!isRunning || runStartedAt == null) return '—'
@@ -990,7 +990,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
             Source currency (wallet)
             <input
               className="mt-0.5 w-full rounded-md border border-[var(--border)] bg-[var(--bg-deep)] px-2 py-1 text-sm"
-              value={config.sourceCurrency}
+              value={effectiveConfig.sourceCurrency}
               onChange={(e) => setConfig((c) => ({ ...c, sourceCurrency: e.target.value.toLowerCase() }))}
               disabled={isRunning}
             />
@@ -999,7 +999,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
             Target currency (slot)
             <input
               className="mt-0.5 w-full rounded-md border border-[var(--border)] bg-[var(--bg-deep)] px-2 py-1 text-sm"
-              value={config.targetCurrency}
+              value={effectiveConfig.targetCurrency}
               onChange={(e) => setConfig((c) => ({ ...c, targetCurrency: e.target.value.toLowerCase() }))}
               disabled={isRunning}
             />

@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.228': [
+    '🐛 CI/Lint: Autorun Site-Währung ohne setState-in-effect (effectiveConfig) — Build grün',
+  ],
   '1.0.227': [
     '🐛 Stake.com Challenge Hunter: kein sweeps/gold mehr nach .eu→.com — Session nur EU bei preferredSite=eu, stale Filter/Queue bereinigt',
   ],
