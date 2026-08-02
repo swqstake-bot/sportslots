@@ -15,6 +15,7 @@ import {
 import { isFiat, isStable, formatAmount, toUnits, toMinor, ZERO_DECIMAL_CURRENCIES } from '../utils/formatAmount'
 import { parseBetResponse } from '../utils/parseBetResponse'
 import { CURRENCY_GROUPS, PROVIDER_CURRENCIES, isEuGoldCoinCode } from '../constants/currencies'
+import { useStakeSiteStore } from '../../../store/stakeSiteStore'
 import { notifyChallengeStart } from '../utils/notifications'
 import { effectiveSpinMultiplierFromParsed } from '../api/providers/stakeEngine'
 import { appendBet } from '../utils/betHistoryDb'
@@ -324,10 +325,16 @@ export async function runTelegramChallengeSession(ctx) {
     const provider = isDirectOriginals ? null : await getProvider(slot.providerId)
     if (!provider && !isDirectOriginals) throw new Error(`Kein Provider für ${slot.providerId}`)
 
-    const sCurr = sourceCurrency.toLowerCase()
+    let sCurr = String(sourceCurrency || 'usdc').toLowerCase()
     const providerId = isPacksOriginal ? 'stakeEngine' : slot.providerId || 'stakeEngine'
-    const preferredTarget = (targetCurrency || 'usd').toLowerCase()
+    let preferredTarget = (targetCurrency || 'usd').toLowerCase()
     const minBetUsd = challenge.minBetUsd
+    const isEuSite = useStakeSiteStore.getState().preferredSite === 'eu'
+    // Stale GC/SC from a previous .eu session must not run on .com
+    if (!isEuSite) {
+      if (isEuGoldCoinCode(sCurr)) sCurr = 'usdc'
+      if (isEuGoldCoinCode(preferredTarget)) preferredTarget = 'usd'
+    }
 
     let session = null
     let tCurr = preferredTarget
@@ -335,8 +342,12 @@ export async function runTelegramChallengeSession(ctx) {
     let betAmount
 
     // Stake.eu GoldCoins: source === target (gold/sweeps).
-    if (isEuGoldCoinCode(sCurr) || isEuGoldCoinCode(preferredTarget)) {
-      const coin = isEuGoldCoinCode(sCurr) ? sCurr : preferredTarget
+    if (isEuSite) {
+      const coin = isEuGoldCoinCode(sCurr)
+        ? sCurr
+        : isEuGoldCoinCode(preferredTarget)
+          ? preferredTarget
+          : 'sweeps'
       tCurr = coin
       if (isDirectOriginals) {
         session = { betLevels: [] }
@@ -364,7 +375,7 @@ export async function runTelegramChallengeSession(ctx) {
       )
     }
 
-    if (!isEuGoldCoinCode(sCurr) && !isEuGoldCoinCode(tCurr) && autoOptimalTargetCurrency && !isDirectOriginals) {
+    if (!isEuSite && autoOptimalTargetCurrency && !isDirectOriginals) {
       const allowed = getAllowedTargetCurrenciesForSlot(providerId)
       const probeAllowed = allowed.filter((c) => !AUTO_PROBE_EXCLUDED_CURRENCIES.has(String(c).toLowerCase()))
       const allowedFiat = probeAllowed.filter((c) => isFiat(c) && !isStable(c))

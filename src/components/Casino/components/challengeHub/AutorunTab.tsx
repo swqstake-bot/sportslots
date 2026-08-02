@@ -116,6 +116,22 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     return 'sweeps'
   }, [isEuGoldCoins, config.sourceCurrency, config.targetCurrency])
 
+  // After switching .eu → .com, drop leftover GC/SC from persisted autorun config.
+  useEffect(() => {
+    if (isEuGoldCoins) {
+      const coin = euWalletCurrency || 'sweeps'
+      if (config.sourceCurrency !== coin || config.targetCurrency !== coin) {
+        setConfig((c) => ({ ...c, sourceCurrency: coin, targetCurrency: coin }))
+      }
+      return
+    }
+    const src = isEuGoldCoinCode(config.sourceCurrency) ? 'usdc' : config.sourceCurrency
+    const tgt = isEuGoldCoinCode(config.targetCurrency) ? 'usd' : config.targetCurrency
+    if (src !== config.sourceCurrency || tgt !== config.targetCurrency) {
+      setConfig((c) => ({ ...c, sourceCurrency: src, targetCurrency: tgt }))
+    }
+  }, [isEuGoldCoins, euWalletCurrency, config.sourceCurrency, config.targetCurrency])
+
   const applySessionTotals = useCallback((totals: { wagered: number; payout: number; profit: number; bestMulti: number }) => {
     sessionKpiRef.current = {
       wagered: Number(totals?.wagered) || 0,
@@ -262,13 +278,21 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
 
     const rawTarget = String(cfg.targetCurrency || '').toLowerCase()
     const rawSource = String(cfg.sourceCurrency || '').toLowerCase()
-    const tCurr =
-      isEuGoldCoinCode(rawSource) || isEuGoldCoinCode(rawTarget)
-        ? isEuGoldCoinCode(rawSource)
-          ? rawSource
-          : rawTarget
-        : rawTarget
-    const sCurr = isEuGoldCoinCode(tCurr) ? tCurr : rawSource
+    let tCurr: string
+    let sCurr: string
+    if (isEuGoldCoins) {
+      const coin = isEuGoldCoinCode(rawSource)
+        ? rawSource
+        : isEuGoldCoinCode(rawTarget)
+          ? rawTarget
+          : 'sweeps'
+      tCurr = coin
+      sCurr = coin
+    } else {
+      // .com: ignore leftover GC/SC from a previous .eu config
+      sCurr = isEuGoldCoinCode(rawSource) ? 'usdc' : rawSource
+      tCurr = isEuGoldCoinCode(rawTarget) ? 'usd' : rawTarget
+    }
     const rate = getRateForCurrency(rates, tCurr)
     if (!rate || rate <= 0) {
       pushLog(`No rate for target currency ${tCurr}`)

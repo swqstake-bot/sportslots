@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.227': [
+    '🐛 Stake.com Challenge Hunter: kein sweeps/gold mehr nach .eu→.com — Session nur EU bei preferredSite=eu, stale Filter/Queue bereinigt',
+  ],
   '1.0.226': [
     '🐛 Stake.com: Challenge-Preise (USDC/USDT) nicht mehr ~$0 — Stablecoin-Rate 1:1 + Prize-USD-Berechnung',
   ],

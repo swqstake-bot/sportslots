@@ -206,11 +206,15 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
   const [autoOptimalTargetCurrency, setAutoOptimalTargetCurrency] = useState(true)
 
   useEffect(() => {
-    if (!isEuGoldCoins) return
-    const next = isEuGoldCoinCode(sourceCurrency) ? sourceCurrency : 'sweeps'
-    if (sourceCurrency !== next) setSourceCurrency(next)
-    if (targetCurrency !== next) setTargetCurrency(next)
-    if (autoOptimalTargetCurrency) setAutoOptimalTargetCurrency(false)
+    if (isEuGoldCoins) {
+      const next = isEuGoldCoinCode(sourceCurrency) ? sourceCurrency : 'sweeps'
+      if (sourceCurrency !== next) setSourceCurrency(next)
+      if (targetCurrency !== next) setTargetCurrency(next)
+      if (autoOptimalTargetCurrency) setAutoOptimalTargetCurrency(false)
+      return
+    }
+    if (isEuGoldCoinCode(sourceCurrency)) setSourceCurrency('xrp')
+    if (isEuGoldCoinCode(targetCurrency)) setTargetCurrency('usd')
   }, [isEuGoldCoins, sourceCurrency, targetCurrency, autoOptimalTargetCurrency])
   const [casesBetIdentifierStr, setCasesBetIdentifierStr] = useState(() => {
     try {

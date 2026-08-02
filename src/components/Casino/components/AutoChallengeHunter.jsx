@@ -715,12 +715,21 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   }, [isEuGoldCoins])
 
   // Stake.eu: one wallet currency — source === target (GC or SC).
+  // Stake.com: never keep leftover gold/sweeps from a previous .eu session (stale localStorage).
   useEffect(() => {
-    if (!isEuGoldCoins) return
-    const next = isEuGoldCoinCode(sourceCurrency) ? sourceCurrency : 'sweeps'
-    if (sourceCurrency !== next) setSourceCurrency(next)
-    if (targetCurrency !== next) setTargetCurrency(next)
-    if (autoOptimalTargetCurrency) setAutoOptimalTargetCurrency(false)
+    if (isEuGoldCoins) {
+      const next = isEuGoldCoinCode(sourceCurrency) ? sourceCurrency : 'sweeps'
+      if (sourceCurrency !== next) setSourceCurrency(next)
+      if (targetCurrency !== next) setTargetCurrency(next)
+      if (autoOptimalTargetCurrency) setAutoOptimalTargetCurrency(false)
+      return
+    }
+    let src = sourceCurrency
+    let tgt = targetCurrency
+    if (isEuGoldCoinCode(src)) src = DEFAULT_HUNTER_FILTERS.sourceCurrency
+    if (isEuGoldCoinCode(tgt)) tgt = DEFAULT_HUNTER_FILTERS.targetCurrency
+    if (src !== sourceCurrency) setSourceCurrency(src)
+    if (tgt !== targetCurrency) setTargetCurrency(tgt)
   }, [isEuGoldCoins, sourceCurrency, targetCurrency, autoOptimalTargetCurrency])
 
   const prefersReducedMotion = usePrefersReducedMotion()
@@ -970,7 +979,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   )
   const buildQueueItemForChallenge = useCallback(
     (challengeId, queueSnapshot, forcedTargetCurrency = null, sourceCurrencyOverride = null, slotSlugOverride = null) => {
-      const src = String(sourceCurrencyOverride || sourceCurrency || 'usd').toLowerCase()
+      let src = String(sourceCurrencyOverride || sourceCurrency || DEFAULT_HUNTER_FILTERS.sourceCurrency).toLowerCase()
+      if (!isEuGoldCoins && isEuGoldCoinCode(src)) src = DEFAULT_HUNTER_FILTERS.sourceCurrency
+      let forced =
+        forcedTargetCurrency != null && String(forcedTargetCurrency).trim()
+          ? String(forcedTargetCurrency).toLowerCase()
+          : null
+      if (!isEuGoldCoins && forced && isEuGoldCoinCode(forced)) forced = null
       const slug = String(slotSlugOverride || resolveChallengeSlugById(challengeId)).toLowerCase()
       const slotIndex = getNextCurrencySlotIndexForGroup(queueSnapshot, challengeId, src, slug)
       return {
@@ -980,10 +995,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         sourceCurrency: src,
         slotSlug: slug || null,
         stakeRgsSeedResetEvery: 0,
-        ...(forcedTargetCurrency ? { forcedTargetCurrency: String(forcedTargetCurrency).toLowerCase() } : {}),
+        ...(forced ? { forcedTargetCurrency: forced } : {}),
       }
     },
-    [getNextCurrencySlotIndexForGroup, resolveChallengeSlugById, sourceCurrency]
+    [getNextCurrencySlotIndexForGroup, isEuGoldCoins, resolveChallengeSlugById, sourceCurrency]
   )
   const totalStatsRef = useRef(totalSessionStats)
   if (!sessionStatsUiDirtyRef.current) {
@@ -1721,7 +1736,6 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       0,
       Math.min(100000, parseInt(String(queuedSeedEvery ?? 0), 10) || 0)
     )
-    const forced = (forcedRaw || '').trim().toLowerCase()
     const challenge = challenges.find((c) => c.id === challengeId)
     if (!challenge) {
       log(`Challenge ${challengeId} not found anymore.`)
@@ -1753,7 +1767,16 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     }
 
     const prizeParts = formatChallengePrize(challenge)
-    const sCurr = String(queuedSourceRaw || sourceCurrency || 'usd').toLowerCase()
+    let sCurr = String(queuedSourceRaw || sourceCurrency || DEFAULT_HUNTER_FILTERS.sourceCurrency).toLowerCase()
+    // .com must never start sessions in GC/SC (stale queue / filters after site switch).
+    if (!isEuGoldCoins && isEuGoldCoinCode(sCurr)) {
+      const fallback = isEuGoldCoinCode(sourceCurrency)
+        ? DEFAULT_HUNTER_FILTERS.sourceCurrency
+        : String(sourceCurrency || DEFAULT_HUNTER_FILTERS.sourceCurrency).toLowerCase()
+      sCurr = isEuGoldCoinCode(fallback) ? DEFAULT_HUNTER_FILTERS.sourceCurrency : fallback
+    }
+    let forced = (forcedRaw || '').trim().toLowerCase()
+    if (!isEuGoldCoins && isEuGoldCoinCode(forced)) forced = ''
     runnersRef.current[runId] = { stop: false }
     runBestMultiSyncRef.current[runId] = 0
     setActiveRuns((prev) => ({
@@ -1796,7 +1819,10 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       if (!provider) throw new Error(`No provider found for ${slot.providerId}`)
 
       const providerId = slot.providerId || 'stakeEngine'
-      const preferredTarget = (targetCurrency || 'usd').toLowerCase()
+      let preferredTarget = (targetCurrency || DEFAULT_HUNTER_FILTERS.targetCurrency).toLowerCase()
+      if (!isEuGoldCoins && isEuGoldCoinCode(preferredTarget)) {
+        preferredTarget = DEFAULT_HUNTER_FILTERS.targetCurrency
+      }
       const minBetUsd = challenge.minBetUsd
       const probeCacheKey = buildProbeCacheKey(providerId, slot.slug, sCurr, minBetUsd)
       const isStakeRgsRun = String(providerId || '').toLowerCase() === 'stakeengine'
@@ -1817,10 +1843,12 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       let betAmount
       let stakeRgsSpinsSinceSeedReset = 0
 
-      // Stake.eu GoldCoins: source and target must be the same wallet (gold/sweeps).
-      if (isEuGoldCoins || isEuGoldCoinCode(sCurr)) {
+      // Stake.eu GoldCoins only: source and target must be the same wallet (gold/sweeps).
+      // Never gate on isEuGoldCoinCode(sCurr) alone — stale "sweeps" on .com must not take this path.
+      if (isEuGoldCoins) {
         const coin = isEuGoldCoinCode(sCurr) ? sCurr : 'sweeps'
         tCurr = coin
+        sCurr = coin
         rate = getRateForCurrency(rates, coin) || 1
         log(`Session (EU): ${coin.toUpperCase()}…`)
         session = await provider.startSession(accessToken, slot.slug, coin, coin)
@@ -3917,7 +3945,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                             <div>
                               <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Source (Crypto)</label>
                               <select
-                                value={sourceCurrency}
+                                value={
+                                  cryptoOptions.some((c) => c.value === sourceCurrency)
+                                    ? sourceCurrency
+                                    : (cryptoOptions[0]?.value || DEFAULT_HUNTER_FILTERS.sourceCurrency)
+                                }
                                 onChange={e => setSourceCurrency(e.target.value)}
                                 style={STYLES.input}
                               >
@@ -3927,7 +3959,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                             <div>
                               <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Target (Fiat/Display)</label>
                               <select
-                                value={targetCurrency}
+                                value={
+                                  [...fiatOptions, ...cryptoOptions].some((c) => c.value === targetCurrency)
+                                    ? targetCurrency
+                                    : DEFAULT_HUNTER_FILTERS.targetCurrency
+                                }
                                 onChange={e => setTargetCurrency(e.target.value)}
                                 style={STYLES.input}
                               >
