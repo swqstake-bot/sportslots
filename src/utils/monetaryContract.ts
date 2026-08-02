@@ -6,8 +6,8 @@ const FIAT = new Set([
   'eur', 'usd', 'usdc', 'usdt', 'ars', 'brl', 'mxn', 'cad', 'aud', 'clp', 'jpy', 'krw', 'inr', 'idr', 'php',
   'pkr', 'pln', 'ngn', 'cny', 'rub', 'try', 'dkk', 'pen', 'cop',
 ])
-/** Stake.eu GoldCoins — 2-decimal minor units, no USD FX. */
-const GOLD_COINS = new Set(['gold', 'sweeps'])
+/** Stake.eu GoldCoins — wallet + RGS aliases (XGC/XSC). 2-decimal minor; display FX 1:1. */
+const GOLD_COINS = new Set(['gold', 'sweeps', 'xgc', 'xsc'])
 const USD_LIKE = new Set(['usd', 'usdc', 'usdt'])
 
 export interface MonetaryAmount {

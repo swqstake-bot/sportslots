@@ -96,12 +96,15 @@ export const ALL_CURRENCIES = [
   ...CURRENCY_GROUPS.goldCoins,
 ]
 
+import { isGoldCoinCurrency } from '../utils/currencyMeta'
+
 export const EU_CURRENCY_CODES = ['gold', 'sweeps']
 
 export const EU_CURRENCIES = CURRENCY_GROUPS.goldCoins
 
 export function isEuGoldCoinCode(code) {
-  return EU_CURRENCY_CODES.includes(String(code || '').toLowerCase())
+  // Wallet: gold/sweeps; RGS may report XGC/XSC
+  return isGoldCoinCurrency(code)
 }
 
 /**

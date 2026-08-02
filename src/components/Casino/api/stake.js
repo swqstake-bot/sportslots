@@ -16,9 +16,13 @@ export async function startThirdPartySession(accessToken, slug = 'hacksaw-le-ban
   const t0 = Date.now()
   let src = String(source || 'usdc').toLowerCase().trim()
   let tgt = String(target || 'eur').toLowerCase().trim()
-  // Stake.eu GoldCoins: no crypto→fiat pair — source and target are the same wallet (gold/sweeps).
-  if (src === 'gold' || src === 'sweeps' || tgt === 'gold' || tgt === 'sweeps') {
-    const coin = src === 'gold' || src === 'sweeps' ? src : tgt
+  // Stake.eu GoldCoins: no crypto→fiat pair — source and target are the same wallet (gold/sweeps / XGC/XSC).
+  if (
+    src === 'gold' || src === 'sweeps' || src === 'xgc' || src === 'xsc' ||
+    tgt === 'gold' || tgt === 'sweeps' || tgt === 'xgc' || tgt === 'xsc'
+  ) {
+    const coin =
+      src === 'gold' || src === 'sweeps' || src === 'xgc' || src === 'xsc' ? src : tgt
     src = coin
     tgt = coin
   }

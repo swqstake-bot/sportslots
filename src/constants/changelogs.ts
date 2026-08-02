@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.223': [
+    '🐛 Stake.eu / Stake Engine: XGC/XSC = GC/SC — Einsätze korrekt (nicht mehr immer 1 GC)',
+  ],
   '1.0.222': [
     '🐛 CI/Lint: Autorun EU-Currency + Originals Settings (kein setState-in-effect)',
   ],

@@ -10,13 +10,21 @@ export const FIAT_CURRENCIES = [
   'pkr', 'pln', 'ngn', 'cny', 'rub', 'try', 'dkk', 'pen', 'cop',
 ]
 
-/** Stake.eu GoldCoins — not crypto FX, 2-decimal display like fiat. */
-export const GOLD_COIN_CURRENCIES = ['gold', 'sweeps']
+/** Stake.eu GoldCoins — wallet codes + Stake Engine RGS aliases (HAR: currency XGC / XSC). */
+export const GOLD_COIN_CURRENCIES = ['gold', 'sweeps', 'xgc', 'xsc']
 
 export const USD_LIKE_CURRENCIES = ['usd', 'usdc', 'usdt']
 
 export function normalizeCurrencyCode(currencyCode) {
   return String(currencyCode || '').toLowerCase()
+}
+
+/** Map RGS aliases → wallet codes used in the UI (gold/sweeps). */
+export function canonicalizeGoldCoinCode(currencyCode) {
+  const c = normalizeCurrencyCode(currencyCode)
+  if (c === 'xgc' || c === 'gold') return 'gold'
+  if (c === 'xsc' || c === 'sweeps') return 'sweeps'
+  return c
 }
 
 export function isZeroDecimalCurrency(currencyCode) {
@@ -47,6 +55,9 @@ export function hunterBetCurrenciesMatch(a, b) {
   if (!x || !y) return true
   if (x === y) return true
   if (isUsdLikeCurrency(x) && isUsdLikeCurrency(y)) return true
+  if (isGoldCoinCurrency(x) && isGoldCoinCurrency(y)) {
+    return canonicalizeGoldCoinCode(x) === canonicalizeGoldCoinCode(y)
+  }
   return false
 }
 
@@ -63,8 +74,9 @@ export function getDisplayFractionDigits(currencyCode) {
 }
 
 export function getCurrencyLabel(currencyCode) {
-  const c = normalizeCurrencyCode(currencyCode)
+  const c = canonicalizeGoldCoinCode(currencyCode)
   if (c === 'gold') return 'GC'
   if (c === 'sweeps') return 'SC'
-  return c ? c.toUpperCase() : ''
+  const raw = normalizeCurrencyCode(currencyCode)
+  return raw ? raw.toUpperCase() : ''
 }
