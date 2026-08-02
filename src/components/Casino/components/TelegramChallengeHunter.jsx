@@ -9,7 +9,8 @@ import { parseTelegramStakeMessage } from '../utils/parseTelegramStakeMessage'
 import { setTelegramSlotTargets, clearTelegramSlotTargets } from '../utils/hunterSlotTargetsBridge'
 import { runTelegramChallengeSession } from '../utils/telegramHunterRun'
 import { Button } from './ui/Button'
-import { CURRENCY_GROUPS } from '../constants/currencies'
+import { CURRENCY_GROUPS, EU_CURRENCIES, isEuGoldCoinCode } from '../constants/currencies'
+import { useStakeSiteStore } from '../../../store/stakeSiteStore'
 import { requestNotificationPermission } from '../utils/notifications'
 import {
   usdLimitToInputStr,
@@ -35,7 +36,8 @@ const DIRECT_ORIGINALS_SLUGS = new Set(['packs', 'dice', 'limbo', 'mines', 'plin
 
 function getRateForCurrency(rates, tCurr) {
   const c = (tCurr || '').toLowerCase()
-  if (c === 'usd') return 1
+  if (c === 'usd' || c === 'usdc' || c === 'usdt') return 1
+  if (c === 'sweeps' || c === 'gold') return rates[c] || 1
   return rates[c] || 0
 }
 
@@ -157,6 +159,8 @@ const STYLES = {
 }
 
 export default function TelegramChallengeHunter({ accessToken, webSlots = [], onDiscoveredSlots, onHubStatsChange }) {
+  const preferredSite = useStakeSiteStore((s) => s.preferredSite)
+  const isEuGoldCoins = preferredSite === 'eu'
   const [cruncherRanking, setCruncherRanking] = useState(false)
   const [draft, setDraft] = useState(() => {
     try {
@@ -200,6 +204,14 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
   const [stopLossStr, setStopLossStr] = useState('')
   const [stopProfitStr, setStopProfitStr] = useState('')
   const [autoOptimalTargetCurrency, setAutoOptimalTargetCurrency] = useState(true)
+
+  useEffect(() => {
+    if (!isEuGoldCoins) return
+    const next = isEuGoldCoinCode(sourceCurrency) ? sourceCurrency : 'sweeps'
+    if (sourceCurrency !== next) setSourceCurrency(next)
+    if (targetCurrency !== next) setTargetCurrency(next)
+    if (autoOptimalTargetCurrency) setAutoOptimalTargetCurrency(false)
+  }, [isEuGoldCoins, sourceCurrency, targetCurrency, autoOptimalTargetCurrency])
   const [casesBetIdentifierStr, setCasesBetIdentifierStr] = useState(() => {
     try {
       return localStorage.getItem(TG_CASES_BET_ID_KEY) || ''
@@ -719,6 +731,28 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
       <div className="hunter-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) 1fr', gap: '1rem', alignItems: 'start' }}>
         <div className="hunter-card" style={{ padding: '1rem' }}>
           <h3 className="hunter-section-title">Run settings</h3>
+          {isEuGoldCoins ? (
+            <div style={{ marginBottom: '0.5rem' }}>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Currency (GC / SC)</label>
+              <select
+                value={isEuGoldCoinCode(sourceCurrency) ? sourceCurrency : 'sweeps'}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setSourceCurrency(v)
+                  setTargetCurrency(v)
+                }}
+                style={{ width: '100%', padding: '0.35rem', marginTop: '0.2rem' }}
+                title="Stake.eu: one wallet currency"
+              >
+                {EU_CURRENCIES.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <>
           <div style={{ marginBottom: '0.5rem' }}>
             <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Source (crypto)</label>
             <select
@@ -761,6 +795,8 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
             />
             Auto-pick target currency (like hunter)
           </label>
+            </>
+          )}
           <div
             style={{
               marginBottom: '0.65rem',

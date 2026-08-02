@@ -227,6 +227,7 @@ export default function BonusHuntControl({
     return () => { cancelled = true }
   }, [accessToken])
   const preferredSite = useStakeSiteStore((s) => s.preferredSite)
+  const isEuGoldCoins = preferredSite === 'eu'
   const availableCurrencies = useUserStore((s) => s.availableCurrencies)
   const walletBalances = useUserStore((s) => s.balances)
 
@@ -250,8 +251,20 @@ export default function BonusHuntControl({
     [allowedCurrencies]
   )
 
+  // Stake.eu: one wallet — source and target are the same.
+  const sessionSource = sourceCurrency
+  const sessionTarget = isEuGoldCoins ? sourceCurrency : targetCurrency
+
   useEffect(() => {
     if (selectedSlots.length === 0 && preferredSite !== 'eu') return
+    if (preferredSite === 'eu') {
+      setSourceCurrency((prev) => {
+        const next = pickDefaultCurrency(allowedCurrencies, prev, preferredSite)
+        setTargetCurrency(next)
+        return next
+      })
+      return
+    }
     setSourceCurrency((prev) => pickDefaultCurrency(allowedCurrencies, prev, preferredSite))
     setTargetCurrency((prev) => pickDefaultCurrency(allowedCurrencies, prev, preferredSite))
   }, [selectedSlugs.join(','), slots?.length ?? 0, supportedCurrencies.length, preferredSite, allowedCurrencies])
@@ -275,7 +288,7 @@ export default function BonusHuntControl({
       }
       return () => { cancelled = true }
     }
-    provider.startSession(accessToken, slot.slug, sourceCurrency, targetCurrency)
+    provider.startSession(accessToken, slot.slug, sessionSource, sessionTarget)
       .then((session) => {
         if (cancelled) return
         const levels = session?.betLevels?.length ? session.betLevels : fallbackLevels
@@ -537,7 +550,7 @@ export default function BonusHuntControl({
     }))
     if (!window.electronAPI?.openSlotPopup) return
     try {
-      const launchSession = await startThirdPartySession(accessToken, slug, sourceCurrency, targetCurrency)
+      const launchSession = await startThirdPartySession(accessToken, slug, sessionSource, sessionTarget)
       const launchUrl =
         typeof launchSession?.config === 'string'
           ? launchSession.config
@@ -545,8 +558,8 @@ export default function BonusHuntControl({
       const res = await window.electronAPI.openSlotPopup({
         slug,
         locale: 'en',
-        sourceCurrency,
-        targetCurrency,
+        sourceCurrency: sessionSource,
+        targetCurrency: sessionTarget,
         launchUrl,
       })
       if (res?.ok && res?.popupId) {
@@ -567,7 +580,7 @@ export default function BonusHuntControl({
     } catch (_) {
       // Ignore popup open errors; opening can be retried manually.
     }
-  }, [accessToken, currentBalance, sourceCurrency, targetCurrency])
+  }, [accessToken, currentBalance, sessionSource, sessionTarget])
 
   useEffect(() => {
     latestBetHistoryRef.current = betHistory
@@ -818,7 +831,7 @@ export default function BonusHuntControl({
       let genericSessionRetryUsed = false
       for (let sessAttempt = 0; sessAttempt <= CLOUDFLARE_MAX_RETRIES; sessAttempt++) {
         try {
-          session = await provider.startSession(accessToken, slot.slug, sourceCurrency, targetCurrency)
+          session = await provider.startSession(accessToken, slot.slug, sessionSource, sessionTarget)
           break
         } catch (err) {
           if (sessAttempt < CLOUDFLARE_MAX_RETRIES && isCloudflareError(err)) {
@@ -873,7 +886,7 @@ export default function BonusHuntControl({
             let genericRefreshRetryUsed = false
             for (let srAttempt = 0; srAttempt <= CLOUDFLARE_MAX_RETRIES; srAttempt++) {
               try {
-                session = await provider.startSession(accessToken, slot.slug, sourceCurrency, targetCurrency)
+                session = await provider.startSession(accessToken, slot.slug, sessionSource, sessionTarget)
                 spinsSinceRefresh = 0
                 break
               } catch (srErr) {
@@ -923,7 +936,7 @@ export default function BonusHuntControl({
                 let genericNoExtraRetryUsed = false
                 for (let neAttempt = 0; neAttempt <= CLOUDFLARE_MAX_RETRIES && !noExtraOk; neAttempt++) {
                   try {
-                    session = await provider.startSession(accessToken, slot.slug, sourceCurrency, targetCurrency)
+                    session = await provider.startSession(accessToken, slot.slug, sessionSource, sessionTarget)
                     spinsSinceRefresh = 0
                     if (session?.initialBalance != null) lastBalance = session.initialBalance
                     result = await provider.placeBet(session, betAmount, false, false, placeBetOpts)
@@ -1587,19 +1600,38 @@ export default function BonusHuntControl({
         <div className={`${styles.section} ${styles.sectionBlock}`}>
         <span className={styles.label} style={{ marginBottom: '0.5rem' }}>Currency & Bet</span>
         <div className={styles.row} style={{ flexWrap: 'wrap', marginBottom: '0.35rem' }}>
-          <select value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'usdc')} onChange={(e) => setSourceCurrency(e.target.value)} className={styles.select} style={{ minWidth: 90, flex: 'none' }} disabled={isRunning}>
-            {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-            {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-            {goldOpts.length > 0 && <optgroup label="GoldCoins">{goldOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-          </select>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
-          <select value={allowedCurrencies.some((c) => c.value === targetCurrency) ? targetCurrency : (allowedCurrencies[0]?.value || 'eur')} onChange={(e) => setTargetCurrency(e.target.value)} className={styles.select} style={{ minWidth: 90, flex: 'none' }} disabled={isRunning}>
-            {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-            {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-            {goldOpts.length > 0 && <optgroup label="GoldCoins">{goldOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-          </select>
+          {preferredSite === 'eu' ? (
+            <select
+              value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'sweeps')}
+              onChange={(e) => {
+                const v = e.target.value
+                setSourceCurrency(v)
+                setTargetCurrency(v)
+              }}
+              className={styles.select}
+              style={{ minWidth: 90, flex: 'none' }}
+              disabled={isRunning}
+              title="Currency (GC / SC)"
+            >
+              {goldOpts.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+          ) : (
+            <>
+              <select value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'usdc')} onChange={(e) => setSourceCurrency(e.target.value)} className={styles.select} style={{ minWidth: 90, flex: 'none' }} disabled={isRunning}>
+                {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+                {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+              </select>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
+              <select value={allowedCurrencies.some((c) => c.value === targetCurrency) ? targetCurrency : (allowedCurrencies[0]?.value || 'eur')} onChange={(e) => setTargetCurrency(e.target.value)} className={styles.select} style={{ minWidth: 90, flex: 'none' }} disabled={isRunning}>
+                {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+                {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+              </select>
+            </>
+          )}
           <select value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} className={styles.select} style={{ minWidth: 100, flex: 'none' }} disabled={isRunning}>
-            {huntBetLevels.map((v) => <option key={v} value={v}>{formatBetLabel(v, targetCurrency)}</option>)}
+            {huntBetLevels.map((v) => <option key={v} value={v}>{formatBetLabel(v, preferredSite === 'eu' ? sourceCurrency : targetCurrency)}</option>)}
           </select>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
             <input type="checkbox" checked={extraBet} onChange={(e) => setExtraBet(e.target.checked)} disabled={isRunning} />

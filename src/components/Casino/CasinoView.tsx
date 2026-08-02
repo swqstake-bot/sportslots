@@ -6,12 +6,14 @@ import { loadSlotSets, saveSlotSet, deleteSlotSet, exportSlotSets, importSlotSet
 import { loadDiscoveredSlots, saveDiscoveredSlots } from './utils/discoveredSlots'
 import { loadRecentBets, clearSlotHistory } from './utils/betHistoryDb'
 import { useCasinoBetSessionLifecycle } from './utils/casinoBetSession'
-import { ALL_CURRENCIES } from './constants/currencies'
+import { ALL_CURRENCIES, buildSelectableCurrencyOptions, pickDefaultCurrency } from './constants/currencies'
 import { isFiat, isStable } from './utils/formatAmount'
 import { CASINO_STORAGE_KEYS } from './utils/storageRegistry'
 import { pushRecentSlots } from './utils/slotDiscoveryPreferences'
 import './bridge/slotbotBridge'
 import { useUiStore } from '../../store/uiStore'
+import { useStakeSiteStore } from '../../store/stakeSiteStore'
+import { useUserStore } from '../../store/userStore'
 import { useCasinoSession } from './hooks/useCasinoSession'
 import { CasinoShell } from './components/shell/CasinoShell'
 import { CasinoModeContent } from './components/tabs/CasinoModeContent'
@@ -73,6 +75,8 @@ export default function CasinoView() {
     attempts: number
   }>>([])
   // const [lastBet, setLastBet] = useState<any>(null) // Unused
+  const preferredSite = useStakeSiteStore((s) => s.preferredSite)
+  const walletBalances = useUserStore((s) => s.balances)
   const [useSharedCurrency, setUseSharedCurrency] = useState(false)
   const [sharedSourceCurrency, setSharedSourceCurrency] = useState('usdc')
   const [sharedTargetCurrency, setSharedTargetCurrency] = useState('eur')
@@ -80,24 +84,36 @@ export default function CasinoView() {
   const [globalControlsOpen, setGlobalControlsOpen] = useState(false)
   const [supportedCurrencies] = useState<{ value: string; label: string }[]>(ALL_CURRENCIES) // Removed unused setter
 
-  // Filter currencies based on sharedCryptoOnly
-  const displayedCurrencies = sharedCryptoOnly 
-    ? supportedCurrencies.filter(c => !isFiat(c.value) || isStable(c.value))
-    : supportedCurrencies
+  const ownedCodes = Object.keys(walletBalances || {})
 
-  // Auto-switch currency if filtered out
+  const displayedCurrencies =
+    preferredSite === 'eu'
+      ? buildSelectableCurrencyOptions({ site: 'eu', ownedCodes })
+      : sharedCryptoOnly
+        ? supportedCurrencies.filter((c) => !isFiat(c.value) || isStable(c.value))
+        : supportedCurrencies
+
+  // Auto-switch currency if filtered out / EU: source === target
   useEffect(() => {
+    if (preferredSite === 'eu') {
+      const next = pickDefaultCurrency(displayedCurrencies, sharedSourceCurrency, 'eu')
+      if (next && (next !== sharedSourceCurrency || next !== sharedTargetCurrency)) {
+        setSharedSourceCurrency(next)
+        setSharedTargetCurrency(next)
+      }
+      return
+    }
     if (sharedCryptoOnly) {
       if (isFiat(sharedSourceCurrency) && !isStable(sharedSourceCurrency)) {
-        const first = displayedCurrencies.find(c => !isFiat(c.value) || isStable(c.value))
+        const first = displayedCurrencies.find((c) => !isFiat(c.value) || isStable(c.value))
         if (first) setSharedSourceCurrency(first.value)
       }
       if (isFiat(sharedTargetCurrency) && !isStable(sharedTargetCurrency)) {
-        const first = displayedCurrencies.find(c => !isFiat(c.value) || isStable(c.value))
+        const first = displayedCurrencies.find((c) => !isFiat(c.value) || isStable(c.value))
         if (first) setSharedTargetCurrency(first.value)
       }
     }
-  }, [sharedCryptoOnly, sharedSourceCurrency, sharedTargetCurrency, displayedCurrencies])
+  }, [preferredSite, sharedCryptoOnly, sharedSourceCurrency, sharedTargetCurrency, displayedCurrencies])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme

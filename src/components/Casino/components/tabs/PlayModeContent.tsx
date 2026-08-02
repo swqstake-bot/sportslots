@@ -12,6 +12,8 @@ import type { CasinoSlotInstance, SlotSet } from '../../types'
 import { getProvider } from '../../api/providers'
 import { getMinorFactor } from '../../../../utils/monetaryContract'
 import { getApiLogs } from '../../utils/apiLogger'
+import { useStakeSiteStore } from '../../../../store/stakeSiteStore'
+import { isEuGoldCoinCode } from '../../constants/currencies'
 
 const SlotControl = SlotControlJS as any
 const STATS_FILTER_KEY = 'slotbot_workbench_stats_filter'
@@ -89,6 +91,8 @@ export function PlayModeContent(props: PlayModeContentProps) {
     getSlotControlRef,
     handlePlayLogUpdate,
   } = props
+  const preferredSite = useStakeSiteStore((s) => s.preferredSite)
+  const isEuGoldCoins = preferredSite === 'eu'
   const [smokeRunning, setSmokeRunning] = useState(false)
   const [smokeResults, setSmokeResults] = useState<Array<{ providerId: string; slotSlug: string; ok: boolean; message: string; ms: number; requestedStakeMinor?: number; appliedBetAmount?: number | null }>>([])
   const [smokeSummary, setSmokeSummary] = useState('')
@@ -453,33 +457,56 @@ export function PlayModeContent(props: PlayModeContentProps) {
           </label>
           {useSharedCurrency && (
             <span className="flex flex-wrap gap-1 items-center text-xs">
-              <select
-                value={sharedSourceCurrency}
-                onChange={(e) => setSharedSourceCurrency(e.target.value)}
-                className="h-8 text-xs bg-[var(--bg-deep)] border border-[var(--border)] rounded px-2 py-0 outline-none"
-              >
-                {displayedCurrencies.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-              <span className="text-[var(--text-muted)]">→</span>
-              <select
-                value={sharedTargetCurrency}
-                onChange={(e) => setSharedTargetCurrency(e.target.value)}
-                className="h-8 text-xs bg-[var(--bg-deep)] border border-[var(--border)] rounded px-2 py-0 outline-none"
-              >
-                {displayedCurrencies.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-              <label className="flex items-center gap-1 cursor-pointer text-[var(--text-muted)]">
-                <input type="checkbox" checked={sharedCryptoOnly} onChange={(e) => setSharedCryptoOnly(e.target.checked)} className="w-3.5 h-3.5 rounded accent-[var(--accent)]" />
-                <span>Crypto only</span>
-              </label>
+              {isEuGoldCoins ? (
+                <select
+                  value={isEuGoldCoinCode(sharedSourceCurrency) ? sharedSourceCurrency : 'sweeps'}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setSharedSourceCurrency(v)
+                    setSharedTargetCurrency(v)
+                  }}
+                  className="h-8 text-xs bg-[var(--bg-deep)] border border-[var(--border)] rounded px-2 py-0 outline-none"
+                  title="Currency (GC / SC)"
+                >
+                  {displayedCurrencies
+                    .filter((c) => isEuGoldCoinCode(c.value))
+                    .map((c) => (
+                      <option key={c.value} value={c.value}>
+                        {c.label}
+                      </option>
+                    ))}
+                </select>
+              ) : (
+                <>
+                  <select
+                    value={sharedSourceCurrency}
+                    onChange={(e) => setSharedSourceCurrency(e.target.value)}
+                    className="h-8 text-xs bg-[var(--bg-deep)] border border-[var(--border)] rounded px-2 py-0 outline-none"
+                  >
+                    {displayedCurrencies.map((c) => (
+                      <option key={c.value} value={c.value}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-[var(--text-muted)]">→</span>
+                  <select
+                    value={sharedTargetCurrency}
+                    onChange={(e) => setSharedTargetCurrency(e.target.value)}
+                    className="h-8 text-xs bg-[var(--bg-deep)] border border-[var(--border)] rounded px-2 py-0 outline-none"
+                  >
+                    {displayedCurrencies.map((c) => (
+                      <option key={c.value} value={c.value}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                  <label className="flex items-center gap-1 cursor-pointer text-[var(--text-muted)]">
+                    <input type="checkbox" checked={sharedCryptoOnly} onChange={(e) => setSharedCryptoOnly(e.target.checked)} className="w-3.5 h-3.5 rounded accent-[var(--accent)]" />
+                    <span>Crypto only</span>
+                  </label>
+                </>
+              )}
             </span>
           )}
         </div>

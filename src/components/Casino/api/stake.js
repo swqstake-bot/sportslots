@@ -14,8 +14,14 @@ export async function verifyStakeToken(accessToken) {
  */
 export async function startThirdPartySession(accessToken, slug = 'hacksaw-le-bandit', source = 'usdc', target = 'eur') {
   const t0 = Date.now()
-  const src = String(source || 'usdc').toLowerCase().trim()
-  const tgt = String(target || 'eur').toLowerCase().trim()
+  let src = String(source || 'usdc').toLowerCase().trim()
+  let tgt = String(target || 'eur').toLowerCase().trim()
+  // Stake.eu GoldCoins: no crypto→fiat pair — source and target are the same wallet (gold/sweeps).
+  if (src === 'gold' || src === 'sweeps' || tgt === 'gold' || tgt === 'sweeps') {
+    const coin = src === 'gold' || src === 'sweeps' ? src : tgt
+    src = coin
+    tgt = coin
+  }
   const mutation = `
         mutation StartThirdPartySession($slug: String!, $source: CurrencyEnum!, $target: CurrencyEnum!) {
           startThirdPartySession(slug: $slug, source: $source, target: $target) {

@@ -9,7 +9,8 @@ import { getProvider } from '../api/providers'
 import { isFiat, isStable, formatAmount, formatBetLabel, toUnits, toMinor, ZERO_DECIMAL_CURRENCIES } from '../utils/formatAmount'
 import { parseBetResponse } from '../utils/parseBetResponse'
 import { Button } from './ui/Button'
-import { CURRENCY_GROUPS, PROVIDER_CURRENCIES } from '../constants/currencies'
+import { CURRENCY_GROUPS, EU_CURRENCIES, PROVIDER_CURRENCIES, isEuGoldCoinCode } from '../constants/currencies'
+import { useStakeSiteStore } from '../../../store/stakeSiteStore'
 import { notifyChallengeStart, requestNotificationPermission } from '../utils/notifications'
 import { addDiscoveredFromChallenges, inferProviderId } from '../utils/discoveredSlots'
 import {
@@ -146,6 +147,8 @@ function buildProbeCacheKey(providerId, slotSlug, sourceCurr, minBetUsd) {
 function getRateForCurrency(rates, tCurr) {
   const c = (tCurr || '').toLowerCase()
   if (c === 'usd' || c === 'usdc' || c === 'usdt') return 1
+  // Stake.eu GoldCoins: SC ≈ $1 display; GC treated as 1:1 for stake sizing
+  if (c === 'sweeps' || c === 'gold') return rates[c] || 1
   return rates[c] || 0
 }
 
@@ -678,6 +681,8 @@ const STYLES = {
 }
 
 export default function AutoChallengeHunter({ accessToken, webSlots = [], onDiscoveredSlots, onHubStatsChange }) {
+  const preferredSite = useStakeSiteStore((s) => s.preferredSite)
+  const isEuGoldCoins = preferredSite === 'eu'
   const [minMinBet, setMinMinBet] = useState(hunterFiltersInitial.minMinBet)
   const [maxMinBet, setMaxMinBet] = useState(hunterFiltersInitial.maxMinBet)
   const [minPrizeUsd, setMinPrizeUsd] = useState(hunterFiltersInitial.minPrizeUsd)
@@ -700,12 +705,23 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
   const cryptoOptions = useMemo(() => CURRENCY_GROUPS.crypto, [])
   const fiatOptions = useMemo(() => CURRENCY_GROUPS.fiat, [])
-  /** Dropdown: gleiche Kandidaten wie Session-Probes (stakeEngine). */
+  const euCurrencyOptions = useMemo(() => EU_CURRENCIES, [])
+  /** Dropdown: gleiche Kandidaten wie Session-Probes (stakeEngine). EU: nur GC/SC. */
   const hunterTargetCurrencyOptions = useMemo(() => {
+    if (isEuGoldCoins) return EU_CURRENCIES.map((c) => c.value)
     const allowed = getAllowedTargetCurrenciesForSlot('stakeEngine')
     const probeCandidates = getProbeTargetCurrencies(allowed)
     return [...probeCandidates].sort((a, b) => a.localeCompare(b))
-  }, [])
+  }, [isEuGoldCoins])
+
+  // Stake.eu: one wallet currency — source === target (GC or SC).
+  useEffect(() => {
+    if (!isEuGoldCoins) return
+    const next = isEuGoldCoinCode(sourceCurrency) ? sourceCurrency : 'sweeps'
+    if (sourceCurrency !== next) setSourceCurrency(next)
+    if (targetCurrency !== next) setTargetCurrency(next)
+    if (autoOptimalTargetCurrency) setAutoOptimalTargetCurrency(false)
+  }, [isEuGoldCoins, sourceCurrency, targetCurrency, autoOptimalTargetCurrency])
 
   const prefersReducedMotion = usePrefersReducedMotion()
 
@@ -1797,7 +1813,20 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       let betAmount
       let stakeRgsSpinsSinceSeedReset = 0
 
-      if (forced) {
+      // Stake.eu GoldCoins: source and target must be the same wallet (gold/sweeps).
+      if (isEuGoldCoins || isEuGoldCoinCode(sCurr)) {
+        const coin = isEuGoldCoinCode(sCurr) ? sCurr : 'sweeps'
+        tCurr = coin
+        rate = getRateForCurrency(rates, coin) || 1
+        log(`Session (EU): ${coin.toUpperCase()}…`)
+        session = await provider.startSession(accessToken, slot.slug, coin, coin)
+        noteSessionFairnessId(session)
+        const computed = computeBetFromMinBetAndSession(session, coin, rate, minBetUsd)
+        betAmount = computed.betAmount
+        log(
+          `EU: effective stake ~$${computed.usdAt.toFixed(2)} · challenge min bet (USD): $${minBetUsd}`
+        )
+      } else if (forced) {
         const r = getRateForCurrency(rates, forced)
         if (!r) throw new Error(`No rate for ${forced.toUpperCase()}`)
         tCurr = forced
@@ -3134,7 +3163,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Run done</span>
           )}
         </div>
-        {!inQueue && (
+        {!inQueue && !isEuGoldCoins && (
           <div
             role="presentation"
             onClick={(e) => e.stopPropagation()}
@@ -3177,7 +3206,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             </select>
           </div>
         )}
-        {inQueue && qMeta && (
+        {inQueue && qMeta && !isEuGoldCoins && (
           <div
             role="presentation"
             onClick={(e) => e.stopPropagation()}
@@ -3447,6 +3476,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
+          {!isEuGoldCoins && (
           <select
             value={manualTargetCurrencyByChallengeId[c.id] ?? ''}
             onChange={(e) => {
@@ -3470,6 +3500,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               </option>
             ))}
           </select>
+          )}
           <Button
             size="small"
             variant="primary"
@@ -3859,47 +3890,69 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     <div className="hunter-ops-group" style={STYLES.inputGroup}>
                       <label style={STYLES.label}>Allowed Currencies</label>
                       <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
-                        <div>
-                          <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Source (Crypto)</label>
-                          <select
-                            value={sourceCurrency}
-                            onChange={e => setSourceCurrency(e.target.value)}
-                            style={STYLES.input}
-                          >
-                            {cryptoOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Target (Fiat/Display)</label>
-                          <select
-                            value={targetCurrency}
-                            onChange={e => setTargetCurrency(e.target.value)}
-                            style={STYLES.input}
-                          >
-                            {fiatOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                            <option disabled>--- Crypto ---</option>
-                            {cryptoOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                          </select>
-                        </div>
-                        <label
-                          style={{
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            gap: '0.4rem',
-                            fontSize: '0.75rem',
-                            color: 'var(--text-muted)',
-                            cursor: 'pointer',
-                            marginTop: '0.25rem',
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={autoOptimalTargetCurrency}
-                            onChange={(e) => setAutoOptimalTargetCurrency(e.target.checked)}
-                            style={{ marginTop: '0.1rem' }}
-                          />
-                          <span>Auto target currency</span>
-                        </label>
+                        {isEuGoldCoins ? (
+                          <div>
+                            <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Currency (GC / SC)</label>
+                            <select
+                              value={isEuGoldCoinCode(sourceCurrency) ? sourceCurrency : 'sweeps'}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                setSourceCurrency(v)
+                                setTargetCurrency(v)
+                              }}
+                              style={STYLES.input}
+                              title="Stake.eu: one wallet currency"
+                            >
+                              {euCurrencyOptions.map((c) => (
+                                <option key={c.value} value={c.value}>{c.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <>
+                            <div>
+                              <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Source (Crypto)</label>
+                              <select
+                                value={sourceCurrency}
+                                onChange={e => setSourceCurrency(e.target.value)}
+                                style={STYLES.input}
+                              >
+                                {cryptoOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Target (Fiat/Display)</label>
+                              <select
+                                value={targetCurrency}
+                                onChange={e => setTargetCurrency(e.target.value)}
+                                style={STYLES.input}
+                              >
+                                {fiatOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                                <option disabled>--- Crypto ---</option>
+                                {cryptoOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                              </select>
+                            </div>
+                            <label
+                              style={{
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: '0.4rem',
+                                fontSize: '0.75rem',
+                                color: 'var(--text-muted)',
+                                cursor: 'pointer',
+                                marginTop: '0.25rem',
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={autoOptimalTargetCurrency}
+                                onChange={(e) => setAutoOptimalTargetCurrency(e.target.checked)}
+                                style={{ marginTop: '0.1rem' }}
+                              />
+                              <span>Auto target currency</span>
+                            </label>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div className="hunter-ops-group" style={STYLES.inputGroup}>

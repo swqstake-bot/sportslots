@@ -214,8 +214,17 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const [targetCurrency, setTargetCurrency] = useState(
     initialCur || saved?.target || 'eur'
   )
-  const effectiveSource = useSharedCurrency ? (sharedSourceCurrency || 'usdc') : sourceCurrency
-  const effectiveTarget = useSharedCurrency ? (sharedTargetCurrency || 'eur') : targetCurrency
+  const preferredSite = useStakeSiteStore((s) => s.preferredSite)
+  const isEuGoldCoins = preferredSite === 'eu'
+  // Stake.eu GoldCoins: one wallet currency — source and target must match (GC or SC).
+  const effectiveSource = useSharedCurrency
+    ? (sharedSourceCurrency || (isEuGoldCoins ? 'sweeps' : 'usdc'))
+    : sourceCurrency
+  const effectiveTarget = isEuGoldCoins
+    ? effectiveSource
+    : useSharedCurrency
+      ? (sharedTargetCurrency || 'eur')
+      : targetCurrency
   const [session, setSession] = useState(null)
   const sessionSlugForLevels =
     session?.slug != null && session.slug !== ''
@@ -552,7 +561,6 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     onWorkbenchSessionPublishRef.current(buildWorkbenchSessionPayload())
   }, [layout, buildWorkbenchSessionPayload])
 
-  const preferredSite = useStakeSiteStore((s) => s.preferredSite)
   const availableCurrencies = useUserStore((s) => s.availableCurrencies)
   const walletBalances = useUserStore((s) => s.balances)
 
@@ -576,6 +584,15 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
 
   useEffect(() => {
     const nextSource = pickDefaultCurrency(allowedCurrencies, sourceCurrency, preferredSite)
+    if (preferredSite === 'eu') {
+      // GoldCoins: wallet = game currency (source === target).
+      if (nextSource && (nextSource !== sourceCurrency || nextSource !== targetCurrency)) {
+        setSourceCurrency(nextSource)
+        setTargetCurrency(nextSource)
+        setSlotCurrency(slot.slug, { source: nextSource, target: nextSource })
+      }
+      return
+    }
     const nextTarget = pickDefaultCurrency(allowedCurrencies, targetCurrency, preferredSite)
     if (nextSource && nextSource !== sourceCurrency) {
       setSourceCurrency(nextSource)
@@ -1711,27 +1728,45 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       <div style={{ ...STYLES.section, display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'flex-end' }}>
         {!useSharedCurrency && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-            <select
-              value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'usdc')}
-              onChange={(e) => { const v = e.target.value; setSourceCurrency(v); setSlotCurrency(slot.slug, { source: v }) }}
-              style={{ ...STYLES.select, minWidth: 90, flex: 'none' }}
-              title="Account currency"
-            >
-              {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-              {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-              {goldOpts.length > 0 && <optgroup label="GoldCoins">{goldOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-            </select>
-            <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
-            <select
-              value={allowedCurrencies.some((c) => c.value === targetCurrency) ? targetCurrency : (allowedCurrencies[0]?.value || 'eur')}
-              onChange={(e) => { const v = e.target.value; setTargetCurrency(v); setSlotCurrency(slot.slug, { target: v }) }}
-              style={{ ...STYLES.select, minWidth: 90, flex: 'none' }}
-              title="Game currency"
-            >
-              {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-              {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-              {goldOpts.length > 0 && <optgroup label="GoldCoins">{goldOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-            </select>
+            {isEuGoldCoins ? (
+              <select
+                value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'sweeps')}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setSourceCurrency(v)
+                  setTargetCurrency(v)
+                  setSlotCurrency(slot.slug, { source: v, target: v })
+                }}
+                style={{ ...STYLES.select, minWidth: 90, flex: 'none' }}
+                title="Currency (GC / SC)"
+              >
+                {goldOpts.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
+            ) : (
+              <>
+                <select
+                  value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'usdc')}
+                  onChange={(e) => { const v = e.target.value; setSourceCurrency(v); setSlotCurrency(slot.slug, { source: v }) }}
+                  style={{ ...STYLES.select, minWidth: 90, flex: 'none' }}
+                  title="Account currency"
+                >
+                  {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+                  {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+                </select>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
+                <select
+                  value={allowedCurrencies.some((c) => c.value === targetCurrency) ? targetCurrency : (allowedCurrencies[0]?.value || 'eur')}
+                  onChange={(e) => { const v = e.target.value; setTargetCurrency(v); setSlotCurrency(slot.slug, { target: v }) }}
+                  style={{ ...STYLES.select, minWidth: 90, flex: 'none' }}
+                  title="Game currency"
+                >
+                  {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+                  {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+                </select>
+              </>
+            )}
           </div>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>

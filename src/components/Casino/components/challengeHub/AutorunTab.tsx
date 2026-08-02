@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { useUserStore } from '../../../../store/userStore'
+import { useStakeSiteStore } from '../../../../store/stakeSiteStore'
 import { fetchCurrencyRates } from '../../api/stakeChallenges'
 import { getProvider } from '../../api/providers'
 import { parseBetResponse } from '../../utils/parseBetResponse'
@@ -17,6 +18,7 @@ import {
   type AutorunRule,
 } from './autorunTypes'
 import { loadAutorunConfigFromStorage, saveAutorunConfigToStorage } from './autorunPersistence'
+import { EU_CURRENCIES, isEuGoldCoinCode } from '../../constants/currencies'
 
 const MAX_LOG_LINES = 20
 const SPIN_GAP_MS = 180
@@ -42,6 +44,7 @@ type SpinContext = {
 function getRateForCurrency(rates: Record<string, number>, code: string) {
   const c = (code || '').toLowerCase()
   if (c === 'usd' || c === 'usdc' || c === 'usdt') return 1
+  if (c === 'sweeps' || c === 'gold') return rates[c] || 1
   return rates[c] || 0
 }
 
@@ -58,6 +61,8 @@ export interface AutorunTabProps {
 export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHubStatsChange }: AutorunTabProps) {
   const balances = useUserStore((s) => s.balances)
   const selectedCurrency = useUserStore((s) => s.selectedCurrency)
+  const preferredSite = useStakeSiteStore((s) => s.preferredSite)
+  const isEuGoldCoins = preferredSite === 'eu'
 
   const [config, setConfig] = useState<AutorunConfig>(() => loadAutorunConfigFromStorage() ?? createDefaultAutorunConfig())
   const [isRunning, setIsRunning] = useState(false)
@@ -103,6 +108,19 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     accessTokenRef.current = accessToken
     webSlotsRef.current = webSlots
   }, [config, accessToken, webSlots])
+
+  useEffect(() => {
+    if (!isEuGoldCoins) return
+    setConfig((c) => {
+      const next = isEuGoldCoinCode(c.sourceCurrency)
+        ? c.sourceCurrency
+        : isEuGoldCoinCode(c.targetCurrency)
+          ? c.targetCurrency
+          : 'sweeps'
+      if (c.sourceCurrency === next && c.targetCurrency === next) return c
+      return { ...c, sourceCurrency: next, targetCurrency: next }
+    })
+  }, [isEuGoldCoins])
 
   const applySessionTotals = useCallback((totals: { wagered: number; payout: number; profit: number; bestMulti: number }) => {
     sessionKpiRef.current = {
@@ -248,8 +266,15 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
 
     if (checkGlobalStops(cfg, balanceUsd)) return true
 
-    const tCurr = cfg.targetCurrency
-    const sCurr = cfg.sourceCurrency
+    const rawTarget = String(cfg.targetCurrency || '').toLowerCase()
+    const rawSource = String(cfg.sourceCurrency || '').toLowerCase()
+    const tCurr =
+      isEuGoldCoinCode(rawSource) || isEuGoldCoinCode(rawTarget)
+        ? isEuGoldCoinCode(rawSource)
+          ? rawSource
+          : rawTarget
+        : rawTarget
+    const sCurr = isEuGoldCoinCode(tCurr) ? tCurr : rawSource
     const rate = getRateForCurrency(rates, tCurr)
     if (!rate || rate <= 0) {
       pushLog(`No rate for target currency ${tCurr}`)
@@ -921,6 +946,28 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
         </div>
         <div className="space-y-2">
           <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Session &amp; timing</h3>
+          {isEuGoldCoins ? (
+            <label className="text-[11px] text-[var(--text-muted)] block">
+              Currency (GC / SC)
+              <select
+                className="mt-0.5 w-full rounded-md border border-[var(--border)] bg-[var(--bg-deep)] px-2 py-1 text-sm"
+                value={isEuGoldCoinCode(config.sourceCurrency) ? config.sourceCurrency : 'sweeps'}
+                onChange={(e) => {
+                  const v = e.target.value.toLowerCase()
+                  setConfig((c) => ({ ...c, sourceCurrency: v, targetCurrency: v }))
+                }}
+                disabled={isRunning}
+                title="Stake.eu: one wallet currency"
+              >
+                {EU_CURRENCIES.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <>
           <label className="text-[11px] text-[var(--text-muted)] block">
             Source currency (wallet)
             <input
@@ -939,6 +986,8 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
               disabled={isRunning}
             />
           </label>
+            </>
+          )}
           <label className="text-[11px] text-[var(--text-muted)] block">
             Rule check every {config.scanIntervalSec}s (2–120)
             <input

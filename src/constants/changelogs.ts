@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.220': [
+    '🐛 Stake.eu: Slot / Bonus Hunt / Challenge Hunter / Telegram / Autorun — eine Währung (GC oder SC), kein Source→Target-Paar',
+    '🐛 Stake.eu: startThirdPartySession setzt gold/sweeps mit source === target',
+  ],
   '1.0.219': [
     '✨ Site-Switch Stake.com ↔ Stake.eu (parallele Cookies, aktive Origin für Login/API/WS)',
     '✨ Stake.eu: nur GC/SC (gold/sweeps), Sports-Tab ausgeblendet, Wallet nur vorhandene Währungen',

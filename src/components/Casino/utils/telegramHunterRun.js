@@ -14,7 +14,7 @@ import {
 } from '../api/stakeOriginalsBets'
 import { isFiat, isStable, formatAmount, toUnits, toMinor, ZERO_DECIMAL_CURRENCIES } from '../utils/formatAmount'
 import { parseBetResponse } from '../utils/parseBetResponse'
-import { CURRENCY_GROUPS, PROVIDER_CURRENCIES } from '../constants/currencies'
+import { CURRENCY_GROUPS, PROVIDER_CURRENCIES, isEuGoldCoinCode } from '../constants/currencies'
 import { notifyChallengeStart } from '../utils/notifications'
 import { effectiveSpinMultiplierFromParsed } from '../api/providers/stakeEngine'
 import { appendBet } from '../utils/betHistoryDb'
@@ -35,7 +35,8 @@ const HUNTER_TARGET_CANDIDATES = [
 
 function getRateForCurrency(rates, tCurr) {
   const c = (tCurr || '').toLowerCase()
-  if (c === 'usd') return 1
+  if (c === 'usd' || c === 'usdc' || c === 'usdt') return 1
+  if (c === 'sweeps' || c === 'gold') return rates[c] || 1
   return rates[c] || 0
 }
 
@@ -333,10 +334,25 @@ export async function runTelegramChallengeSession(ctx) {
     let rate
     let betAmount
 
-    // Originals direkt per Stake GraphQL: immer in Source-Währung setzen (echte Wallet-Balance),
-    // sonst kann ein "insufficientBalance" auftreten, wenn z.B. USD gewählt ist,
-    // aber das Guthaben in USDT/XRP liegt.
-    if (isDirectOriginals) {
+    // Stake.eu GoldCoins: source === target (gold/sweeps).
+    if (isEuGoldCoinCode(sCurr) || isEuGoldCoinCode(preferredTarget)) {
+      const coin = isEuGoldCoinCode(sCurr) ? sCurr : preferredTarget
+      tCurr = coin
+      if (isDirectOriginals) {
+        session = { betLevels: [] }
+      } else {
+        session = await provider.startSession(accessToken, slot.slug, coin, coin)
+      }
+      rate = getRateForCurrency(rates, coin) || 1
+      const computed = computeBetFromMinBetAndSession(session, coin, rate, minBetUsd)
+      betAmount = computed.betAmount
+      log(
+        `EU currency: ${coin.toUpperCase()}; effektiv ~$${computed.usdAt.toFixed(2)} (Min $${minBetUsd})`
+      )
+    } else if (isDirectOriginals) {
+      // Originals direkt per Stake GraphQL: immer in Source-Währung setzen (echte Wallet-Balance),
+      // sonst kann ein "insufficientBalance" auftreten, wenn z.B. USD gewählt ist,
+      // aber das Guthaben in USDT/XRP liegt.
       tCurr = sCurr
       session = { betLevels: [] }
       rate = getRateForCurrency(rates, tCurr)
@@ -348,7 +364,7 @@ export async function runTelegramChallengeSession(ctx) {
       )
     }
 
-    if (autoOptimalTargetCurrency && !isDirectOriginals) {
+    if (!isEuGoldCoinCode(sCurr) && !isEuGoldCoinCode(tCurr) && autoOptimalTargetCurrency && !isDirectOriginals) {
       const allowed = getAllowedTargetCurrenciesForSlot(providerId)
       const probeAllowed = allowed.filter((c) => !AUTO_PROBE_EXCLUDED_CURRENCIES.has(String(c).toLowerCase()))
       const allowedFiat = probeAllowed.filter((c) => isFiat(c) && !isStable(c))

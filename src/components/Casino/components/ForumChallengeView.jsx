@@ -3,6 +3,9 @@
  */
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { scrapeForumBets } from '../api/forumScraper'
+import { buildSelectableCurrencyOptions } from '../constants/currencies'
+import { useStakeSiteStore } from '../../../store/stakeSiteStore'
+import { useUserStore } from '../../../store/userStore'
 const FORUM_URL_STORAGE_KEY = 'slotbot_forum_last_url'
 
 const STYLES = {
@@ -97,6 +100,26 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
   const [forumSlug, setForumSlug] = useState('')
   const [forumCurrency, setForumCurrency] = useState('usdc')
   const [forumMinBet, setForumMinBet] = useState('')
+  const preferredSite = useStakeSiteStore((s) => s.preferredSite)
+  const walletBalances = useUserStore((s) => s.balances)
+  const forumCurrencyOptions = useMemo(() => {
+    if (preferredSite === 'eu') {
+      return buildSelectableCurrencyOptions({ site: 'eu', ownedCodes: Object.keys(walletBalances || {}) })
+    }
+    return [
+      { value: 'usdc', label: 'USDC' },
+      { value: 'eur', label: 'EUR' },
+      { value: 'usd', label: 'USD' },
+      { value: 'btc', label: 'BTC' },
+    ]
+  }, [preferredSite, walletBalances])
+
+  useEffect(() => {
+    if (preferredSite !== 'eu') return
+    if (!forumCurrencyOptions.some((c) => c.value === forumCurrency)) {
+      setForumCurrency(forumCurrencyOptions[0]?.value || 'sweeps')
+    }
+  }, [preferredSite, forumCurrencyOptions, forumCurrency])
   const [copyFeedback, setCopyFeedback] = useState('')
   const [forumSession, setForumSession] = useState({ hasCookies: false, hasCf: false, cookieCount: 0 })
 
@@ -369,10 +392,9 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
             <div>
               <label style={STYLES.label}>Currency</label>
               <select value={forumCurrency} onChange={(e) => setForumCurrency(e.target.value)} style={STYLES.input}>
-                <option value="usdc">USDC</option>
-                <option value="eur">EUR</option>
-                <option value="usd">USD</option>
-                <option value="btc">BTC</option>
+                {forumCurrencyOptions.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
               </select>
             </div>
             <div>
