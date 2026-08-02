@@ -1,4 +1,9 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.219': [
+    '✨ Site-Switch Stake.com ↔ Stake.eu (parallele Cookies, aktive Origin für Login/API/WS)',
+    '✨ Stake.eu: nur GC/SC (gold/sweeps), Sports-Tab ausgeblendet, Wallet nur vorhandene Währungen',
+    '🐛 Stats/Code Mode: große Zahlen (10k+) nicht mehr abgeschnitten (rechts/Stats-Panel)',
+  ],
   '1.0.218': [
     '✨ Slots: Stake-RGS Seed-Optionen (After spins / Multi / Wins / Losses / Streaks / Reset on loss) im Autospin',
     '🐛 Forum-Scraper: Cloudflare/403 Fix via BrowserWindow + Challenge-Fenster (Appeals-Monitor-Pattern)',

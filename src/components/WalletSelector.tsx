@@ -1,13 +1,39 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useUserStore } from '../store/userStore';
+import { useStakeSiteStore } from '../store/stakeSiteStore';
 import { useLiveWalletBalance } from '../hooks/useLiveWalletBalance';
 import { formatWalletBalanceAmount } from '../utils/walletBalance';
+import { getCurrencyLabel } from './Casino/utils/currencyMeta';
+import {
+  buildSelectableCurrencyOptions,
+  pickDefaultCurrency,
+} from './Casino/constants/currencies';
 
 export function WalletSelector() {
   const user = useUserStore((s) => s.user);
   const balances = useUserStore((s) => s.balances);
+  const availableCurrencies = useUserStore((s) => s.availableCurrencies);
   const selectedCurrency = useUserStore((s) => s.selectedCurrency);
   const setSelectedCurrency = useUserStore((s) => s.setSelectedCurrency);
+  const preferredSite = useStakeSiteStore((s) => s.preferredSite);
+
+  const walletOptions = useMemo(() => {
+    const owned = availableCurrencies?.length ? availableCurrencies : Object.keys(balances || {});
+    return buildSelectableCurrencyOptions({
+      site: preferredSite,
+      ownedCodes: owned,
+    });
+  }, [preferredSite, availableCurrencies, balances]);
+
+  const visibleEntries = useMemo(() => {
+    const allowed = new Set(walletOptions.map((c: { value: string }) => c.value));
+    return Object.entries(balances || {}).filter(([currency]) => allowed.has(String(currency).toLowerCase()));
+  }, [balances, walletOptions]);
+
+  useEffect(() => {
+    const next = pickDefaultCurrency(walletOptions, selectedCurrency, preferredSite);
+    if (next && next !== selectedCurrency) setSelectedCurrency(next);
+  }, [walletOptions, preferredSite, selectedCurrency, setSelectedCurrency]);
 
   const { formattedUsd, lastPollAt, lastLiveAt, isLive } = useLiveWalletBalance(selectedCurrency, {
     poll: !!user,
@@ -15,6 +41,7 @@ export function WalletSelector() {
   });
 
   const [isOpen, setIsOpen] = useState(false);
+  const [stakeOrigin, setStakeOrigin] = useState('https://stake.com');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const toggleDropdown = () => setIsOpen(!isOpen);
@@ -24,10 +51,33 @@ export function WalletSelector() {
     setIsOpen(false);
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadOrigin = async () => {
+      try {
+        const status = await window.electronAPI.getStakeSessionStatus();
+        const origin = String(status?.origin || '').replace(/\/$/, '');
+        if (!cancelled && origin) setStakeOrigin(origin);
+      } catch {
+        /* keep default */
+      }
+    };
+    void loadOrigin();
+    const onRevalidated = () => {
+      void loadOrigin();
+    };
+    window.addEventListener('stake-session-revalidated', onRevalidated);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('stake-session-revalidated', onRevalidated);
+    };
+  }, []);
+
   const openStakeWalletPage = async (operation: 'deposit' | 'withdraw' | 'wallet') => {
+    const base = stakeOrigin || 'https://stake.com';
     const url = operation === 'wallet'
-      ? 'https://stake.com/wallet'
-      : `https://stake.com/?operation=${operation}&modal=wallet`;
+      ? `${base}/wallet`
+      : `${base}/?operation=${operation}&modal=wallet`;
     try {
       await window.electronAPI.invoke('open-external', url);
       setIsOpen(false);
@@ -49,6 +99,7 @@ export function WalletSelector() {
   }, [dropdownRef]);
 
   const currentBalance = balances[selectedCurrency] || 0;
+  const showUsd = preferredSite !== 'eu';
   const usdLine = formattedUsd.includes('—') ? 'USD: —' : `${formattedUsd} USD`;
   const syncAt = lastLiveAt && isLive ? lastLiveAt : lastPollAt;
   const syncLabel = syncAt
@@ -66,16 +117,18 @@ export function WalletSelector() {
           <span className="text-[10px] font-bold uppercase tracking-wider transition-colors" style={{ color: 'var(--app-text-muted)' }}>
             {syncLabel}
           </span>
-          <span className="font-mono font-bold text-sm tracking-tight transition-colors group-hover:opacity-90" style={{ color: 'var(--app-accent)' }}>
-            {usdLine}
-          </span>
+          {showUsd && (
+            <span className="font-mono font-bold text-sm tracking-tight transition-colors group-hover:opacity-90" style={{ color: 'var(--app-accent)' }}>
+              {usdLine}
+            </span>
+          )}
           <span className="font-mono text-[10px] tracking-tight transition-colors" style={{ color: 'var(--app-text-muted)' }}>
-            {formatWalletBalanceAmount(currentBalance, selectedCurrency)} {selectedCurrency.toUpperCase()}
+            {formatWalletBalanceAmount(currentBalance, selectedCurrency)} {getCurrencyLabel(selectedCurrency)}
           </span>
         </div>
         <div className="flex items-center gap-2 pl-3 border-l h-full" style={{ borderColor: 'color-mix(in srgb, var(--app-border) 50%, transparent)' }}>
            <span className="uppercase font-bold text-xs tracking-wider" style={{ color: 'var(--app-accent)' }}>
-            {selectedCurrency}
+            {getCurrencyLabel(selectedCurrency)}
           </span>
           <svg 
             className={`w-2.5 h-2.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
@@ -104,8 +157,8 @@ export function WalletSelector() {
           </div>
           
           <div className="max-h-[300px] overflow-y-auto scrollbar-thin p-1 space-y-0.5" style={{ scrollbarColor: 'var(--app-border) transparent' }}>
-            {Object.keys(balances).length > 0 ? (
-               Object.entries(balances).map(([currency, amount]) => (
+            {visibleEntries.length > 0 ? (
+               visibleEntries.map(([currency, amount]) => (
                 <button
                   key={currency}
                   onClick={() => handleSelect(currency)}
@@ -126,7 +179,7 @@ export function WalletSelector() {
                         className={`uppercase font-bold text-xs ${selectedCurrency === currency ? 'text-white' : 'group-hover:text-white'}`}
                         style={selectedCurrency !== currency ? { color: 'var(--app-text-muted)' } : undefined}
                       >
-                          {currency}
+                          {getCurrencyLabel(currency)}
                       </span>
                   </div>
                   <span 

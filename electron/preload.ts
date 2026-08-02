@@ -33,7 +33,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized') as Promise<boolean>,
     getAppVersion: () => ipcRenderer.invoke('get-app-version') as Promise<string>,
     version: pkg?.version ?? '',
-    login: () => ipcRenderer.invoke('login'),
+    login: (payload?: { site?: 'com' | 'eu'; origin?: string }) => ipcRenderer.invoke('login', payload),
+    getStakeSite: () => ipcRenderer.invoke('stake-get-site'),
+    setStakeSite: (site: 'com' | 'eu') => ipcRenderer.invoke('stake-set-site', site),
+    getStakeSiteStatuses: () => ipcRenderer.invoke('stake-site-statuses'),
     invoke: (channel: string, ...args: any[]) => {
         if (!INVOKE_ALLOWLIST.has(channel)) {
             return Promise.reject(new Error(`IPC channel not allowed: ${channel}`));

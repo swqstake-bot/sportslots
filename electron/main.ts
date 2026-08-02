@@ -26,10 +26,15 @@ import type { StakebotxRendererBridgeInfo } from './stakebotxBridgeTypes.js';
 import { sessionData, captureSession } from './sessionCapture.js';
 import {
   ensureValidStakeSession,
+  getPreferredStakeSite,
   getStakeSessionStatus,
   invalidateStakeSessionStatusCache,
   isStakeOriginUrl,
+  listStakeSiteStatuses,
+  resolveStakeLoginOrigin,
   resolveStakeOrigin,
+  setPreferredStakeSite,
+  type StakePreferredSite,
   type StakeSessionStatus,
 } from './stakeSessionManager.js';
 import {
@@ -338,6 +343,7 @@ function isPragmaticProxyTarget(hostname: string, pathname: string): boolean {
   if (
     hostnameMatches(hostname, 'stake.com') ||
     hostnameMatches(hostname, 'stake.bet') ||
+    hostnameMatches(hostname, 'stake.eu') ||
     hostnameMatches(hostname, 'stake-engine.com')
   ) {
     return false;
@@ -491,8 +497,22 @@ function openLoginWindowForRejectedSession(reason: string): void {
 }
 
 async function ensureStakeBridgeWindow(origin: string): Promise<BrowserWindow> {
+  const target = String(origin || '').replace(/\/$/, '');
   if (stakeBridgeWin && !stakeBridgeWin.isDestroyed()) {
-    return stakeBridgeWin;
+    try {
+      const current = stakeBridgeWin.webContents.getURL();
+      if (current.startsWith(target)) {
+        return stakeBridgeWin;
+      }
+    } catch {
+      /* recreate below */
+    }
+    try {
+      stakeBridgeWin.destroy();
+    } catch {
+      /* ignore */
+    }
+    stakeBridgeWin = null;
   }
   stakeBridgeWin = new BrowserWindow({
     show: false,
@@ -503,7 +523,7 @@ async function ensureStakeBridgeWindow(origin: string): Promise<BrowserWindow> {
       backgroundThrottling: false,
     },
   });
-  await stakeBridgeWin.loadURL(`${origin}/`);
+  await stakeBridgeWin.loadURL(`${target}/`);
   return stakeBridgeWin;
 }
 
@@ -845,28 +865,74 @@ function createLoginWindow() {
   });
 }
 
-async function openStakeLoginWindow(): Promise<void> {
+async function openStakeLoginWindow(explicitOrigin?: string): Promise<void> {
+  const stakeUrl = String(explicitOrigin || '').trim() || (await resolveStakeLoginOrigin());
+  const stakeOriginBase = stakeUrl.replace(/\/$/, '');
+
+  // Same-origin window already open → focus and wait for that login flow.
+  if (loginWin && !loginWin.isDestroyed()) {
+    try {
+      const current = loginWin.webContents.getURL();
+      if (current.startsWith(stakeOriginBase)) {
+        loginWin.focus();
+        if (stakeLoginPromise) await stakeLoginPromise;
+        return;
+      }
+    } catch {
+      /* recreate below */
+    }
+    // Different site (com ↔ eu): close previous login and continue.
+    try {
+      loginWin.destroy();
+    } catch {
+      /* ignore */
+    }
+    loginWin = null;
+    if (stakeLoginPromise) {
+      try {
+        await stakeLoginPromise;
+      } catch {
+        /* ignore */
+      }
+    }
+  } else if (stakeLoginPromise) {
+    try {
+      await stakeLoginPromise;
+    } catch {
+      /* ignore */
+    }
+    // After waiting, another caller may have opened the target site already.
+    if (loginWin && !loginWin.isDestroyed()) {
+      try {
+        if (loginWin.webContents.getURL().startsWith(stakeOriginBase)) {
+          loginWin.focus();
+          return;
+        }
+      } catch {
+        /* recreate below */
+      }
+    }
+  }
+
   if (stakeLoginPromise) {
-    await stakeLoginPromise;
-    return;
+    try {
+      await stakeLoginPromise;
+    } catch {
+      /* ignore */
+    }
+    return openStakeLoginWindow(stakeUrl);
   }
 
   stakeLoginPromise = new Promise<void>((resolve) => {
     void (async () => {
-      const stakeUrl = await resolveStakeOrigin();
       const ses = session.defaultSession;
 
-      if (loginWin && !loginWin.isDestroyed()) {
-        loginWin.focus();
-        resolve();
-        return;
-      }
-
+      const isEu = /stake\.eu/i.test(stakeUrl);
       loginWin = new BrowserWindow({
         width: 1000,
         height: 720,
         autoHideMenuBar: true,
-        title: 'Stake – sign in',
+        title: isEu ? 'Stake.eu – sign in' : 'Stake – sign in',
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
@@ -902,14 +968,32 @@ async function openStakeLoginWindow(): Promise<void> {
         resolve();
       };
 
-      const isStakeLoggedIn = async (): Promise<boolean> => {
-        if (!loginWin || loginWin.isDestroyed()) return false;
+      const loginOrigin = (() => {
         try {
-          const title = await loginWin.webContents.executeJavaScript('document.title', true);
-          return title === 'Stake';
+          return new URL(stakeUrl).origin;
+        } catch {
+          return stakeOriginBase;
+        }
+      })();
+
+      /** Nur Session-Cookie der Login-Origin zählt — Titel „Stake“ allein schließt sonst .eu sofort (wenn .com schon da ist). */
+      const isStakeLoggedIn = async (): Promise<boolean> => {
+        try {
+          const cookies = await ses.cookies.get({ url: loginOrigin });
+          const sessionCookie = cookies.find((c) => c.name === 'session');
+          if (!sessionCookie || !String(sessionCookie.value || '').length) return false;
+          const exp = Number(sessionCookie.expirationDate);
+          if (Number.isFinite(exp) && exp > 0 && exp <= Date.now() / 1000) return false;
+          return true;
         } catch {
           return false;
         }
+      };
+
+      const sessionCookieMatchesLoginSite = (cookie: Electron.Cookie): boolean => {
+        const domain = String(cookie.domain || '').toLowerCase();
+        if (isEu) return domain.includes('stake.eu');
+        return domain.includes('stake.com') || domain.includes('stake.bet');
       };
 
       const pollTimer = setInterval(() => {
@@ -926,10 +1010,10 @@ async function openStakeLoginWindow(): Promise<void> {
         _cause: string,
         removed: boolean
       ) => {
-        if (cookie.name === 'cf_clearance' && !removed) {
+        if (cookie.name === 'cf_clearance' && !removed && sessionCookieMatchesLoginSite(cookie)) {
           void captureSession();
         }
-        if (cookie.name === 'session' && !removed) {
+        if (cookie.name === 'session' && !removed && sessionCookieMatchesLoginSite(cookie)) {
           void (async () => {
             if (await isStakeLoggedIn()) {
               await finish(true);
@@ -1069,8 +1153,43 @@ ipcMain.handle('quit-and-install', () => {
 // --------------------------
 
 // IPC Handlers
-ipcMain.handle('login', async () => {
-    await openStakeLoginWindow();
+ipcMain.handle('login', async (_event, payload?: { site?: StakePreferredSite; origin?: string }) => {
+    const site = payload?.site;
+    if (site === 'com' || site === 'eu') {
+      setPreferredStakeSite(site);
+    }
+    const origin =
+      String(payload?.origin || '').trim() ||
+      (site === 'eu' ? 'https://stake.eu' : site === 'com' ? await resolveStakeLoginOrigin() : undefined);
+    await openStakeLoginWindow(origin);
+});
+
+ipcMain.handle('stake-get-site', async () => {
+    return {
+      preferredSite: getPreferredStakeSite(),
+      activeOrigin: await resolveStakeOrigin(),
+      statuses: await listStakeSiteStatuses(),
+    };
+});
+
+ipcMain.handle('stake-set-site', async (_event, site: StakePreferredSite | string) => {
+    const preferredSite = setPreferredStakeSite(site);
+    // Bridge-Fenster an neue Origin binden (403-Fallback / browser fetch).
+    if (stakeBridgeWin && !stakeBridgeWin.isDestroyed()) {
+      try {
+        stakeBridgeWin.destroy();
+      } catch {
+        /* ignore */
+      }
+      stakeBridgeWin = null;
+    }
+    const statuses = await listStakeSiteStatuses();
+    const status = await getStakeSessionStatus(true);
+    return { preferredSite, statuses, status };
+});
+
+ipcMain.handle('stake-site-statuses', async () => {
+    return listStakeSiteStatuses();
 });
 
 ipcMain.handle('get-keyauth-hwid', async () => {
@@ -2571,112 +2690,125 @@ ipcMain.handle('nolimit-evo-entry', async (_event, configUrl: string) => nolimit
 
 ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = {}, body = null, followRedirects = true, freshConnection = false }) => {
     const stakeOrigin = await resolveStakeOrigin();
+    // Validation logic from SwaqSlotbot (Hauptslotprojekt)
+    let isAllowed = false;
+    let type = '';
+
+    if (!url || typeof url !== 'string') {
+         throw new Error('Invalid url structure');
+    }
+    
+    url = url.trim();
+
+    // Handle relative URLs & Hacksaw Proxy (mimic SwaqSlotbot vite.config.js)
+    if (url.startsWith('/api/hacksaw')) {
+         // Target: https://d1oa92ndvzdrfz.cloudfront.net
+         // Rewrite: /api/hacksaw -> /api
+         const path = url.replace(/^\/api\/hacksaw/, '/api');
+         url = 'https://d1oa92ndvzdrfz.cloudfront.net' + path;
+         isAllowed = true;
+         type = 'hacksaw'; 
+    } else if (url.startsWith('/api/stake')) {
+         // Target: https://stake.com (or stake.bet / stake.eu)
+         // Rewrite: /api/stake -> /_api
+         const path = url.replace(/^\/api\/stake/, '/_api');
+        url = stakeOrigin + path;
+         // Usually allowed by generic check, but we set it explicitly
+         isAllowed = true;
+         type = 'rgs'; // Standard API handling
+    } else if (url.startsWith('/')) {
+         // Default other relative URLs to active stake origin
+        url = stakeOrigin + url;
+    }
+
+    // 1. Pragmatic Logic
+    let parsedProxyUrl: URL | null = null;
+    try {
+        parsedProxyUrl = new URL(url);
+    } catch {
+        parsedProxyUrl = null;
+    }
+    const proxyHostname = parsedProxyUrl?.hostname || '';
+    const proxyPathname = parsedProxyUrl?.pathname || '';
+
+    if (proxyHostname && isPragmaticProxyTarget(proxyHostname, proxyPathname)) {
+        isAllowed = true;
+        type = 'pragmatic';
+    } 
+    // 2. Forum Logic
+    else if (proxyHostname && hostnameMatches(proxyHostname, 'stakecommunity.com') && proxyPathname.startsWith('/topic/')) {
+        isAllowed = true;
+        type = 'forum';
+    }
+    // 3. RGS / General Provider Logic
+    else {
+        const allowed = [
+            'stake-engine.com', 'stake.com', 'evolution.com', 'stake.bet', 'stake.eu', 'evo-games.com',
+            'nolimitcdn.com', 'nolimitcity.com', 'l0mpxqfj.xyz', 'thunderkick', 'relax',
+            'blueprint', 'endorphina', 'netent', 'gameart', 'push', 'btg', 'oak', 'redtiger',
+            'playngo', 'octoplay', 'peterandsons', 'shady', 'shuffle', 'titan', 'twist',
+            'popiplay', 'helio', 'samurai', '1000lakes', 'hacksawgaming.com', 'd1oa92ndvzdrfz.cloudfront.net',
+            'api.clawbuster.com', 'clawbuster-cdn.com', 'gsplauncher.de',
+            'hub88-2-playnetic.com', 'playnetic.com',
+            // Mascot launcher/runtime hosts (e.g. open.mascot.host -> <session>.mascot.games)
+            'mascot.host', 'mascot.games',
+            // Truelab / Stake third-party: startThirdPartySession config → grandgames launcher, RGS play.launcher-gg.com
+            'grandgames.io', 'launcher-gg.com',
+        ];
+        if (proxyHostname && allowed.some(h => hostnameMatches(proxyHostname, h))) {
+            isAllowed = true;
+            type = 'rgs';
+        }
+    }
+
+    if (!isAllowed) {
+        console.error('Proxy Request Blocked: Invalid URL', url);
+        throw new Error('Invalid url');
+    }
+
+    // Node https statt net.request – umgeht ERR_BLOCKED_BY_CLIENT (Adblocker/Session)
+    const requestHeaders: Record<string, string> = { ...headers };
+    const isStakeTarget = isStakeOriginUrl(url);
+    let requestStakeOrigin = stakeOrigin;
+    try {
+        requestStakeOrigin = new URL(url).origin;
+    } catch {
+        requestStakeOrigin = stakeOrigin;
+    }
+
+    if (isStakeTarget) {
+        if (!requestHeaders['Cookie']) {
+            try {
+                const cookies = await session.defaultSession.cookies.get({ url });
+                const header = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+                if (header) requestHeaders['Cookie'] = header;
+                else if (sessionData.cookies) requestHeaders['Cookie'] = sessionData.cookies;
+            } catch {
+                if (sessionData.cookies) requestHeaders['Cookie'] = sessionData.cookies;
+            }
+        }
+        if (!requestHeaders['Origin']) {
+            requestHeaders['Origin'] = requestStakeOrigin;
+        }
+        if (!requestHeaders['Referer']) {
+            requestHeaders['Referer'] = `${requestStakeOrigin}/`;
+        }
+        if (!requestHeaders['Accept']) {
+            requestHeaders['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+        }
+        if (!requestHeaders['Accept-Language']) {
+            requestHeaders['Accept-Language'] = 'en-US,en;q=0.9,de;q=0.8';
+        }
+    }
+
     return new Promise((resolve, reject) => {
-        // Validation logic from SwaqSlotbot (Hauptslotprojekt)
-        let isAllowed = false;
-        let type = '';
-
-        if (!url || typeof url !== 'string') {
-             return reject(new Error('Invalid url structure'));
-        }
-        
-        url = url.trim();
-
-        // Handle relative URLs & Hacksaw Proxy (mimic SwaqSlotbot vite.config.js)
-        if (url.startsWith('/api/hacksaw')) {
-             // Target: https://d1oa92ndvzdrfz.cloudfront.net
-             // Rewrite: /api/hacksaw -> /api
-             const path = url.replace(/^\/api\/hacksaw/, '/api');
-             url = 'https://d1oa92ndvzdrfz.cloudfront.net' + path;
-             isAllowed = true;
-             type = 'hacksaw'; 
-        } else if (url.startsWith('/api/stake')) {
-             // Target: https://stake.com (or stake.bet)
-             // Rewrite: /api/stake -> /_api
-             const path = url.replace(/^\/api\/stake/, '/_api');
-            url = stakeOrigin + path;
-             // Usually allowed by generic check, but we set it explicitly
-             isAllowed = true;
-             type = 'rgs'; // Standard API handling
-        } else if (url.startsWith('/')) {
-             // Default other relative URLs to stake.com
-            url = stakeOrigin + url;
-        }
-
-        // 1. Pragmatic Logic
-        let parsedProxyUrl: URL | null = null;
-        try {
-            parsedProxyUrl = new URL(url);
-        } catch {
-            parsedProxyUrl = null;
-        }
-        const proxyHostname = parsedProxyUrl?.hostname || '';
-        const proxyPathname = parsedProxyUrl?.pathname || '';
-
-        if (proxyHostname && isPragmaticProxyTarget(proxyHostname, proxyPathname)) {
-            isAllowed = true;
-            type = 'pragmatic';
-        } 
-        // 2. Forum Logic
-        else if (proxyHostname && hostnameMatches(proxyHostname, 'stakecommunity.com') && proxyPathname.startsWith('/topic/')) {
-            isAllowed = true;
-            type = 'forum';
-        }
-        // 3. RGS / General Provider Logic
-        else {
-            const allowed = [
-                'stake-engine.com', 'stake.com', 'evolution.com', 'stake.bet', 'evo-games.com',
-                'nolimitcdn.com', 'nolimitcity.com', 'l0mpxqfj.xyz', 'thunderkick', 'relax',
-                'blueprint', 'endorphina', 'netent', 'gameart', 'push', 'btg', 'oak', 'redtiger',
-                'playngo', 'octoplay', 'peterandsons', 'shady', 'shuffle', 'titan', 'twist',
-                'popiplay', 'helio', 'samurai', '1000lakes', 'hacksawgaming.com', 'd1oa92ndvzdrfz.cloudfront.net',
-                'api.clawbuster.com', 'clawbuster-cdn.com', 'gsplauncher.de',
-                'hub88-2-playnetic.com', 'playnetic.com',
-                // Mascot launcher/runtime hosts (e.g. open.mascot.host -> <session>.mascot.games)
-                'mascot.host', 'mascot.games',
-                // Truelab / Stake third-party: startThirdPartySession config → grandgames launcher, RGS play.launcher-gg.com
-                'grandgames.io', 'launcher-gg.com',
-            ];
-            if (proxyHostname && allowed.some(h => hostnameMatches(proxyHostname, h))) {
-                isAllowed = true;
-                type = 'rgs';
-            }
-        }
-
-        if (!isAllowed) {
-            console.error('Proxy Request Blocked: Invalid URL', url);
-            return reject(new Error('Invalid url'));
-        }
-
-        // Node https statt net.request – umgeht ERR_BLOCKED_BY_CLIENT (Adblocker/Session)
-        const requestHeaders: Record<string, string> = { ...headers };
-        const isStakeTarget = isStakeOriginUrl(url);
-
-        if (isStakeTarget) {
-            if (sessionData.cookies && !requestHeaders['Cookie']) {
-                requestHeaders['Cookie'] = sessionData.cookies;
-            }
-            if (!requestHeaders['Origin']) {
-                requestHeaders['Origin'] = stakeOrigin;
-            }
-            if (!requestHeaders['Referer']) {
-                requestHeaders['Referer'] = `${stakeOrigin}/`;
-            }
-            if (!requestHeaders['Accept']) {
-                requestHeaders['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
-            }
-            if (!requestHeaders['Accept-Language']) {
-                requestHeaders['Accept-Language'] = 'en-US,en;q=0.9,de;q=0.8';
-            }
-        }
-
         if (type === 'pragmatic') {
             try {
                 const urlObj = new URL(url);
                 const origin = `${urlObj.protocol}//${urlObj.host}`;
                 if (method === 'GET' && url.includes('playGame.do')) {
-                    requestHeaders['Origin'] = 'https://stake.bet';
-                    requestHeaders['Referer'] = 'https://stake.bet/casino/home';
+                    requestHeaders['Origin'] = stakeOrigin;
+                    requestHeaders['Referer'] = `${stakeOrigin}/casino/home`;
                 } else {
                     requestHeaders['Origin'] = origin;
                     requestHeaders['Referer'] = method === 'GET' ? url : `${origin}/gs2c/html5Game.do`;
@@ -2953,7 +3085,8 @@ app.whenReady().then(() => {
         removed: boolean
       ) => {
         const domain = String(cookie.domain || '').toLowerCase();
-        const isStakeCookie = domain.includes('stake.com') || domain.includes('stake.bet');
+        const isStakeCookie =
+          domain.includes('stake.com') || domain.includes('stake.bet') || domain.includes('stake.eu');
         if (!isStakeCookie) return;
         if (!STAKE_COOKIE_DEBUG_NAMES.has(String(cookie.name || ''))) return;
         invalidateStakeSessionStatusCache();
@@ -2973,7 +3106,16 @@ app.whenReady().then(() => {
 
     // Inject headers for requests to Stake origins from Renderer (if any)
     session.defaultSession.webRequest.onBeforeSendHeaders(
-      { urls: ['*://stake.com/*', '*://*.stake.com/*', '*://stake.bet/*', '*://*.stake.bet/*'] },
+      {
+        urls: [
+          '*://stake.com/*',
+          '*://*.stake.com/*',
+          '*://stake.bet/*',
+          '*://*.stake.bet/*',
+          '*://stake.eu/*',
+          '*://*.stake.eu/*',
+        ],
+      },
       (
         details: { url: string; requestHeaders: Record<string, string> },
         callback: (response: { requestHeaders: Record<string, string> }) => void

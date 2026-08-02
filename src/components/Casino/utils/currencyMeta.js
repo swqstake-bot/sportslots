@@ -10,6 +10,9 @@ export const FIAT_CURRENCIES = [
   'pkr', 'pln', 'ngn', 'cny', 'rub', 'try', 'dkk', 'pen', 'cop',
 ]
 
+/** Stake.eu GoldCoins — not crypto FX, 2-decimal display like fiat. */
+export const GOLD_COIN_CURRENCIES = ['gold', 'sweeps']
+
 export const USD_LIKE_CURRENCIES = ['usd', 'usdc', 'usdt']
 
 export function normalizeCurrencyCode(currencyCode) {
@@ -22,6 +25,10 @@ export function isZeroDecimalCurrency(currencyCode) {
 
 export function isFiatCurrency(currencyCode) {
   return FIAT_CURRENCIES.includes(normalizeCurrencyCode(currencyCode))
+}
+
+export function isGoldCoinCurrency(currencyCode) {
+  return GOLD_COIN_CURRENCIES.includes(normalizeCurrencyCode(currencyCode))
 }
 
 export function isStableCurrency(currencyCode) {
@@ -45,12 +52,19 @@ export function hunterBetCurrenciesMatch(a, b) {
 
 export function getMinorFactor(currencyCode) {
   if (isZeroDecimalCurrency(currencyCode)) return 1
-  if (isFiatCurrency(currencyCode)) return 100
+  if (isFiatCurrency(currencyCode) || isGoldCoinCurrency(currencyCode)) return 100
   return 1e8
 }
 
 export function getDisplayFractionDigits(currencyCode) {
   if (isZeroDecimalCurrency(currencyCode)) return 0
-  if (isFiatCurrency(currencyCode)) return 2
+  if (isFiatCurrency(currencyCode) || isGoldCoinCurrency(currencyCode)) return 2
   return 8
+}
+
+export function getCurrencyLabel(currencyCode) {
+  const c = normalizeCurrencyCode(currencyCode)
+  if (c === 'gold') return 'GC'
+  if (c === 'sweeps') return 'SC'
+  return c ? c.toUpperCase() : ''
 }

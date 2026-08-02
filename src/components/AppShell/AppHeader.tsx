@@ -1,11 +1,21 @@
+import { useCallback, useEffect, useState } from 'react'
 import { WalletSelector } from '../WalletSelector'
 import { PrimaryNav } from './PrimaryNav'
 import { ThemeAccentButton } from './ThemeAccentButton'
 import { HeaderAccountMeta } from './HeaderAccountMeta'
 import { AppBrandMark, AppBrandTitle } from './AppBrandMark'
 import { APP_VIEW_TITLES } from '../../constants/branding'
+import { useStakeSiteStore } from '../../store/stakeSiteStore'
 
 type AppView = 'casino' | 'sports' | 'logger'
+type StakeSite = 'com' | 'eu'
+
+interface SiteStatuses {
+  preferredSite: StakeSite
+  activeOrigin: string
+  com: { site: 'com'; origin: string; valid: boolean }
+  eu: { site: 'eu'; origin: string; valid: boolean }
+}
 
 interface AppHeaderProps {
   currentView: AppView
@@ -15,8 +25,9 @@ interface AppHeaderProps {
   isRunning: boolean
   isLoading: boolean
   onRefresh: () => void
-  onLogin: () => void
+  onLogin: (site?: StakeSite) => void
   onSessionRevalidate?: () => void
+  onSiteChanged?: () => void
 }
 
 export function AppHeader({
@@ -29,8 +40,60 @@ export function AppHeader({
   onRefresh,
   onLogin,
   onSessionRevalidate,
+  onSiteChanged,
 }: AppHeaderProps) {
   const hasUser = Boolean(userName)
+  const preferredSite = useStakeSiteStore((s) => s.preferredSite)
+  const setPreferredSite = useStakeSiteStore((s) => s.setPreferredSite)
+  const [siteStatuses, setSiteStatuses] = useState<SiteStatuses | null>(null)
+  const [switching, setSwitching] = useState(false)
+
+  const refreshSiteState = useCallback(async () => {
+    try {
+      const api = window.electronAPI
+      if (!api?.getStakeSiteStatuses) return
+      const statuses = await api.getStakeSiteStatuses()
+      setSiteStatuses(statuses)
+      setPreferredSite(statuses.preferredSite || 'com')
+    } catch (err) {
+      console.warn('[AppHeader] Failed to load stake site status', err)
+    }
+  }, [setPreferredSite])
+
+  useEffect(() => {
+    void refreshSiteState()
+    const onRevalidated = () => {
+      void refreshSiteState()
+    }
+    window.addEventListener('stake-session-revalidated', onRevalidated)
+    return () => window.removeEventListener('stake-session-revalidated', onRevalidated)
+  }, [refreshSiteState])
+
+  const handleSiteSwitch = async (site: StakeSite) => {
+    if (site === preferredSite || switching) return
+    setSwitching(true)
+    try {
+      const result = await window.electronAPI.setStakeSite(site)
+      setPreferredSite(result.preferredSite)
+      setSiteStatuses(result.statuses)
+      if (result.preferredSite === 'eu' && currentView === 'sports') {
+        onChangeView('casino')
+      }
+      if (!result.status?.valid) {
+        onLogin(site)
+      } else {
+        window.dispatchEvent(new CustomEvent('stake-session-revalidated'))
+        onSiteChanged?.()
+      }
+    } catch (err) {
+      console.error('[AppHeader] Site switch failed', err)
+    } finally {
+      setSwitching(false)
+    }
+  }
+
+  const loginLabel = preferredSite === 'eu' ? 'Login Stake.eu' : 'Login with Stake'
+
   return (
     <header className="app-header">
       <div className="app-header-left">
@@ -47,10 +110,42 @@ export function AppHeader({
           </div>
         )}
         {isChallengeRunning && <div className="app-header-alert">Challenge running</div>}
-        <PrimaryNav currentView={currentView} onChangeView={onChangeView} />
+        <PrimaryNav
+          currentView={currentView}
+          onChangeView={onChangeView}
+          hideSports={preferredSite === 'eu'}
+        />
       </div>
 
       <div className="app-header-right">
+        <div className="app-site-switch" role="group" aria-label="Stake site">
+          <button
+            type="button"
+            className={`app-site-switch-btn ${preferredSite === 'com' ? 'is-active' : ''}`.trim()}
+            onClick={() => void handleSiteSwitch('com')}
+            disabled={switching}
+            aria-pressed={preferredSite === 'com'}
+          >
+            <span
+              className={`app-site-switch-dot ${siteStatuses?.com?.valid ? 'is-valid' : ''}`.trim()}
+              aria-hidden
+            />
+            .com
+          </button>
+          <button
+            type="button"
+            className={`app-site-switch-btn ${preferredSite === 'eu' ? 'is-active' : ''}`.trim()}
+            onClick={() => void handleSiteSwitch('eu')}
+            disabled={switching}
+            aria-pressed={preferredSite === 'eu'}
+          >
+            <span
+              className={`app-site-switch-dot ${siteStatuses?.eu?.valid ? 'is-valid' : ''}`.trim()}
+              aria-hidden
+            />
+            .eu
+          </button>
+        </div>
         {hasUser ? (
           <>
             <div className={`app-run-state ${isRunning ? 'is-running' : ''}`.trim()}>
@@ -73,8 +168,8 @@ export function AppHeader({
             </button>
           </>
         ) : (
-          <button type="button" onClick={onLogin} className="app-header-login-btn">
-            Login with Stake
+          <button type="button" onClick={() => onLogin(preferredSite)} className="app-header-login-btn">
+            {loginLabel}
           </button>
         )}
       </div>

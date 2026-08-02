@@ -6,6 +6,8 @@ const FIAT = new Set([
   'eur', 'usd', 'usdc', 'usdt', 'ars', 'brl', 'mxn', 'cad', 'aud', 'clp', 'jpy', 'krw', 'inr', 'idr', 'php',
   'pkr', 'pln', 'ngn', 'cny', 'rub', 'try', 'dkk', 'pen', 'cop',
 ])
+/** Stake.eu GoldCoins — 2-decimal minor units, no USD FX. */
+const GOLD_COINS = new Set(['gold', 'sweeps'])
 const USD_LIKE = new Set(['usd', 'usdc', 'usdt'])
 
 export interface MonetaryAmount {
@@ -31,8 +33,12 @@ export function normalizeCurrencyCode(currencyCode: unknown): string {
 export function getMinorFactor(currencyCode: unknown): number {
   const c = normalizeCurrencyCode(currencyCode)
   if (ZERO_DECIMAL.has(c)) return 1
-  if (FIAT.has(c)) return 100
+  if (FIAT.has(c) || GOLD_COINS.has(c)) return 100
   return 1e8
+}
+
+export function isGoldCoinCurrency(currencyCode: unknown): boolean {
+  return GOLD_COINS.has(normalizeCurrencyCode(currencyCode))
 }
 
 export function isUsdLikeCurrency(currencyCode: unknown): boolean {
@@ -77,6 +83,17 @@ export function convertToUsd(value: unknown, currencyCode: unknown, unit: Moneta
       fxSource: 'usd-like',
       fxRateSource: 'usd-like',
       fxRate: 1,
+    }
+  }
+  if (GOLD_COINS.has(base.currencyCode)) {
+    return {
+      ...base,
+      usdAmount: null,
+      usdCents: null,
+      fxStatus: 'missing-rate',
+      fxSource: null,
+      fxRateSource: null,
+      fxRate: null,
     }
   }
   const rate = Number(rates?.[base.currencyCode])

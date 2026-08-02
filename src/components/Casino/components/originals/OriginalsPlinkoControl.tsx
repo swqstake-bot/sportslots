@@ -10,7 +10,7 @@ import OriginalsBetHistory, { type OriginalsBetEntry } from './OriginalsBetHisto
 import { shouldStopSession } from './originalsStopConditions'
 import type { OriginalsSettingsState } from './OriginalsSettings'
 
-import { ALL_CURRENCIES, CURRENCY_GROUPS } from '../../constants/currencies'
+import WorkbenchCurrencySelect from './workbench/WorkbenchCurrencySelect'
 import { useCasinoBetListReset } from '../../utils/casinoBetSession'
 const RISK_OPTIONS = ['low', 'medium', 'high', 'expert'] as const
 const ROWS_OPTIONS = [8, 10, 12, 14, 16]
@@ -100,25 +100,7 @@ export default function OriginalsPlinkoControl({ settings: propSettings, onSetti
         </div>
         <div>
           <label className="block text-xs text-[var(--text-muted)] mb-1">Currency</label>
-          <select
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
-            className="w-full bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text)] focus:ring-2 focus:ring-[var(--accent)] outline-none"
-          >
-            <optgroup label="Crypto">
-              {CURRENCY_GROUPS.crypto.map((c) => (
-                <option key={c.value} value={c.value}>{c.label}</option>
-              ))}
-            </optgroup>
-            <optgroup label="Fiat">
-              {CURRENCY_GROUPS.fiat.map((c) => (
-                <option key={c.value} value={c.value}>{c.label}</option>
-              ))}
-            </optgroup>
-            {!ALL_CURRENCIES.some((c) => c.value === currency) && (
-              <option value={currency}>{currency.toUpperCase()}</option>
-            )}
-          </select>
+          <WorkbenchCurrencySelect value={currency} onChange={setCurrency} showBalances />
         </div>
         <div>
           <label className="block text-xs text-[var(--text-muted)] mb-1">Rows</label>

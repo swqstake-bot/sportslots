@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { useStakeSiteStore } from './stakeSiteStore';
+import { EU_CURRENCY_CODES, pickDefaultCurrency } from '../components/Casino/constants/currencies';
 
 export interface Balance {
   amount: number;
@@ -125,8 +127,8 @@ interface UserState {
 export const useUserStore = create<UserState>((set, get) => ({
   user: null,
   balances: {},
-  availableCurrencies: ['btc'], 
-  selectedCurrency: 'btc',
+  availableCurrencies: [],
+  selectedCurrency: 'usdc',
   activeBets: [],
 
   setUser: (user) => set({ user }),
@@ -134,44 +136,41 @@ export const useUserStore = create<UserState>((set, get) => ({
   setBalancesFromApi: (balancesData) => {
     const balancesMap: { [currency: string]: number } = {};
     const currencies: string[] = [];
+    const site = useStakeSiteStore.getState().preferredSite;
 
     if (Array.isArray(balancesData)) {
       balancesData.forEach(b => {
         if (b.available && b.available.currency) {
           const curr = b.available.currency.toLowerCase();
           balancesMap[curr] = b.available.amount;
-          
-          // User request: Hide USD if empty (useless wallet)
+
+          // Hide empty USD noise on classic Stake
           if (curr === 'usd' && b.available.amount <= 0.01) {
-             return; 
+             return;
           }
-          
-          // Show ALL other currencies (Crypto & Fiat) regardless of balance
-          // This restores the behavior "ganz am anfang habe ich alle meine balances gesehen"
-          currencies.push(curr);
+
+          // Only wallets the account actually has
+          if (site === 'eu') {
+            if (EU_CURRENCY_CODES.includes(curr)) currencies.push(curr);
+          } else if (!EU_CURRENCY_CODES.includes(curr)) {
+            currencies.push(curr);
+          }
         }
       });
     }
 
-    // Always ensure BTC is available in the list, even if API didn't return it
-    if (!currencies.includes('btc')) {
-        currencies.push('btc');
-        if (balancesMap['btc'] === undefined) {
-            balancesMap['btc'] = 0;
-        }
+    // EU: only keep gold/sweeps that the API actually returned
+    if (site === 'eu') {
+      for (const code of EU_CURRENCY_CODES) {
+        if (balancesMap[code] === undefined) continue
+        if (!currencies.includes(code)) currencies.push(code)
+      }
     }
 
-    // Default to BTC
-    let newSelected = 'btc';
     const currentSelected = get().selectedCurrency;
-    
-    // Keep the current selection whenever it is still available.
-    // Falling back to BTC only when the current selection disappears avoids
-    // unexpected currency switches during balance refresh.
-    if (currentSelected && currencies.includes(currentSelected)) {
-        newSelected = currentSelected;
-    }
-    
+    const optionList = currencies.map((value) => ({ value, label: value.toUpperCase() }));
+    const newSelected = pickDefaultCurrency(optionList, currentSelected, site);
+
     set({
         balances: balancesMap,
         availableCurrencies: currencies,
@@ -195,5 +194,11 @@ export const useUserStore = create<UserState>((set, get) => ({
     activeBets: [bet, ...state.activeBets.filter((b) => b.id !== bet.id)],
   })),
   
-  logout: () => set({ user: null, balances: {}, availableCurrencies: ['btc'], selectedCurrency: 'btc', activeBets: [] })
+  logout: () => set({
+    user: null,
+    balances: {},
+    availableCurrencies: useStakeSiteStore.getState().preferredSite === 'eu' ? ['gold', 'sweeps'] : [],
+    selectedCurrency: useStakeSiteStore.getState().preferredSite === 'eu' ? 'sweeps' : 'usdc',
+    activeBets: [],
+  })
 }));

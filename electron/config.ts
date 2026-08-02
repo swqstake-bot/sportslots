@@ -34,6 +34,9 @@ export const PROXY_ALLOWED_HOSTS = [
   'https://d1oa92ndvzdrfz.cloudfront.net',
   'https://stake.com',
   'https://stake.bet',
+  'https://stake.eu',
   'https://*.stake.com',
+  'https://*.stake.bet',
+  'https://*.stake.eu',
   'https://*.cloudfront.net',
 ] as const;

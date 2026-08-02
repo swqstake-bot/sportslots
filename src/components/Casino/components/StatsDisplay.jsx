@@ -24,6 +24,8 @@ const STYLES = {
     display: 'flex',
     flexDirection: 'column',
     gap: '0.15rem',
+    minWidth: 0,
+    overflow: 'visible',
   },
   label: {
     fontSize: '0.7rem',
@@ -35,6 +37,9 @@ const STYLES = {
     fontSize: '1rem',
     fontWeight: 600,
     fontFamily: '"JetBrains Mono", monospace',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word',
+    whiteSpace: 'normal',
   },
   valuePositive: { color: 'var(--success)' },
   valueNegative: { color: 'var(--error)' },

@@ -15,7 +15,7 @@ import {
   DICE_RUNNER_BALANCE_POLL_MS,
 } from './diceRunner/diceRunnerBalance'
 import { refreshWalletBalances, walletBalanceMajor } from '../../../../utils/walletBalance'
-import { ALL_CURRENCIES, CURRENCY_GROUPS } from '../../constants/currencies'
+import WorkbenchCurrencySelect from './workbench/WorkbenchCurrencySelect'
 
 interface BetRow {
   spin: number
@@ -362,21 +362,7 @@ export default function DiceRunnerTab() {
           )}
           <div>
             <label className="block text-xs text-[var(--text-muted)] mb-1">Currency</label>
-            <select value={currency} onChange={(e) => setCurrency(e.target.value)} className={inputCls} disabled={controlsLocked}>
-              <optgroup label="Crypto">
-                {CURRENCY_GROUPS.crypto.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </optgroup>
-              <optgroup label="Fiat">
-                {CURRENCY_GROUPS.fiat.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </optgroup>
-              {!ALL_CURRENCIES.some((c) => c.value === currency) && (
-                <option value={currency}>{currency.toUpperCase()}</option>
-              )}
-            </select>
+            <WorkbenchCurrencySelect value={currency} onChange={setCurrency} showBalances disabled={controlsLocked} />
           </div>
           <div>
             <label className="block text-xs text-[var(--text-muted)] mb-1">Spins per second</label>

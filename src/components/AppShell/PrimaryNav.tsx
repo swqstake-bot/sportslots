@@ -3,6 +3,8 @@ type AppView = 'casino' | 'sports' | 'logger'
 interface PrimaryNavProps {
   currentView: AppView
   onChangeView: (view: AppView) => void
+  /** Stake.eu has no sports product yet. */
+  hideSports?: boolean
 }
 
 const TABS: { id: AppView; label: string }[] = [
@@ -11,10 +13,11 @@ const TABS: { id: AppView; label: string }[] = [
   { id: 'logger', label: 'Logger' },
 ]
 
-export function PrimaryNav({ currentView, onChangeView }: PrimaryNavProps) {
+export function PrimaryNav({ currentView, onChangeView, hideSports = false }: PrimaryNavProps) {
+  const tabs = hideSports ? TABS.filter((t) => t.id !== 'sports') : TABS
   return (
     <nav className="app-primary-nav" aria-label="Primary Navigation">
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const active = currentView === tab.id
         return (
           <button

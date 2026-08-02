@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ALL_CURRENCIES, CURRENCY_GROUPS } from '../../../constants/currencies'
 import type { WorkbenchSettings, BetListColumnId } from './workbenchStorage'
+import WorkbenchCurrencySelect from './WorkbenchCurrencySelect'
 import {
   STAKE_TURBO_DEFAULT_INTERVAL_MS,
   DEFAULT_TURBO_MAX_IN_FLIGHT,
@@ -108,29 +108,11 @@ function SettingsForm({
       <SettingsSection title="Session">
         <label className="originals-field">
           <span className="originals-field-label">Currency</span>
-          <select
+          <WorkbenchCurrencySelect
             value={draft.currency}
-            onChange={(e) => setDraft((d) => ({ ...d, currency: e.target.value }))}
-            className={inputCls}
-          >
-            <optgroup label="Crypto">
-              {CURRENCY_GROUPS.crypto.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Fiat">
-              {CURRENCY_GROUPS.fiat.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </optgroup>
-            {!ALL_CURRENCIES.some((c) => c.value === draft.currency) && (
-              <option value={draft.currency}>{draft.currency.toUpperCase()}</option>
-            )}
-          </select>
+            onChange={(currency) => setDraft((d) => ({ ...d, currency }))}
+            showBalances
+          />
         </label>
 
         <label className="originals-field">

@@ -6,12 +6,14 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import styles from './BonusHuntControl.module.css'
 import { getProvider } from '../api/providers'
 import { getImpliedScatterLevel } from '../api/providers/hacksaw'
-import { ALL_CURRENCIES, filterCurrenciesByProvider } from '../constants/currencies'
+import { ALL_CURRENCIES, filterCurrenciesByProvider, buildSelectableCurrencyOptions, groupSelectableCurrencyOptions, pickDefaultCurrency } from '../constants/currencies'
 import { fetchSupportedCurrencies, fetchCurrencyRates } from '../api/stakeChallenges'
 import { formatAmount, formatBetLabel, isFiat, isStable, toMinor, toUnits } from '../utils/formatAmount'
 import { isUsdLikeCurrency } from '../utils/currencyMeta'
 import { convertMinorToUsdMajor } from '../utils/monetaryContract'
 import { getEffectiveBetAmount } from '../constants/bet'
+import { useUserStore } from '../../../store/userStore'
+import { useStakeSiteStore } from '../../../store/stakeSiteStore'
 import { SlotSelectMulti } from './SlotSelectGrouped'
 import SlotSlider from './SlotSlider'
 import { parseBetResponse } from '../utils/parseBetResponse'
@@ -224,19 +226,35 @@ export default function BonusHuntControl({
       })
     return () => { cancelled = true }
   }, [accessToken])
-  const allowedCurrencies = selectedSlots.length
-    ? (filterCurrenciesByProvider(supportedCurrencies, selectedSlots) || supportedCurrencies)
-    : supportedCurrencies
-  const cryptoOpts = allowedCurrencies.filter((c) => !isFiat(c.value) || isStable(c.value))
-  const fiatOpts = allowedCurrencies.filter((c) => isFiat(c.value) && !isStable(c.value))
+  const preferredSite = useStakeSiteStore((s) => s.preferredSite)
+  const availableCurrencies = useUserStore((s) => s.availableCurrencies)
+  const walletBalances = useUserStore((s) => s.balances)
+
+  const allowedCurrencies = useMemo(() => {
+    const owned = availableCurrencies?.length ? availableCurrencies : Object.keys(walletBalances || {})
+    if (preferredSite === 'eu') {
+      return buildSelectableCurrencyOptions({ site: 'eu', ownedCodes: owned })
+    }
+    const providerFiltered = selectedSlots.length
+      ? (filterCurrenciesByProvider(supportedCurrencies, selectedSlots) || supportedCurrencies)
+      : supportedCurrencies
+    return buildSelectableCurrencyOptions({
+      site: 'com',
+      ownedCodes: owned,
+      baseList: providerFiltered,
+    })
+  }, [preferredSite, availableCurrencies, walletBalances, supportedCurrencies, selectedSlots])
+
+  const { crypto: cryptoOpts, fiat: fiatOpts, goldCoins: goldOpts } = useMemo(
+    () => groupSelectableCurrencyOptions(allowedCurrencies),
+    [allowedCurrencies]
+  )
 
   useEffect(() => {
-    if (selectedSlots.length === 0) return
-    const allowed = filterCurrenciesByProvider(supportedCurrencies, selectedSlots) || supportedCurrencies
-    const vals = new Set(allowed.map((c) => (c.value || c).toLowerCase()))
-    setSourceCurrency((prev) => (!vals.has(prev.toLowerCase()) && allowed[0] ? allowed[0].value : prev))
-    setTargetCurrency((prev) => (!vals.has(prev.toLowerCase()) && allowed[0] ? allowed[0].value : prev))
-  }, [selectedSlugs.join(','), slots?.length ?? 0, supportedCurrencies.length])
+    if (selectedSlots.length === 0 && preferredSite !== 'eu') return
+    setSourceCurrency((prev) => pickDefaultCurrency(allowedCurrencies, prev, preferredSite))
+    setTargetCurrency((prev) => pickDefaultCurrency(allowedCurrencies, prev, preferredSite))
+  }, [selectedSlugs.join(','), slots?.length ?? 0, supportedCurrencies.length, preferredSite, allowedCurrencies])
 
   useEffect(() => {
     if (!accessToken || isRunning) return
@@ -1572,11 +1590,13 @@ export default function BonusHuntControl({
           <select value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'usdc')} onChange={(e) => setSourceCurrency(e.target.value)} className={styles.select} style={{ minWidth: 90, flex: 'none' }} disabled={isRunning}>
             {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
             {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+            {goldOpts.length > 0 && <optgroup label="GoldCoins">{goldOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
           </select>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
           <select value={allowedCurrencies.some((c) => c.value === targetCurrency) ? targetCurrency : (allowedCurrencies[0]?.value || 'eur')} onChange={(e) => setTargetCurrency(e.target.value)} className={styles.select} style={{ minWidth: 90, flex: 'none' }} disabled={isRunning}>
             {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
             {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+            {goldOpts.length > 0 && <optgroup label="GoldCoins">{goldOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
           </select>
           <select value={betAmount} onChange={(e) => setBetAmount(Number(e.target.value))} className={styles.select} style={{ minWidth: 100, flex: 'none' }} disabled={isRunning}>
             {huntBetLevels.map((v) => <option key={v} value={v}>{formatBetLabel(v, targetCurrency)}</option>)}

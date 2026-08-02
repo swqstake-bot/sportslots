@@ -1,7 +1,15 @@
-import { session } from 'electron';
+import { app, session } from 'electron';
+import fs from 'node:fs';
+import path from 'node:path';
 
-const STAKE_ORIGINS = ['https://stake.com', 'https://stake.bet'] as const;
+export const STAKE_ORIGIN_COM = 'https://stake.com';
+export const STAKE_ORIGIN_BET = 'https://stake.bet';
+export const STAKE_ORIGIN_EU = 'https://stake.eu';
+
+const STAKE_ORIGINS = [STAKE_ORIGIN_COM, STAKE_ORIGIN_BET, STAKE_ORIGIN_EU] as const;
 const RELEVANT_COOKIE_NAMES = ['session', 'cf_clearance', '__cf_bm'] as const;
+
+export type StakePreferredSite = 'com' | 'eu';
 
 export type SessionRejectionReason =
   | 'no_session_cookie'
@@ -22,6 +30,7 @@ export interface StakeCookieMeta {
 export interface StakeSessionStatus {
   valid: boolean;
   origin: string;
+  preferredSite: StakePreferredSite;
   checkedAt: string;
   reasons: SessionRejectionReason[];
   missingCookies: string[];
@@ -32,12 +41,59 @@ export interface StakeSessionStatus {
   cookiesByName: Record<string, StakeCookieMeta>;
 }
 
+export interface StakeSiteStatusSummary {
+  site: StakePreferredSite;
+  origin: string;
+  valid: boolean;
+}
+
+export interface StakeSiteStatuses {
+  preferredSite: StakePreferredSite;
+  activeOrigin: string;
+  com: StakeSiteStatusSummary;
+  eu: StakeSiteStatusSummary;
+}
+
 let lastStatus: StakeSessionStatus | null = null;
 let lastCheckedAtMs = 0;
 let inflightStatusPromise: Promise<StakeSessionStatus> | null = null;
 const STATUS_CACHE_MS = 1000;
 let lastLoggedStatusKey = '';
 const LOG_VALID_SESSION_STATUS = false;
+
+let preferredSiteCache: StakePreferredSite | null = null;
+
+function sitePrefsPath(): string {
+  return path.join(app.getPath('userData'), 'stake-site.json');
+}
+
+function normalizePreferredSite(raw: unknown): StakePreferredSite {
+  return String(raw || '').trim().toLowerCase() === 'eu' ? 'eu' : 'com';
+}
+
+export function getPreferredStakeSite(): StakePreferredSite {
+  if (preferredSiteCache) return preferredSiteCache;
+  try {
+    const raw = fs.readFileSync(sitePrefsPath(), 'utf8');
+    const parsed = JSON.parse(raw) as { site?: string };
+    preferredSiteCache = normalizePreferredSite(parsed?.site);
+  } catch {
+    preferredSiteCache = 'com';
+  }
+  return preferredSiteCache;
+}
+
+export function setPreferredStakeSite(site: StakePreferredSite | string): StakePreferredSite {
+  const next = normalizePreferredSite(site);
+  preferredSiteCache = next;
+  try {
+    fs.writeFileSync(sitePrefsPath(), JSON.stringify({ site: next }, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('[StakeSession] Failed to persist preferred site', err);
+  }
+  invalidateStakeSessionStatusCache();
+  return next;
+}
 
 function isCookieExpired(cookie: Electron.Cookie): boolean {
   const exp = Number(cookie.expirationDate);
@@ -68,18 +124,34 @@ async function hasValidSessionCookieForOrigin(origin: string): Promise<boolean> 
   return !isCookieExpired(sessionCookie) && String(sessionCookie.value || '').length > 0;
 }
 
+/** Classic (.com/.bet) origin resolution — prefer stake.bet when both present. */
+async function resolveClassicStakeOrigin(): Promise<string> {
+  const hasCom = await hasValidSessionCookieForOrigin(STAKE_ORIGIN_COM);
+  const hasBet = await hasValidSessionCookieForOrigin(STAKE_ORIGIN_BET);
+  if (hasBet) return STAKE_ORIGIN_BET;
+  if (hasCom) return STAKE_ORIGIN_COM;
+  return STAKE_ORIGIN_COM;
+}
+
 export async function resolveStakeOrigin(): Promise<string> {
   try {
-    const hasCom = await hasValidSessionCookieForOrigin('https://stake.com');
-    const hasBet = await hasValidSessionCookieForOrigin('https://stake.bet');
-    // Prefer stake.bet whenever it has a valid session. Stake.com may keep stale/partial cookies
-    // and using the wrong origin breaks GraphQL WS during app startup.
-    if (hasBet) return 'https://stake.bet';
-    if (hasCom) return 'https://stake.com';
-    return 'https://stake.com';
+    const preferred = getPreferredStakeSite();
+    if (preferred === 'eu') {
+      const hasEu = await hasValidSessionCookieForOrigin(STAKE_ORIGIN_EU);
+      if (hasEu) return STAKE_ORIGIN_EU;
+      // Preferred EU but no session yet — still target EU for login/API until user switches back.
+      return STAKE_ORIGIN_EU;
+    }
+    return await resolveClassicStakeOrigin();
   } catch {
-    return 'https://stake.com';
+    return getPreferredStakeSite() === 'eu' ? STAKE_ORIGIN_EU : STAKE_ORIGIN_COM;
   }
+}
+
+/** Login URL for the active preferred site (ignores missing cookies). */
+export async function resolveStakeLoginOrigin(): Promise<string> {
+  if (getPreferredStakeSite() === 'eu') return STAKE_ORIGIN_EU;
+  return resolveClassicStakeOrigin();
 }
 
 function buildCookieHeader(cookies: Electron.Cookie[]): string {
@@ -90,6 +162,7 @@ function logSessionStatus(status: StakeSessionStatus): void {
   const statusKey = JSON.stringify({
     valid: status.valid,
     origin: status.origin,
+    preferredSite: status.preferredSite,
     reasons: status.reasons,
     missingCookies: status.missingCookies,
     expiredCookies: status.expiredCookies,
@@ -102,6 +175,7 @@ function logSessionStatus(status: StakeSessionStatus): void {
     if (!LOG_VALID_SESSION_STATUS) return;
     console.log('[StakeSession] Session valid', {
       origin: status.origin,
+      preferredSite: status.preferredSite,
       hasSessionCookie: Boolean(status.sessionToken),
       hasCfClearance: !status.missingCookies.includes('cf_clearance'),
       hasCfBm: !status.missingCookies.includes('__cf_bm'),
@@ -111,15 +185,15 @@ function logSessionStatus(status: StakeSessionStatus): void {
 
   console.warn('[StakeSession] Session rejected', {
     origin: status.origin,
+    preferredSite: status.preferredSite,
     reasons: status.reasons,
     missingCookies: status.missingCookies,
     expiredCookies: status.expiredCookies,
   });
 }
 
-async function collectStatusInternal(): Promise<StakeSessionStatus> {
+async function collectStatusForOrigin(origin: string, preferredSite: StakePreferredSite): Promise<StakeSessionStatus> {
   const nowIso = new Date().toISOString();
-  const origin = await resolveStakeOrigin();
   const userAgent = session.defaultSession.getUserAgent();
   const reasons: SessionRejectionReason[] = [];
 
@@ -159,9 +233,10 @@ async function collectStatusInternal(): Promise<StakeSessionStatus> {
   if (!sessionCookie) reasons.push('no_session_cookie');
   if (sessionCookie && isCookieExpired(sessionCookie)) reasons.push('session_cookie_expired');
 
-  const status: StakeSessionStatus = {
+  return {
     valid: reasons.length === 0,
     origin,
+    preferredSite,
     checkedAt: nowIso,
     reasons,
     missingCookies,
@@ -171,7 +246,12 @@ async function collectStatusInternal(): Promise<StakeSessionStatus> {
     userAgent,
     cookiesByName,
   };
+}
 
+async function collectStatusInternal(): Promise<StakeSessionStatus> {
+  const preferredSite = getPreferredStakeSite();
+  const origin = await resolveStakeOrigin();
+  const status = await collectStatusForOrigin(origin, preferredSite);
   logSessionStatus(status);
   return status;
 }
@@ -205,5 +285,30 @@ export function invalidateStakeSessionStatusCache(): void {
 }
 
 export function isStakeOriginUrl(url: string): boolean {
-  return STAKE_ORIGINS.some((origin) => url.startsWith(origin));
+  return STAKE_ORIGINS.some((origin) => url.startsWith(origin)) || /https?:\/\/([^/]*\.)?stake\.(com|bet|eu)\b/i.test(url);
+}
+
+export async function listStakeSiteStatuses(): Promise<StakeSiteStatuses> {
+  const preferredSite = getPreferredStakeSite();
+  const [comOrigin, hasCom, hasBet, hasEu] = await Promise.all([
+    resolveClassicStakeOrigin(),
+    hasValidSessionCookieForOrigin(STAKE_ORIGIN_COM),
+    hasValidSessionCookieForOrigin(STAKE_ORIGIN_BET),
+    hasValidSessionCookieForOrigin(STAKE_ORIGIN_EU),
+  ]);
+  const activeOrigin = await resolveStakeOrigin();
+  return {
+    preferredSite,
+    activeOrigin,
+    com: {
+      site: 'com',
+      origin: comOrigin,
+      valid: hasCom || hasBet,
+    },
+    eu: {
+      site: 'eu',
+      origin: STAKE_ORIGIN_EU,
+      valid: hasEu,
+    },
+  };
 }

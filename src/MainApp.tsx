@@ -24,6 +24,7 @@ import { AppBrandMark } from './components/AppShell/AppBrandMark';
 import { WindowTitleBar } from './components/AppShell/WindowTitleBar';
 import { APP_NAME, APP_TAGLINE } from './constants/branding';
 import { refreshWalletBalances } from './utils/walletBalance';
+import { refreshStakeSiteFromMain, useStakeSiteStore } from './store/stakeSiteStore';
 import {
   ACTIVE_SPORT_BETS_MAX_TOTAL,
   ACTIVE_SPORT_BETS_PAGE_SIZE,
@@ -73,6 +74,7 @@ function App() {
   } = useUiStore();
 
   const accentInlineStyle = useAccentInlineStyle();
+  const preferredSite = useStakeSiteStore((s) => s.preferredSite);
   const [isChallengeRunning, setIsChallengeRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +83,21 @@ function App() {
   const [showChangelog, setShowChangelog] = useState(false);
   const [changelogVersion, setChangelogVersion] = useState('');
   const [changelogContent, setChangelogContent] = useState<string[]>([]);
+
+  useEffect(() => {
+    void refreshStakeSiteFromMain();
+    const onRevalidated = () => {
+      void refreshStakeSiteFromMain();
+    };
+    window.addEventListener('stake-session-revalidated', onRevalidated);
+    return () => window.removeEventListener('stake-session-revalidated', onRevalidated);
+  }, []);
+
+  useEffect(() => {
+    if (preferredSite === 'eu' && currentView === 'sports') {
+      setCurrentView('casino');
+    }
+  }, [preferredSite, currentView, setCurrentView]);
 
   useEffect(() => {
     // Version vom Main-Prozess (app.getVersion()) – stimmt auch nach Auto-Update
@@ -106,9 +123,9 @@ function App() {
     setIsAuthenticated(true);
   };
 
-  const handleLogin = async () => {
+  const handleLogin = async (site?: 'com' | 'eu') => {
     try {
-      await window.electronAPI.login();
+      await window.electronAPI.login(site ? { site } : undefined);
       // Verhindert Race Condition: nicht blind nach 2s pollen,
       // sondern warten bis Session wirklich validiert ist.
       let resolved = false;
@@ -130,6 +147,11 @@ function App() {
       console.error(`Login error: ${err.message}`);
       setError(err.message);
     }
+  };
+
+  const handleSiteChanged = () => {
+    window.dispatchEvent(new CustomEvent('stake-session-revalidated'));
+    void fetchData();
   };
 
   const handleSessionRevalidate = async () => {
@@ -273,6 +295,7 @@ function App() {
     onRefresh: fetchData,
     onLogin: handleLogin,
     onSessionRevalidate: handleSessionRevalidate,
+    onSiteChanged: handleSiteChanged,
   } as const
 
   return (
@@ -353,7 +376,7 @@ function App() {
                         {APP_TAGLINE}. Login with Stake.com to configure AutoBet and manage your sport bets.
                       </p>
                       <button 
-                        onClick={handleLogin}
+                        onClick={() => void handleLogin()}
                         className="px-8 py-3.5 rounded-xl font-bold text-sm transition-all uppercase tracking-wider hover:-translate-y-0.5"
                         style={{ background: 'var(--app-accent)', color: 'var(--app-bg-deep)', boxShadow: '0 0 24px var(--app-accent-glow)' }}
                       >

@@ -423,6 +423,55 @@
   }
 }
 
+.app-site-switch {
+  display: inline-flex;
+  gap: 0.2rem;
+  padding: 0.16rem;
+  border-radius: 10px;
+  border: 1px solid var(--app-border-subtle);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.app-site-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--app-text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.38rem 0.62rem;
+  cursor: pointer;
+}
+
+.app-site-switch-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.app-site-switch-btn.is-active {
+  color: #071015;
+  background: rgba(var(--app-accent-rgb), 0.95);
+  box-shadow: 0 0 12px rgba(var(--app-accent-rgb), 0.22);
+}
+
+.app-site-switch-dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.app-site-switch-dot.is-valid {
+  background: #3dd68c;
+  box-shadow: 0 0 8px rgba(61, 214, 140, 0.55);
+}
+
 .app-header-refresh-btn,
 .app-header-login-btn {
   border-radius: 10px;

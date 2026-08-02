@@ -32,7 +32,7 @@ import {
   DICE_ROTATION_HYBRID_PROFILE_JSON,
   DICE_SELF_RECOVERY_PROFILE_JSON,
 } from './dice/diceWageringProfile'
-import { ALL_CURRENCIES, CURRENCY_GROUPS } from '../../constants/currencies'
+import WorkbenchCurrencySelect from './workbench/WorkbenchCurrencySelect'
 
 type ScriptSubTab = 'run' | 'builder'
 
@@ -86,9 +86,13 @@ function StatItem({
   valueClass?: string
 }) {
   return (
-    <div className="min-w-0 leading-none" title={`${label}: ${value}`}>
-      <div className="text-[9px] text-[var(--text-muted)] truncate">{label}</div>
-      <div className={`text-[11px] font-medium tabular-nums truncate ${valueClass}`}>{value}</div>
+    <div className="min-w-0 leading-tight" title={`${label}: ${value}`}>
+      <div className="text-[9px] text-[var(--text-muted)]">{label}</div>
+      <div
+        className={`text-[11px] font-medium tabular-nums break-all whitespace-normal ${valueClass}`}
+      >
+        {value}
+      </div>
     </div>
   )
 }
@@ -139,7 +143,7 @@ function ScriptStatsPanel({ stats, wide = false }: { stats: ScriptSessionStats; 
       className={
         wide
           ? 'grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-x-3 gap-y-1.5 w-full'
-          : 'grid grid-cols-4 sm:grid-cols-5 gap-x-2 gap-y-1.5 sm:w-[15.5rem] lg:w-[17rem] shrink-0 content-center'
+          : 'grid grid-cols-3 sm:grid-cols-4 gap-x-2.5 gap-y-2 sm:w-[18rem] lg:w-[20rem] shrink-0 content-start'
       }
     >
       {items.map((item) => (
@@ -428,25 +432,7 @@ export default function OriginalsScriptView() {
           </p>
           <div className="flex gap-2 items-center">
             <label className="text-xs text-[var(--text-muted)]">Currency</label>
-            <select
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-              className="bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--text)]"
-            >
-              <optgroup label="Crypto">
-                {CURRENCY_GROUPS.crypto.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </optgroup>
-              <optgroup label="Fiat">
-                {CURRENCY_GROUPS.fiat.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </optgroup>
-              {!ALL_CURRENCIES.some((c) => c.value === currency) && (
-                <option value={currency}>{currency.toUpperCase()}</option>
-              )}
-            </select>
+            <WorkbenchCurrencySelect value={currency} onChange={setCurrency} showBalances />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

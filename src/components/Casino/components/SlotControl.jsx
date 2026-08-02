@@ -2,9 +2,11 @@ import { useState, useCallback, useRef, useEffect, useMemo, forwardRef, useImper
 import { getProvider } from '../api/providers'
 import { PROVIDERS as PROVIDERS_BASIC } from '../constants/slots'
 import { PROVIDERS as PROVIDERS_META } from '../constants/providers'
-import { ALL_CURRENCIES, filterCurrenciesByProvider } from '../constants/currencies'
+import { ALL_CURRENCIES, filterCurrenciesByProvider, buildSelectableCurrencyOptions, groupSelectableCurrencyOptions, pickDefaultCurrency } from '../constants/currencies'
 import { fetchSupportedCurrencies } from '../api/stakeChallenges'
 import { isFiat, isStable } from '../utils/formatAmount'
+import { useUserStore } from '../../../store/userStore'
+import { useStakeSiteStore } from '../../../store/stakeSiteStore'
 import { getEffectiveBetAmount } from '../constants/bet'
 import { parseBetResponse } from '../utils/parseBetResponse'
 import { formatBetLabel, formatAmount, toUnits, toMinor } from '../utils/formatAmount'
@@ -550,9 +552,41 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     onWorkbenchSessionPublishRef.current(buildWorkbenchSessionPayload())
   }, [layout, buildWorkbenchSessionPayload])
 
-  const allowedCurrencies = filterCurrenciesByProvider(supportedCurrencies, [slot]) || supportedCurrencies
-  const cryptoOpts = allowedCurrencies.filter((c) => !isFiat(c.value) || isStable(c.value))
-  const fiatOpts = allowedCurrencies.filter((c) => isFiat(c.value) && !isStable(c.value))
+  const preferredSite = useStakeSiteStore((s) => s.preferredSite)
+  const availableCurrencies = useUserStore((s) => s.availableCurrencies)
+  const walletBalances = useUserStore((s) => s.balances)
+
+  const allowedCurrencies = useMemo(() => {
+    const owned = availableCurrencies?.length ? availableCurrencies : Object.keys(walletBalances || {})
+    if (preferredSite === 'eu') {
+      return buildSelectableCurrencyOptions({ site: 'eu', ownedCodes: owned })
+    }
+    const providerFiltered = filterCurrenciesByProvider(supportedCurrencies, [slot]) || supportedCurrencies
+    return buildSelectableCurrencyOptions({
+      site: 'com',
+      ownedCodes: owned,
+      baseList: providerFiltered,
+    })
+  }, [preferredSite, availableCurrencies, walletBalances, supportedCurrencies, slot])
+
+  const { crypto: cryptoOpts, fiat: fiatOpts, goldCoins: goldOpts } = useMemo(
+    () => groupSelectableCurrencyOptions(allowedCurrencies),
+    [allowedCurrencies]
+  )
+
+  useEffect(() => {
+    const nextSource = pickDefaultCurrency(allowedCurrencies, sourceCurrency, preferredSite)
+    const nextTarget = pickDefaultCurrency(allowedCurrencies, targetCurrency, preferredSite)
+    if (nextSource && nextSource !== sourceCurrency) {
+      setSourceCurrency(nextSource)
+      setSlotCurrency(slot.slug, { source: nextSource })
+    }
+    if (nextTarget && nextTarget !== targetCurrency) {
+      setTargetCurrency(nextTarget)
+      setSlotCurrency(slot.slug, { target: nextTarget })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferredSite, allowedCurrencies])
 
   /** Einsatz aus localStorage (pro Slot) auf aktuelle Levels mappen; bei Slot-Wechsel ohne Speicherung Default. */
   useEffect(() => {
@@ -1192,6 +1226,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     let spinsSinceSeed = 0
     let winsSinceSeed = 0
     let lossesSinceSeed = 0
+    /** Set when a seed trigger fired during an open bonus/FS round — rotate on next closed spin. */
+    let seedResetPending = false
     // Summen in USD-Cent (wie stats.totalWagered / totalWon) – konsistent mit Autospin Profit/Loss-Schwellen (ganze USD × 100)
     let aggWageredUsd = (stats.totalWagered ?? 0) / 100
     let aggWonUsd = (stats.totalWon ?? 0) / 100
@@ -1211,6 +1247,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       spinsSinceSeed = 0
       winsSinceSeed = 0
       lossesSinceSeed = 0
+      seedResetPending = false
     }
     const recordAutospinStopBet = (payload, { stoppedBonus = false } = {}) => {
       lastBalanceRef.current = payload.balance ?? lastBalanceRef.current
@@ -1399,28 +1436,29 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           if (isWin) winsSinceSeed += 1
           else lossesSinceSeed += 1
           const multi = effectiveBet > 0 && winAmount > 0 ? winAmount / effectiveBet : 0
-          const seedTrigger = shouldTriggerStakeRgsSeedReset({
-            spinsSinceSeed,
-            winsSinceSeed,
-            lossesSinceSeed,
-            winStreak,
-            lossStreak,
-            isWin,
-            multi,
-            seedChangeAfterSpins,
-            seedChangeOnMultiplier,
-            seedChangeAfterWins,
-            seedChangeAfterLosses,
-            seedChangeAfterWinStreak,
-            seedChangeAfterLossStreak,
-            seedResetOnLoss,
-          })
+          const seedTrigger =
+            seedResetPending ||
+            shouldTriggerStakeRgsSeedReset({
+              spinsSinceSeed,
+              winsSinceSeed,
+              lossesSinceSeed,
+              winStreak,
+              lossStreak,
+              isWin,
+              multi,
+              seedChangeAfterSpins,
+              seedChangeOnMultiplier,
+              seedChangeAfterWins,
+              seedChangeAfterLosses,
+              seedChangeAfterWinStreak,
+              seedChangeAfterLossStreak,
+              seedResetOnLoss,
+            })
           if (seedTrigger) {
             const rawRound = data?._stakeEngine?.raw?.round
             if (shouldDeferStakeRgsSeedReset(rawRound)) {
-              spinsSinceSeed -= 1
-              if (isWin) winsSinceSeed -= 1
-              else lossesSinceSeed -= 1
+              // Keep intent (multi / every-loss / streak) until the base round closes.
+              seedResetPending = true
               logApiCall({
                 type: `${slot.providerId}/seed`,
                 endpoint: 'deferSeedReset',
@@ -1681,6 +1719,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             >
               {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
               {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+              {goldOpts.length > 0 && <optgroup label="GoldCoins">{goldOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
             </select>
             <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
             <select
@@ -1691,6 +1730,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             >
               {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
               {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+              {goldOpts.length > 0 && <optgroup label="GoldCoins">{goldOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
             </select>
           </div>
         )}

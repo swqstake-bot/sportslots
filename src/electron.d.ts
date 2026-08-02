@@ -10,6 +10,7 @@ export interface ElectronAPI {
   getStakeSessionStatus: () => Promise<{
     valid: boolean;
     origin: string;
+    preferredSite?: 'com' | 'eu';
     checkedAt: string;
     reasons: string[];
     missingCookies: string[];
@@ -19,13 +20,49 @@ export interface ElectronAPI {
   revalidateStakeSession: () => Promise<{
     valid: boolean;
     origin: string;
+    preferredSite?: 'com' | 'eu';
     checkedAt: string;
     reasons: string[];
     missingCookies: string[];
     expiredCookies: string[];
     sessionToken: string | null;
   }>;
-  login: () => Promise<void>;
+  login: (payload?: { site?: 'com' | 'eu'; origin?: string }) => Promise<void>;
+  getStakeSite: () => Promise<{
+    preferredSite: 'com' | 'eu';
+    activeOrigin: string;
+    statuses: {
+      preferredSite: 'com' | 'eu';
+      activeOrigin: string;
+      com: { site: 'com'; origin: string; valid: boolean };
+      eu: { site: 'eu'; origin: string; valid: boolean };
+    };
+  }>;
+  setStakeSite: (site: 'com' | 'eu') => Promise<{
+    preferredSite: 'com' | 'eu';
+    statuses: {
+      preferredSite: 'com' | 'eu';
+      activeOrigin: string;
+      com: { site: 'com'; origin: string; valid: boolean };
+      eu: { site: 'eu'; origin: string; valid: boolean };
+    };
+    status: {
+      valid: boolean;
+      origin: string;
+      preferredSite?: 'com' | 'eu';
+      checkedAt: string;
+      reasons: string[];
+      missingCookies: string[];
+      expiredCookies: string[];
+      sessionToken: string | null;
+    };
+  }>;
+  getStakeSiteStatuses: () => Promise<{
+    preferredSite: 'com' | 'eu';
+    activeOrigin: string;
+    com: { site: 'com'; origin: string; valid: boolean };
+    eu: { site: 'eu'; origin: string; valid: boolean };
+  }>;
   invoke: (channel: string, ...args: any[]) => Promise<any>;
   getKeyAuthHwid: () => Promise<string>;
   getSessionToken: () => Promise<string | null>;
