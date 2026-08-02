@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getStakeSite: () => ipcRenderer.invoke('stake-get-site'),
     setStakeSite: (site: 'com' | 'eu') => ipcRenderer.invoke('stake-set-site', site),
     getStakeSiteStatuses: () => ipcRenderer.invoke('stake-site-statuses'),
+    deleteCacheAndRelaunch: () =>
+        ipcRenderer.invoke('app-delete-cache') as Promise<{ ok: boolean }>,
     invoke: (channel: string, ...args: any[]) => {
         if (!INVOKE_ALLOWLIST.has(channel)) {
             return Promise.reject(new Error(`IPC channel not allowed: ${channel}`));

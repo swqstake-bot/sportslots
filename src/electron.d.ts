@@ -63,6 +63,8 @@ export interface ElectronAPI {
     com: { site: 'com'; origin: string; valid: boolean };
     eu: { site: 'eu'; origin: string; valid: boolean };
   }>;
+  /** Clear cookies/cache/login session data and relaunch the app. */
+  deleteCacheAndRelaunch: () => Promise<{ ok: boolean }>;
   invoke: (channel: string, ...args: any[]) => Promise<any>;
   getKeyAuthHwid: () => Promise<string>;
   getSessionToken: () => Promise<string | null>;

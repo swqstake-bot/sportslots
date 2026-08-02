@@ -86,14 +86,16 @@ export function convertToUsd(value: unknown, currencyCode: unknown, unit: Moneta
     }
   }
   if (GOLD_COINS.has(base.currencyCode)) {
+    // Stake.eu: SC ≈ $1; GC play-money — use 1:1 for stats/display (no FX feed).
+    const usd = base.amountMajor
     return {
       ...base,
-      usdAmount: null,
-      usdCents: null,
-      fxStatus: 'missing-rate',
-      fxSource: null,
-      fxRateSource: null,
-      fxRate: null,
+      usdAmount: usd,
+      usdCents: Math.round(usd * 100),
+      fxStatus: 'ok',
+      fxSource: 'usd-like',
+      fxRateSource: 'usd-like',
+      fxRate: 1,
     }
   }
   const rate = Number(rates?.[base.currencyCode])

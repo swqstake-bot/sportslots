@@ -6,6 +6,7 @@
 import {
   FIAT_CURRENCIES,
   ZERO_DECIMAL_CURRENCIES,
+  getCurrencyLabel,
   getDisplayFractionDigits,
   getMinorFactor,
   isFiatCurrency,
@@ -53,11 +54,11 @@ export function formatBetLabel(value, currencyCode, opts = {}) {
   const formatted = divisor
     ? (Number(value) / divisor).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     : formatAmount(value, currencyCode)
-  const cc = (currencyCode || '').toUpperCase()
-  if (!cc) return String(value)
-  if (cc === 'EUR') return `${formatted} €`
-  if (['USD', 'USDC', 'USDT'].includes(cc)) return `$${formatted}`
-  return `${formatted} ${cc}`
+  const label = getCurrencyLabel(currencyCode)
+  if (!label) return String(value)
+  if (label === 'EUR') return `${formatted} €`
+  if (['USD', 'USDC', 'USDT'].includes(label)) return `$${formatted}`
+  return `${formatted} ${label}`
 }
 
 /**

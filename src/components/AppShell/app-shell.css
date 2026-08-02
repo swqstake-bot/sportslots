@@ -491,6 +491,17 @@
   box-shadow: 0 0 12px rgba(var(--app-accent-rgb), 0.2);
 }
 
+.app-header-danger-btn {
+  border-color: rgba(232, 80, 80, 0.45);
+  color: #f5b4b4;
+}
+
+.app-header-danger-btn:hover {
+  border-color: rgba(232, 80, 80, 0.75);
+  background: rgba(232, 80, 80, 0.14);
+  color: #ffd6d6;
+}
+
 .app-header-login-btn {
   color: #071015;
   border-color: rgba(255, 255, 255, 0.18);

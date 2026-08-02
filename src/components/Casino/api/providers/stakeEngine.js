@@ -21,7 +21,7 @@
 import { startThirdPartySession } from '../stake'
 import { getEffectiveBetAmount } from '../../constants/bet'
 import { logApiCall } from '../../utils/apiLogger'
-import { isFiatCurrency, isZeroDecimalCurrency } from '../../utils/currencyMeta'
+import { isFiatCurrency, isGoldCoinCurrency, isZeroDecimalCurrency } from '../../utils/currencyMeta'
 import { normalizeProviderError } from './providerErrors'
 
 /** RGS: ganzzahliger Betrag; 1.000.000 = 1,0 Währungseinheit (vgl. stake-engine API_MULTIPLIER). */
@@ -154,18 +154,19 @@ function parseConfigFromUrl(config) {
 function toStakeEngineAmount(betAmount, targetCurrency) {
   const curr = (targetCurrency || 'eur').toLowerCase()
   const isZeroDec = isZeroDecimalCurrency(curr)
-  const fiatCurrency = isFiatCurrency(curr)
-  
+  // GoldCoins (GC/SC) use 2-decimal minor like fiat — not crypto 1e8.
+  const centCurrency = isFiatCurrency(curr) || isGoldCoinCurrency(curr)
+
   let units
   if (isZeroDec) {
     units = Number(betAmount)
-  } else if (fiatCurrency) {
+  } else if (centCurrency) {
     units = Number(betAmount) / 100
   } else {
     // Crypto: Input ist in Satoshis (1e8), wir brauchen Major Units
     units = Number(betAmount) / 1e8
   }
-  
+
   return Math.round(units * STAKE_ENGINE_API_MULTIPLIER)
 }
 
@@ -307,10 +308,10 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const betLevels = betLevelsRaw.map((v) => {
     const units = v / STAKE_ENGINE_API_MULTIPLIER
     const curr = (targetCurrency || 'eur').toLowerCase()
-    
+
     if (isZeroDecimalCurrency(curr)) {
       return Math.round(units)
-    } else if (isFiatCurrency(curr)) {
+    } else if (isFiatCurrency(curr) || isGoldCoinCurrency(curr)) {
       return Math.round(units * 100)
     } else {
       // Crypto: Major -> Satoshis (1e8)
@@ -523,8 +524,8 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
     // da einige Slots (z.B. Maze Quest) winAmount in anderem Format liefern können.
     const winInUnitsFromRaw = winAmount / STAKE_ENGINE_API_MULTIPLIER
     const curr = (playData?.balance?.currency || session?.currencyCode || 'eur').toLowerCase()
-    const fiatCurrency = isFiatCurrency(curr)
-    const wouldBeZero = fiatCurrency && winInUnitsFromRaw < 0.001
+    const centCurrency = isFiatCurrency(curr) || isGoldCoinCurrency(curr)
+    const wouldBeZero = centCurrency && winInUnitsFromRaw < 0.001
     if (wouldBeZero) winAmount = fromPayoutMult
   }
   const balanceObj = playData?.balance || {}

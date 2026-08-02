@@ -92,6 +92,30 @@ export function AppHeader({
     }
   }
 
+  const handleDeleteCache = async () => {
+    const ok = window.confirm(
+      'Delete all cache and login/session data?\n\nThis clears Stake cookies, local cache and Telegram session, then restarts the app.'
+    )
+    if (!ok) return
+    try {
+      try {
+        localStorage.clear()
+        sessionStorage.clear()
+      } catch {
+        /* ignore */
+      }
+      const api = window.electronAPI
+      if (!api?.deleteCacheAndRelaunch) {
+        window.alert('Delete Cache is only available in the desktop app.')
+        return
+      }
+      await api.deleteCacheAndRelaunch()
+    } catch (err) {
+      console.error('[AppHeader] Delete cache failed', err)
+      window.alert(`Delete cache failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
   const loginLabel = preferredSite === 'eu' ? 'Login Stake.eu' : 'Login with Stake'
 
   return (
@@ -166,11 +190,31 @@ export function AppHeader({
             >
               Session
             </button>
+            <button
+              type="button"
+              onClick={() => void handleDeleteCache()}
+              className="app-header-refresh-btn app-header-danger-btn"
+              aria-label="Delete cache and login data, then restart"
+              title="Clear cookies, cache, login/session data and restart"
+            >
+              Delete Cache
+            </button>
           </>
         ) : (
-          <button type="button" onClick={() => onLogin(preferredSite)} className="app-header-login-btn">
-            {loginLabel}
-          </button>
+          <>
+            <button type="button" onClick={() => onLogin(preferredSite)} className="app-header-login-btn">
+              {loginLabel}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDeleteCache()}
+              className="app-header-refresh-btn app-header-danger-btn"
+              aria-label="Delete cache and login data, then restart"
+              title="Clear cookies, cache, login/session data and restart"
+            >
+              Delete Cache
+            </button>
+          </>
         )}
       </div>
     </header>

@@ -34,6 +34,9 @@ import {
   resolveStakeLoginOrigin,
   resolveStakeOrigin,
   setPreferredStakeSite,
+  STAKE_ORIGIN_BET,
+  STAKE_ORIGIN_COM,
+  STAKE_ORIGIN_EU,
   type StakePreferredSite,
   type StakeSessionStatus,
 } from './stakeSessionManager.js';
@@ -1190,6 +1193,98 @@ ipcMain.handle('stake-set-site', async (_event, site: StakePreferredSite | strin
 
 ipcMain.handle('stake-site-statuses', async () => {
     return listStakeSiteStatuses();
+});
+
+/** Wipe cookies/cache/session files and relaunch — hard reset for stuck login/session. */
+ipcMain.handle('app-delete-cache', async () => {
+  const wipeSession = async (ses: Electron.Session) => {
+    try {
+      await ses.clearCache();
+    } catch (err) {
+      console.warn('[delete-cache] clearCache', err);
+    }
+    try {
+      await ses.clearStorageData();
+    } catch (err) {
+      console.warn('[delete-cache] clearStorageData', err);
+    }
+    try {
+      await ses.clearAuthCache();
+    } catch (err) {
+      console.warn('[delete-cache] clearAuthCache', err);
+    }
+    try {
+      await ses.clearHostResolverCache();
+    } catch {
+      /* optional */
+    }
+  };
+
+  const removeCookiesForOrigin = async (ses: Electron.Session, origin: string) => {
+    try {
+      const cookies = await ses.cookies.get({ url: origin });
+      for (const c of cookies) {
+        const domain = c.domain?.startsWith('.') ? c.domain : c.domain || new URL(origin).hostname;
+        const url = `${c.secure ? 'https' : 'http'}://${domain.replace(/^\./, '')}${c.path || '/'}`;
+        try {
+          await ses.cookies.remove(url, c.name);
+        } catch {
+          try {
+            await ses.cookies.remove(origin, c.name);
+          } catch {
+            /* ignore single cookie */
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[delete-cache] cookies', origin, err);
+    }
+  };
+
+  const ses = session.defaultSession;
+  await wipeSession(ses);
+  for (const origin of [STAKE_ORIGIN_COM, STAKE_ORIGIN_BET, STAKE_ORIGIN_EU]) {
+    await removeCookiesForOrigin(ses, origin);
+  }
+
+  try {
+    const forumSes = session.fromPartition(FORUM_SESSION_PARTITION);
+    await wipeSession(forumSes);
+  } catch (err) {
+    console.warn('[delete-cache] forum partition', err);
+  }
+
+  const ud = app.getPath('userData');
+  const filesToDelete = [
+    'stake-site.json',
+    'telegram_string_session.txt',
+    // Keep telegram_user_config.json (API id/hash) — only wipe login session above.
+  ];
+  for (const name of filesToDelete) {
+    try {
+      fs.unlinkSync(path.join(ud, name));
+    } catch {
+      /* missing ok */
+    }
+  }
+
+  // Best-effort wipe of Chromium cache folders under userData
+  for (const dirName of ['Cache', 'Code Cache', 'GPUCache', 'Session Storage', 'Local Storage', 'Cookies', 'Cookies-journal']) {
+    try {
+      fs.rmSync(path.join(ud, dirName), { recursive: true, force: true });
+    } catch {
+      /* locked/missing ok */
+    }
+  }
+
+  invalidateStakeSessionStatusCache();
+
+  setTimeout(() => {
+    app.relaunch();
+    app.exit(0);
+  }, 150);
+
+  return { ok: true };
 });
 
 ipcMain.handle('get-keyauth-hwid', async () => {

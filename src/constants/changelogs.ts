@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.221': [
+    '🐛 Stake.eu / Stake Engine: GC/SC-Einsätze korrekt (1 GC ≠ 1.000.000) — Bet-Levels & Stats',
+    '✨ Delete Cache: Cookies/Login/Session/Cache löschen und App neu starten (Header)',
+  ],
   '1.0.220': [
     '🐛 Stake.eu: Slot / Bonus Hunt / Challenge Hunter / Telegram / Autorun — eine Währung (GC oder SC), kein Source→Target-Paar',
     '🐛 Stake.eu: startThirdPartySession setzt gold/sweeps mit source === target',
