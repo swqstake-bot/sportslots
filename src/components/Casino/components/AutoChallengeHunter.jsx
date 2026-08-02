@@ -6,7 +6,7 @@ import {
   extractProviderGroupSlug,
 } from '../api/stakeChallenges'
 import { getProvider } from '../api/providers'
-import { isFiat, isStable, formatAmount, formatBetLabel, toUnits, toMinor, ZERO_DECIMAL_CURRENCIES } from '../utils/formatAmount'
+import { isFiat, isStable, formatAmount, formatBetLabel, formatChallengeAmountWithSymbol, toUnits, toMinor, ZERO_DECIMAL_CURRENCIES } from '../utils/formatAmount'
 import { parseBetResponse } from '../utils/parseBetResponse'
 import { Button } from './ui/Button'
 import { CURRENCY_GROUPS, EU_CURRENCIES, PROVIDER_CURRENCIES, isEuGoldCoinCode } from '../constants/currencies'
@@ -1591,27 +1591,31 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
   const getPrizeUsd = (c, currentRates = rates) => {
     if (c.award == null) return 0
+    const award = Number(c.award)
+    if (!Number.isFinite(award) || award <= 0) return 0
     const currency = (c.currency || 'usd').toLowerCase()
-    if (currency === 'usd') return c.award
-    const rate = currentRates[currency] || 0
+    // USDC/USDT/USD are ~$1; do not require baseRates entry (Stake.com prizes are often USDC)
+    const rate = getRateForCurrency(currentRates, currency)
     if (!rate) return 0
-    return c.award * rate
+    return award * rate
   }
 
   /** Anzeige Gewinn/Preis der Challenge: USD-Näherung + optional Betrag in Spiel-Währung */
   const formatChallengePrize = (c) => {
     if (c.award == null || !(Number(c.award) > 0)) return { main: '—', hint: null }
     const usd = getPrizeUsd(c)
-    const main = `~$${usd.toFixed(2)}`
     const cur = (c.currency || 'usd').toLowerCase()
-    let hint = null
-    if (cur !== 'usd' && c.currency) {
-      try {
-        hint = formatBetLabel(c.award, c.currency)
-      } catch {
-        hint = null
-      }
+    let native = null
+    try {
+      native = formatChallengeAmountWithSymbol(c.award, c.currency || 'usd')
+    } catch {
+      native = null
     }
+    if (!(usd > 0)) {
+      return { main: native || String(c.award), hint: null }
+    }
+    const main = `~$${usd.toFixed(2)}`
+    const hint = cur !== 'usd' && cur !== 'usdc' && cur !== 'usdt' ? native : null
     return { main, hint }
   }
 

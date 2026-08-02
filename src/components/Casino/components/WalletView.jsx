@@ -175,7 +175,8 @@ export default function WalletView({ accessToken, compact = false, hideTitle = f
   if (!accessToken) return null
 
   const toUsd = (amount, currency) => {
-    const rate = rates[currency?.toLowerCase()] ?? 0
+    const c = (currency || '').toLowerCase()
+    const rate = (c === 'usd' || c === 'usdc' || c === 'usdt') ? 1 : (rates[c] ?? 0)
     return rate ? amount * rate : null
   }
 

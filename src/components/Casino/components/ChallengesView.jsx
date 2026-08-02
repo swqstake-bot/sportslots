@@ -209,9 +209,14 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
 
   const formatAwardUsd = (c) => {
     if (c.award == null) return null
-    const rate = rates[c.currency?.toLowerCase()] ?? 0
-    const usd = rate ? c.award * rate : null
-    return usd != null ? `~$${usd.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : null
+    const award = Number(c.award)
+    if (!Number.isFinite(award) || award <= 0) return null
+    const cur = (c.currency || 'usd').toLowerCase()
+    // USD/USDC/USDT ≈ $1 even when currencyConfiguration omits them
+    const rate = (cur === 'usd' || cur === 'usdc' || cur === 'usdt') ? 1 : (rates[cur] ?? 0)
+    if (!rate) return null
+    const usd = award * rate
+    return `~$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
 
   useEffect(() => {
@@ -468,8 +473,8 @@ export default function ChallengesView({ accessToken, onSelectChallenge, webSlot
                 )}
                 <span style={STYLES.itemMulti}>{c.targetMultiplier}×</span>
                 {c.award != null && c.award > 0 && (
-                  <span title={c.currency ? formatBetLabel(c.award, c.currency) : undefined}>
-                    {formatAwardUsd(c) ?? formatBetLabel(c.award, c.currency || 'usd')}
+                  <span title={c.currency ? formatChallengeAmountWithSymbol(c.award, c.currency) : undefined}>
+                    {formatAwardUsd(c) ?? formatChallengeAmountWithSymbol(c.award, c.currency || 'usd')}
                   </span>
                 )}
                 {c.minBetUsd != null && c.minBetUsd > 0 && (

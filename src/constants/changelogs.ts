@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.226': [
+    '🐛 Stake.com: Challenge-Preise (USDC/USDT) nicht mehr ~$0 — Stablecoin-Rate 1:1 + Prize-USD-Berechnung',
+  ],
   '1.0.225': [
     '🐛 Stake.eu: Spin-Liste leer trotz Stats — GC/SC als 1:1 USD für BetList/Stats (nicht mehr auf 0 gefiltert)',
   ],

@@ -16,12 +16,19 @@ const CURRENCY_CONFIG_QUERY = `query CurrencyConfiguration($isAcp: Boolean!) {
  */
 export async function fetchCurrencyRates(accessToken, options = {}) {
   const force = !!options?.force
+  const withPegs = (map) => {
+    const out = { ...(map || {}) }
+    for (const peg of ['usd', 'usdc', 'usdt']) {
+      if (!out[peg] || !(Number(out[peg]) > 0)) out[peg] = 1
+    }
+    return out
+  }
   try {
     const raw = force ? null : localStorage.getItem('slotbot_currency_rates_cache')
     if (raw && !force) {
       const { ts, map } = JSON.parse(raw)
       if (map && ts && Date.now() - ts < 30 * 60 * 1000) {
-        return map
+        return withPegs(map)
       }
     }
   } catch (_) {}
@@ -50,7 +57,7 @@ export async function fetchCurrencyRates(accessToken, options = {}) {
 
     const cfg = json?.currencyConfiguration
     if (!cfg) {
-      return {}
+      return withPegs({})
     }
 
     const map = {}
@@ -59,11 +66,12 @@ export async function fetchCurrencyRates(accessToken, options = {}) {
       const usdRate = Number(r?.baseRate)
       if (code && Number.isFinite(usdRate) && usdRate > 0) map[code] = usdRate
     }
+    const finalMap = withPegs(map)
 
     try {
-      localStorage.setItem('slotbot_currency_rates_cache', JSON.stringify({ ts: Date.now(), map }))
+      localStorage.setItem('slotbot_currency_rates_cache', JSON.stringify({ ts: Date.now(), map: finalMap }))
     } catch (_) {}
-    return map
+    return finalMap
   } catch (error) {
     logApiCall({
       type: 'stake/currencyConfiguration',
@@ -73,7 +81,7 @@ export async function fetchCurrencyRates(accessToken, options = {}) {
       error: error.message,
       durationMs: Date.now() - t0,
     })
-    return {}
+    return withPegs({})
   }
 }
 
