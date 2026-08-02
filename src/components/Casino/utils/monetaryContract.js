@@ -1,5 +1,6 @@
 import {
   getMinorFactor,
+  isGoldCoinCurrency,
   isUsdLikeCurrency,
   normalizeCurrencyCode,
 } from './currencyMeta'
@@ -41,13 +42,18 @@ export function normalizeMonetaryAmount(value, currencyCode, unit = 'minor') {
     : normalizeMinorAmount(value, currencyCode)
 }
 
+/** USD-like + Stake.eu GoldCoins (GC/SC / XGC/XSC) — 1:1 for stats & BetList display. */
+function isDirectUsdParityCurrency(currencyCode) {
+  return isUsdLikeCurrency(currencyCode) || isGoldCoinCurrency(currencyCode)
+}
+
 export function convertMinorToUsdCents(amountMinor, currencyCode, currencyRates = {}) {
   const base = normalizeMinorAmount(amountMinor, currencyCode)
   if (!Number.isFinite(base.amountMajor)) {
     return { usdCents: null, fxStatus: 'invalid-amount', fxRateSource: null, fxSource: null, fxRate: null, ...base }
   }
 
-  if (isUsdLikeCurrency(base.currencyCode)) {
+  if (isDirectUsdParityCurrency(base.currencyCode)) {
     return { usdCents: Math.round(base.amountMajor * 100), fxStatus: 'ok', fxRateSource: 'usd-like', fxSource: 'usd-like', fxRate: 1, ...base }
   }
 
@@ -72,7 +78,7 @@ export function convertMinorToUsdMajor(amountMinor, currencyCode, currencyRates 
     return { usd: null, fxStatus: 'invalid-amount', fxRateSource: null, fxSource: null, fxRate: null, ...base }
   }
 
-  if (isUsdLikeCurrency(base.currencyCode)) {
+  if (isDirectUsdParityCurrency(base.currencyCode)) {
     return { usd: base.amountMajor, fxStatus: 'ok', fxRateSource: 'usd-like', fxSource: 'usd-like', fxRate: 1, ...base }
   }
 

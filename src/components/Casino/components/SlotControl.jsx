@@ -407,17 +407,21 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const betListDisplayRows = useMemo(() => {
     const rows = sessionBetsDeduped.slice(-40)
     return rows.map((b) => {
-      const curr = String(b.currencyCode || effectiveTarget || 'usd').toLowerCase()
+      const curr = betHistoryCurrencyKey(b.currencyCode || effectiveTarget || 'usd')
       let betUsd = Number(b.betUsdSnapshotMajor)
       let winUsd = Number(b.winUsdSnapshotMajor)
       if (!Number.isFinite(betUsd)) betUsd = Number(toUsdMajor(b.betAmount, curr))
       if (!Number.isFinite(winUsd)) winUsd = Number(toUsdMajor(b.winAmount, curr))
-      // Rates missing: only treat raw minor as USD for USD-like currencies — never flash SOL/etc.
+      // Rates missing: USD-like + GoldCoins (GC/SC) are 1:1 — never flash SOL/etc.
       if (!Number.isFinite(betUsd)) {
-        betUsd = (curr === 'usd' || curr === 'usdc' || curr === 'usdt') ? (Number(b.betAmount) || 0) / 100 : 0
+        const parity =
+          curr === 'usd' || curr === 'usdc' || curr === 'usdt' || isGoldCoinCurrency(curr)
+        betUsd = parity ? (Number(b.betAmount) || 0) / 100 : 0
       }
       if (!Number.isFinite(winUsd)) {
-        winUsd = (curr === 'usd' || curr === 'usdc' || curr === 'usdt') ? (Number(b.winAmount) || 0) / 100 : 0
+        const parity =
+          curr === 'usd' || curr === 'usdc' || curr === 'usdt' || isGoldCoinCurrency(curr)
+        winUsd = parity ? (Number(b.winAmount) || 0) / 100 : 0
       }
       return {
         ...b,
@@ -433,7 +437,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     let cum = 0
     const cumNets = []
     for (const b of list) {
-      const curr = String(b.currencyCode || effectiveTarget || 'usd').toLowerCase()
+      const curr = betHistoryCurrencyKey(b.currencyCode || effectiveTarget || 'usd')
       const winMinor = (b.isBonus && b.stoppedBonus) ? 0 : (Number(b.winAmount) || 0)
       const betMinor = Number(b.betAmount) || 0
       let betUsd = Number(b.betUsdSnapshotMajor)
@@ -442,13 +446,17 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       if (!Number.isFinite(betUsd)) {
         betUsd = Number(toUsdMajor(betMinor, curr))
         if (!Number.isFinite(betUsd)) {
-          betUsd = (curr === 'usd' || curr === 'usdc' || curr === 'usdt') ? betMinor / 100 : 0
+          const parity =
+            curr === 'usd' || curr === 'usdc' || curr === 'usdt' || isGoldCoinCurrency(curr)
+          betUsd = parity ? betMinor / 100 : 0
         }
       }
       if (!Number.isFinite(winUsd)) {
         winUsd = Number(toUsdMajor(winMinor, curr))
         if (!Number.isFinite(winUsd)) {
-          winUsd = (curr === 'usd' || curr === 'usdc' || curr === 'usdt') ? winMinor / 100 : 0
+          const parity =
+            curr === 'usd' || curr === 'usdc' || curr === 'usdt' || isGoldCoinCurrency(curr)
+          winUsd = parity ? winMinor / 100 : 0
         }
       }
       cum += winUsd - betUsd
