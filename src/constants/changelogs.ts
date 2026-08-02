@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.222': [
+    '🐛 CI/Lint: Autorun EU-Currency + Originals Settings (kein setState-in-effect)',
+  ],
   '1.0.221': [
     '🐛 Stake.eu / Stake Engine: GC/SC-Einsätze korrekt (1 GC ≠ 1.000.000) — Bet-Levels & Stats',
     '✨ Delete Cache: Cookies/Login/Session/Cache löschen und App neu starten (Header)',

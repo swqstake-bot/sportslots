@@ -109,18 +109,12 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
     webSlotsRef.current = webSlots
   }, [config, accessToken, webSlots])
 
-  useEffect(() => {
-    if (!isEuGoldCoins) return
-    setConfig((c) => {
-      const next = isEuGoldCoinCode(c.sourceCurrency)
-        ? c.sourceCurrency
-        : isEuGoldCoinCode(c.targetCurrency)
-          ? c.targetCurrency
-          : 'sweeps'
-      if (c.sourceCurrency === next && c.targetCurrency === next) return c
-      return { ...c, sourceCurrency: next, targetCurrency: next }
-    })
-  }, [isEuGoldCoins])
+  const euWalletCurrency = useMemo(() => {
+    if (!isEuGoldCoins) return null
+    if (isEuGoldCoinCode(config.sourceCurrency)) return config.sourceCurrency
+    if (isEuGoldCoinCode(config.targetCurrency)) return config.targetCurrency
+    return 'sweeps'
+  }, [isEuGoldCoins, config.sourceCurrency, config.targetCurrency])
 
   const applySessionTotals = useCallback((totals: { wagered: number; payout: number; profit: number; bestMulti: number }) => {
     sessionKpiRef.current = {
@@ -951,7 +945,7 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
               Currency (GC / SC)
               <select
                 className="mt-0.5 w-full rounded-md border border-[var(--border)] bg-[var(--bg-deep)] px-2 py-1 text-sm"
-                value={isEuGoldCoinCode(config.sourceCurrency) ? config.sourceCurrency : 'sweeps'}
+                value={euWalletCurrency || 'sweeps'}
                 onChange={(e) => {
                   const v = e.target.value.toLowerCase()
                   setConfig((c) => ({ ...c, sourceCurrency: v, targetCurrency: v }))

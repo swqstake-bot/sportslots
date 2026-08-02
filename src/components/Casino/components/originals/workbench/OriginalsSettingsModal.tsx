@@ -45,12 +45,8 @@ function DraftNumberInput({
   className?: string
   fallback: number
 }) {
+  const [focused, setFocused] = useState(false)
   const [text, setText] = useState(() => String(value))
-  const focusedRef = useRef(false)
-
-  useEffect(() => {
-    if (!focusedRef.current) setText(String(value))
-  }, [value])
 
   const commit = (raw: string) => {
     const parsed = Number(raw)
@@ -68,18 +64,19 @@ function DraftNumberInput({
       max={max}
       step={step}
       className={className}
-      value={text}
+      value={focused ? text : String(value)}
       onFocus={() => {
-        focusedRef.current = true
+        setFocused(true)
+        setText(String(value))
       }}
       onChange={(e) => setText(e.target.value)}
       onBlur={() => {
-        focusedRef.current = false
+        setFocused(false)
         commit(text)
       }}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
-          ;(e.target as HTMLInputElement).blur()
+          e.currentTarget.blur()
         }
       }}
     />
