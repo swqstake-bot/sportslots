@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.224': [
+    '🐛 Stake.eu: Bet-IDs — round.betID priorisieren, gold↔XGC houseBets-Match (Copy-ID / Reconcile)',
+  ],
   '1.0.223': [
     '🐛 Stake.eu / Stake Engine: XGC/XSC = GC/SC — Einsätze korrekt (nicht mehr immer 1 GC)',
   ],

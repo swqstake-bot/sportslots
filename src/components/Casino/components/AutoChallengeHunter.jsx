@@ -148,7 +148,7 @@ function getRateForCurrency(rates, tCurr) {
   const c = (tCurr || '').toLowerCase()
   if (c === 'usd' || c === 'usdc' || c === 'usdt') return 1
   // Stake.eu GoldCoins: SC ≈ $1 display; GC treated as 1:1 for stake sizing
-  if (c === 'sweeps' || c === 'gold') return rates[c] || 1
+  if (c === 'sweeps' || c === 'gold' || c === 'xsc' || c === 'xgc') return rates[c] || 1
   return rates[c] || 0
 }
 

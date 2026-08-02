@@ -21,7 +21,7 @@
 import { startThirdPartySession } from '../stake'
 import { getEffectiveBetAmount } from '../../constants/bet'
 import { logApiCall } from '../../utils/apiLogger'
-import { isFiatCurrency, isGoldCoinCurrency, isZeroDecimalCurrency } from '../../utils/currencyMeta'
+import { isFiatCurrency, isGoldCoinCurrency, isZeroDecimalCurrency, canonicalizeGoldCoinCode } from '../../utils/currencyMeta'
 import { normalizeProviderError } from './providerErrors'
 
 /** RGS: ganzzahliger Betrag; 1.000.000 = 1,0 Währungseinheit (vgl. stake-engine API_MULTIPLIER). */
@@ -530,7 +530,11 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
   }
   const balanceObj = playData?.balance || {}
   const balanceRaw = balanceObj?.amount != null ? Number(balanceObj.amount) : null
-  const respCurrency = (balanceObj?.currency || session?.currencyCode || 'EUR').toLowerCase()
+  // RGS uses XGC/XSC; wallet/UI/houseBets use gold/sweeps — keep cent math on either code.
+  const respCurrencyRaw = (balanceObj?.currency || session?.currencyCode || 'EUR').toLowerCase()
+  const respCurrency = isGoldCoinCurrency(respCurrencyRaw)
+    ? canonicalizeGoldCoinCode(respCurrencyRaw)
+    : respCurrencyRaw
   const balanceUnits = balanceRaw != null ? balanceRaw / STAKE_ENGINE_API_MULTIPLIER : null
   const balanceMinor = balanceUnits != null
     ? isZeroDecimalCurrency(respCurrency)
@@ -605,7 +609,8 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
     round: {
       ...round,
       status: round?.status || 'complete',
-      roundId: round?.roundId ?? round?.betID ?? round?.betId ?? round?.id,
+      // HAR / Stake Engine: round.betID is the numeric casino bet id (e.g. 13335567427).
+      roundId: round?.betID ?? round?.betId ?? round?.roundId ?? round?.id ?? null,
       events: eventsWithWin,
       winAmountDisplay: winDisplay, // Explizit für parseBetResponse (Gleiche Einheiten wie balance)
     },

@@ -11,6 +11,7 @@ import { getEffectiveBetAmount } from '../constants/bet'
 import { parseBetResponse } from '../utils/parseBetResponse'
 import { formatBetLabel, formatAmount, toUnits, toMinor } from '../utils/formatAmount'
 import { convertMinorToUsdMajor } from '../utils/monetaryContract'
+import { canonicalizeGoldCoinCode, isGoldCoinCurrency } from '../utils/currencyMeta'
 import {
   createEmptyCasinoAggregate,
   recomputeCasinoAggregate,
@@ -124,6 +125,13 @@ const FALLBACK_RECONCILE_WINDOW_MS = 60000
 const STOPPED_BONUS_RECONCILE_WINDOW_MS = 30 * 60 * 1000
 const PENDING_HOUSE_RECONCILE_SOURCES = new Set(['placebet', 'http_fallback'])
 
+/** Normalize currency for bet-history signatures (gold ↔ XGC, sweeps ↔ XSC). */
+function betHistoryCurrencyKey(code) {
+  const c = String(code || '').toLowerCase()
+  if (isGoldCoinCurrency(c)) return canonicalizeGoldCoinCode(c)
+  return c
+}
+
 function findPendingRowForHouseReconcile(prev, { betAmount, signature, now, sessionStartAt }) {
   // 1) Prefer newest unreconciled stop-on-bonus row (Hacksaw: otherwise FIFO steals settlement → duplicate wins).
   let bonusIdx = -1
@@ -166,7 +174,7 @@ function findPendingRowForHouseReconcile(prev, { betAmount, signature, now, sess
     if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) break
     if (!PENDING_HOUSE_RECONCILE_SOURCES.has(String(row?.source || ''))) continue
     if (row?.houseBetReconciled) continue
-    const rowCurr = String(row?.currencyCode || 'usd').toLowerCase()
+    const rowCurr = betHistoryCurrencyKey(row?.currencyCode || 'usd')
     const rowSig = `${rowCurr}|${Number(row?.betAmount) || 0}|${Number(row?.winAmount) || 0}|${row?.isBonus ? 1 : 0}`
     if (rowSig === signature) return i
   }
@@ -752,7 +760,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     // FX must follow the bet's real currency (house/API). Session target is fallback only.
     // Forcing effectiveTarget caused EUR stakes to be valued as SOL/ARS → ~10× USD vs Stake.
     const apiCurr = String(parsed.currencyCode || '').toLowerCase()
-    const currencyCode = String(apiCurr || effectiveTarget || 'usd').toLowerCase()
+    const currencyCode = betHistoryCurrencyKey(apiCurr || effectiveTarget || 'usd')
     const parsedBet = Number(parsed.betAmount) || 0
     const parsedWin = Number(parsed.stoppedBonus ? 0 : (parsed.winAmount ?? 0)) || 0
     const signature = `${currencyCode}|${parsedBet}|${parsedWin}|${parsed.isBonus ? 1 : 0}`
@@ -800,9 +808,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           const settledBet = parsedBet > 0
             ? parsedBet
             : (Math.max(Number(clone[pendingIdx]?.betAmount) || 0, 0) || 0)
-          const settledCurr = String(
+          const settledCurr = betHistoryCurrencyKey(
             apiCurr || clone[pendingIdx]?.currencyCode || effectiveTarget || 'usd'
-          ).toLowerCase()
+          )
           const settledWinUsd = convertMinorToUsdMajor(settledWin, settledCurr, currencyRates)
           const settledBetUsd = convertMinorToUsdMajor(settledBet, settledCurr, currencyRates)
           clone[pendingIdx] = {
@@ -846,7 +854,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           const age = now - Number(row?.addedAt || 0)
           if (age > FALLBACK_RECONCILE_WINDOW_MS) break
           if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
-          const rowCurr = String(row?.currencyCode || effectiveTarget || 'usd').toLowerCase()
+          const rowCurr = betHistoryCurrencyKey(row?.currencyCode || effectiveTarget || 'usd')
           const rowWin = Number(row?.stoppedBonus ? 0 : (row?.winAmount ?? 0)) || 0
           const rowSig = `${rowCurr}|${Number(row?.betAmount) || 0}|${rowWin}|${row?.isBonus ? 1 : 0}`
           if (rowSig !== signature) continue
@@ -911,7 +919,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-placebet-vs-house-settlement', roundId: rid })
             return prev
           }
-          const rowCurr = String(row?.currencyCode || effectiveTarget || 'usd').toLowerCase()
+          const rowCurr = betHistoryCurrencyKey(row?.currencyCode || effectiveTarget || 'usd')
           const rowSig = `${rowCurr}|${Number(row?.betAmount) || 0}|${Number(row?.winAmount) || 0}|${row?.isBonus ? 1 : 0}`
           if (rowSig === signature) {
             recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-placebet-vs-house-settlement-sig' })

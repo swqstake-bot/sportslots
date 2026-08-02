@@ -44,7 +44,7 @@ type SpinContext = {
 function getRateForCurrency(rates: Record<string, number>, code: string) {
   const c = (code || '').toLowerCase()
   if (c === 'usd' || c === 'usdc' || c === 'usdt') return 1
-  if (c === 'sweeps' || c === 'gold') return rates[c] || 1
+  if (c === 'sweeps' || c === 'gold' || c === 'xsc' || c === 'xgc') return rates[c] || 1
   return rates[c] || 0
 }
 

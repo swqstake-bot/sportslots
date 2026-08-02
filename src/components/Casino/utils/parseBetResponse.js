@@ -209,12 +209,13 @@ export function parseBetResponse(response, betAmount) {
   const balance = response?.accountBalance?.balance != null
     ? Number(response.accountBalance.balance)
     : null
-  const currencyCode = response?.accountBalance?.currencyCode || null
+  const currencyCodeRaw = response?.accountBalance?.currencyCode || null
+  const currencyCode = currencyCodeRaw
   const roundId =
-    response?.round?.roundId ??
-    response?.round?.id ??
     response?.round?.betID ??
     response?.round?.betId ??
+    response?.round?.roundId ??
+    response?.round?.id ??
     response?.roundId ??
     null
 
