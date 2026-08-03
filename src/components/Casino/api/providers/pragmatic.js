@@ -63,6 +63,78 @@ function extractHtml5GameUrlFromHtml(html, baseUrl) {
   }
 }
 
+/** Stake.eu Shell (HAR): kein html5Game.do — mgckey als AUTHTOKEN@…~stylename@…~SESSION@… im HTML/JSON. */
+function extractMgckeyFromText(text) {
+  if (!text || typeof text !== 'string') return null
+  const full = text.match(
+    /AUTHTOKEN@[A-Za-z0-9]+(?:~(?:stylename|SESSION|SN)@[A-Za-z0-9._-]+)*/i
+  )
+  if (full?.[0]) return full[0]
+  const quoted = text.match(/mgckey["'\s:=]+(AUTHTOKEN@[^"'\\\s&]+)/i)
+  if (quoted?.[1]) return quoted[1]
+  return null
+}
+
+function extractSymbolFromPlayGameConfig(configUrl) {
+  try {
+    const u = new URL(configUrl)
+    const keyRaw = decodeURIComponent(u.searchParams.get('key') || '')
+    for (const part of keyRaw.split(/[|`]+/)) {
+      const eq = part.indexOf('=')
+      if (eq < 0) continue
+      if (part.slice(0, eq).trim() === 'symbol') return part.slice(eq + 1).trim()
+    }
+    return u.searchParams.get('symbol')
+  } catch {
+    return null
+  }
+}
+
+function buildMgckeyGameUrl(host, symbol, mgckey) {
+  if (!host || !symbol || !mgckey) return null
+  const q = new URLSearchParams({ mgckey, symbol })
+  return `https://${host}/gs2c/html5Game.do?${q.toString()}`
+}
+
+/**
+ * EU-Shell: POST /gs2c/SingleSessionAPI/data (leer, Cookies vom game/load) → mgckey.
+ * HAR stakeeuspiele.har: content-length 0, Referer = game/load?ssid=…
+ */
+async function resolveMgckeyViaSingleSessionApi(host, refererUrl) {
+  if (!host) return null
+  const url = `https://${host}/gs2c/SingleSessionAPI/data`
+  try {
+    const res = await safeFetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: `https://${host}`,
+        Referer: refererUrl || `https://${host}/gs2c/game/load`,
+      },
+      body: '',
+    })
+    const text = await res.text()
+    const fromText = extractMgckeyFromText(text)
+    if (fromText) return fromText
+    try {
+      const j = JSON.parse(text)
+      const cand =
+        j?.mgckey ||
+        j?.mgcKey ||
+        j?.data?.mgckey ||
+        j?.data?.mgcKey ||
+        j?.session?.mgckey ||
+        j?.result?.mgckey
+      if (typeof cand === 'string' && cand.includes('AUTHTOKEN@')) return cand
+      return extractMgckeyFromText(JSON.stringify(j))
+    } catch {
+      return null
+    }
+  } catch {
+    return null
+  }
+}
+
 const PRAGMATIC_PROXY_FETCH = null
 const PRAGMATIC_PROXY_POST = null
 
@@ -100,6 +172,7 @@ async function safeFetch(url, options = {}) {
  * Holt die finale Game-URL aus der Config.
  * - Wenn config bereits mgckey+symbol enthält: direkt nutzen.
  * - playGame.do?key=...: GET via Proxy (CORS), folgt Redirects.
+ * - Stake.eu: game/load Shell ohne html5Game.do → AUTHTOKEN im HTML oder SingleSessionAPI.
  */
 async function resolveGameUrl(config) {
   if (typeof config !== 'string') return null
@@ -112,12 +185,20 @@ async function resolveGameUrl(config) {
     return trimmed
   }
 
-  // playGame.do?key=… → playGame (302) → game/load (HTML mit html5Game.do + voller mgckey)
+  const symbolFromConfig = params.symbol || extractSymbolFromPlayGameConfig(trimmed)
+
+  // playGame.do?key=… → playGame (302) → game/load (HTML / Shell + Cookies)
   let url = trimmed
   try {
     const res = await safeFetch(url, { method: 'GET' })
     const responseText = await res.text()
     const finalBase = res.url || url
+    let host = null
+    try {
+      host = new URL(finalBase).hostname
+    } catch {
+      host = params.host || null
+    }
 
     if (res.url) {
       const finalParams = parseUrlParams(res.url)
@@ -137,8 +218,21 @@ async function resolveGameUrl(config) {
       }
     }
 
-    if (params.symbol && params.host && trimmed.includes('playGame.do')) {
-      throw pragmaticError('playGame-Session: mgckey aus html5Game.do nicht gefunden.')
+    // EU shell: mgckey im game/load HTML/JS
+    let mgckey = extractMgckeyFromText(responseText)
+    const symbol = symbolFromConfig || parseUrlParams(finalBase).symbol
+    if (mgckey && symbol && host) {
+      return buildMgckeyGameUrl(host, symbol, mgckey)
+    }
+
+    // EU shell: SingleSessionAPI/data (Cookies vom Redirect-Jar)
+    mgckey = await resolveMgckeyViaSingleSessionApi(host, finalBase)
+    if (mgckey && symbol && host) {
+      return buildMgckeyGameUrl(host, symbol, mgckey)
+    }
+
+    if ((symbol || params.symbol) && (host || params.host) && trimmed.includes('playGame.do')) {
+      throw pragmaticError('playGame-Session: mgckey aus html5Game.do / SingleSessionAPI nicht gefunden.')
     }
   } catch (e) {
     logApiCall({ type: 'pragmatic/resolve', endpoint: url, request: null, response: null, error: String(e), durationMs: null })

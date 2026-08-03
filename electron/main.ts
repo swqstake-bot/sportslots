@@ -337,7 +337,13 @@ function hostnameMatches(hostname: string, allowed: string): boolean {
 }
 
 /** Pragmatic / Fat Panda / Sexy Rabbit gs2c hosts (Stake liefert rotierende CDN-Subdomains). */
-const PRAGMATIC_HOST_SUFFIXES = ['gcmlgxrmkp.net', 'ukffjfmmka.net', 'iumtibif.net'] as const;
+const PRAGMATIC_HOST_SUFFIXES = [
+  'gcmlgxrmkp.net',
+  'ukffjfmmka.net',
+  'iumtibif.net',
+  /** Stake.eu social / XSWP (HAR stakeeuspiele.har) */
+  'xtsbzfybyl.net',
+] as const;
 
 function isPragmaticProxyTarget(hostname: string, pathname: string): boolean {
   if (!hostname) return false;
@@ -2541,6 +2547,32 @@ function normalizeOutgoingProxyHeaders(headers: IncomingHttpHeaders): Record<str
     return out;
 }
 
+/** Merge Set-Cookie name=value into an existing Cookie request header (redirect jar). */
+function mergeSetCookieIntoCookieHeader(
+  existingCookieHeader: string | undefined,
+  setCookieLines: string[] | undefined
+): string | undefined {
+  if (!setCookieLines?.length) return existingCookieHeader || undefined;
+  const map = new Map<string, string>();
+  for (const part of String(existingCookieHeader || '').split(';')) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) continue;
+    map.set(trimmed.slice(0, eq).trim(), trimmed.slice(eq + 1).trim());
+  }
+  for (const line of setCookieLines) {
+    const first = String(line || '').split(';')[0] || '';
+    const eq = first.indexOf('=');
+    if (eq <= 0) continue;
+    const name = first.slice(0, eq).trim();
+    const value = first.slice(eq + 1).trim();
+    if (name) map.set(name, value);
+  }
+  if (map.size === 0) return existingCookieHeader || undefined;
+  return [...map.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
+}
+
 const gunzipAsync = promisify(zlib.gunzip);
 const inflateAsync = promisify(zlib.inflate);
 const brotliDecompressAsync = promisify(zlib.brotliDecompress);
@@ -2594,6 +2626,56 @@ function readSetCookieLines(headers: IncomingHttpHeaders): string[] {
     const raw = headers['set-cookie'];
     if (!raw) return [];
     return Array.isArray(raw) ? raw.map(String) : [String(raw)];
+}
+
+/** Persist Set-Cookie into Electron session so follow-up proxy calls (SingleSessionAPI) keep the jar. */
+async function persistProxySetCookies(targetUrl: string, headers: IncomingHttpHeaders): Promise<void> {
+  const lines = readSetCookieLines(headers);
+  if (!lines.length) return;
+  let origin: string;
+  try {
+    origin = new URL(targetUrl).origin;
+  } catch {
+    return;
+  }
+  for (const line of lines) {
+    const parts = String(line).split(';').map((p) => p.trim());
+    const nv = parts[0] || '';
+    const eq = nv.indexOf('=');
+    if (eq <= 0) continue;
+    const name = nv.slice(0, eq).trim();
+    const value = nv.slice(eq + 1).trim();
+    if (!name) continue;
+    let path = '/';
+    let secure = origin.startsWith('https:');
+    let httpOnly = false;
+    let expirationDate: number | undefined;
+    for (const p of parts.slice(1)) {
+      const [kRaw, vRaw] = p.split('=');
+      const k = String(kRaw || '').trim().toLowerCase();
+      const v = String(vRaw || '').trim();
+      if (k === 'path' && v) path = v;
+      else if (k === 'secure') secure = true;
+      else if (k === 'httponly') httpOnly = true;
+      else if (k === 'max-age' && v) {
+        const sec = Number(v);
+        if (Number.isFinite(sec)) expirationDate = Date.now() / 1000 + sec;
+      }
+    }
+    try {
+      await session.defaultSession.cookies.set({
+        url: origin + (path.startsWith('/') ? path : `/${path}`),
+        name,
+        value,
+        path,
+        secure,
+        httpOnly,
+        ...(expirationDate != null ? { expirationDate } : {}),
+      });
+    } catch {
+      /* ignore single cookie */
+    }
+  }
 }
 
 function mergeEvoCookiesFromHeaders(headers: IncomingHttpHeaders, into: Map<string, string>) {
@@ -2897,6 +2979,17 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
         }
     }
 
+    // Pragmatic: Cookies über playGame→game/load→SingleSessionAPI hinweg (Stake.eu Shell).
+    if (!isStakeTarget && !requestHeaders['Cookie'] && parsedProxyUrl) {
+      try {
+        const cookies = await session.defaultSession.cookies.get({ url });
+        const header = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+        if (header) requestHeaders['Cookie'] = header;
+      } catch {
+        /* ignore */
+      }
+    }
+
     return new Promise((resolve, reject) => {
         if (type === 'pragmatic') {
             try {
@@ -2906,11 +2999,14 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                     requestHeaders['Origin'] = stakeOrigin;
                     requestHeaders['Referer'] = `${stakeOrigin}/casino/home`;
                 } else {
-                    requestHeaders['Origin'] = origin;
-                    requestHeaders['Referer'] = method === 'GET' ? url : `${origin}/gs2c/html5Game.do`;
+                    if (!requestHeaders['Origin']) requestHeaders['Origin'] = origin;
+                    if (!requestHeaders['Referer']) {
+                      requestHeaders['Referer'] =
+                        method === 'GET' ? url : `${origin}/gs2c/html5Game.do`;
+                    }
                 }
                 if (body && method !== 'GET') {
-                    requestHeaders['Content-Type'] = 'application/x-www-form-urlencoded';
+                    requestHeaders['Content-Type'] = requestHeaders['Content-Type'] || 'application/x-www-form-urlencoded';
                 }
             } catch (e) {
                 console.error('Pragmatic URL parse error', e);
@@ -2941,9 +3037,17 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
             requestHeaders['User-Agent'] = sessionData.userAgent;
         }
 
-        const bodyStr = body
-            ? (typeof body === 'object' && !Buffer.isBuffer(body) ? JSON.stringify(body) : body)
-            : undefined;
+        const bodyStr =
+            body === undefined || body === null
+                ? undefined
+                : typeof body === 'object' && !Buffer.isBuffer(body)
+                  ? JSON.stringify(body)
+                  : String(body);
+        if (bodyStr !== undefined && method !== 'GET' && method !== 'HEAD') {
+          if (!requestHeaders['Content-Length'] && !requestHeaders['content-length']) {
+            requestHeaders['Content-Length'] = String(Buffer.byteLength(bodyStr));
+          }
+        }
 
         function doRequest(targetUrl: string, redirectCount = 0): void {
             const urlParsed = new URL(targetUrl);
@@ -3002,6 +3106,23 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                             return;
                         }
                         if (redirectCount < 5) {
+                            // Pragmatic playGame→game/load setzt Session-Cookies auf dem 302;
+                            // ohne Jar liefert game/load kein mgckey (Stake.eu shell).
+                            const setCookieLines = readSetCookieLines(res.headers);
+                            if (setCookieLines.length) {
+                              const prevCookie =
+                                typeof requestHeaders['Cookie'] === 'string'
+                                  ? requestHeaders['Cookie']
+                                  : typeof requestHeaders['cookie'] === 'string'
+                                    ? requestHeaders['cookie']
+                                    : undefined;
+                              const merged = mergeSetCookieIntoCookieHeader(prevCookie, setCookieLines);
+                              if (merged) {
+                                requestHeaders['Cookie'] = merged;
+                                delete requestHeaders['cookie'];
+                              }
+                              void persistProxySetCookies(targetUrl, res.headers);
+                            }
                             destroyFreshAgents();
                             return doRequest(resolvedLoc, redirectCount + 1);
                         }
@@ -3032,6 +3153,7 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
                         return;
                     }
                     destroyFreshAgents();
+                    void persistProxySetCookies(targetUrl, res.headers);
                     resolve({
                         status: res.statusCode || 0,
                         statusText: res.statusMessage || '',

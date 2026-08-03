@@ -786,8 +786,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     setBetHistory((prev) => {
       const last = prev[prev.length - 1]
       // Stake houseBets-IDs sind global eindeutig; Provider-roundIds (z. B. Playnetic `n`) nicht in den Seen-Set.
-      if (rid && source === 'placebet') {
+      if (source === 'placebet') {
         if (
+          rid &&
           last &&
           String(last.roundId ?? '') === rid &&
           String(last.source || '') === 'placebet' &&
@@ -795,6 +796,73 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         ) {
           recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-placebet-roundId', roundId: rid })
           return prev
+        }
+        // Race: houseBets oft vor placeBet → sonst Leerspin + Ergebnis (Stake.eu Hacksaw).
+        // placeBet merged rückwärts in die jüngste house-Zeile mit gleichem Stake.
+        for (let i = prev.length - 1; i >= 0; i--) {
+          const row = prev[i]
+          const age = now - Number(row?.addedAt || 0)
+          if (age > FALLBACK_RECONCILE_WINDOW_MS) break
+          if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
+          const rowSource = String(row?.source || '')
+          if (rowSource !== 'housebets' && rowSource !== 'mybetupdated') continue
+          const rowBet = Number(row?.betAmount) || 0
+          if (parsedBet > 0 && rowBet > 0) {
+            const tol = Math.max(1, rowBet * 0.08)
+            if (Math.abs(rowBet - parsedBet) > tol) continue
+          } else if (parsedBet > 0 && rowBet !== parsedBet) {
+            continue
+          }
+          const clone = prev.slice()
+          const houseWin = Number(row?.winAmount ?? 0) || 0
+          const placeWin = Number(parsed.stoppedBonus ? 0 : (parsed.winAmount ?? parsedWin)) || 0
+          const mergedWin = Math.max(houseWin, placeWin)
+          const settledCurr = betHistoryCurrencyKey(
+            apiCurr || row?.currencyCode || effectiveTarget || 'usd'
+          )
+          const settledBet = parsedBet > 0 ? parsedBet : rowBet
+          const settledWinUsd = convertMinorToUsdMajor(mergedWin, settledCurr, currencyRates)
+          const settledBetUsd = convertMinorToUsdMajor(settledBet, settledCurr, currencyRates)
+          clone[i] = {
+            ...row,
+            ...(!row.roundId && rid ? { roundId: rid } : {}),
+            currencyCode: settledCurr,
+            betAmount: settledBet,
+            winAmount: mergedWin,
+            rawWinAmount: Math.max(Number(row?.rawWinAmount ?? 0) || 0, Number(parsed.rawWinAmount ?? parsed.winAmount ?? 0) || 0),
+            isBonus: !!(row?.isBonus || parsed.isBonus),
+            houseBetReconciled: true,
+            source: rowSource,
+            ...(settledBetUsd?.fxStatus === 'ok' && settledBetUsd.usd != null && Number.isFinite(Number(settledBetUsd.usd))
+              ? { betUsdSnapshotMajor: Number(settledBetUsd.usd) }
+              : {}),
+            ...(mergedWin > 0 &&
+            settledWinUsd?.fxStatus === 'ok' &&
+            settledWinUsd.usd != null &&
+            Number.isFinite(Number(settledWinUsd.usd))
+              ? { winUsdSnapshotMajor: Number(settledWinUsd.usd) }
+              : {}),
+          }
+          if (rid) {
+            const roundKey = `round:${rid}`
+            seenBetDedupKeysRef.current.add(roundKey)
+            seenBetDedupOrderRef.current.push(roundKey)
+            while (seenBetDedupOrderRef.current.length > BET_HISTORY_DEDUP_MAX) {
+              const old = seenBetDedupOrderRef.current.shift()
+              if (old) seenBetDedupKeysRef.current.delete(old)
+            }
+          }
+          if (row.roundId != null) {
+            const houseKey = `round:${String(row.roundId)}`
+            seenBetDedupKeysRef.current.add(houseKey)
+            seenBetDedupOrderRef.current.push(houseKey)
+          }
+          recordBetHistoryAudit({
+            slotSlug: slot.slug,
+            event: 'reconcile-placebet-into-housebets',
+            roundId: rid ?? row.roundId ?? null,
+          })
+          return clone
         }
       }
       if (rid && isHouseSettlement) {
