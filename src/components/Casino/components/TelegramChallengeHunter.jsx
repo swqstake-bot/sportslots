@@ -37,7 +37,7 @@ const DIRECT_ORIGINALS_SLUGS = new Set(['packs', 'dice', 'limbo', 'mines', 'plin
 function getRateForCurrency(rates, tCurr) {
   const c = (tCurr || '').toLowerCase()
   if (c === 'usd' || c === 'usdc' || c === 'usdt') return 1
-  if (c === 'sweeps' || c === 'gold' || c === 'xsc' || c === 'xgc') return rates[c] || 1
+  if (c === 'sweeps' || c === 'gold' || c === 'xsc' || c === 'xgc' || c === 'xswp' || c === 'sc' || c === 'gc') return rates[c] || 1
   return rates[c] || 0
 }
 

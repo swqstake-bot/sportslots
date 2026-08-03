@@ -16,13 +16,15 @@ export async function startThirdPartySession(accessToken, slug = 'hacksaw-le-ban
   const t0 = Date.now()
   let src = String(source || 'usdc').toLowerCase().trim()
   let tgt = String(target || 'eur').toLowerCase().trim()
-  // Stake.eu GoldCoins: no crypto→fiat pair — source and target are the same wallet (gold/sweeps / XGC/XSC).
+  // Stake.eu GoldCoins: no crypto→fiat pair — source and target are the same wallet (gold/sweeps / XGC/XSC/XSWP).
   if (
-    src === 'gold' || src === 'sweeps' || src === 'xgc' || src === 'xsc' ||
-    tgt === 'gold' || tgt === 'sweeps' || tgt === 'xgc' || tgt === 'xsc'
+    src === 'gold' || src === 'sweeps' || src === 'xgc' || src === 'xsc' || src === 'xswp' || src === 'gc' || src === 'sc' ||
+    tgt === 'gold' || tgt === 'sweeps' || tgt === 'xgc' || tgt === 'xsc' || tgt === 'xswp' || tgt === 'gc' || tgt === 'sc'
   ) {
     const coin =
-      src === 'gold' || src === 'sweeps' || src === 'xgc' || src === 'xsc' ? src : tgt
+      src === 'gold' || src === 'sweeps' || src === 'xgc' || src === 'xsc' || src === 'xswp' || src === 'gc' || src === 'sc'
+        ? src
+        : tgt
     src = coin
     tgt = coin
   }

@@ -18,7 +18,7 @@ export async function fetchCurrencyRates(accessToken, options = {}) {
   const force = !!options?.force
   const withPegs = (map) => {
     const out = { ...(map || {}) }
-    for (const peg of ['usd', 'usdc', 'usdt']) {
+    for (const peg of ['usd', 'usdc', 'usdt', 'gold', 'sweeps', 'xgc', 'xsc', 'xswp']) {
       if (!out[peg] || !(Number(out[peg]) > 0)) out[peg] = 1
     }
     return out

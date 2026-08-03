@@ -101,17 +101,22 @@ export function dedupeBetHistoryForAggregate(entries) {
 }
 
 function resolveUsdMajor(minorAmount, currencyCode, rates, snapshotMajor) {
-  if (snapshotMajor != null && Number.isFinite(Number(snapshotMajor))) {
-    return Number(snapshotMajor)
+  const snap = snapshotMajor == null ? null : Number(snapshotMajor)
+  const minor = Number(minorAmount) || 0
+  // Ignore poisoned 0-snapshots when the raw stake/win is non-zero (Number(null)===0 bug).
+  if (snap != null && Number.isFinite(snap) && !(snap === 0 && minor > 0)) {
+    return snap
   }
   const conv = convertMinorToUsdMajor(minorAmount, currencyCode, rates || {})
-  const usd = Number(conv?.usd)
+  if (conv?.fxStatus !== 'ok' || conv?.usd == null) return null
+  const usd = Number(conv.usd)
   return Number.isFinite(usd) ? usd : null
 }
 
 function resolveLiveUsdMajor(minorAmount, currencyCode, rates) {
   const conv = convertMinorToUsdMajor(minorAmount, currencyCode, rates || {})
-  const usd = Number(conv?.usd)
+  if (conv?.fxStatus !== 'ok' || conv?.usd == null) return null
+  const usd = Number(conv.usd)
   return Number.isFinite(usd) ? usd : null
 }
 

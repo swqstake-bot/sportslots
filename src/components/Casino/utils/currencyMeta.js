@@ -10,8 +10,9 @@ export const FIAT_CURRENCIES = [
   'pkr', 'pln', 'ngn', 'cny', 'rub', 'try', 'dkk', 'pen', 'cop',
 ]
 
-/** Stake.eu GoldCoins — wallet codes + Stake Engine RGS aliases (HAR: currency XGC / XSC). */
-export const GOLD_COIN_CURRENCIES = ['gold', 'sweeps', 'xgc', 'xsc']
+/** Stake.eu GoldCoins — wallet codes + RGS aliases.
+ * Wallet: gold/sweeps. RGS/providers: XGC/XSC (Stake Engine) and XSWP (Hacksaw/Pragmatic HAR). */
+export const GOLD_COIN_CURRENCIES = ['gold', 'sweeps', 'xgc', 'xsc', 'xswp']
 
 export const USD_LIKE_CURRENCIES = ['usd', 'usdc', 'usdt']
 
@@ -22,8 +23,8 @@ export function normalizeCurrencyCode(currencyCode) {
 /** Map RGS aliases → wallet codes used in the UI (gold/sweeps). */
 export function canonicalizeGoldCoinCode(currencyCode) {
   const c = normalizeCurrencyCode(currencyCode)
-  if (c === 'xgc' || c === 'gold') return 'gold'
-  if (c === 'xsc' || c === 'sweeps') return 'sweeps'
+  if (c === 'xgc' || c === 'gold' || c === 'gc') return 'gold'
+  if (c === 'xsc' || c === 'xswp' || c === 'sweeps' || c === 'sc') return 'sweeps'
   return c
 }
 

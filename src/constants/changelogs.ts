@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.229': [
+    '🐛 Stake.eu SC BetList leer trotz Spins — RGS-Code XSWP (Hacksaw/Pragmatic) als SC, kein Number(null)→$0 Snapshot mehr',
+  ],
   '1.0.228': [
     '🐛 CI/Lint: Autorun Site-Währung ohne setState-in-effect (effectiveConfig) — Build grün',
   ],

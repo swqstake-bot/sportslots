@@ -393,7 +393,11 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   }, [accessToken])
   const toUsdMajor = useCallback((amountMinor, curr) => {
     if (amountMinor == null || amountMinor === 0) return Number(amountMinor || 0)
-    return convertMinorToUsdMajor(amountMinor, curr, currencyRates).usd
+    const conv = convertMinorToUsdMajor(amountMinor, curr, currencyRates)
+    // Never coerce null → 0 via Number(null); missing FX must stay null.
+    if (conv?.fxStatus !== 'ok' || conv?.usd == null) return null
+    const usd = Number(conv.usd)
+    return Number.isFinite(usd) ? usd : null
   }, [currencyRates])
   // Stats/BetList: placeBet sofort (Drittanbieter), houseBets reconciled per FIFO
   const sessionBets = useMemo(
@@ -408,20 +412,27 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     const rows = sessionBetsDeduped.slice(-40)
     return rows.map((b) => {
       const curr = betHistoryCurrencyKey(b.currencyCode || effectiveTarget || 'usd')
+      const rawBet = Number(b.betAmount) || 0
+      const rawWin = Number(b.winAmount) || 0
       let betUsd = Number(b.betUsdSnapshotMajor)
       let winUsd = Number(b.winUsdSnapshotMajor)
-      if (!Number.isFinite(betUsd)) betUsd = Number(toUsdMajor(b.betAmount, curr))
-      if (!Number.isFinite(winUsd)) winUsd = Number(toUsdMajor(b.winAmount, curr))
-      // Rates missing: USD-like + GoldCoins (GC/SC) are 1:1 — never flash SOL/etc.
+      // Poisoned snapshot: Number(null)===0 was written when FX failed — ignore 0 if raw stake exists.
+      if (!Number.isFinite(betUsd) || (betUsd === 0 && rawBet > 0)) {
+        betUsd = Number(toUsdMajor(rawBet, curr))
+      }
+      if (!Number.isFinite(winUsd) || (winUsd === 0 && rawWin > 0)) {
+        winUsd = Number(toUsdMajor(rawWin, curr))
+      }
+      // Rates missing: USD-like + GoldCoins (GC/SC / XSWP) are 1:1 — never flash SOL/etc.
       if (!Number.isFinite(betUsd)) {
         const parity =
           curr === 'usd' || curr === 'usdc' || curr === 'usdt' || isGoldCoinCurrency(curr)
-        betUsd = parity ? (Number(b.betAmount) || 0) / 100 : 0
+        betUsd = parity ? rawBet / 100 : 0
       }
       if (!Number.isFinite(winUsd)) {
         const parity =
           curr === 'usd' || curr === 'usdc' || curr === 'usdt' || isGoldCoinCurrency(curr)
-        winUsd = parity ? (Number(b.winAmount) || 0) / 100 : 0
+        winUsd = parity ? rawWin / 100 : 0
       }
       return {
         ...b,
@@ -443,7 +454,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       let betUsd = Number(b.betUsdSnapshotMajor)
       let winUsd = Number(b.winUsdSnapshotMajor)
       // Prefer frozen snapshots so live FX/currency flips don't reshape the whole series.
-      if (!Number.isFinite(betUsd)) {
+      if (!Number.isFinite(betUsd) || (betUsd === 0 && betMinor > 0)) {
         betUsd = Number(toUsdMajor(betMinor, curr))
         if (!Number.isFinite(betUsd)) {
           const parity =
@@ -451,7 +462,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           betUsd = parity ? betMinor / 100 : 0
         }
       }
-      if (!Number.isFinite(winUsd)) {
+      if (!Number.isFinite(winUsd) || (winUsd === 0 && winMinor > 0)) {
         winUsd = Number(toUsdMajor(winMinor, curr))
         if (!Number.isFinite(winUsd)) {
           const parity =
@@ -833,10 +844,10 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             stoppedBonus: false,
             isBonus: wasStoppedBonus ? true : !!clone[pendingIdx]?.isBonus,
             houseBetReconciled: true,
-            ...(Number.isFinite(Number(settledBetUsd?.usd))
+            ...(settledBetUsd?.fxStatus === 'ok' && settledBetUsd.usd != null && Number.isFinite(Number(settledBetUsd.usd))
               ? { betUsdSnapshotMajor: Number(settledBetUsd.usd) }
               : {}),
-            ...(Number.isFinite(Number(settledWinUsd?.usd))
+            ...(settledWinUsd?.fxStatus === 'ok' && settledWinUsd.usd != null && Number.isFinite(Number(settledWinUsd.usd))
               ? { winUsdSnapshotMajor: Number(settledWinUsd.usd) }
               : { winUsdSnapshotMajor: undefined }),
           }
@@ -976,19 +987,35 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         addedAt: now,
         source,
       }
-      const curr = (entry.currencyCode || effectiveTarget || 'usd').toLowerCase()
+      const curr = betHistoryCurrencyKey(entry.currencyCode || effectiveTarget || 'usd')
       const betConv = convertMinorToUsdMajor(entry.betAmount, curr, currencyRates)
       const winConv = convertMinorToUsdMajor(entry.winAmount, curr, currencyRates)
-      const betUsdSnapshotMajor = Number(betConv?.usd)
-      const winUsdSnapshotMajor = Number(winConv?.usd)
-      if (Number.isFinite(betUsdSnapshotMajor)) entry.betUsdSnapshotMajor = betUsdSnapshotMajor
+      // Only store snapshots on real FX ok — Number(null)===0 used to poison BetList/stats.
+      if (betConv?.fxStatus === 'ok' && betConv.usd != null && Number.isFinite(Number(betConv.usd))) {
+        entry.betUsdSnapshotMajor = Number(betConv.usd)
+      }
       // Kein Win-USD-Snapshot bei gestopptem Bonus — sonst zählen Stats den Trigger-Win doppelt.
-      if (!stoppedBonus && Number.isFinite(winUsdSnapshotMajor)) entry.winUsdSnapshotMajor = winUsdSnapshotMajor
-      if (Number.isFinite(Number(betConv?.fxRate))) entry.fxRateSnapshot = Number(betConv.fxRate)
+      if (
+        !stoppedBonus &&
+        winConv?.fxStatus === 'ok' &&
+        winConv.usd != null &&
+        Number.isFinite(Number(winConv.usd))
+      ) {
+        entry.winUsdSnapshotMajor = Number(winConv.usd)
+      }
+      if (betConv?.fxStatus === 'ok' && Number.isFinite(Number(betConv?.fxRate))) {
+        entry.fxRateSnapshot = Number(betConv.fxRate)
+      }
       appendBet(slot.slug, entry, slot.name).catch(() => {})
       try {
-        const betUsd = Number.isFinite(betUsdSnapshotMajor) ? betUsdSnapshotMajor : toUsdMajor(entry.betAmount, curr)
-        const winUsd = Number.isFinite(winUsdSnapshotMajor) ? winUsdSnapshotMajor : toUsdMajor(entry.winAmount, curr)
+        const betUsd =
+          entry.betUsdSnapshotMajor != null
+            ? entry.betUsdSnapshotMajor
+            : toUsdMajor(entry.betAmount, curr)
+        const winUsd =
+          entry.winUsdSnapshotMajor != null
+            ? entry.winUsdSnapshotMajor
+            : toUsdMajor(entry.winAmount, curr)
         const multiplier = entry.betAmount > 0 ? (entry.winAmount || 0) / entry.betAmount : 0
         window.dispatchEvent(new CustomEvent('casino-bet-added', {
           detail: {

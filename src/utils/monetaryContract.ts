@@ -6,8 +6,8 @@ const FIAT = new Set([
   'eur', 'usd', 'usdc', 'usdt', 'ars', 'brl', 'mxn', 'cad', 'aud', 'clp', 'jpy', 'krw', 'inr', 'idr', 'php',
   'pkr', 'pln', 'ngn', 'cny', 'rub', 'try', 'dkk', 'pen', 'cop',
 ])
-/** Stake.eu GoldCoins — wallet + RGS aliases (XGC/XSC). 2-decimal minor; display FX 1:1. */
-const GOLD_COINS = new Set(['gold', 'sweeps', 'xgc', 'xsc'])
+/** Stake.eu GoldCoins — wallet + RGS aliases (XGC/XSC/XSWP). 2-decimal minor; display FX 1:1. */
+const GOLD_COINS = new Set(['gold', 'sweeps', 'xgc', 'xsc', 'xswp', 'gc', 'sc'])
 const USD_LIKE = new Set(['usd', 'usdc', 'usdt'])
 
 export interface MonetaryAmount {
@@ -27,7 +27,10 @@ export interface UsdConversion extends MonetaryAmount {
 }
 
 export function normalizeCurrencyCode(currencyCode: unknown): string {
-  return String(currencyCode || '').trim().toLowerCase()
+  const c = String(currencyCode || '').trim().toLowerCase()
+  if (c === 'xgc' || c === 'gc') return 'gold'
+  if (c === 'xsc' || c === 'xswp' || c === 'sc') return 'sweeps'
+  return c
 }
 
 export function getMinorFactor(currencyCode: unknown): number {
