@@ -5,9 +5,11 @@
 import { rotateSeedPair, fetchPacksProgress } from '../../../api/stakeOriginalsBets'
 import {
   PACKS_TOTAL_CARDS,
+  formatPacksProgressLog,
   isPacksCollectionComplete,
   packsCollectedFromBetApi,
   packsHuntAmountForCurrency,
+  packsNewCardIdsFromBetApi,
   packsRemaining,
   publishPacksProgress,
 } from '../../../utils/packsProgress'
@@ -490,6 +492,7 @@ export async function runProfile(
     !!workbenchOptions.huntPacksCards &&
     String(currentGame || workbenchOptions.game || options.game || '').toLowerCase() === 'packs'
   const huntPacksStake = huntPacksCards ? packsHuntAmountForCurrency(cur) : 0
+  let lastPacksCollected: number | null = null
   if (huntPacksCards) {
     betSizeUsd = huntPacksStake
     currentBlockBase = huntPacksStake
@@ -500,6 +503,7 @@ export async function runProfile(
     )
     try {
       const prog = await fetchPacksProgress()
+      lastPacksCollected = prog.collected
       publishPacksProgress(prog.collected)
       const rem = packsRemaining(prog.collected)
       callbacks.onLog?.(
@@ -1343,20 +1347,24 @@ export async function runProfile(
     } else if (workbenchEnabled) {
       if (huntPacksCards) {
         const collected = packsCollectedFromBetApi(betApi)
+        const newIds = packsNewCardIdsFromBetApi(betApi)
         if (collected != null) {
           publishPacksProgress(collected)
-          const rem = packsRemaining(collected)
-          if (rollNumber === 1 || rem === 0 || collected % 5 === 0) {
+          const gained =
+            lastPacksCollected != null ? Math.max(0, collected - lastPacksCollected) : newIds.length > 0 ? newIds.length : 0
+          // Log on every new card / collection increase (not only every 5th).
+          if (newIds.length > 0 || gained > 0 || rollNumber === 1 || collected !== lastPacksCollected) {
             callbacks.onLog?.(
-              rem > 0
-                ? `Packs: ${collected}/${PACKS_TOTAL_CARDS} — ${rem} remaining`
-                : `Packs: collection complete (${collected}/${PACKS_TOTAL_CARDS})`
+              formatPacksProgressLog(collected, { newIds, prevCollected: lastPacksCollected })
             )
           }
+          lastPacksCollected = collected
           if (isPacksCollectionComplete(collected)) {
             callbacks.onLog?.('Stop: packs collection complete')
             break
           }
+        } else if (newIds.length > 0) {
+          callbacks.onLog?.(`Packs: +${newIds.length} new this open (#${newIds.join(', #')})`)
         }
       }
       const stopReason = checkWorkbenchStops(workbenchOptions, {

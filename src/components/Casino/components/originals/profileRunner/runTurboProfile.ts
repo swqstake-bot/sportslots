@@ -13,9 +13,11 @@ import { waitWhilePaused, type SessionSignal } from '../engine/sessionSignal'
 import { fetchPacksProgress } from '../../../api/stakeOriginalsBets'
 import {
   PACKS_TOTAL_CARDS,
+  formatPacksProgressLog,
   isPacksCollectionComplete,
   packsCollectedFromBetApi,
   packsHuntAmountForCurrency,
+  packsNewCardIdsFromBetApi,
   packsRemaining,
   publishPacksProgress,
 } from '../../../utils/packsProgress'
@@ -88,6 +90,7 @@ export async function runTurboProfile(
   const stopOnProfit = optFrom(options, 'stopOnProfit', 0)
   const stopOnLoss = optFrom(options, 'stopOnLoss', 0)
   const stopOnTotalWagered = optFrom(options, 'stopOnTotalWagered', 0)
+  let lastPacksCollected: number | null = null
 
   if (huntPacksCards) {
     callbacks.onLog?.(
@@ -95,6 +98,7 @@ export async function runTurboProfile(
     )
     try {
       const prog = await fetchPacksProgress()
+      lastPacksCollected = prog.collected
       publishPacksProgress(prog.collected)
       const rem = packsRemaining(prog.collected)
       callbacks.onLog?.(
@@ -312,14 +316,29 @@ export async function runTurboProfile(
           emitStats()
           if (huntPacksCards) {
             const collected = packsCollectedFromBetApi(placed.betApi)
+            const newIds = packsNewCardIdsFromBetApi(placed.betApi)
             if (collected != null) {
               publishPacksProgress(collected)
+              const gained =
+                lastPacksCollected != null
+                  ? Math.max(0, collected - lastPacksCollected)
+                  : newIds.length > 0
+                    ? newIds.length
+                    : 0
+              if (newIds.length > 0 || gained > 0 || collected !== lastPacksCollected) {
+                callbacks.onLog?.(
+                  formatPacksProgressLog(collected, { newIds, prevCollected: lastPacksCollected })
+                )
+              }
+              lastPacksCollected = collected
               if (isPacksCollectionComplete(collected)) {
                 callbacks.onLog?.(
                   `Stop: packs collection complete (${collected}/${PACKS_TOTAL_CARDS})`
                 )
                 stopped = true
               }
+            } else if (newIds.length > 0) {
+              callbacks.onLog?.(`Packs: +${newIds.length} new this open (#${newIds.join(', #')})`)
             }
           }
           if (checkStop()) stopped = true

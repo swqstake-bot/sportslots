@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.235': [
+    '🐛 Packs Hunt: Progress-Log bei jeder neuen Karte (nicht nur alle 5) — inkl. Card-IDs',
+  ],
   '1.0.234': [
     '🐛 Fat Panda ≠ 777 Rush: keine Prefix-Hacks mehr (pragmatic-play-fat-panda ist ein Spiel), Session nur Stake-Slug + Name-Cache',
   ],
