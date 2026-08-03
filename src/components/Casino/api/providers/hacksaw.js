@@ -5,7 +5,19 @@
 import { startThirdPartySession } from '../stake'
 import { logApiCall } from '../../utils/apiLogger'
 import { parseBetResponse } from '../../utils/parseBetResponse'
-import { HACKSAW_API_BASE, HACKSAW_USER_AGENT, sendHacksawKeepAlive, sendHacksawContinue, sendHacksawContinueWithRetry, drainHacksawContinues, hacksawRoundNeedsContinue, isHacksawTimeoutLike, isHacksawSessionClosed, safeFetch } from './hacksawShared'
+import {
+  HACKSAW_USER_AGENT,
+  sessionHacksawApiBase,
+  resolveHacksawPlayApiBase,
+  resolveHacksawGameVersion,
+  sendHacksawKeepAlive,
+  sendHacksawContinueWithRetry,
+  drainHacksawContinues,
+  hacksawRoundNeedsContinue,
+  isHacksawTimeoutLike,
+  isHacksawSessionClosed,
+  safeFetch,
+} from './hacksawShared'
 
 /** Vergleich von bonusFeatureWon (CamelCase, snake_case, Leerzeichen). */
 function normalizeHacksawBonusFeatureKey(raw) {
@@ -62,6 +74,35 @@ function getHacksawNamedFiveScatterLevel(bonusFeatureIdRaw, slotSlugRaw) {
   return null
 }
 
+function normalizeHacksawLanguage(lang) {
+  const raw = String(lang || 'de-de').toLowerCase().replace(/_/g, '-')
+  if (/^[a-z]{2}-[a-z]{2}$/.test(raw)) return raw
+  if (/^[a-z]{2}$/.test(raw)) return `${raw}-${raw}`
+  return 'de-de'
+}
+
+function resolveHacksawAuthChannel(channel) {
+  const c = String(channel || '').toLowerCase()
+  if (c === '1' || c === 'desktop' || c === 'web') return 1
+  if (c === '2' || c === 'mobile') return 2
+  const n = parseInt(c, 10)
+  return Number.isFinite(n) ? n : 1
+}
+
+function resolveHacksawLaunchChannel(channel) {
+  const c = String(channel || '').toLowerCase()
+  if (c === '2' || c === 'mobile') return 'mobile'
+  return 'desktop'
+}
+
+function resolveHacksawMode(mode) {
+  const m = String(mode || '').toLowerCase()
+  if (m === 'live' || m === '1') return 1
+  if (m === 'demo' || m === '0') return 0
+  const n = parseInt(m, 10)
+  return Number.isFinite(n) ? n : 1
+}
+
 function parseConfigFromUrl(configUrl) {
   try {
     const url = new URL(configUrl)
@@ -69,12 +110,15 @@ function parseConfigFromUrl(configUrl) {
     return {
       token: params.get('token'),
       gameId: params.get('gameId') || params.get('gameid'),
-      gameVersion: params.get('gameVersion') || params.get('version') || '1.22.0',
-      currency: params.get('currency') || 'EUR',
+      gameVersion: params.get('gameVersion') || params.get('version') || null,
+      currency: params.get('currency') || null,
       language: params.get('language') || params.get('languageCode') || 'de-de',
-      channel: params.get('channel') || '2',
+      channel: params.get('channel') || 'desktop',
       mode: params.get('mode') || '1',
+      // Launcher darf branding=social haben; Authenticate nutzt laut HAR trotzdem "default"
       branding: params.get('branding') || 'default',
+      partner: params.get('partner') || 'stake',
+      jurisdiction: params.get('jurisdiction') || null,
     }
   } catch {
     return null
@@ -98,19 +142,34 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const cfg = parseConfigFromConfig(session?.config, targetCurrency)
   if (!cfg?.token) throw new Error('Token konnte nicht aus Session extrahiert werden.')
 
+  const partner = String(cfg.partner || 'stake').trim() || 'stake'
+  const gameId = parseInt(cfg.gameId, 10) || 1309
+  const apiBase = await resolveHacksawPlayApiBase(partner, cfg.branding)
+  const gameVersion =
+    cfg.gameVersion ||
+    (await resolveHacksawGameVersion(gameId, '1.22.0'))
+  // RGS-Currency aus Launcher (XSWP auf Stake.eu), nicht Wallet-Code (sweeps)
+  const rgsCurrency = String(cfg.currency || targetCurrency || 'eur').toUpperCase()
+  // HAR: branding=social in Launcher, authenticate trotzdem branding=default
+  const authBranding = String(cfg.branding || 'default').toLowerCase() === 'social'
+    ? 'default'
+    : (cfg.branding || 'default')
+
   const authReq = {
     seq: 1,
-    partner: 'stake',
-    gameId: parseInt(cfg.gameId, 10) || 1309,
-    gameVersion: cfg.gameVersion,
-    currency: (targetCurrency || 'eur').toUpperCase(),
-    languageCode: cfg.language || 'de-de',
-    mode: parseInt(cfg.mode, 10) || 1,
-    branding: cfg.branding || 'default',
-    channel: parseInt(cfg.channel, 10) || 2,
+    partner,
+    gameId,
+    gameVersion,
+    currency: rgsCurrency,
+    languageCode: normalizeHacksawLanguage(cfg.language),
+    mode: resolveHacksawMode(cfg.mode),
+    branding: authBranding,
+    channel: resolveHacksawAuthChannel(cfg.channel),
     userAgent: HACKSAW_USER_AGENT,
     token: cfg.token,
   }
+  if (cfg.jurisdiction) authReq.jurisdiction = cfg.jurisdiction
+
   let authData
   let lastAuthError
   
@@ -118,7 +177,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   for (let i = 0; i < 3; i++) {
     const tAuth = Date.now()
     try {
-      const authRes = await safeFetch(`${HACKSAW_API_BASE}/authenticate`, {
+      const authRes = await safeFetch(`${apiBase}/authenticate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(authReq),
@@ -129,13 +188,13 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
       } catch (e) {
         const errText = await authRes.text()
         lastAuthError = `Authenticate JSON Error: ${errText || String(e)}`
-        logApiCall({ type: 'hacksaw/authenticate', endpoint: `${HACKSAW_API_BASE}/authenticate`, request: authReq, response: null, error: lastAuthError, durationMs: Date.now() - tAuth })
+        logApiCall({ type: 'hacksaw/authenticate', endpoint: `${apiBase}/authenticate`, request: authReq, response: null, error: lastAuthError, durationMs: Date.now() - tAuth })
         await new Promise(r => setTimeout(r, 1000))
         continue
       }
 
       const apiError = (authData?.statusCode && authData.statusCode !== 0) ? `API Error ${authData.statusCode} (${authData.statusMessage})` : null
-      logApiCall({ type: 'hacksaw/authenticate', endpoint: `${HACKSAW_API_BASE}/authenticate`, request: authReq, response: authData, error: !authRes.ok ? `HTTP ${authRes.status}` : apiError, durationMs: Date.now() - tAuth })
+      logApiCall({ type: 'hacksaw/authenticate', endpoint: `${apiBase}/authenticate`, request: authReq, response: authData, error: !authRes.ok ? `HTTP ${authRes.status}` : apiError, durationMs: Date.now() - tAuth })
 
       if (!authRes.ok) {
         lastAuthError = `Authenticate HTTP Error: ${authRes.status}`
@@ -173,21 +232,21 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
 
   const packageName = slotSlug.includes('-') ? slotSlug.split('-').slice(1).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : slotSlug
   const launchReq = {
-    channel: 'mobile',
+    channel: resolveHacksawLaunchChannel(cfg.channel),
     gameId: authReq.gameId,
     loadTime: 1.0,
     mode: authReq.mode,
-    packageName: `${packageName}@${cfg.gameVersion}`,
+    packageName: `${packageName}@${gameVersion}`,
     resolution: '1920x1080',
     sessionUuid,
     token: cfg.token,
     userAgent: HACKSAW_USER_AGENT,
-    version: cfg.gameVersion,
-    partner: 'stake',
+    version: gameVersion,
+    partner,
     playerId: 'slotbot',
   }
   const tLaunch = Date.now()
-  const launchRes = await safeFetch(`${HACKSAW_API_BASE}/gameLaunch`, {
+  const launchRes = await safeFetch(`${apiBase}/gameLaunch`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(launchReq),
@@ -199,7 +258,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   } catch (e) {
     launchData = { _error: String(e) }
   }
-  logApiCall({ type: 'hacksaw/gameLaunch', endpoint: `${HACKSAW_API_BASE}/gameLaunch`, request: launchReq, response: launchData, error: !launchRes.ok ? `HTTP ${launchRes.status}` : null, durationMs: Date.now() - tLaunch })
+  logApiCall({ type: 'hacksaw/gameLaunch', endpoint: `${apiBase}/gameLaunch`, request: launchReq, response: launchData, error: !launchRes.ok ? `HTTP ${launchRes.status}` : null, durationMs: Date.now() - tLaunch })
 
   if (!launchRes.ok) {
     throw new Error(`GameLaunch fehlgeschlagen: ${launchRes.status}`)
@@ -210,7 +269,17 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const betLevels = authData?.betLevels?.map((v) => Math.round(Number(v))) ?? []
   // Offene Runde aus gameLaunch (bei Session-Resume mit aktivem Bonus)
   const openRoundId = launchData?.round?.roundId ?? launchData?.roundId ?? launchData?.openRound?.roundId ?? authData?.round?.roundId ?? authData?.roundId ?? null
-  return { token: cfg.token, sessionUuid, seq: 2, keepAliveInterval, betLevels, openRoundId: openRoundId || undefined }
+  return {
+    token: cfg.token,
+    sessionUuid,
+    seq: 2,
+    keepAliveInterval,
+    betLevels,
+    openRoundId: openRoundId || undefined,
+    apiBase,
+    partner,
+    rgsCurrency,
+  }
 }
 
 function parseConfigFromConfig(config, targetCurrency = 'eur') {
@@ -224,12 +293,12 @@ function parseConfigFromConfig(config, targetCurrency = 'eur') {
 }
 
 export async function sendKeepAlive(session) {
-  return sendHacksawKeepAlive(HACKSAW_API_BASE, session, { treat404AsOk: true })
+  return sendHacksawKeepAlive(sessionHacksawApiBase(session), session, { treat404AsOk: true })
 }
 
 export async function sendContinue(session, roundId, prevResponse, slotSlug, gambleOnBonus, continueOptions = {}) {
   return sendHacksawContinueWithRetry(
-    HACKSAW_API_BASE,
+    sessionHacksawApiBase(session),
     session,
     roundId,
     prevResponse,
@@ -240,7 +309,7 @@ export async function sendContinue(session, roundId, prevResponse, slotSlug, gam
 }
 
 async function hacksawKeepAliveCb(session) {
-  await sendHacksawKeepAlive(HACKSAW_API_BASE, session, { treat404AsOk: true })
+  await sendHacksawKeepAlive(sessionHacksawApiBase(session), session, { treat404AsOk: true })
 }
 
 function buildContinueOpts(options) {
@@ -254,11 +323,12 @@ function buildContinueOpts(options) {
 async function tryResumeHacksawRound(session, data, options) {
   const roundIds = [data?.round?.roundId, session.openRoundId].filter(Boolean)
   const continueOpts = buildContinueOpts(options)
+  const apiBase = sessionHacksawApiBase(session)
   for (const rid of roundIds) {
     try {
       const prev = data?.round?.roundId === rid ? data : undefined
       const first = await sendHacksawContinueWithRetry(
-        HACKSAW_API_BASE,
+        apiBase,
         { ...session, seq: session.seq },
         rid,
         prev,
@@ -267,7 +337,7 @@ async function tryResumeHacksawRound(session, data, options) {
         continueOpts
       )
       const drained = await drainHacksawContinues(
-        HACKSAW_API_BASE,
+        apiBase,
         { ...session, seq: session.seq + 1 },
         first,
         options?.slotSlug,
@@ -293,6 +363,7 @@ async function tryResumeHacksawRound(session, data, options) {
  * @param {{ skipContinueIfBonusMinScatter?: number }} [options] - Bonus nicht durchspielen wenn scatterCount >= X
  */
 export async function placeBet(session, betAmount, extraBet = false, autoplay = false, options = {}) {
+  const apiBase = sessionHacksawApiBase(session)
   const bets = [{ betAmount: String(betAmount) }]
   if (extraBet) {
     const slug = (options?.slotSlug || '').toLowerCase()
@@ -308,7 +379,7 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     autoplay,
   }
   const t0 = Date.now()
-  const res = await safeFetch(`${HACKSAW_API_BASE}/bet`, {
+  const res = await safeFetch(`${apiBase}/bet`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
@@ -319,11 +390,11 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     data = await res.json()
   } catch (e) {
     const errText = await res.text()
-    logApiCall({ type: 'hacksaw/bet', endpoint: `${HACKSAW_API_BASE}/bet`, request: req, response: null, error: errText || String(e), durationMs: Date.now() - t0 })
+    logApiCall({ type: 'hacksaw/bet', endpoint: `${apiBase}/bet`, request: req, response: null, error: errText || String(e), durationMs: Date.now() - t0 })
     throw new Error(`Bet fehlgeschlagen: ${errText || res.status}`)
   }
 
-  logApiCall({ type: 'hacksaw/bet', endpoint: `${HACKSAW_API_BASE}/bet`, request: req, response: data, error: !res.ok ? `HTTP ${res.status}` : data?.statusCode !== 0 ? data?.statusMessage : null, durationMs: Date.now() - t0 })
+  logApiCall({ type: 'hacksaw/bet', endpoint: `${apiBase}/bet`, request: req, response: data, error: !res.ok ? `HTTP ${res.status}` : data?.statusCode !== 0 ? data?.statusMessage : null, durationMs: Date.now() - t0 })
 
   if (!res.ok) {
     throw new Error(`Bet fehlgeschlagen: ${res.status}`)
@@ -346,12 +417,12 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     const continueOpts = buildContinueOpts(options)
     try {
       const continueReq = { seq: session.seq, sessionUuid: session.sessionUuid, continueInstructions: { action: 'win_presentation_complete' } }
-      const cres = await safeFetch(`${HACKSAW_API_BASE}/bet`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(continueReq) })
+      const cres = await safeFetch(`${apiBase}/bet`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(continueReq) })
       const cdata = await cres.json().catch(() => ({}))
-      logApiCall({ type: 'hacksaw/continue', endpoint: `${HACKSAW_API_BASE}/bet`, request: continueReq, response: cdata, error: cdata?.statusCode !== 0 ? cdata?.statusMessage : null, durationMs: 0 })
+      logApiCall({ type: 'hacksaw/continue', endpoint: `${apiBase}/bet`, request: continueReq, response: cdata, error: cdata?.statusCode !== 0 ? cdata?.statusMessage : null, durationMs: 0 })
       if (cdata?.round) {
         const drained = await drainHacksawContinues(
-          HACKSAW_API_BASE,
+          apiBase,
           { ...session, seq: session.seq + 1 },
           cdata,
           options?.slotSlug,
@@ -363,14 +434,14 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
         }
       }
     } catch (e) {
-      logApiCall({ type: 'hacksaw/continue', endpoint: `${HACKSAW_API_BASE}/bet`, request: { continueOnly: true }, response: null, error: e?.message, durationMs: 0 })
+      logApiCall({ type: 'hacksaw/continue', endpoint: `${apiBase}/bet`, request: { continueOnly: true }, response: null, error: e?.message, durationMs: 0 })
     }
     if (extraBet) {
       const reqNoExtra = { ...req, bets: [{ betAmount: String(betAmount) }] }
       const t1 = Date.now()
-      const res2 = await safeFetch(`${HACKSAW_API_BASE}/bet`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reqNoExtra) })
+      const res2 = await safeFetch(`${apiBase}/bet`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reqNoExtra) })
       const data2 = await res2.json().catch(() => ({}))
-      logApiCall({ type: 'hacksaw/bet', endpoint: `${HACKSAW_API_BASE}/bet`, request: reqNoExtra, response: data2, error: data2?.statusCode !== 0 ? data2?.statusMessage : null, durationMs: Date.now() - t1 })
+      logApiCall({ type: 'hacksaw/bet', endpoint: `${apiBase}/bet`, request: reqNoExtra, response: data2, error: data2?.statusCode !== 0 ? data2?.statusMessage : null, durationMs: Date.now() - t1 })
       if (data2?.statusCode === 0 && data2?.round?.roundId) {
         data = data2
       }
@@ -404,7 +475,7 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     const initialBonusScatter = parsed?.scatterCount ?? null
     const continueOpts = buildContinueOpts(options)
     const drained = await drainHacksawContinues(
-      HACKSAW_API_BASE,
+      apiBase,
       { ...session, seq: currentSeq },
       data,
       options?.slotSlug,

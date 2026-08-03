@@ -2842,7 +2842,8 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
             'nolimitcdn.com', 'nolimitcity.com', 'l0mpxqfj.xyz', 'thunderkick', 'relax',
             'blueprint', 'endorphina', 'netent', 'gameart', 'push', 'btg', 'oak', 'redtiger',
             'playngo', 'octoplay', 'peterandsons', 'shady', 'shuffle', 'titan', 'twist',
-            'popiplay', 'helio', 'samurai', '1000lakes', 'hacksawgaming.com', 'd1oa92ndvzdrfz.cloudfront.net',
+            'popiplay', 'helio', 'samurai', '1000lakes', 'hacksawgaming.com', 'rgs-social.hacksawgaming.com',
+            'static-live.hacksawgaming.com', 'd1oa92ndvzdrfz.cloudfront.net',
             'api.clawbuster.com', 'clawbuster-cdn.com', 'gsplauncher.de',
             'hub88-2-playnetic.com', 'playnetic.com',
             // Mascot launcher/runtime hosts (e.g. open.mascot.host -> <session>.mascot.games)

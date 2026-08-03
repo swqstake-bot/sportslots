@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.237': [
+    '🐛 Stake.eu Hacksaw: partner=stake_eu, currency=XSWP, rgs-social + version.json (HAR) — Sessions starten wieder',
+    '🐛 Stake.eu Pragmatic: doInit cver 398682 (Fat Panda HAR) zusätzlich zu 421122/406989',
+  ],
   '1.0.236': [
     '🔧 Packs Hunt: Progress-Log/UI nur alle 8s (nicht nach jedem Bet) — Stop bei Collection weiterhin sofort',
   ],

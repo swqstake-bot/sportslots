@@ -32,6 +32,8 @@ export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'] as string 
 /** Proxy-URL-Whitelist für proxy-request – erlaubte Host-Präfixe */
 export const PROXY_ALLOWED_HOSTS = [
   'https://d1oa92ndvzdrfz.cloudfront.net',
+  'https://rgs-social.hacksawgaming.com',
+  'https://static-live.hacksawgaming.com',
   'https://stake.com',
   'https://stake.bet',
   'https://stake.eu',
@@ -39,4 +41,5 @@ export const PROXY_ALLOWED_HOSTS = [
   'https://*.stake.bet',
   'https://*.stake.eu',
   'https://*.cloudfront.net',
+  'https://*.hacksawgaming.com',
 ] as const;

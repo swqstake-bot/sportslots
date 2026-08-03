@@ -3,13 +3,63 @@
  */
 import { logApiCall } from '../../utils/apiLogger'
 
-/** Basis-URL der Hacksaw Play API */
+/** Basis-URL der Hacksaw Play API (Stake.com / default) */
 export const HACKSAW_API_BASE = import.meta.env.DEV
   ? '/api/hacksaw/play'
   : 'https://d1oa92ndvzdrfz.cloudfront.net/api/play'
 
+/** Stake.eu / social branding (HAR stakeeuspiele.har) */
+export const HACKSAW_SOCIAL_API_BASE = 'https://rgs-social.hacksawgaming.com/api/play'
+export const HACKSAW_STATIC_BASE = 'https://static-live.hacksawgaming.com'
+
 /** User-Agent für Hacksaw-Requests */
 export const HACKSAW_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/144.0.0.0'
+
+/** Session-spezifische Play-API (EU social vs. CloudFront). */
+export function sessionHacksawApiBase(session) {
+  const base = session?.apiBase
+  return typeof base === 'string' && base ? base.replace(/\/$/, '') : HACKSAW_API_BASE
+}
+
+/**
+ * Partner-Config: env → Play-API-Base.
+ * z.B. stake_eu.json → https://rgs-social.hacksawgaming.com/api → …/api/play
+ */
+export async function resolveHacksawPlayApiBase(partner, branding = 'default') {
+  const p = String(partner || 'stake').trim() || 'stake'
+  try {
+    const res = await safeFetch(`${HACKSAW_STATIC_BASE}/launcher/configs/${encodeURIComponent(p)}.json`)
+    if (res.ok) {
+      const data = await res.json().catch(() => null)
+      const env = String(data?.env || '').replace(/\/$/, '')
+      if (env) return `${env}/play`
+    }
+  } catch {
+    /* fallback below */
+  }
+  const b = String(branding || '').toLowerCase()
+  if (b === 'social' || /_eu$/i.test(p) || p.toLowerCase().includes('stake_eu')) {
+    return HACKSAW_SOCIAL_API_BASE
+  }
+  return HACKSAW_API_BASE
+}
+
+/** Live-Version aus static-live/{gameId}/version.json */
+export async function resolveHacksawGameVersion(gameId, fallback = '1.22.0') {
+  const id = String(gameId || '').trim()
+  if (!id) return fallback
+  try {
+    const res = await safeFetch(`${HACKSAW_STATIC_BASE}/${encodeURIComponent(id)}/version.json?${Date.now()}`)
+    if (res.ok) {
+      const data = await res.json().catch(() => null)
+      const v = String(data?.version || '').trim()
+      if (v) return v
+    }
+  } catch {
+    /* ignore */
+  }
+  return fallback
+}
 
 export const HACKSAW_CONTINUE_RETRY_MS = 3000
 export const HACKSAW_CONTINUE_RETRY_MAX = 8

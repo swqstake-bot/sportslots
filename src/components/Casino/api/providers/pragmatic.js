@@ -14,7 +14,13 @@ const SSP_FALLBACK_V4_URL = 'https://441f8864ac.ukffjfmmka.net/gs2c/ge/v4/gameSe
 /** Browser/Stake 2026 — Sexy Rabbit (Big Duck Bonanza) nutzt 421122; ältere Slots oft 406989. */
 const PRAGMATIC_DOINIT_CVER = '406989'
 const PRAGMATIC_DOINIT_CVER_NEW = '421122'
-const PRAGMATIC_DOINIT_CVER_CANDIDATES = [PRAGMATIC_DOINIT_CVER_NEW, PRAGMATIC_DOINIT_CVER]
+/** Stake.eu Fat Panda (HAR stakeeuspiele.har): cver=398682 */
+const PRAGMATIC_DOINIT_CVER_EU = '398682'
+const PRAGMATIC_DOINIT_CVER_CANDIDATES = [
+  PRAGMATIC_DOINIT_CVER_NEW,
+  PRAGMATIC_DOINIT_CVER,
+  PRAGMATIC_DOINIT_CVER_EU,
+]
 
 function parseUrlParams(urlStr) {
   try {
