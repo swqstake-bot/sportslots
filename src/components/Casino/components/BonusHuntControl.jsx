@@ -231,24 +231,33 @@ export default function BonusHuntControl({
   const availableCurrencies = useUserStore((s) => s.availableCurrencies)
   const walletBalances = useUserStore((s) => s.balances)
 
-  const allowedCurrencies = useMemo(() => {
+  const sourceCurrencies = useMemo(() => {
     const owned = availableCurrencies?.length ? availableCurrencies : Object.keys(walletBalances || {})
     if (preferredSite === 'eu') {
       return buildSelectableCurrencyOptions({ site: 'eu', ownedCodes: owned })
     }
+    return buildSelectableCurrencyOptions({ site: 'com', ownedCodes: owned })
+  }, [preferredSite, availableCurrencies, walletBalances])
+
+  const targetCurrencies = useMemo(() => {
+    if (preferredSite === 'eu') return sourceCurrencies
     const providerFiltered = selectedSlots.length
       ? (filterCurrenciesByProvider(supportedCurrencies, selectedSlots) || supportedCurrencies)
       : supportedCurrencies
     return buildSelectableCurrencyOptions({
       site: 'com',
-      ownedCodes: owned,
+      ownedCodes: null,
       baseList: providerFiltered,
     })
-  }, [preferredSite, availableCurrencies, walletBalances, supportedCurrencies, selectedSlots])
+  }, [preferredSite, sourceCurrencies, supportedCurrencies, selectedSlots])
 
-  const { crypto: cryptoOpts, fiat: fiatOpts, goldCoins: goldOpts } = useMemo(
-    () => groupSelectableCurrencyOptions(allowedCurrencies),
-    [allowedCurrencies]
+  const { crypto: sourceCryptoOpts, fiat: sourceFiatOpts, goldCoins: goldOpts } = useMemo(
+    () => groupSelectableCurrencyOptions(sourceCurrencies),
+    [sourceCurrencies]
+  )
+  const { crypto: targetCryptoOpts, fiat: targetFiatOpts } = useMemo(
+    () => groupSelectableCurrencyOptions(targetCurrencies),
+    [targetCurrencies]
   )
 
   // Stake.eu: one wallet — source and target are the same.
@@ -259,15 +268,15 @@ export default function BonusHuntControl({
     if (selectedSlots.length === 0 && preferredSite !== 'eu') return
     if (preferredSite === 'eu') {
       setSourceCurrency((prev) => {
-        const next = pickDefaultCurrency(allowedCurrencies, prev, preferredSite)
+        const next = pickDefaultCurrency(sourceCurrencies, prev, preferredSite)
         setTargetCurrency(next)
         return next
       })
       return
     }
-    setSourceCurrency((prev) => pickDefaultCurrency(allowedCurrencies, prev, preferredSite))
-    setTargetCurrency((prev) => pickDefaultCurrency(allowedCurrencies, prev, preferredSite))
-  }, [selectedSlugs.join(','), slots?.length ?? 0, supportedCurrencies.length, preferredSite, allowedCurrencies])
+    setSourceCurrency((prev) => pickDefaultCurrency(sourceCurrencies, prev, preferredSite))
+    setTargetCurrency((prev) => pickDefaultCurrency(targetCurrencies, prev, preferredSite))
+  }, [selectedSlugs.join(','), slots?.length ?? 0, supportedCurrencies.length, preferredSite, sourceCurrencies, targetCurrencies])
 
   useEffect(() => {
     if (!accessToken || isRunning) return
@@ -1602,7 +1611,7 @@ export default function BonusHuntControl({
         <div className={styles.row} style={{ flexWrap: 'wrap', marginBottom: '0.35rem' }}>
           {preferredSite === 'eu' ? (
             <select
-              value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'sweeps')}
+              value={sourceCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (sourceCurrencies[0]?.value || 'sweeps')}
               onChange={(e) => {
                 const v = e.target.value
                 setSourceCurrency(v)
@@ -1619,14 +1628,14 @@ export default function BonusHuntControl({
             </select>
           ) : (
             <>
-              <select value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'usdc')} onChange={(e) => setSourceCurrency(e.target.value)} className={styles.select} style={{ minWidth: 90, flex: 'none' }} disabled={isRunning}>
-                {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-                {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+              <select value={sourceCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (sourceCurrencies[0]?.value || 'usdc')} onChange={(e) => setSourceCurrency(e.target.value)} className={styles.select} style={{ minWidth: 90, flex: 'none' }} disabled={isRunning}>
+                {sourceCryptoOpts.length > 0 && <optgroup label="Crypto">{sourceCryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+                {sourceFiatOpts.length > 0 && <optgroup label="Fiat">{sourceFiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
               </select>
               <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
-              <select value={allowedCurrencies.some((c) => c.value === targetCurrency) ? targetCurrency : (allowedCurrencies[0]?.value || 'eur')} onChange={(e) => setTargetCurrency(e.target.value)} className={styles.select} style={{ minWidth: 90, flex: 'none' }} disabled={isRunning}>
-                {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-                {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+              <select value={targetCurrencies.some((c) => c.value === targetCurrency) ? targetCurrency : (targetCurrencies[0]?.value || 'eur')} onChange={(e) => setTargetCurrency(e.target.value)} className={styles.select} style={{ minWidth: 90, flex: 'none' }} disabled={isRunning}>
+                {targetCryptoOpts.length > 0 && <optgroup label="Crypto">{targetCryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+                {targetFiatOpts.length > 0 && <optgroup label="Fiat">{targetFiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
               </select>
             </>
           )}

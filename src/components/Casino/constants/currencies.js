@@ -111,7 +111,8 @@ export function isEuGoldCoinCode(code) {
  * Selectable currency options for settings / wallet UI.
  * - .eu → only GC/SC
  * - .com → crypto+fiat (no goldCoins)
- * - If `ownedCodes` given → only wallets the user actually has
+ * - If `ownedCodes` given → only wallets the user actually has (use for Account/source only;
+ *   Game/target must omit ownedCodes so USD stays selectable with a $0 USD wallet)
  * @param {{
  *   site?: 'com'|'eu'|string,
  *   ownedCodes?: string[]|Record<string, unknown>|null,

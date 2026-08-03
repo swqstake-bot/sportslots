@@ -591,26 +591,37 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const availableCurrencies = useUserStore((s) => s.availableCurrencies)
   const walletBalances = useUserStore((s) => s.balances)
 
-  const allowedCurrencies = useMemo(() => {
+  // Account (source): only wallets the user has.
+  // Game (target): provider fiat/crypto including USD even with $0 USD wallet (Stake converts).
+  const sourceCurrencies = useMemo(() => {
     const owned = availableCurrencies?.length ? availableCurrencies : Object.keys(walletBalances || {})
     if (preferredSite === 'eu') {
       return buildSelectableCurrencyOptions({ site: 'eu', ownedCodes: owned })
     }
+    return buildSelectableCurrencyOptions({ site: 'com', ownedCodes: owned })
+  }, [preferredSite, availableCurrencies, walletBalances])
+
+  const targetCurrencies = useMemo(() => {
+    if (preferredSite === 'eu') return sourceCurrencies
     const providerFiltered = filterCurrenciesByProvider(supportedCurrencies, [slot]) || supportedCurrencies
     return buildSelectableCurrencyOptions({
       site: 'com',
-      ownedCodes: owned,
+      ownedCodes: null,
       baseList: providerFiltered,
     })
-  }, [preferredSite, availableCurrencies, walletBalances, supportedCurrencies, slot])
+  }, [preferredSite, sourceCurrencies, supportedCurrencies, slot])
 
-  const { crypto: cryptoOpts, fiat: fiatOpts, goldCoins: goldOpts } = useMemo(
-    () => groupSelectableCurrencyOptions(allowedCurrencies),
-    [allowedCurrencies]
+  const { crypto: sourceCryptoOpts, fiat: sourceFiatOpts, goldCoins: goldOpts } = useMemo(
+    () => groupSelectableCurrencyOptions(sourceCurrencies),
+    [sourceCurrencies]
+  )
+  const { crypto: targetCryptoOpts, fiat: targetFiatOpts } = useMemo(
+    () => groupSelectableCurrencyOptions(targetCurrencies),
+    [targetCurrencies]
   )
 
   useEffect(() => {
-    const nextSource = pickDefaultCurrency(allowedCurrencies, sourceCurrency, preferredSite)
+    const nextSource = pickDefaultCurrency(sourceCurrencies, sourceCurrency, preferredSite)
     if (preferredSite === 'eu') {
       // GoldCoins: wallet = game currency (source === target).
       if (nextSource && (nextSource !== sourceCurrency || nextSource !== targetCurrency)) {
@@ -620,7 +631,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       }
       return
     }
-    const nextTarget = pickDefaultCurrency(allowedCurrencies, targetCurrency, preferredSite)
+    const nextTarget = pickDefaultCurrency(targetCurrencies, targetCurrency, preferredSite)
     if (nextSource && nextSource !== sourceCurrency) {
       setSourceCurrency(nextSource)
       setSlotCurrency(slot.slug, { source: nextSource })
@@ -630,7 +641,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       setSlotCurrency(slot.slug, { target: nextTarget })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preferredSite, allowedCurrencies])
+  }, [preferredSite, sourceCurrencies, targetCurrencies])
 
   /** Einsatz aus localStorage (pro Slot) auf aktuelle Levels mappen; bei Slot-Wechsel ohne Speicherung Default. */
   useEffect(() => {
@@ -1890,7 +1901,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
             {isEuGoldCoins ? (
               <select
-                value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'sweeps')}
+                value={sourceCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (sourceCurrencies[0]?.value || 'sweeps')}
                 onChange={(e) => {
                   const v = e.target.value
                   setSourceCurrency(v)
@@ -1907,23 +1918,23 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             ) : (
               <>
                 <select
-                  value={allowedCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (allowedCurrencies[0]?.value || 'usdc')}
+                  value={sourceCurrencies.some((c) => c.value === sourceCurrency) ? sourceCurrency : (sourceCurrencies[0]?.value || 'usdc')}
                   onChange={(e) => { const v = e.target.value; setSourceCurrency(v); setSlotCurrency(slot.slug, { source: v }) }}
                   style={{ ...STYLES.select, minWidth: 90, flex: 'none' }}
                   title="Account currency"
                 >
-                  {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-                  {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+                  {sourceCryptoOpts.length > 0 && <optgroup label="Crypto">{sourceCryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+                  {sourceFiatOpts.length > 0 && <optgroup label="Fiat">{sourceFiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
                 </select>
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
                 <select
-                  value={allowedCurrencies.some((c) => c.value === targetCurrency) ? targetCurrency : (allowedCurrencies[0]?.value || 'eur')}
+                  value={targetCurrencies.some((c) => c.value === targetCurrency) ? targetCurrency : (targetCurrencies[0]?.value || 'eur')}
                   onChange={(e) => { const v = e.target.value; setTargetCurrency(v); setSlotCurrency(slot.slug, { target: v }) }}
                   style={{ ...STYLES.select, minWidth: 90, flex: 'none' }}
                   title="Game currency"
                 >
-                  {cryptoOpts.length > 0 && <optgroup label="Crypto">{cryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
-                  {fiatOpts.length > 0 && <optgroup label="Fiat">{fiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+                  {targetCryptoOpts.length > 0 && <optgroup label="Crypto">{targetCryptoOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
+                  {targetFiatOpts.length > 0 && <optgroup label="Fiat">{targetFiatOpts.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</optgroup>}
                 </select>
               </>
             )}
