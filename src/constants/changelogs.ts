@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.231': [
+    '🐛 Packs Release-Build: placePacksRestBet Typen (cardsCollected) — TS2345 / CI grün',
+  ],
   '1.0.230': [
     '✨ Packs: Collection-Progress (X/240, remaining) + Hunt packs cards (GC 1000 / SC 0.10 bis alle Karten oder Stop)',
   ],
