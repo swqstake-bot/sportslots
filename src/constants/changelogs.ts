@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.236': [
+    '🔧 Packs Hunt: Progress-Log/UI nur alle 8s (nicht nach jedem Bet) — Stop bei Collection weiterhin sofort',
+  ],
   '1.0.235': [
     '🐛 Packs Hunt: Progress-Log bei jeder neuen Karte (nicht nur alle 5) — inkl. Card-IDs',
   ],

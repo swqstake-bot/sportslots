@@ -5,6 +5,7 @@ import { TextField } from './gamePanelFields'
 import { fetchPacksProgress } from '../../../api/stakeOriginalsBets'
 import {
   PACKS_TOTAL_CARDS,
+  PACKS_PROGRESS_LOG_INTERVAL_MS,
   packsHuntAmountForCurrency,
   packsRemaining,
   publishPacksProgress,
@@ -66,7 +67,7 @@ export default function PacksTargetControl({
     if (!options.huntPacksCards) return
     const id = window.setInterval(() => {
       void refresh()
-    }, 8000)
+    }, PACKS_PROGRESS_LOG_INTERVAL_MS)
     return () => clearInterval(id)
   }, [options.huntPacksCards, refresh])
 

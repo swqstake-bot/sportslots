@@ -1,4 +1,5 @@
 export const PACKS_TOTAL_CARDS = 240
+export const PACKS_PROGRESS_LOG_INTERVAL_MS = 8000
 
 export function packsHuntAmountForCurrency(currency?: string | null): number
 export function packsCollectedCount(cardsCollected: unknown): number

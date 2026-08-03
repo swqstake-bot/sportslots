@@ -5,6 +5,7 @@
 import { rotateSeedPair, fetchPacksProgress } from '../../../api/stakeOriginalsBets'
 import {
   PACKS_TOTAL_CARDS,
+  PACKS_PROGRESS_LOG_INTERVAL_MS,
   formatPacksProgressLog,
   isPacksCollectionComplete,
   packsCollectedFromBetApi,
@@ -493,6 +494,8 @@ export async function runProfile(
     String(currentGame || workbenchOptions.game || options.game || '').toLowerCase() === 'packs'
   const huntPacksStake = huntPacksCards ? packsHuntAmountForCurrency(cur) : 0
   let lastPacksCollected: number | null = null
+  let lastPacksProgressLogAt = 0
+  let packsNewSinceLog: number[] = []
   if (huntPacksCards) {
     betSizeUsd = huntPacksStake
     currentBlockBase = huntPacksStake
@@ -504,6 +507,7 @@ export async function runProfile(
     try {
       const prog = await fetchPacksProgress()
       lastPacksCollected = prog.collected
+      lastPacksProgressLogAt = Date.now()
       publishPacksProgress(prog.collected)
       const rem = packsRemaining(prog.collected)
       callbacks.onLog?.(
@@ -1348,23 +1352,29 @@ export async function runProfile(
       if (huntPacksCards) {
         const collected = packsCollectedFromBetApi(betApi)
         const newIds = packsNewCardIdsFromBetApi(betApi)
+        if (newIds.length) packsNewSinceLog.push(...newIds)
         if (collected != null) {
-          publishPacksProgress(collected)
-          const gained =
-            lastPacksCollected != null ? Math.max(0, collected - lastPacksCollected) : newIds.length > 0 ? newIds.length : 0
-          // Log on every new card / collection increase (not only every 5th).
-          if (newIds.length > 0 || gained > 0 || rollNumber === 1 || collected !== lastPacksCollected) {
-            callbacks.onLog?.(
-              formatPacksProgressLog(collected, { newIds, prevCollected: lastPacksCollected })
-            )
-          }
           lastPacksCollected = collected
+          const now = Date.now()
+          const due =
+            lastPacksProgressLogAt === 0 ||
+            now - lastPacksProgressLogAt >= PACKS_PROGRESS_LOG_INTERVAL_MS ||
+            isPacksCollectionComplete(collected)
+          if (due) {
+            publishPacksProgress(collected)
+            callbacks.onLog?.(
+              formatPacksProgressLog(collected, {
+                newIds: packsNewSinceLog,
+                prevCollected: null,
+              })
+            )
+            packsNewSinceLog = []
+            lastPacksProgressLogAt = now
+          }
           if (isPacksCollectionComplete(collected)) {
             callbacks.onLog?.('Stop: packs collection complete')
             break
           }
-        } else if (newIds.length > 0) {
-          callbacks.onLog?.(`Packs: +${newIds.length} new this open (#${newIds.join(', #')})`)
         }
       }
       const stopReason = checkWorkbenchStops(workbenchOptions, {

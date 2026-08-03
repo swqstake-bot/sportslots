@@ -7,6 +7,9 @@
 
 export const PACKS_TOTAL_CARDS = 240
 
+/** How often hunt mode logs / publishes UI progress (ms). */
+export const PACKS_PROGRESS_LOG_INTERVAL_MS = 8000
+
 /** Min pack-open stake for card hunting (Stake.eu). */
 export function packsHuntAmountForCurrency(currency) {
   const c = String(currency || '').toLowerCase()
@@ -63,7 +66,7 @@ export function formatPacksProgressLog(collected, { newIds, prevCollected } = {}
     prevCollected != null && Number.isFinite(Number(prevCollected))
       ? Math.max(0, collected - Number(prevCollected))
       : 0
-  const news = Array.isArray(newIds) ? newIds : []
+  const news = Array.isArray(newIds) ? [...new Set(newIds)] : []
   if (news.length > 0) {
     return `${base} · +${news.length} new (#${news.join(', #')})`
   }

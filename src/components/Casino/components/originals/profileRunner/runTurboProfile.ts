@@ -13,6 +13,7 @@ import { waitWhilePaused, type SessionSignal } from '../engine/sessionSignal'
 import { fetchPacksProgress } from '../../../api/stakeOriginalsBets'
 import {
   PACKS_TOTAL_CARDS,
+  PACKS_PROGRESS_LOG_INTERVAL_MS,
   formatPacksProgressLog,
   isPacksCollectionComplete,
   packsCollectedFromBetApi,
@@ -91,6 +92,8 @@ export async function runTurboProfile(
   const stopOnLoss = optFrom(options, 'stopOnLoss', 0)
   const stopOnTotalWagered = optFrom(options, 'stopOnTotalWagered', 0)
   let lastPacksCollected: number | null = null
+  let lastPacksProgressLogAt = 0
+  let packsNewSinceLog: number[] = []
 
   if (huntPacksCards) {
     callbacks.onLog?.(
@@ -99,6 +102,7 @@ export async function runTurboProfile(
     try {
       const prog = await fetchPacksProgress()
       lastPacksCollected = prog.collected
+      lastPacksProgressLogAt = Date.now()
       publishPacksProgress(prog.collected)
       const rem = packsRemaining(prog.collected)
       callbacks.onLog?.(
@@ -317,28 +321,31 @@ export async function runTurboProfile(
           if (huntPacksCards) {
             const collected = packsCollectedFromBetApi(placed.betApi)
             const newIds = packsNewCardIdsFromBetApi(placed.betApi)
+            if (newIds.length) packsNewSinceLog.push(...newIds)
             if (collected != null) {
-              publishPacksProgress(collected)
-              const gained =
-                lastPacksCollected != null
-                  ? Math.max(0, collected - lastPacksCollected)
-                  : newIds.length > 0
-                    ? newIds.length
-                    : 0
-              if (newIds.length > 0 || gained > 0 || collected !== lastPacksCollected) {
-                callbacks.onLog?.(
-                  formatPacksProgressLog(collected, { newIds, prevCollected: lastPacksCollected })
-                )
-              }
               lastPacksCollected = collected
+              const now = Date.now()
+              const due =
+                lastPacksProgressLogAt === 0 ||
+                now - lastPacksProgressLogAt >= PACKS_PROGRESS_LOG_INTERVAL_MS ||
+                isPacksCollectionComplete(collected)
+              if (due) {
+                publishPacksProgress(collected)
+                callbacks.onLog?.(
+                  formatPacksProgressLog(collected, {
+                    newIds: packsNewSinceLog,
+                    prevCollected: null,
+                  })
+                )
+                packsNewSinceLog = []
+                lastPacksProgressLogAt = now
+              }
               if (isPacksCollectionComplete(collected)) {
                 callbacks.onLog?.(
                   `Stop: packs collection complete (${collected}/${PACKS_TOTAL_CARDS})`
                 )
                 stopped = true
               }
-            } else if (newIds.length > 0) {
-              callbacks.onLog?.(`Packs: +${newIds.length} new this open (#${newIds.join(', #')})`)
             }
           }
           if (checkStop()) stopped = true
