@@ -6,7 +6,19 @@ export function minesCashout(params: { identifier: string }): Promise<{ id?: str
 export function placePlinkoBet(params: { amount: number; currency: string; rows: number; risk: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
 export function placeKenoBet(params: { amount: number; currency: string; picks: number[]; risk: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
 export function placePacksBet(params: { amount: number; currency: string; identifier: string; difficulty?: string }): Promise<{ iid?: string; id?: string; payout?: number } | null>
-export function placePacksRestBet(params: { amount: number; currency: string; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number; state?: { cardsCollected?: unknown[]; cards?: unknown[] } } | null>
+export function placePacksRestBet(params: { amount: number; currency: string; identifier?: string }): Promise<{
+  iid?: string
+  id?: string
+  betApiId?: string
+  payout?: number
+  payoutMultiplier?: number
+  amount?: number
+  game?: string
+  state?: {
+    cardsCollected?: Array<{ id?: number; obtained?: number } | number>
+    cards?: Array<{ id?: number; isNew?: boolean; multiplier?: number }>
+  }
+} | null>
 export function fetchPacksProgress(): Promise<{ cardsCollected: Array<{ id?: number; obtained?: number }>; collected: number; user?: unknown; game?: string; raw?: unknown }>
 export function placeSnakesBet(params: { amount: number; currency: string; difficulty?: string; rollCount?: number; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
 export function placeWheelBet(params: { amount: number; currency: string; segments?: number; risk?: string; identifier?: string }): Promise<{ iid?: string; id?: string; payout?: number; payoutMultiplier?: number; amount?: number } | null>
