@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.230': [
+    '✨ Packs: Collection-Progress (X/240, remaining) + Hunt packs cards (GC 1000 / SC 0.10 bis alle Karten oder Stop)',
+  ],
   '1.0.229': [
     '🐛 Stake.eu SC BetList leer trotz Spins — RGS-Code XSWP (Hacksaw/Pragmatic) als SC, kein Number(null)→$0 Snapshot mehr',
   ],

@@ -2,7 +2,15 @@
  * Profil-Runner: JSON-Profil parsen und Session gegen Stake-API ausführen.
  */
 
-import { rotateSeedPair } from '../../../api/stakeOriginalsBets'
+import { fetchPacksProgress, rotateSeedPair } from '../../../api/stakeOriginalsBets'
+import {
+  PACKS_TOTAL_CARDS,
+  isPacksCollectionComplete,
+  packsCollectedFromBetApi,
+  packsHuntAmountForCurrency,
+  packsRemaining,
+  publishPacksProgress,
+} from '../../../utils/packsProgress'
 import { playBlackjackScriptRound } from '../blackjack/blackjackScriptRound'
 import { placeOriginalsBet } from '../engine/placeOriginalsBet'
 import {
@@ -470,7 +478,39 @@ export async function runProfile(
   const stopOnWinStreak = optBoolFrom(options, 'isStopOnWinStreak', false) ? optFrom(options, 'stopOnWinStreak', 0) : 0
   const stopOnLossStreak = optBoolFrom(options, 'isStopOnLossStreak', false) ? optFrom(options, 'stopOnLossStreak', 0) : 0
   const stopOnB2bStreak = optBoolFrom(options, 'isStopOnB2bStreak', false) ? optFrom(options, 'stopOnB2bStreak', 0) : 0
-  
+
+  const huntPacksCards =
+    workbenchEnabled &&
+    !!workbenchOptions.huntPacksCards &&
+    String(currentGame || workbenchOptions.game || options.game || '').toLowerCase() === 'packs'
+  const huntPacksStake = huntPacksCards ? packsHuntAmountForCurrency(cur) : 0
+  if (huntPacksCards) {
+    betSizeUsd = huntPacksStake
+    currentBlockBase = huntPacksStake
+    effectiveBaseUsd = huntPacksStake
+    workbenchOptions = { ...workbenchOptions, numberOfBets: 0, initialBetSize: huntPacksStake, betSize: huntPacksStake }
+    callbacks.onLog?.(
+      `Hunt packs cards — stake ${huntPacksStake} ${cur.toUpperCase()} until ${PACKS_TOTAL_CARDS} cards (or Stop)`
+    )
+    try {
+      const prog = await fetchPacksProgress()
+      publishPacksProgress(prog.collected)
+      const rem = packsRemaining(prog.collected)
+      callbacks.onLog?.(
+        rem > 0
+          ? `Packs: ${prog.collected}/${PACKS_TOTAL_CARDS} — ${rem} remaining`
+          : `Packs: collection already complete (${prog.collected}/${PACKS_TOTAL_CARDS})`
+      )
+      if (isPacksCollectionComplete(prog.collected)) {
+        callbacks.onLog?.('Stop: packs collection complete')
+        return
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      callbacks.onLog?.(`Packs progress fetch failed: ${msg.slice(0, 120)}`)
+    }
+  }
+
   // Rotation (optional): ein Script nutzt 2–3 Spiele nacheinander, z. B. Dice→Limbo→Keno→repeat.
   type RotationStage = { game: string; bets: number; options?: Record<string, unknown> }
   const rotationStagesRaw = options.rotationStages as unknown
@@ -761,7 +801,7 @@ export async function runProfile(
     }
 
     const profitUsdBeforeRound = profitUsd
-    let betSizeUsdThisRound = betSizeUsd
+    let betSizeUsdThisRound = huntPacksCards ? huntPacksStake : betSizeUsd
 
     if (workbenchEnabled && (workbenchOptions.conditionBlocks?.length ?? 0) > 0) {
       const condResult = applyConditionBlocks(workbenchOptions, {
@@ -823,7 +863,7 @@ export async function runProfile(
     }
 
     if (minBetSizeUsd > 0) betSizeUsdThisRound = Math.max(minBetSizeUsd, betSizeUsdThisRound)
-    betSizeUsdThisRound = capBetUsd(betSizeUsdThisRound)
+    if (!huntPacksCards) betSizeUsdThisRound = capBetUsd(betSizeUsdThisRound)
 
     houseBetBridge.registerPending({
       betIndex: toBetListIndex(rollNumber),
@@ -1295,6 +1335,24 @@ export async function runProfile(
     ) {
       if (deferStopForNextWin(`B2B streak ${b2bChainWins}`)) break
     } else if (workbenchEnabled) {
+      if (huntPacksCards) {
+        const collected = packsCollectedFromBetApi(betApi)
+        if (collected != null) {
+          publishPacksProgress(collected)
+          const rem = packsRemaining(collected)
+          if (rollNumber === 1 || rem === 0 || collected % 5 === 0) {
+            callbacks.onLog?.(
+              rem > 0
+                ? `Packs: ${collected}/${PACKS_TOTAL_CARDS} — ${rem} remaining`
+                : `Packs: collection complete (${collected}/${PACKS_TOTAL_CARDS})`
+            )
+          }
+          if (isPacksCollectionComplete(collected)) {
+            callbacks.onLog?.('Stop: packs collection complete')
+            break
+          }
+        }
+      }
       const stopReason = checkWorkbenchStops(workbenchOptions, {
         profitUsd,
         peakProfitUsd,

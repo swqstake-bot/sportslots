@@ -22,6 +22,10 @@ export function workbenchOptionsToProfile(options: OriginalsWorkbenchOptions): R
   if (options.betHigh != null && options.game === 'dice') {
     o.rollOver = options.betHigh
   }
+  // Packs card hunt: infinite bets; stake is forced in the runner from currency.
+  if (options.huntPacksCards && String(o.game).toLowerCase() === 'packs') {
+    o.numberOfBets = 0
+  }
   return o
 }
 

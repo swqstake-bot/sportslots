@@ -864,6 +864,20 @@ export async function placePacksRestBet({ amount, currency, identifier }) {
   return pickRestBet(res, ['packsBet'])
 }
 
+/** Packs collection progress — HAR: POST /_api/casino/packs/getProgress with {}. */
+export async function fetchPacksProgress() {
+  const res = await stakeCasinoRestPost('/_api/casino/packs/getProgress', {})
+  const prog = res?.packsProgress ?? res?.data?.packsProgress ?? null
+  const cards = Array.isArray(prog?.cardsCollected) ? prog.cardsCollected : []
+  return {
+    cardsCollected: cards,
+    collected: cards.length,
+    user: prog?.user ?? null,
+    game: prog?.game ?? 'packs',
+    raw: prog,
+  }
+}
+
 /**
  * No verified Stake API for these registry slugs (not in reference handlers).
  * Throws so manual/automatic modes surface an honest error.

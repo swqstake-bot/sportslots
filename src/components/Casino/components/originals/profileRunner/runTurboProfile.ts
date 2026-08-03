@@ -10,6 +10,15 @@ import { createScriptHouseBetIdBridge } from '../scriptEngine/scriptHouseBetIdBr
 import type { ProfileRunnerCallbacks } from './runProfile'
 import { isTurboCompatibleGame, isRateLimitError, TURBO_RATE_LIMIT_COOLDOWN_MS, TURBO_RATE_LIMIT_INTERVAL_BUMP_MS, turboSpawnRatePerSec } from '../engine/turboConfig'
 import { waitWhilePaused, type SessionSignal } from '../engine/sessionSignal'
+import { fetchPacksProgress } from '../../../api/stakeOriginalsBets'
+import {
+  PACKS_TOTAL_CARDS,
+  isPacksCollectionComplete,
+  packsCollectedFromBetApi,
+  packsHuntAmountForCurrency,
+  packsRemaining,
+  publishPacksProgress,
+} from '../../../utils/packsProgress'
 
 function optFrom(opts: Record<string, unknown>, key: string, fallback: number): number {
   const v = opts[key]
@@ -67,10 +76,37 @@ export async function runTurboProfile(
     }
     return 0.01
   })()
-  const numberOfBets = Math.max(0, optFrom(options, 'numberOfBets', 0))
+  const huntPacksCards = !!workbenchOptions.huntPacksCards && game === 'packs'
+  const huntPacksStake = huntPacksCards ? packsHuntAmountForCurrency(cur) : 0
+  const effectiveInitialBetUsd = huntPacksCards ? huntPacksStake : initialBetUsd
+  let numberOfBets = Math.max(0, optFrom(options, 'numberOfBets', 0))
+  if (huntPacksCards) numberOfBets = 0
   const stopOnProfit = optFrom(options, 'stopOnProfit', 0)
   const stopOnLoss = optFrom(options, 'stopOnLoss', 0)
   const stopOnTotalWagered = optFrom(options, 'stopOnTotalWagered', 0)
+
+  if (huntPacksCards) {
+    callbacks.onLog?.(
+      `Hunt packs cards (turbo) — stake ${huntPacksStake} ${cur.toUpperCase()} until ${PACKS_TOTAL_CARDS} cards (or Stop)`
+    )
+    try {
+      const prog = await fetchPacksProgress()
+      publishPacksProgress(prog.collected)
+      const rem = packsRemaining(prog.collected)
+      callbacks.onLog?.(
+        rem > 0
+          ? `Packs: ${prog.collected}/${PACKS_TOTAL_CARDS} — ${rem} remaining`
+          : `Packs: collection already complete (${prog.collected}/${PACKS_TOTAL_CARDS})`
+      )
+      if (isPacksCollectionComplete(prog.collected)) {
+        callbacks.onLog?.('Stop: packs collection complete')
+        return
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      callbacks.onLog?.(`Packs progress fetch failed: ${msg.slice(0, 120)}`)
+    }
+  }
 
   const sessionStartMs = Date.now()
   let rollNumber = 0
@@ -160,7 +196,7 @@ export async function runTurboProfile(
   let rateLimitHits = 0
 
   callbacks.onLog?.(
-    `Turbo ⚡ — max ${effectiveMaxInFlight} in flight, interval ${effectiveFireIntervalMs}ms (~${turboSpawnRatePerSec(effectiveFireIntervalMs).toFixed(1)}/s spawn, flat bet $${initialBetUsd.toFixed(4)})`
+    `Turbo ⚡ — max ${effectiveMaxInFlight} in flight, interval ${effectiveFireIntervalMs}ms (~${turboSpawnRatePerSec(effectiveFireIntervalMs).toFixed(1)}/s spawn, flat bet $${effectiveInitialBetUsd.toFixed(4)})`
   )
 
   const handleRateLimit = async (msg: string) => {
@@ -181,7 +217,7 @@ export async function runTurboProfile(
     if (signal.cancelled || stopped) return
     rollNumber++
     const betIndex = toBetListIndex(rollNumber)
-    const betSizeUsd = capBetUsd(initialBetUsd)
+    const betSizeUsd = huntPacksCards ? huntPacksStake : capBetUsd(effectiveInitialBetUsd)
     const amountMajor = usdToCurrencyAmount(betSizeUsd, cur, usdRates)
     inFlight++
 
@@ -192,6 +228,7 @@ export async function runTurboProfile(
       game,
       initialBetSize: betSizeUsd,
       betSize: betSizeUsd,
+      ...(huntPacksCards ? { numberOfBets: 0 } : {}),
     }
 
     void placeOriginalsBet(game, betOpts as Record<string, unknown>, amountMajor, cur, signal, callbacks.onLog)
@@ -269,6 +306,18 @@ export async function runTurboProfile(
             hiloSuit: round.hiloSuit,
           })
           emitStats()
+          if (huntPacksCards) {
+            const collected = packsCollectedFromBetApi(placed.betApi)
+            if (collected != null) {
+              publishPacksProgress(collected)
+              if (isPacksCollectionComplete(collected)) {
+                callbacks.onLog?.(
+                  `Stop: packs collection complete (${collected}/${PACKS_TOTAL_CARDS})`
+                )
+                stopped = true
+              }
+            }
+          }
           if (checkStop()) stopped = true
         })
       })

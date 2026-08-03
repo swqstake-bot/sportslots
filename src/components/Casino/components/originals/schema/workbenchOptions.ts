@@ -228,6 +228,9 @@ export interface OriginalsWorkbenchOptions extends Omit<Partial<LegacyProfileOpt
   minesFields?: number[]
   casesIdentifier?: string
 
+  /** Packs: keep opening packs at card-hunt stake until all 240 cards collected (or Stop). */
+  huntPacksCards?: boolean
+
   /** Plinko UI: selected board slot × (sets rows/risk via lookup) */
   plinkoTarget?: number
 
@@ -310,6 +313,8 @@ export const DEFAULT_WORKBENCH_OPTIONS: OriginalsWorkbenchOptions = {
   huntEnabled: false,
 
   huntMultiplier: 30,
+
+  huntPacksCards: false,
 
   difficulty: 'easy',
 

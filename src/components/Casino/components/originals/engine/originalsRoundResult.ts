@@ -22,6 +22,9 @@ export type OriginalsBetApiState = {
   minesCount?: number
   rounds?: Array<MinesRoundState | HiloRoundState>
   startCard?: HiloCardState
+  /** Packs: unique cards owned after this open */
+  cardsCollected?: Array<{ id?: number; obtained?: number } | number>
+  cards?: Array<{ id?: number; isNew?: boolean }>
 }
 
 export type OriginalsBetApiRow = {

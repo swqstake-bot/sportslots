@@ -24,6 +24,7 @@ interface OriginalsGamePanelProps {
   options: OriginalsWorkbenchOptions
   onOptionsPatch: (partial: Partial<OriginalsWorkbenchOptions>) => void
   readOnly?: boolean
+  currency?: string
 }
 
 const BLOCKED = new Set(['roulette', 'baccarat', 'video-poker', 'drill', 'moles', 'blitz'])
@@ -54,7 +55,7 @@ const TITLES: Record<string, string> = {
   blackjack: 'Blackjack',
 }
 
-export default function OriginalsGamePanel({ slug, options, onOptionsPatch, readOnly }: OriginalsGamePanelProps) {
+export default function OriginalsGamePanel({ slug, options, onOptionsPatch, readOnly, currency }: OriginalsGamePanelProps) {
   const g = slug.toLowerCase()
   const meta = getGameMeta(g)
   const title = TITLES[g] ?? g
@@ -142,7 +143,7 @@ export default function OriginalsGamePanel({ slug, options, onOptionsPatch, read
       body = <NoParamsGameControl gameSlug={g} />
       break
     case 'packs':
-      body = <PacksTargetControl options={options} onPatch={patch} readOnly={readOnly} />
+      body = <PacksTargetControl options={options} onPatch={patch} readOnly={readOnly} currency={currency} />
       break
     default:
       return (

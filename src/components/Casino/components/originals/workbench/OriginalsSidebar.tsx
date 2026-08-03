@@ -86,6 +86,7 @@ export default function OriginalsSidebar({
             options={options}
             onOptionsPatch={(partial) => onChange({ ...options, ...partial })}
             readOnly={disabled}
+            currency={currency}
           />
         )}
       </div>
