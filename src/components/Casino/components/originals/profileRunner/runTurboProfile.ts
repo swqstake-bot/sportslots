@@ -19,6 +19,7 @@ import {
   packsRemaining,
   publishPacksProgress,
 } from '../../../utils/packsProgress'
+import { isGoldCoinCurrency } from '../../../utils/currencyMeta'
 
 function optFrom(opts: Record<string, unknown>, key: string, fallback: number): number {
   const v = opts[key]
@@ -31,6 +32,9 @@ function sleep(ms: number): Promise<void> {
 }
 
 function usdToCurrencyAmount(usd: number, currency: string, usdRates?: Record<string, number>): number {
+  if (!(usd > 0)) return usd
+  // GC/SC: native major (HAR packs bet amount 1000 gold / 0.1 sweeps) — ignore Stake FX baseRate.
+  if (isGoldCoinCurrency(currency)) return Math.round(usd * 100) / 100
   const rate = usdRates?.[currency.toLowerCase()]
   if (rate && rate > 0) return usd / rate
   return usd

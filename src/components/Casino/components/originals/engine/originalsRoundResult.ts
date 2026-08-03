@@ -1,5 +1,9 @@
+import { isGoldCoinCurrency } from '../../../utils/currencyMeta'
+
 function currencyAmountToUsd(amount: number, currency: string, usdRates?: Record<string, number>): number {
-  if (!usdRates || amount <= 0) return amount
+  if (amount <= 0) return amount
+  if (isGoldCoinCurrency(currency)) return Math.round(amount * 100) / 100
+  if (!usdRates) return amount
   const rate = usdRates[currency.toLowerCase()]
   if (rate == null || rate <= 0) return amount
   return Math.round(amount * rate * 1e8) / 1e8

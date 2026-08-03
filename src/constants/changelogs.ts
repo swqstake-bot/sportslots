@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.232': [
+    '🐛 Stake.eu Packs/Originals: GC/SC-Einsatz 1:1 (kein FX) — 1000 GC bleibt 1000 (HAR), nicht ~8M durch gold.baseRate',
+  ],
   '1.0.231': [
     '🐛 Packs Release-Build: placePacksRestBet Typen (cardsCollected) — TS2345 / CI grün',
   ],

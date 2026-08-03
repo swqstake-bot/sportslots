@@ -3,7 +3,7 @@
  */
 
 import { placeDiceBet, rotateSeedPair } from '../../../api/stakeOriginalsBets'
-import { isFiatCurrency, isZeroDecimalCurrency } from '../../../utils/currencyMeta'
+import { isFiatCurrency, isGoldCoinCurrency, isZeroDecimalCurrency } from '../../../utils/currencyMeta'
 
 export interface DiceRunnerConfig {
   betUsd: number
@@ -53,7 +53,9 @@ function sleep(ms: number) {
 }
 
 export function usdToCurrencyAmount(usdAmount: number, currency: string, usdRates?: Record<string, number>): number {
-  if (!usdRates || usdAmount <= 0) return usdAmount
+  if (usdAmount <= 0) return usdAmount
+  if (isGoldCoinCurrency(currency)) return Math.round(usdAmount * 100) / 100
+  if (!usdRates) return usdAmount
   const cur = currency.toLowerCase()
   const rate = usdRates[cur]
   if (rate == null || rate <= 0) return usdAmount
@@ -64,7 +66,9 @@ export function usdToCurrencyAmount(usdAmount: number, currency: string, usdRate
 }
 
 function currencyAmountToUsd(amount: number, currency: string, usdRates?: Record<string, number>): number {
-  if (!usdRates || amount <= 0) return amount
+  if (amount <= 0) return amount
+  if (isGoldCoinCurrency(currency)) return Math.round(amount * 100) / 100
+  if (!usdRates) return amount
   const rate = usdRates[currency.toLowerCase()]
   if (rate == null || rate <= 0) return amount
   return Math.round(amount * rate * 1e8) / 1e8

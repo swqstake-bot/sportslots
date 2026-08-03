@@ -18,8 +18,13 @@ export async function fetchCurrencyRates(accessToken, options = {}) {
   const force = !!options?.force
   const withPegs = (map) => {
     const out = { ...(map || {}) }
-    for (const peg of ['usd', 'usdc', 'usdt', 'gold', 'sweeps', 'xgc', 'xsc', 'xswp']) {
+    for (const peg of ['usd', 'usdc', 'usdt']) {
       if (!out[peg] || !(Number(out[peg]) > 0)) out[peg] = 1
+    }
+    // Stake.eu returns tiny/odd baseRates for gold/sweeps (HAR: gold≈0.000115).
+    // Workbench + slots treat GC/SC amounts as native major units (1:1) — always override.
+    for (const peg of ['gold', 'sweeps', 'xgc', 'xsc', 'xswp']) {
+      out[peg] = 1
     }
     return out
   }

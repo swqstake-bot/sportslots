@@ -2,7 +2,7 @@
  * Profil-Runner: JSON-Profil parsen und Session gegen Stake-API ausführen.
  */
 
-import { fetchPacksProgress, rotateSeedPair } from '../../../api/stakeOriginalsBets'
+import { rotateSeedPair, fetchPacksProgress } from '../../../api/stakeOriginalsBets'
 import {
   PACKS_TOTAL_CARDS,
   isPacksCollectionComplete,
@@ -11,6 +11,7 @@ import {
   packsRemaining,
   publishPacksProgress,
 } from '../../../utils/packsProgress'
+import { isGoldCoinCurrency } from '../../../utils/currencyMeta'
 import { playBlackjackScriptRound } from '../blackjack/blackjackScriptRound'
 import { placeOriginalsBet } from '../engine/placeOriginalsBet'
 import {
@@ -164,9 +165,12 @@ function applyDiceTargetFromMultiplier(opts: Record<string, unknown>, mult: numb
 /**
  * Rechnet Einsatz in USD in die Spielwährung um (1 Einheit Währung = usdRates[currency] USD).
  * Ohne usdRates wird der Wert 1:1 verwendet (Einsatz = Währungseinheiten).
+ * GC/SC: Workbench-Wert ist immer native Major (HAR packs: gold 1000 / sweeps 0.1) — kein FX.
  */
 function usdToCurrencyAmount(usdAmount: number, currency: string, usdRates?: Record<string, number>): number {
-  if (!usdRates || usdAmount <= 0) return usdAmount
+  if (usdAmount <= 0) return usdAmount
+  if (isGoldCoinCurrency(currency)) return Math.round(usdAmount * 100) / 100
+  if (!usdRates) return usdAmount
   const rate = usdRates[currency.toLowerCase()]
   if (rate == null || rate <= 0) return usdAmount
   const amount = usdAmount / rate
@@ -177,7 +181,9 @@ function usdToCurrencyAmount(usdAmount: number, currency: string, usdRates?: Rec
 
 /** Rechnet Einsatz in Spielwährung zurück nach USD (inverse von usdToCurrencyAmount). */
 function currencyAmountToUsd(amount: number, currency: string, usdRates?: Record<string, number>): number {
-  if (!usdRates || amount <= 0) return amount
+  if (amount <= 0) return amount
+  if (isGoldCoinCurrency(currency)) return Math.round(amount * 100) / 100
+  if (!usdRates) return amount
   const rate = usdRates[currency.toLowerCase()]
   if (rate == null || rate <= 0) return amount
   const usd = amount * rate
