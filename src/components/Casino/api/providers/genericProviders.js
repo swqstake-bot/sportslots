@@ -133,12 +133,13 @@ export function parseConfig(urlStr, targetCurrency) {
   }
 }
 
-async function commonStart(accessToken, slotSlug, sourceCurrency, targetCurrency) {
+async function commonStart(accessToken, slotSlug, sourceCurrency, targetCurrency, opts = {}) {
   const session = await startThirdPartySession(
     accessToken,
     slotSlug,
     (sourceCurrency || 'usdc').toLowerCase(),
-    (targetCurrency || 'eur').toLowerCase()
+    (targetCurrency || 'eur').toLowerCase(),
+    opts
   )
   const cfgUrl = typeof session?.config === 'string' ? session.config : session?.config?.url
   const cfg = parseConfig(cfgUrl, targetCurrency)
@@ -424,8 +425,8 @@ function buildBetValueCandidates(effectiveBet, currencyCode) {
 
 function makeAdapter(path) {
   return {
-    async startSession(accessToken, slotSlug, sourceCurrency, targetCurrency) {
-      const s = await commonStart(accessToken, slotSlug, sourceCurrency, targetCurrency)
+    async startSession(accessToken, slotSlug, sourceCurrency, targetCurrency, opts = {}) {
+      const s = await commonStart(accessToken, slotSlug, sourceCurrency, targetCurrency, opts)
       logApiCall({ type: `provider/${path}/init`, endpoint: s.configUrl || s.base, request: { slotSlug }, response: { host: s.host, token: !!s.token, gameId: s.gameId }, error: null, durationMs: null })
       return s
     },
@@ -472,8 +473,8 @@ function makeAdapter(path) {
 }
 
 export const genericUniversal = {
-  async startSession(accessToken, slotSlug, sourceCurrency, targetCurrency) {
-    const s = await commonStart(accessToken, slotSlug, sourceCurrency, targetCurrency)
+  async startSession(accessToken, slotSlug, sourceCurrency, targetCurrency, opts = {}) {
+    const s = await commonStart(accessToken, slotSlug, sourceCurrency, targetCurrency, opts)
     logApiCall({
       type: 'provider/generic-universal/init',
       endpoint: s.configUrl || s.base,
@@ -586,8 +587,8 @@ export const onetouch = makeAdapter('spin')
  * Die RGS-Basis steht im JWT aus startThirdPartySession unter „rgs“ (gleiches Muster wie Browser-HAR).
  */
 export const truelab = {
-  async startSession(accessToken, slotSlug, sourceCurrency, targetCurrency) {
-    const s = await commonStart(accessToken, slotSlug, sourceCurrency, targetCurrency)
+  async startSession(accessToken, slotSlug, sourceCurrency, targetCurrency, opts = {}) {
+    const s = await commonStart(accessToken, slotSlug, sourceCurrency, targetCurrency, opts)
     const payload = decodeJwtPayloadLoose(s.token)
     const rgsRaw = payload?.rgs
     const apiBase =

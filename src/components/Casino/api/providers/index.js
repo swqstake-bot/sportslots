@@ -22,11 +22,11 @@ function getWebviewBridge() {
 }
 
 const THUNDERKICK_WEBVIEW_PROVIDER = {
-  async startSession(accessToken, slug, sourceCurrency, targetCurrency) {
+  async startSession(accessToken, slug, sourceCurrency, targetCurrency, opts = {}) {
     const source = (sourceCurrency || 'usdc').toLowerCase()
     const target = (targetCurrency || 'eur').toLowerCase()
     const t0 = performance.now()
-    const stakeSession = await startThirdPartySession(accessToken, slug, source, target)
+    const stakeSession = await startThirdPartySession(accessToken, slug, source, target, opts)
     const cfgUrl = typeof stakeSession?.config === 'string' ? stakeSession.config : stakeSession?.config?.url
     const cfg = parseConfig(cfgUrl, target)
     const bridge = getWebviewBridge()

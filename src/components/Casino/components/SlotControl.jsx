@@ -1156,7 +1156,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     setProviderWarning('')
     try {
       const t0 = performance.now()
-      const s = await provider.startSession(accessToken, slot.slug, effectiveSource, effectiveTarget)
+      const s = await provider.startSession(accessToken, slot.slug, effectiveSource, effectiveTarget, {
+        gameName: slot.name,
+      })
       const levels = s.betLevels?.length ? s.betLevels : baseBetLevels
       if (levels.length) {
         const stored = getSlotBetAmount(slot.slug)
@@ -1217,7 +1219,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     try {
       let currentSession = session
       if (sessionRefreshSpins > 0 && spinsSinceRefreshRef.current >= sessionRefreshSpins) {
-        currentSession = await provider.startSession(accessToken, slot.slug, effectiveSource, effectiveTarget)
+        currentSession = await provider.startSession(accessToken, slot.slug, effectiveSource, effectiveTarget, {
+          gameName: slot.name,
+        })
         setSession(currentSession)
         spinsSinceRefreshRef.current = 0
       }
@@ -1327,11 +1331,15 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         if (sessionRefreshSpins > 0 && spinsSinceRefresh >= sessionRefreshSpins) {
           let newSession
           try {
-            newSession = await provider.startSession(accessToken, slot.slug, effectiveSource, effectiveTarget)
+            newSession = await provider.startSession(accessToken, slot.slug, effectiveSource, effectiveTarget, {
+              gameName: slot.name,
+            })
           } catch (refreshErr) {
             // No long artificial cooldown here; otherwise autospin feels much slower than manual spin.
             await new Promise((r) => setTimeout(r, 150))
-            newSession = await provider.startSession(accessToken, slot.slug, effectiveSource, effectiveTarget)
+            newSession = await provider.startSession(accessToken, slot.slug, effectiveSource, effectiveTarget, {
+              gameName: slot.name,
+            })
           }
           currentSession = newSession
           setSession(newSession)
@@ -1534,7 +1542,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
                 slug: slot.slug,
                 slotName: slot.name,
                 startSession: (token, slug, source, target) =>
-                  provider.startSession(token, slug, source, target),
+                  provider.startSession(token, slug, source, target, { gameName: slot.name }),
                 accessToken,
                 sourceCurrency: effectiveSource,
                 targetCurrency: effectiveTarget,

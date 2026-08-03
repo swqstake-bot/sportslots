@@ -271,12 +271,13 @@ async function rgsPost(rgsUrl, body) {
   })
 }
 
-export async function startSession(accessToken, slotSlug, sourceCurrency, targetCurrency) {
+export async function startSession(accessToken, slotSlug, sourceCurrency, targetCurrency, opts = {}) {
   const session = await startThirdPartySession(
     accessToken,
     slotSlug,
     sourceCurrency?.toLowerCase() || 'usdc',
-    targetCurrency?.toLowerCase() || 'eur'
+    targetCurrency?.toLowerCase() || 'eur',
+    opts
   )
   const config = typeof session?.config === 'string' ? session.config : session?.config?.url
   const parsed = parseConfigFromUrl(config)

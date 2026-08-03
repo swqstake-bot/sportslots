@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.234': [
+    '🐛 Fat Panda ≠ 777 Rush: keine Prefix-Hacks mehr (pragmatic-play-fat-panda ist ein Spiel), Session nur Stake-Slug + Name-Cache',
+  ],
   '1.0.233': [
     '🐛 Pragmatic/Fat Panda: Session-Slug-Aliases (fatpanda-→fat-panda-/pragmatic-play-) + Provider-Map pragmatic-play-fat-panda — kein type.game cannot be found',
   ],

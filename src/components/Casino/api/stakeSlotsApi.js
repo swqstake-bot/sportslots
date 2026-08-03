@@ -14,8 +14,8 @@ const KURATOR_SWITCH_DELAY_MS = 150
 const QUICK_LOAD_EXTRA_GROUPS = [
   { slug: 'hacksaw-gaming', pages: 10 },
   { slug: 'mascot', pages: 6 },
+  // Fat Panda studio provider group only — never pragmatic-play-fat-panda (that slug is a GAME).
   { slug: 'fat-panda', pages: 4 },
-  { slug: 'pragmatic-play-fat-panda', pages: 4 },
 ]
 const SESSION_CACHE_TTL_MS = 10 * 60 * 1000 // 10 min – kein Refetch beim Tab-Wechsel
 
@@ -30,9 +30,8 @@ const PROVIDER_MAP = {
   'bullshark-games': 'hacksaw',
   bullsharkgames: 'hacksaw',
   'pragmatic-play': 'pragmatic',
+  // Fat Panda studio provider group (NOT the game pragmatic-play-fat-panda).
   'fat-panda': 'pragmatic',
-  'pragmatic-play-fat-panda': 'pragmatic',
-  pragmaticplayfatpanda: 'pragmatic',
   fatpanda: 'pragmatic',
   'blueprint-gaming': 'blueprint',
   'play-n-go': 'playngo',
@@ -227,6 +226,32 @@ function loadCachedSlots() {
   } catch {
     return null
   }
+}
+
+/**
+ * Find another catalog slug with the same display name (e.g. stale cache vs live Stake slug).
+ * Never invents prefixes — only returns slugs already present in the Stake slots cache.
+ */
+export function findCachedSlotSlugByName(gameName, { excludeSlug } = {}) {
+  const key = String(gameName || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+  if (!key) return null
+  const exclude = String(excludeSlug || '').toLowerCase()
+  const slots = sessionSlotsCache?.length ? sessionSlotsCache : loadCachedSlots() || []
+  const hit = slots.find((s) => {
+    const slug = String(s?.slug || '').toLowerCase()
+    if (!slug || (exclude && slug === exclude)) return false
+    const nameKey = String(s?.name || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ')
+    return nameKey === key
+  })
+  return hit?.slug || null
 }
 
 function saveCachedSlots(slots) {

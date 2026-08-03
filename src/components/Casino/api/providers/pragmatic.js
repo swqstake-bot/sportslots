@@ -391,12 +391,13 @@ function parseBetLevels(doInitText, targetCurrency, symbol = '') {
   return uniq.length > 0 ? uniq : PRAGMATIC_DEFAULT_BET_LEVELS
 }
 
-export async function startSession(accessToken, slotSlug, sourceCurrency, targetCurrency) {
+export async function startSession(accessToken, slotSlug, sourceCurrency, targetCurrency, opts = {}) {
   const session = await startThirdPartySession(
     accessToken,
     slotSlug,
     sourceCurrency?.toLowerCase() || 'usdc',
-    targetCurrency?.toLowerCase() || 'eur'
+    targetCurrency?.toLowerCase() || 'eur',
+    opts
   )
   if (!session?.config) throw pragmaticError('Keine Config von Stake erhalten.')
 
