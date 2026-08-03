@@ -1354,7 +1354,6 @@ export async function runProfile(
         const newIds = packsNewCardIdsFromBetApi(betApi)
         if (newIds.length) packsNewSinceLog.push(...newIds)
         if (collected != null) {
-          lastPacksCollected = collected
           const now = Date.now()
           const due =
             lastPacksProgressLogAt === 0 ||
@@ -1365,9 +1364,10 @@ export async function runProfile(
             callbacks.onLog?.(
               formatPacksProgressLog(collected, {
                 newIds: packsNewSinceLog,
-                prevCollected: null,
+                prevCollected: lastPacksCollected,
               })
             )
+            lastPacksCollected = collected
             packsNewSinceLog = []
             lastPacksProgressLogAt = now
           }

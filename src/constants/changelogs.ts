@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.238': [
+    '🐛 Release-Build: unused lastPacksCollected (TS6133) — latest.yml wieder verfügbar',
+  ],
   '1.0.237': [
     '🐛 Stake.eu Hacksaw: partner=stake_eu, currency=XSWP, rgs-social + version.json (HAR) — Sessions starten wieder',
     '🐛 Stake.eu Pragmatic: doInit cver 398682 (Fat Panda HAR) zusätzlich zu 421122/406989',

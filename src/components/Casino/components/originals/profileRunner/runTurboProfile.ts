@@ -323,7 +323,6 @@ export async function runTurboProfile(
             const newIds = packsNewCardIdsFromBetApi(placed.betApi)
             if (newIds.length) packsNewSinceLog.push(...newIds)
             if (collected != null) {
-              lastPacksCollected = collected
               const now = Date.now()
               const due =
                 lastPacksProgressLogAt === 0 ||
@@ -334,9 +333,10 @@ export async function runTurboProfile(
                 callbacks.onLog?.(
                   formatPacksProgressLog(collected, {
                     newIds: packsNewSinceLog,
-                    prevCollected: null,
+                    prevCollected: lastPacksCollected,
                   })
                 )
+                lastPacksCollected = collected
                 packsNewSinceLog = []
                 lastPacksProgressLogAt = now
               }
