@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.240': [
+    '🐛 Pragmatic/Hacksaw: keine Doppelspins mehr — orphan houseBets vor placeBet werden übersprungen (eine Spin-Zeile)',
+  ],
   '1.0.239': [
     '🐛 Stake.eu Pragmatic: playGame Cookie-Jar + mgckey aus Shell/SingleSessionAPI (kein html5Game.do) — Session startet wieder',
     '🐛 Hacksaw Spins: Leerspin+Ergebnis (houseBets vor placeBet) — reverse reconcile zu einer Zeile',
