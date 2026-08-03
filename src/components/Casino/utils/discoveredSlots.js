@@ -30,7 +30,7 @@ export function inferProviderId(slug) {
   if (s.startsWith('backseat-gaming-') || s.startsWith('backseatgaming-')) return 'hacksaw'
   if (s.startsWith('bullshark-games-') || s.startsWith('bullsharkgames-')) return 'hacksaw'
   if (s.startsWith('pragmatic-play-') || s.startsWith('pragmatic-')) return 'pragmatic'
-  if (s.startsWith('fat-panda-')) return 'pragmatic'
+  if (s.startsWith('fat-panda-') || s.startsWith('fatpanda-')) return 'pragmatic'
   if (
     s.startsWith('nolimit-') ||
     s.startsWith('no-limit-') ||

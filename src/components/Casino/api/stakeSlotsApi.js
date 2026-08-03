@@ -14,6 +14,8 @@ const KURATOR_SWITCH_DELAY_MS = 150
 const QUICK_LOAD_EXTRA_GROUPS = [
   { slug: 'hacksaw-gaming', pages: 10 },
   { slug: 'mascot', pages: 6 },
+  { slug: 'fat-panda', pages: 4 },
+  { slug: 'pragmatic-play-fat-panda', pages: 4 },
 ]
 const SESSION_CACHE_TTL_MS = 10 * 60 * 1000 // 10 min – kein Refetch beim Tab-Wechsel
 
@@ -29,6 +31,9 @@ const PROVIDER_MAP = {
   bullsharkgames: 'hacksaw',
   'pragmatic-play': 'pragmatic',
   'fat-panda': 'pragmatic',
+  'pragmatic-play-fat-panda': 'pragmatic',
+  pragmaticplayfatpanda: 'pragmatic',
+  fatpanda: 'pragmatic',
   'blueprint-gaming': 'blueprint',
   'play-n-go': 'playngo',
   playngo: 'playngo',

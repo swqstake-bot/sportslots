@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.233': [
+    '🐛 Pragmatic/Fat Panda: Session-Slug-Aliases (fatpanda-→fat-panda-/pragmatic-play-) + Provider-Map pragmatic-play-fat-panda — kein type.game cannot be found',
+  ],
   '1.0.232': [
     '🐛 Stake.eu Packs/Originals: GC/SC-Einsatz 1:1 (kein FX) — 1000 GC bleibt 1000 (HAR), nicht ~8M durch gold.baseRate',
   ],
