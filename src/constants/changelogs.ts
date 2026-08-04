@@ -1,4 +1,10 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.242': [
+    '✨ Slots Autospin: Delay ms/spin einstellbar (wie Originals/Ante Request-Interval) — 0 = max. Tempo',
+  ],
+  '1.0.241': [
+    '🐛 Stake.com Slots: USD wieder als Game-Währung wählbar (auch bei $0 USD-Wallet) — Account bleibt owned-only',
+  ],
   '1.0.240': [
     '🐛 Pragmatic/Hacksaw: keine Doppelspins mehr — orphan houseBets vor placeBet werden übersprungen (eine Spin-Zeile)',
   ],

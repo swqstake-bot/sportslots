@@ -269,6 +269,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     onLogUpdate?.()
   }, [onLogUpdate])
   const [autospinCount, setAutospinCount] = useState(10)
+  /** Delay between autospins (ms). 0 = as fast as API allows (like Originals / Ante request interval). */
+  const [autospinDelayMs, setAutospinDelayMs] = useState(0)
   const [autospinStopOnBonus, setAutospinStopOnBonus] = useState(true)
   const [autospinMinScatter, setAutospinMinScatter] = useState(0) // 0=Jeder Bonus, 3/4/5=nur mind. X Scatter
   const [autospinStopOnMulti, setAutospinStopOnMulti] = useState(false)
@@ -1707,8 +1709,15 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       }
 
       if ((autospinCount === 0 || spinsDone < autospinCount) && !autospinCancelRef.current) {
-        // Kein künstlicher Delay – Geschwindigkeit nur durch API/Netzwerk begrenzt
-        await new Promise((r) => setTimeout(r, 0))
+        const delayMs = Math.max(0, Math.min(60_000, Number(autospinDelayMs) || 0))
+        if (delayMs > 0) {
+          const end = Date.now() + delayMs
+          while (Date.now() < end && !autospinCancelRef.current) {
+            await new Promise((r) => setTimeout(r, Math.min(50, end - Date.now())))
+          }
+        } else {
+          await new Promise((r) => setTimeout(r, 0))
+        }
       }
     }
 
@@ -1745,6 +1754,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       betAmount,
       extraBet,
       autospinCount,
+      autospinDelayMs,
       autospinStopOnBonus,
       autospinMinScatter,
       autospinStopOnMulti,
@@ -1792,6 +1802,10 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     }
     if (s.extraBet != null) setExtraBet(!!s.extraBet)
     if (s.autospinCount != null) setAutospinCount(Math.max(0, s.autospinCount))
+    if (s.autospinDelayMs != null) {
+      const n = Number(s.autospinDelayMs)
+      setAutospinDelayMs(Number.isFinite(n) ? Math.max(0, Math.min(60_000, Math.round(n))) : 0)
+    }
     if (s.autospinStopOnBonus != null) setAutospinStopOnBonus(!!s.autospinStopOnBonus)
     if (s.autospinMinScatter != null) setAutospinMinScatter(s.autospinMinScatter)
     if (s.autospinStopOnMulti != null) setAutospinStopOnMulti(!!s.autospinStopOnMulti)
@@ -1831,7 +1845,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     getSettings,
     applySettings,
     getWorkbenchSession: buildWorkbenchSessionPayload,
-  }), [accessToken, slot.slug, effectiveSource, effectiveTarget, provider, betLevels, baseBetLevels, session?.betLevels, sourceCurrency, targetCurrency, betAmount, extraBet, autospinCount, autospinStopOnBonus, autospinMinScatter, autospinStopOnMulti, autospinStopMultiOnlyAt010Usd, autospinStopMultiplier, autospinStopOnWin, autospinStopOnLoss, autospinStopOnStreak, autospinStopStreakCount, autospinStopStreakType, sessionRefreshSpins, seedChangeAfterSpins, seedChangeOnMultiplier, seedChangeAfterWins, seedChangeAfterLosses, seedChangeAfterWinStreak, seedChangeAfterLossStreak, seedResetOnLoss, rgsClientSeed, buildWorkbenchSessionPayload])
+  }), [accessToken, slot.slug, effectiveSource, effectiveTarget, provider, betLevels, baseBetLevels, session?.betLevels, sourceCurrency, targetCurrency, betAmount, extraBet, autospinCount, autospinDelayMs, autospinStopOnBonus, autospinMinScatter, autospinStopOnMulti, autospinStopMultiOnlyAt010Usd, autospinStopMultiplier, autospinStopOnWin, autospinStopOnLoss, autospinStopOnStreak, autospinStopStreakCount, autospinStopStreakType, sessionRefreshSpins, seedChangeAfterSpins, seedChangeOnMultiplier, seedChangeAfterWins, seedChangeAfterLosses, seedChangeAfterWinStreak, seedChangeAfterLossStreak, seedResetOnLoss, rgsClientSeed, buildWorkbenchSessionPayload])
 
   if (!provider) {
     return (
@@ -1973,6 +1987,26 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             title="0 = infinite"
           />
           <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', alignSelf: 'center' }}>Spins {autospinCount === 0 ? '(∞)' : ''}</span>
+          <label
+            style={{ ...STYLES.checkboxRow, cursor: 'pointer', fontSize: '0.8rem', gap: '0.25rem' }}
+            title="0 = maximum speed (API-limited), like Originals request interval"
+          >
+            Delay
+            <input
+              type="number"
+              min={0}
+              max={60000}
+              step={10}
+              value={autospinDelayMs}
+              onChange={(e) => {
+                const n = parseInt(e.target.value, 10)
+                setAutospinDelayMs(Number.isFinite(n) ? Math.max(0, Math.min(60_000, n)) : 0)
+              }}
+              style={{ ...STYLES.select, width: 64, marginLeft: '0.15rem' }}
+              disabled={isAutospinning}
+            />
+            <span style={{ color: 'var(--text-muted)' }}>ms</span>
+          </label>
           <label style={{ ...STYLES.checkboxRow, cursor: 'pointer', fontSize: '0.8rem' }}>
             <input type="checkbox" checked={autospinStopOnBonus} onChange={(e) => setAutospinStopOnBonus(e.target.checked)} style={STYLES.checkbox} />
             On bonus
