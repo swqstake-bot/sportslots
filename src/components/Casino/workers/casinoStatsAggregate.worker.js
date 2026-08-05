@@ -1,14 +1,7 @@
 import {
-  createEmptyCasinoAggregate,
-  applyCasinoSpinToAggregate,
   recomputeCasinoAggregate,
   entryStableKey,
 } from '../utils/casinoStatsEngine'
-
-let cachedAgg = createEmptyCasinoAggregate()
-let cachedCount = 0
-let cachedLastKey = ''
-let cachedRatesSig = ''
 
 function buildRatesSig(rates) {
   return JSON.stringify(
@@ -18,37 +11,40 @@ function buildRatesSig(rates) {
   )
 }
 
+/** Content fingerprint — in-place house reconcile changes wins without length change. */
+function buildHistorySig(betHistory) {
+  let out = ''
+  for (let i = 0; i < betHistory.length; i += 1) {
+    const e = betHistory[i]
+    out += `${entryStableKey(e)}:${Number(e?.betAmount) || 0}:${Number(e?.winAmount) || 0}:${e?.houseBetReconciled ? 1 : 0};`
+  }
+  return out
+}
+
 self.onmessage = (event) => {
   const payload = event?.data || {}
   const reqId = Number(payload?.reqId) || 0
   const betHistory = Array.isArray(payload?.betHistory) ? payload.betHistory : []
   const currencyRates = payload?.currencyRates && typeof payload.currencyRates === 'object' ? payload.currencyRates : {}
   try {
-    const nextRatesSig = buildRatesSig(currencyRates)
-    const ratesChanged = nextRatesSig !== cachedRatesSig
-    const canAppend = !ratesChanged && betHistory.length >= cachedCount
-    const prevKeyExpected = cachedCount > 0 ? entryStableKey(betHistory[cachedCount - 1]) : ''
-    const orderStable = cachedCount === 0 || prevKeyExpected === cachedLastKey
-
-    if (!canAppend || !orderStable) {
-      cachedAgg = recomputeCasinoAggregate(betHistory, currencyRates)
-    } else if (betHistory.length > cachedCount) {
-      let nextAgg = cachedAgg
-      for (let i = cachedCount; i < betHistory.length; i += 1) {
-        nextAgg = applyCasinoSpinToAggregate(nextAgg, betHistory[i], currencyRates)
-      }
-      cachedAgg = nextAgg
-    }
-
-    cachedCount = betHistory.length
-    cachedLastKey = betHistory.length ? entryStableKey(betHistory[betHistory.length - 1]) : ''
-    cachedRatesSig = nextRatesSig
-    self.postMessage({ reqId, ok: true, agg: cachedAgg })
+    // Always full recompute: placeBet→house patches mid-list; incremental append missed those
+    // and briefly showed doubled wins when FIFO painted onto the wrong pending row.
+    const agg = recomputeCasinoAggregate(betHistory, currencyRates)
+    self.postMessage({
+      reqId,
+      ok: true,
+      agg,
+      _meta: {
+        count: betHistory.length,
+        ratesSig: buildRatesSig(currencyRates),
+        historySig: buildHistorySig(betHistory),
+      },
+    })
   } catch {
-    cachedAgg = recomputeCasinoAggregate(betHistory, currencyRates)
-    cachedCount = betHistory.length
-    cachedLastKey = betHistory.length ? entryStableKey(betHistory[betHistory.length - 1]) : ''
-    cachedRatesSig = buildRatesSig(currencyRates)
-    self.postMessage({ reqId, ok: true, agg: cachedAgg })
+    self.postMessage({
+      reqId,
+      ok: true,
+      agg: recomputeCasinoAggregate(betHistory, currencyRates),
+    })
   }
 }

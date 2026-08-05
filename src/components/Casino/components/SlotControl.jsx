@@ -235,7 +235,37 @@ function claimOrphanHouseShare(buf, { betAmount, winAmount, payoutMultiplier, cu
   return houseShareFieldsFromParsed(claimed)
 }
 
-function findPendingRowForHouseReconcile(prev, { betAmount, signature, now, sessionStartAt }) {
+/** Pick win amount without net+gross double-count (placeBet often gross, house sometimes net). */
+function housePayoutMultiplierFromAmounts(bet, win) {
+  const b = Number(bet) || 0
+  const w = Number(win) || 0
+  if (b <= 0 || w < 0) return NaN
+  return w / b
+}
+
+function resolveReconcileWin(placeWin, houseWin, bet, payoutMultiplier) {
+  const p = Number(placeWin) || 0
+  const h = Number(houseWin) || 0
+  const b = Number(bet) || 0
+  const m = Number(payoutMultiplier) || 0
+  if (h <= 0 && p <= 0) return 0
+  if (h <= 0) return p
+  if (p <= 0) return h
+  // One side net, other gross (±stake).
+  if (b > 0 && Math.abs(h + b - p) <= Math.max(1, b * 0.05)) return p
+  if (b > 0 && Math.abs(p + b - h) <= Math.max(1, b * 0.05)) return h
+  if (m > 0 && b > 0) {
+    const expected = m * b
+    return Math.abs(p - expected) <= Math.abs(h - expected) ? p : h
+  }
+  // House is source of truth when both look like full payouts.
+  return h
+}
+
+function findPendingRowForHouseReconcile(
+  prev,
+  { betAmount, parsedWin, payoutMultiplier, signature, now, sessionStartAt }
+) {
   // 1) Prefer newest unreconciled stop-on-bonus row (Hacksaw: otherwise FIFO steals settlement → duplicate wins).
   let bonusIdx = -1
   let bonusAt = -Infinity
@@ -254,7 +284,54 @@ function findPendingRowForHouseReconcile(prev, { betAmount, signature, now, sess
   }
   if (bonusIdx >= 0) return bonusIdx
 
-  // 2) FIFO: ältester offener placeBet — Betrag kommt von houseBets (PowerBet: 15c placeBet vs 10c Stake).
+  const houseMultiRaw = Number(payoutMultiplier)
+  const houseMulti =
+    Number.isFinite(houseMultiRaw) && houseMultiRaw >= 0
+      ? houseMultiRaw
+      : betAmount > 0 && parsedWin >= 0
+        ? parsedWin / betAmount
+        : NaN
+
+  // 2) Match open placeBet by multi (+ soft stake). Prevents house wins painting onto older 0×
+  //    pending rows while the real win placeBet still shows → brief double win on chart/stats.
+  let bestIdx = -1
+  let bestScore = -Infinity
+  for (let i = 0; i < prev.length; i++) {
+    const row = prev[i]
+    if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
+    if (!PENDING_HOUSE_RECONCILE_SOURCES.has(String(row?.source || ''))) continue
+    if (row?.houseBetReconciled) continue
+    if (row?.stoppedBonus) continue
+    const age = now - Number(row?.addedAt || 0)
+    if (age > FALLBACK_RECONCILE_WINDOW_MS) continue
+
+    const rowBet = Number(row?.betAmount) || 0
+    const rowWin = Number(row?.stoppedBonus ? 0 : row?.winAmount) || 0
+    if (rowBet <= 0) continue
+    if (betAmount > 0) {
+      const tol = Math.max(1, Math.max(rowBet, betAmount) * 0.55)
+      if (Math.abs(rowBet - betAmount) > tol) continue
+    }
+    const rowMulti = rowWin / rowBet
+    if (!Number.isFinite(rowMulti) || rowMulti < 0) continue
+
+    let multiScore = 0.5
+    if (Number.isFinite(houseMulti)) {
+      const rel = Math.abs(houseMulti - rowMulti) / Math.max(houseMulti, rowMulti, 1e-9)
+      const abs = Math.abs(houseMulti - rowMulti)
+      if (rel > 0.08 && abs > 0.15) continue
+      multiScore = 1 - Math.min(1, rel)
+    }
+    // Better multi first; among equals prefer oldest (FIFO for identical 0×).
+    const score = multiScore * 1_000_000 + age
+    if (score > bestScore) {
+      bestScore = score
+      bestIdx = i
+    }
+  }
+  if (bestIdx >= 0) return bestIdx
+
+  // 3) FIFO fallback when multi unknown / no multi match.
   let fifoIdx = -1
   let fifoAt = Infinity
   for (let i = 0; i < prev.length; i++) {
@@ -971,13 +1048,18 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             const clone = rows.slice()
             const houseWin = Number(row?.winAmount ?? 0) || 0
             const placeWin = Number(parsed.stoppedBonus ? 0 : (parsed.winAmount ?? parsedWin)) || 0
-            const mergedWin = Math.max(houseWin, placeWin)
             const settledCurr = betHistoryCurrencyKey(
               apiCurr || row?.currencyCode || effectiveTarget || 'usd'
             )
             const rowBet = Number(row?.betAmount) || 0
             // House/Stake amount is source of truth when both present (matches bet list).
             const settledBet = rowBet > 0 ? rowBet : parsedBet
+            const mergedWin = resolveReconcileWin(
+              placeWin,
+              houseWin,
+              settledBet,
+              parsed?.payoutMultiplier
+            )
             const settledWinUsd = convertMinorToUsdMajor(mergedWin, settledCurr, currencyRates)
             const settledBetUsd = convertMinorToUsdMajor(settledBet, settledCurr, currencyRates)
             const settledMulti =
@@ -1085,6 +1167,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       if (isHouseSettlement) {
         const pendingIdx = findPendingRowForHouseReconcile(rows, {
           betAmount: parsedBet,
+          parsedWin,
+          payoutMultiplier: Number(parsed?.payoutMultiplier) || housePayoutMultiplierFromAmounts(parsedBet, parsedWin),
           signature,
           now,
           sessionStartAt,
@@ -1095,12 +1179,18 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             ? `round:${String(clone[pendingIdx].roundId)}`
             : null
           const wasStoppedBonus = !!clone[pendingIdx]?.stoppedBonus
-          const settledWin = Number(parsed.winAmount ?? parsedWin) || 0
-          // House/Stake history is source of truth (matches bet list on stake.com). Do not Math.max
-          // with placeBet — that kept provider-scaled stakes and blew USD up (~10×).
+          const placeWin = Number(clone[pendingIdx]?.stoppedBonus ? 0 : clone[pendingIdx]?.winAmount) || 0
+          const houseWin = Number(parsed.winAmount ?? parsedWin) || 0
+          // House/Stake history is source of truth, but avoid net+gross double vs placeBet.
           const settledBet = parsedBet > 0
             ? parsedBet
             : (Math.max(Number(clone[pendingIdx]?.betAmount) || 0, 0) || 0)
+          const settledWin = resolveReconcileWin(
+            placeWin,
+            houseWin,
+            settledBet,
+            parsed?.payoutMultiplier
+          )
           const settledCurr = betHistoryCurrencyKey(
             apiCurr || clone[pendingIdx]?.currencyCode || effectiveTarget || 'usd'
           )
@@ -1257,6 +1347,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         if (incomingShare.shareIid) {
           const pendingShareIdx = findPendingRowForHouseReconcile(rows, {
             betAmount: parsedBet,
+            parsedWin,
+            payoutMultiplier: Number(parsed?.payoutMultiplier) || housePayoutMultiplierFromAmounts(parsedBet, parsedWin),
             signature,
             now,
             sessionStartAt,

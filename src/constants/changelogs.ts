@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.251': [
+    '🐛 Slots Stats/Chart: Wins nicht mehr kurz doppelt — House-Reconcile matcht per Multi (nicht blind FIFO) + net/gross-Schutz',
+  ],
   '1.0.250': [
     '🐛 Slots Bet-Liste/Stats: 0×-Losses nicht mehr per Signatur wegdedupt — jeder Spin bleibt (kein Hoch/Runter-Springen mehr)',
   ],
