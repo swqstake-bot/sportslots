@@ -100,7 +100,7 @@ const HOUSEBETS_SUBSCRIPTION = `
   }
 `
 
-/** Fallback für Share-IDs wenn houseBets verzögert/fehlt (SSP: myBetUpdated.id = house:…). */
+/** Fallback für Share-IDs wenn houseBets verzögert/fehlt (myBetUpdated.id oft schon house:…). */
 const MY_BET_UPDATED_SUBSCRIPTION = `
   subscription MyBetUpdated {
     myBetUpdated {

@@ -14,19 +14,17 @@ export function formatStakeShareBetId(raw) {
 }
 
 /**
- * Share-/Bet-ID for UI copy links — **only** real houseBets share ids.
- * Never fall back to placeBet/RGS `roundId` or provider `bet.id` (those look like
- * `house:527…` after formatting but do not open in Stake’s bet modal).
+ * Share-/Bet-ID for the spin list / Top-10 copy column.
+ * Only houseBets fields (`shareIid` / `iid`) — never placeBet `roundId` (RGS).
  */
 export function pickBetHistoryShareRaw(b) {
   if (!b || typeof b !== 'object') return null
-  const raw = pickStakeHouseBetShareRawId({
-    shareIid: b.shareIid ?? b.iid ?? null,
-    houseTopId: b.houseTopId ?? null,
-  })
-  if (!raw) return null
-  const formatted = formatStakeShareBetId(raw)
-  return formatted && isPersistableStakeHouseBetShareId(formatted) ? formatted : null
+  for (const key of ['shareIid', 'iid']) {
+    const v = b[key]
+    if (v == null || String(v).trim() === '') continue
+    return formatStakeShareBetId(v) || String(v).trim()
+  }
+  return null
 }
 
 /**
@@ -54,6 +52,15 @@ export function buildTopSessionMultis(bets, limit = 10) {
   }
   ranked.sort((a, b) => b.multi - a.multi || String(b.shareId || '').localeCompare(String(a.shareId || '')))
   return ranked.slice(0, n)
+}
+
+/**
+ * Normalize houseBets.iid / shareIid for storage on a bet-history row.
+ * Trusts the WS iid field; does not apply the localStorage persistable gate.
+ */
+export function formatHouseBetShareIdForRow(raw) {
+  if (raw == null || String(raw).trim() === '') return null
+  return formatStakeShareBetId(raw) || String(raw).trim()
 }
 
 /** GraphQL `CasinoBet.id` / houseBets `bet.id` — nur numerisch, kein Provider-roundId. */

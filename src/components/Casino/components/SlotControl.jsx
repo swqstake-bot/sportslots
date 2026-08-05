@@ -44,8 +44,7 @@ import {
   shouldTriggerStakeRgsSeedReset,
 } from '../utils/stakeRgsSeedRotate'
 import {
-  formatStakeShareBetId,
-  isPersistableStakeHouseBetShareId,
+  formatHouseBetShareIdForRow,
   pickStakeHouseBetShareRawId,
 } from '../utils/stakeBetShareId'
 
@@ -147,15 +146,20 @@ function betHistoryCurrencyKey(code) {
   return c
 }
 
-/** Persist only real Stake share ids (houseBets.iid) — never RGS/provider roundId. */
+/** Attach houseBets.iid onto bet-history rows (Bet ID column). */
 function houseShareFieldsFromParsed(parsed) {
   if (!parsed || typeof parsed !== 'object') return {}
-  const raw = pickStakeHouseBetShareRawId({
-    shareIid: parsed.shareIid ?? parsed.iid ?? null,
-    houseTopId: parsed.houseTopId ?? null,
-  })
-  const formatted = formatStakeShareBetId(raw)
-  if (!formatted || !isPersistableStakeHouseBetShareId(formatted)) return {}
+  const raw =
+    parsed.shareIid != null && String(parsed.shareIid).trim() !== ''
+      ? parsed.shareIid
+      : parsed.iid != null && String(parsed.iid).trim() !== ''
+        ? parsed.iid
+        : pickStakeHouseBetShareRawId({
+            shareIid: parsed.shareIid ?? parsed.iid ?? null,
+            houseTopId: parsed.houseTopId ?? null,
+          })
+  const formatted = formatHouseBetShareIdForRow(raw)
+  if (!formatted) return {}
   const out = { shareIid: formatted, iid: formatted }
   if (parsed.houseTopId != null && String(parsed.houseTopId).trim() !== '') {
     out.houseTopId = String(parsed.houseTopId).trim()
@@ -885,7 +889,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     const signature = `${currencyCode}|${parsedBet}|${parsedWin}|${parsed.isBonus ? 1 : 0}`
     const incomingShare = houseShareFieldsFromParsed(parsed)
 
-    /** Patch shareIid onto an existing row (SSP-style: row first, iid after WS). */
+    /** Patch shareIid onto an existing spin row once houseBets.iid arrives. */
     const patchShareOntoRow = (clone, idx, row) => {
       if (!incomingShare.shareIid) return false
       if (houseShareFieldsFromParsed(row).shareIid) return false
@@ -1018,7 +1022,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       if (rid && isHouseSettlement) {
         const roundKey = `round:${rid}`
         if (seenBetDedupKeysRef.current.has(roundKey)) {
-          // Dedup — but still attach shareIid if the earlier row never got it (SSP: iid after WS).
+          // Dedup — still attach shareIid if the earlier row never got it.
           if (incomingShare.shareIid) {
             const clone = prev.slice()
             let patched = false
@@ -1202,6 +1206,36 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           }
           return prev
         }
+        // Last chance: attach houseBets.iid to the newest recent spin that still has no share id
+        // (e.g. myBetUpdated settled amounts first, houseBets with iid arrives second).
+        if (incomingShare.shareIid) {
+          for (let i = prev.length - 1; i >= 0; i--) {
+            const row = prev[i]
+            const age = now - Number(row?.addedAt || 0)
+            if (age > ORPHAN_HOUSE_SHARE_TTL_MS) break
+            if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
+            if (houseShareFieldsFromParsed(row).shareIid) continue
+            const rowBet = Number(row?.betAmount) || 0
+            if (parsedBet > 0 && rowBet > 0) {
+              const tol = Math.max(1, Math.max(rowBet, parsedBet) * 0.55)
+              if (Math.abs(rowBet - parsedBet) > tol) continue
+            }
+            const clone = prev.slice()
+            clone[i] = {
+              ...row,
+              ...incomingShare,
+              houseBetReconciled: true,
+              source: normalizeBetHistorySource(row?.source) === 'placebet' ? 'housebets' : normalizeBetHistorySource(row?.source) || 'housebets',
+            }
+            recordBetHistoryAudit({
+              slotSlug: slot.slug,
+              event: 'patch-share-last-chance',
+              roundId: rid ?? null,
+              source,
+            })
+            return clone
+          }
+        }
         // houseBets/myBetUpdated ohne offenes placeBet: nicht als eigene Zeile anlegen.
         // Auf .eu (Pragmatic/Hacksaw) kommt House oft vor placeBet → sonst Doppelspins
         // (Leer + Ergebnis). placeBet ist die Spin-Zeile; Share-ID hier puffern, sonst
@@ -1356,7 +1390,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const fillBetHistoryFromPlaceBet = isStakeEngine
   const subscribeHouseBetsForHistory = !isStakeEngine
 
-  /** Drittanbieter: sofort aus placeBet (wie SSP-UX), houseBets reconciled später per FIFO. */
+  /** Drittanbieter: sofort aus placeBet, houseBets reconciled später per FIFO. */
   const appendSpinHistoryFromPlaceBet = useCallback((parsed) => {
     if (isStakeEngine || !parsed?.success) return
     addToBetHistory({ ...parsed, winAmount: parsed.winAmount ?? 0, source: 'placebet' })

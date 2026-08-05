@@ -1,6 +1,9 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.246': [
+    '🐛 Slots Bet-IDs: houseBets.iid wieder durchreichen (Persistable-Gate entfernt) + Share-Patch wenn iid nach dem Settlement kommt',
+  ],
   '1.0.245': [
-    '🐛 Slots Bet-IDs: houseBets Source-Case-Fix (houseBets≠housebets) — Share-IDs werden wieder auf placeBet-Zeilen gepatcht (wie SSP: iid nach WS)',
+    '🐛 Slots Bet-IDs: houseBets Source-Case-Fix (houseBets≠housebets) — Share-IDs werden wieder auf placeBet-Zeilen gepatcht',
   ],
   '1.0.244': [
     '🐛 Slots Bet-IDs: nur echte houseBets Share-IDs (house:/casino:) — keine RGS-roundId mehr; House-vor-placeBet Share-IDs werden gepuffert',
