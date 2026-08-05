@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.249': [
+    '🐛 Slots Bet-Liste/Stats: kein Springen mehr — Share-IDs nur per FIFO/Orphan, stabile Reihenfolge (kein addedAt-Resort), Scroll nur bei neuem Spin',
+  ],
   '1.0.248': [
     '🐛 Slots Bet-Liste/Stats: gleiche Losses nicht mehr 60s wegdedupt; Share-IDs nur per Multi+Stake+FIFO — Liste springt nicht mehr / alle Spins zählen',
   ],
