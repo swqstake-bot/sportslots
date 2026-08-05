@@ -14,16 +14,19 @@ export function formatStakeShareBetId(raw) {
 }
 
 /**
- * Share-/Bet-ID raw from a slot/hub bet-history row (prefer houseBets iid).
- * Falls back to roundId when house fields are not yet reconciled.
+ * Share-/Bet-ID for UI copy links — **only** real houseBets share ids.
+ * Never fall back to placeBet/RGS `roundId` or provider `bet.id` (those look like
+ * `house:527…` after formatting but do not open in Stake’s bet modal).
  */
 export function pickBetHistoryShareRaw(b) {
   if (!b || typeof b !== 'object') return null
-  for (const key of ['shareIid', 'iid', 'houseTopId', 'houseId', 'roundId']) {
-    const v = b[key]
-    if (v != null && String(v).trim() !== '') return String(v).trim()
-  }
-  return null
+  const raw = pickStakeHouseBetShareRawId({
+    shareIid: b.shareIid ?? b.iid ?? null,
+    houseTopId: b.houseTopId ?? null,
+  })
+  if (!raw) return null
+  const formatted = formatStakeShareBetId(raw)
+  return formatted && isPersistableStakeHouseBetShareId(formatted) ? formatted : null
 }
 
 /**
@@ -42,11 +45,11 @@ export function buildTopSessionMultis(bets, limit = 10) {
     if (bet <= 0 || win <= 0) continue
     const multi = win / bet
     if (!Number.isFinite(multi) || multi <= 0) continue
-    const shareRaw = pickBetHistoryShareRaw(b)
+    const shareId = pickBetHistoryShareRaw(b)
     ranked.push({
       multi,
-      shareRaw,
-      shareId: formatStakeShareBetId(shareRaw),
+      shareRaw: shareId,
+      shareId,
     })
   }
   ranked.sort((a, b) => b.multi - a.multi || String(b.shareId || '').localeCompare(String(a.shareId || '')))

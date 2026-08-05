@@ -43,6 +43,11 @@ import {
   shouldDeferStakeRgsSeedReset,
   shouldTriggerStakeRgsSeedReset,
 } from '../utils/stakeRgsSeedRotate'
+import {
+  formatStakeShareBetId,
+  isPersistableStakeHouseBetShareId,
+  pickStakeHouseBetShareRawId,
+} from '../utils/stakeBetShareId'
 
 const DEFAULT_BET_LEVELS = [
   1100, 2200, 4400, 6600, 8800, 11000, 13200, 15400, 17600, 19800,
@@ -132,15 +137,71 @@ function betHistoryCurrencyKey(code) {
   return c
 }
 
-/** Persist houseBets share fields onto bet-history rows (for Bet ID column / Top 10). */
+/** Persist only real Stake share ids (houseBets.iid) — never RGS/provider roundId. */
 function houseShareFieldsFromParsed(parsed) {
   if (!parsed || typeof parsed !== 'object') return {}
-  const out = {}
-  if (parsed.shareIid != null && String(parsed.shareIid).trim() !== '') out.shareIid = String(parsed.shareIid).trim()
-  if (parsed.iid != null && String(parsed.iid).trim() !== '') out.iid = String(parsed.iid).trim()
-  if (parsed.houseTopId != null && String(parsed.houseTopId).trim() !== '') out.houseTopId = String(parsed.houseTopId).trim()
-  if (parsed.houseId != null && String(parsed.houseId).trim() !== '') out.houseId = String(parsed.houseId).trim()
+  const raw = pickStakeHouseBetShareRawId({
+    shareIid: parsed.shareIid ?? parsed.iid ?? null,
+    houseTopId: parsed.houseTopId ?? null,
+  })
+  const formatted = formatStakeShareBetId(raw)
+  if (!formatted || !isPersistableStakeHouseBetShareId(formatted)) return {}
+  const out = { shareIid: formatted, iid: formatted }
+  if (parsed.houseTopId != null && String(parsed.houseTopId).trim() !== '') {
+    out.houseTopId = String(parsed.houseTopId).trim()
+  }
   return out
+}
+
+const ORPHAN_HOUSE_SHARE_TTL_MS = 12_000
+const ORPHAN_HOUSE_SHARE_MAX = 40
+
+function pruneOrphanHouseShareBuffer(buf, now = Date.now()) {
+  while (buf.length && (now - Number(buf[0]?.at || 0)) > ORPHAN_HOUSE_SHARE_TTL_MS) buf.shift()
+  while (buf.length > ORPHAN_HOUSE_SHARE_MAX) buf.shift()
+}
+
+/** Buffer share ids when houseBets arrives before placeBet (orphan skip — no row). */
+function bufferOrphanHouseShare(buf, parsed, currencyCode, now = Date.now()) {
+  const fields = houseShareFieldsFromParsed(parsed)
+  if (!fields.shareIid) return
+  pruneOrphanHouseShareBuffer(buf, now)
+  buf.push({
+    at: now,
+    betAmount: Number(parsed?.betAmount) || 0,
+    currencyCode: betHistoryCurrencyKey(currencyCode || parsed?.currencyCode || 'usd'),
+    ...fields,
+  })
+}
+
+function claimOrphanHouseShare(buf, { betAmount, currencyCode, now = Date.now() }) {
+  pruneOrphanHouseShareBuffer(buf, now)
+  const wantBet = Number(betAmount) || 0
+  const wantCurr = betHistoryCurrencyKey(currencyCode || 'usd')
+  let bestIdx = -1
+  let bestScore = -Infinity
+  for (let i = 0; i < buf.length; i++) {
+    const row = buf[i]
+    const age = now - Number(row?.at || 0)
+    if (age > ORPHAN_HOUSE_SHARE_TTL_MS) continue
+    if (betHistoryCurrencyKey(row?.currencyCode || 'usd') !== wantCurr) continue
+    const rowBet = Number(row?.betAmount) || 0
+    let score = 0
+    if (wantBet > 0 && rowBet > 0) {
+      const tol = Math.max(1, Math.max(rowBet, wantBet) * 0.55)
+      if (Math.abs(rowBet - wantBet) <= tol) score = 1_000_000 - age
+      else continue
+    } else {
+      score = 50_000 - age
+    }
+    if (score > bestScore) {
+      bestScore = score
+      bestIdx = i
+    }
+  }
+  if (bestIdx < 0) return {}
+  const [claimed] = buf.splice(bestIdx, 1)
+  return houseShareFieldsFromParsed(claimed)
 }
 
 function findPendingRowForHouseReconcile(prev, { betAmount, signature, now, sessionStartAt }) {
@@ -269,6 +330,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const betHistoryLengthRef = useRef(0)
   const seenBetDedupKeysRef = useRef(new Set())
   const seenBetDedupOrderRef = useRef([])
+  /** houseBets-before-placeBet: keep share ids while orphan rows are skipped */
+  const orphanHouseShareBufferRef = useRef([])
   const prevSlotSlugRef = useRef(slot.slug)
   const [logRefreshKey, setLogRefreshKey] = useState(0)
   const lastLogRefreshAtRef = useRef(0)
@@ -712,6 +775,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       setBetHistory([])
       seenBetDedupKeysRef.current.clear()
       seenBetDedupOrderRef.current = []
+      orphanHouseShareBufferRef.current = []
     }
     window.addEventListener(CASINO_BET_SESSION_CLEAR_EVENT, onClear)
     return () => window.removeEventListener(CASINO_BET_SESSION_CLEAR_EVENT, onClear)
@@ -723,6 +787,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     setBalanceFromPlaceBet(null)
     seenBetDedupKeysRef.current.clear()
     seenBetDedupOrderRef.current = []
+    orphanHouseShareBufferRef.current = []
   }, [slot.slug])
 
   useEffect(() => {
@@ -1055,7 +1120,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         }
         // houseBets/myBetUpdated ohne offenes placeBet: nicht als eigene Zeile anlegen.
         // Auf .eu (Pragmatic/Hacksaw) kommt House oft vor placeBet → sonst Doppelspins
-        // (Leer + Ergebnis). placeBet ist die Spin-Zeile; ein späteres House reconciled per FIFO.
+        // (Leer + Ergebnis). placeBet ist die Spin-Zeile; Share-ID hier puffern, sonst
+        // bleibt nur die RGS-roundId (Copy-Links öffnen nicht im Stake Bet-Modal).
+        bufferOrphanHouseShare(orphanHouseShareBufferRef.current, parsed, currencyCode, now)
         recordBetHistoryAudit({
           slotSlug: slot.slug,
           event: 'skip-orphan-housebets',
@@ -1105,6 +1172,14 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       }
       const stoppedBonus = !!parsed.stoppedBonus
       const realizedWin = stoppedBonus ? 0 : (Number(parsed.winAmount ?? 0) || 0)
+      const orphanShare =
+        source === 'placebet'
+          ? claimOrphanHouseShare(orphanHouseShareBufferRef.current, {
+              betAmount: parsed.betAmount,
+              currencyCode,
+              now,
+            })
+          : {}
       const entry = {
         id: now + Math.random(),
         slotSlug: slot.slug,
@@ -1120,6 +1195,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         currencyCode,
         roundId: roundId ?? undefined,
         ...houseShareFieldsFromParsed(parsed),
+        ...orphanShare,
         addedAt: now,
         source,
       }
@@ -1315,6 +1391,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       setSessionStartAt(Date.now())
       seenBetDedupKeysRef.current.clear()
       seenBetDedupOrderRef.current = []
+      orphanHouseShareBufferRef.current = []
       const hasFull = await hasEnoughSamplesForSlot(slot.slug).catch(() => false)
       setSlotHasFullSamples(hasFull)
       slotHasFullSamplesRef.current = hasFull

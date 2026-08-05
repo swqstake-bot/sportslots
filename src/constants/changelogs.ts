@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.244': [
+    '🐛 Slots Bet-IDs: nur echte houseBets Share-IDs (house:/casino:) — keine RGS-roundId mehr; House-vor-placeBet Share-IDs werden gepuffert',
+  ],
   '1.0.243': [
     '✨ Slots: Bet-ID-Spalte in der Spin-Liste + Top 10 Multis mit Bet-IDs im Stats-Panel',
     '✨ Packs/Originals Session-Log: neue Einträge oben (nicht unten)',

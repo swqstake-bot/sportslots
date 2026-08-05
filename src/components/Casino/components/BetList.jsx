@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import clsx from 'clsx'
 import { formatAmount } from '../utils/formatAmount'
-import { formatStakeShareBetId, pickBetHistoryShareRaw } from '../utils/stakeBetShareId'
+import { pickBetHistoryShareRaw } from '../utils/stakeBetShareId'
 
 function fmt(val, cc) {
   return formatAmount(val, cc)
@@ -139,8 +139,8 @@ export default function BetList({
               const isHubPending = b.hubSettlement === 'pending'
               const rowCurrency = String(b.currencyCode || defaultCurrency || '').toUpperCase()
               const rowSuffix = rowCurrency ? ` ${rowCurrency}` : ''
-              const shareRaw = pickBetHistoryShareRaw(b)
-              const shareId = formatStakeShareBetId(shareRaw)
+              // Already a persistable house:/casino: share id (or null) — never RGS roundId.
+              const shareId = pickBetHistoryShareRaw(b)
               const canCopyShare = typeof shareId === 'string' && shareId.trim() !== ''
               const sharePreview = canCopyShare ? shortenId(shareId, compact || minimal ? 14 : 18) : ''
               const showWin = !(isBonus && b.stoppedBonus)

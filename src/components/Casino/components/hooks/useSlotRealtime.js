@@ -4,6 +4,11 @@ import { isDebugHouseBetsEnabled } from '../../api/stakeBalanceSubscription'
 import { subscribeToHouseBets } from '../../api/stakeRealtimeFacade'
 import { houseBetMatchesSessionSlot } from '../../utils/slotSlugMatching'
 import { useUserStore } from '../../../../store/userStore'
+import {
+  formatStakeShareBetId,
+  isPersistableStakeHouseBetShareId,
+  pickStakeHouseBetShareRawId,
+} from '../../utils/stakeBetShareId'
 
 export function useSlotRealtime({
   accessToken,
@@ -103,17 +108,24 @@ export function useSlotRealtime({
       const betAmount = toMinor(betAmountMajor, curr)
       const winAmount = toMinor(payoutMajorToUse, curr)
       const currencyCode = (b?.currency || '').toUpperCase() || null
+      const shareRaw = pickStakeHouseBetShareRawId({
+        shareIid: b?.shareIid ?? b?.iid ?? null,
+        houseTopId: b?.houseTopId ?? null,
+      })
+      const shareFormatted = formatStakeShareBetId(shareRaw)
+      const shareIid =
+        shareFormatted && isPersistableStakeHouseBetShareId(shareFormatted) ? shareFormatted : null
       addToBetHistoryRef.current({
         betAmount,
         winAmount,
         isBonus: false,
         balance: undefined,
         currencyCode,
-        roundId: b?.id,
-        shareIid: b?.shareIid ?? b?.iid ?? null,
-        iid: b?.iid ?? b?.shareIid ?? null,
+        // Dedup key only — UI Bet ID uses shareIid (never provider/RGS round ids).
+        roundId: shareIid || b?.id,
+        shareIid,
+        iid: shareIid,
         houseTopId: b?.houseTopId ?? null,
-        houseId: b?.houseId ?? null,
         source: b?.source || 'housebets',
       })
     }).then((s) => {
