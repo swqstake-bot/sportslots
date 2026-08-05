@@ -43,10 +43,13 @@ async function ensureChannel(map, tokenKey, createRawSubscription) {
       realtimeAudit.houseBetsReceived += 1
       const key = String(payload?.houseId || payload?.iid || payload?.betId || payload?.id || '')
       realtimeAudit.lastHouseBetKey = key || null
+      // No listeners yet (subscribe still awaiting) — do not consume the key or the bet is lost forever.
+      if (channel.listeners.size === 0) {
+        return
+      }
       if (key) {
         if (channel.seenKeys.has(key)) {
           realtimeAudit.houseBetsDuplicate += 1
-          // Same house bet id already delivered — do not fan out again (was causing double Spins rows).
           return
         }
         channel.seenKeys.add(key)

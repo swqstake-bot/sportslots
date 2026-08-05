@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.247': [
+    '🐛 Slots Bet-IDs: Share-IDs per Multi+Zeit matchen (nicht Stake-FIFO) — korrekte Zuordnung zur X-Spalte; Stake Engine houseBets + kein myBetUpdated',
+  ],
   '1.0.246': [
     '🐛 Slots Bet-IDs: houseBets.iid wieder durchreichen (Persistable-Gate entfernt) + Share-Patch wenn iid nach dem Settlement kommt',
   ],

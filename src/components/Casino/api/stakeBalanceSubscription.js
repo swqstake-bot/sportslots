@@ -304,7 +304,7 @@ function payloadFromMyBetUpdated(mb) {
 /**
  * Subscribes to bet updates via Stake GraphQL WebSocket (graphql-transport-ws).
  * Liefert Bets direkt mit amount/payout in lesbarem Format (keine RGS-Skalierung nötig).
- * Abonniert houseBets und myBetUpdated (Fallback für Share-IDs).
+ * Abonniert houseBets (Share-IDs / iid). myBetUpdated ist im aktuellen Schema nicht mehr vorhanden.
  *
  * @param {string} accessToken - Session token (von getSessionToken)
  * @param {function} onUpdate - callback(bet) mit { gameSlug, amount, payout, currency, id, ... }
@@ -320,7 +320,6 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
   let unsubscribeMyBetUpdated = null
   let client = null
   let debugNextCount = 0
-  let debugMyBetCount = 0
   const processedHouseBetKeys = new Set()
   // Init-Log: hilft zu erkennen, ob die Subscription überhaupt startet
   try {
@@ -419,19 +418,13 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
             if (shouldSkipWalletLikeGame(game, doCompactLog)) continue
             const payload = {
               receivedAt: new Date().toISOString(),
-              /** House-ID analog Logger: bevorzugt `houseBets.iid`, dann bet.id, dann houseBets.id */
               houseId,
-              /** Bet-ID des Union-Objekts (provider-/bet-spezifisch) */
               betId: providerBetId ?? houseTopId ?? null,
-              /** Raw `houseBets.iid` */
               iid: shareIid,
               betType: tn,
               gameName: game?.name || null,
-              /** Union `bet.id` (oft RGS-/Provider-intern, z. B. 527… bei Third-Party) — nicht mit Share-`house:460…` verwechseln. */
               id: houseId,
-              /** GraphQL `houseBets.iid` — Share-Identifier (z. B. house:… / casino:…), für Links wie FRIDA/Bet-Modal */
               shareIid,
-              /** Top-Level `houseBets.id` — Fallback wenn `iid` fehlt */
               houseTopId,
               gameSlug,
               amount: hasValidAmount ? amountCanonical.amountMajor : null,
@@ -457,45 +450,8 @@ export async function subscribeToBetUpdates(accessToken, onUpdate) {
       }
     )
 
-    unsubscribeMyBetUpdated = client.subscribe(
-      { query: MY_BET_UPDATED_SUBSCRIPTION },
-      {
-        next: (result) => {
-          debugMyBetCount += 1
-          const doRawLog = isDebugHouseBetsEnabled() && debugMyBetCount <= 3
-          const doCompactLog = isDebugHouseBetsEnabled() && debugMyBetCount <= 20
-
-          if (doRawLog) {
-            console.warn('[myBetUpdated] RAW:', JSON.stringify(result?.data?.myBetUpdated ?? result, null, 2))
-          }
-          const rawMyBet = result?.data?.myBetUpdated
-          const myBetItems = Array.isArray(rawMyBet) ? rawMyBet : rawMyBet ? [rawMyBet] : []
-          if (myBetItems.length === 0) {
-            if (doCompactLog) console.warn('[myBetUpdated] SKIP: kein myBetUpdated im payload')
-            return
-          }
-
-          for (const mb of myBetItems) {
-            const parsed = payloadFromMyBetUpdated(mb)
-            if (!parsed) {
-              if (doCompactLog) console.warn('[myBetUpdated] SKIP: kein id')
-              continue
-            }
-            if (shouldSkipWalletLikeGame(mb?.game, doCompactLog)) continue
-            if (!markHouseBetKeysProcessed(processedHouseBetKeys, parsed.dedupeKeys || [parsed.dedupeKey])) {
-              if (doCompactLog) console.warn('[myBetUpdated] SKIP: duplicate id', parsed.dedupeKey)
-              continue
-            }
-            if (doCompactLog) console.warn('[myBetUpdated] OK → onUpdate:', parsed.payload)
-            onUpdate(parsed.payload)
-          }
-        },
-        error: (err) => {
-          console.warn('[StakeBetWS] myBetUpdated subscription error:', err?.message || err)
-        },
-        complete: () => {},
-      }
-    )
+    // myBetUpdated is gone from current Stake GraphQL schemas ("Cannot query field myBetUpdated").
+    // Share/bet IDs come from houseBets.iid — do not subscribe.
   } catch (err) {
     console.warn('[StakeBetWS] Failed to create client:', err?.message || err)
   }

@@ -6,6 +6,16 @@ import { houseBetMatchesSessionSlot } from '../../utils/slotSlugMatching'
 import { useUserStore } from '../../../../store/userStore'
 import { formatHouseBetShareIdForRow } from '../../utils/stakeBetShareId'
 
+let slotBetIdLogCount = 0
+
+function logSlotBetId(detail) {
+  if (slotBetIdLogCount >= 40) return
+  slotBetIdLogCount += 1
+  try {
+    console.warn('[slot-bet-id]', detail)
+  } catch (_) {}
+}
+
 export function useSlotRealtime({
   accessToken,
   effectiveTarget,
@@ -41,40 +51,31 @@ export function useSlotRealtime({
       })
     } catch (_) {}
 
-    let slotMatchDebugCount = 0
     let cancelled = false
     let sub = null
     subscribeToHouseBets(accessToken, (b) => {
       const currentSlot = slotRef.current
       const matches = houseBetMatchesSessionSlot(b, currentSlot.slug, currentSlot.name)
-      const shouldLog = isDebugHouseBetsEnabled() && matches && slotMatchDebugCount < 20
-      if (shouldLog) {
-        slotMatchDebugCount += 1
-        console.warn('[houseBets→SlotControl]', {
+      const rawShare = b?.shareIid ?? b?.iid ?? b?.houseTopId ?? null
+      const shareIid = formatHouseBetShareIdForRow(rawShare)
+
+      if (!subscribeHouseBetsForHistory) return
+      if (!matches) {
+        logSlotBetId({
+          phase: 'slug-miss',
+          slotSlug: currentSlot.slug,
           gameSlug: b?.gameSlug,
           gameName: b?.gameName,
-          slotSlug: currentSlot.slug,
-          slotName: currentSlot.name,
-          matches,
-          addToBet: subscribeHouseBetsForHistory,
-          amount: b?.amount,
-          payout: b?.payout,
-          shareIid: b?.shareIid ?? b?.iid ?? null,
-          houseTopId: b?.houseTopId ?? null,
-          id: b?.id ?? null,
+          rawShare,
         })
+        return
       }
-      if (!subscribeHouseBetsForHistory) return
-      if (!matches) return
 
       const curr = (b?.currency || 'usd').toLowerCase()
       const betAmountMajor = Number(b?.amountMajor ?? b?.amount) || 0
       const payoutMajorRaw = Number(b?.payoutMajor ?? b?.payout) || 0
       const payoutMultiplier = Number(b?.payoutMultiplier) || 0
 
-      // Stake sometimes sends payout as net, sometimes as gross. Prefer the interpretation
-      // that matches payoutMultiplier — and always use that for history (never raw payoutMinor
-      // alone), otherwise chart/stats flip between two USD nets on houseBets vs myBetUpdated.
       let payoutMajorToUse = payoutMajorRaw
       if (betAmountMajor > 0 && payoutMultiplier > 0 && payoutMajorRaw >= 0) {
         const derivedFromRaw = payoutMajorRaw / betAmountMajor
@@ -83,33 +84,23 @@ export function useSlotRealtime({
         const rawDist = Math.abs(derivedFromRaw - payoutMultiplier)
         const netStakeDist = Math.abs(derivedFromNetPlusStake - payoutMultiplier)
         if (netStakeDist + tol < rawDist) payoutMajorToUse = payoutMajorRaw + betAmountMajor
-
-        if (isDebugHouseBetsEnabled() && shouldLog) {
-          const chosenDerived = betAmountMajor > 0 ? payoutMajorToUse / betAmountMajor : null
-          console.warn('[houseBets→SlotControl][dbg-multi]', {
-            slotSlug: currentSlot.slug,
-            gameSlug: b?.gameSlug,
-            currency: b?.currency,
-            id: b?.id,
-            amount: betAmountMajor,
-            payoutRaw: payoutMajorRaw,
-            payoutMultiplier,
-            derivedFromRaw,
-            derivedFromNetPlusStake,
-            rawDist,
-            netStakeDist,
-            payoutMajorToUse,
-            chosenDerived,
-          })
-        }
       }
 
       const betAmount = toMinor(betAmountMajor, curr)
       const winAmount = toMinor(payoutMajorToUse, curr)
       const currencyCode = (b?.currency || '').toUpperCase() || null
-      const shareIid = formatHouseBetShareIdForRow(
-        b?.shareIid ?? b?.iid ?? b?.houseTopId ?? null
-      )
+
+      logSlotBetId({
+        phase: 'house→history',
+        slotSlug: currentSlot.slug,
+        gameSlug: b?.gameSlug,
+        rawShare,
+        shareIid,
+        betAmount,
+        winAmount,
+        source: b?.source,
+      })
+
       addToBetHistoryRef.current({
         betAmount,
         winAmount,
@@ -120,6 +111,7 @@ export function useSlotRealtime({
         shareIid,
         iid: shareIid,
         houseTopId: b?.houseTopId ?? null,
+        payoutMultiplier: payoutMultiplier > 0 ? payoutMultiplier : undefined,
         source: String(b?.source || 'housebets').toLowerCase(),
       })
     }).then((s) => {
