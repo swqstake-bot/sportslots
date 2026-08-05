@@ -1,4 +1,5 @@
 import TargetSliderControl from '../games/TargetSliderControl'
+import { isGoldCoinCurrency } from '../../../utils/currencyMeta'
 
 interface BetSizeSliderProps {
   value: number
@@ -7,15 +8,27 @@ interface BetSizeSliderProps {
   disabled?: boolean
 }
 
+/** Crypto/fiat soft cap. EU gold/sweeps: high ceiling for large GC stakes. */
+function betInputMax(currency: string): number {
+  return isGoldCoinCurrency(currency) ? 1_000_000 : 10_000
+}
+
+function betSliderMax(currency: string): number {
+  return isGoldCoinCurrency(currency) ? 100_000 : 10
+}
+
 /** Allow 0 (free / probe bets). Negative → 0. Unset/NaN → 0. */
-function clampBet(n: number): number {
+function clampBet(n: number, currency: string): number {
   if (!Number.isFinite(n) || n < 0) return 0
-  return Math.min(10_000, n)
+  return Math.min(betInputMax(currency), n)
 }
 
 export default function BetSizeSlider({ value, onChange, currency, disabled }: BetSizeSliderProps) {
-  const safe = clampBet(value)
+  const safe = clampBet(value, currency)
   const cur = currency.toUpperCase()
+  const inputMax = betInputMax(currency)
+  const sliderMax = betSliderMax(currency)
+  const euGold = isGoldCoinCurrency(currency)
 
   return (
     <div className="originals-bet-size-slider">
@@ -38,14 +51,18 @@ export default function BetSizeSlider({ value, onChange, currency, disabled }: B
       <TargetSliderControl
         label={`Stake (${cur})`}
         value={safe}
-        onChange={(n) => onChange(clampBet(n))}
+        onChange={(n) => onChange(clampBet(n, currency))}
         min={0}
-        max={10}
-        inputMax={10_000}
-        step={0.01}
+        max={sliderMax}
+        inputMax={inputMax}
+        step={euGold ? 1 : 0.01}
         disabled={disabled}
         prominent={false}
-        hint="0 = no stake · slider 0–10 · type larger amounts in the field"
+        hint={
+          euGold
+            ? '0 = no stake · slider 0–100000 · type up to 1M in the field'
+            : '0 = no stake · slider 0–10 · type larger amounts in the field'
+        }
       />
     </div>
   )

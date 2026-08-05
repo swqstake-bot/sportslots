@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.252': [
+    '✨ Originals EU (Gold/Sweeps): Stake-Slider 0–100000 GC + höhere Tip-Limits für große Einsätze',
+  ],
   '1.0.251': [
     '🐛 Slots Stats/Chart: Wins nicht mehr kurz doppelt — House-Reconcile matcht per Multi (nicht blind FIFO) + net/gross-Schutz',
   ],
