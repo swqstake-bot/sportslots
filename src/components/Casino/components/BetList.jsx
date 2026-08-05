@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import clsx from 'clsx'
 import { formatAmount } from '../utils/formatAmount'
-import { formatStakeShareBetId } from '../utils/stakeBetShareId'
+import { formatStakeShareBetId, pickBetHistoryShareRaw } from '../utils/stakeBetShareId'
 
 function fmt(val, cc) {
   return formatAmount(val, cc)
@@ -18,6 +18,12 @@ function multiplierTone(multiplier) {
   return ''
 }
 
+function shortenId(id, max = 18) {
+  if (!id || typeof id !== 'string') return ''
+  if (id.length <= max) return id
+  return `${id.slice(0, Math.max(6, max - 1))}…`
+}
+
 export default function BetList({
   bets,
   totalCount,
@@ -28,6 +34,7 @@ export default function BetList({
   showNet = true,
   showContext = false,
   showCopyHouse = false,
+  showBetId = false,
   maxRows = 0,
   title = 'Spins',
   emptyMessage,
@@ -35,6 +42,7 @@ export default function BetList({
 }) {
   const scrollRef = useRef(null)
   const lastHeadKeyRef = useRef('')
+  const showIdCol = !!(showBetId || showCopyHouse)
 
   const displayBets = useMemo(() => {
     const nonZero = (bets || []).filter((b) => (b.betAmount ?? 0) !== 0 || (b.winAmount ?? 0) !== 0)
@@ -103,6 +111,11 @@ export default function BetList({
               <th className="terminal-th" style={{ minWidth: '8.5rem' }}>
                 Stake
               </th>
+              {showIdCol && (
+                <th className="terminal-th" style={{ minWidth: '7.5rem' }}>
+                  Bet ID
+                </th>
+              )}
               <th className="terminal-th" style={{ minWidth: '8.5rem' }}>
                 Win
               </th>
@@ -110,11 +123,6 @@ export default function BetList({
               {showContext && (
                 <th className="terminal-th" style={{ minWidth: '11rem' }}>
                   Context
-                </th>
-              )}
-              {showCopyHouse && (
-                <th className="terminal-th" style={{ minWidth: '4.3rem' }}>
-                  ID
                 </th>
               )}
               <th className="terminal-th" style={{ width: '3.1rem' }}>
@@ -131,11 +139,10 @@ export default function BetList({
               const isHubPending = b.hubSettlement === 'pending'
               const rowCurrency = String(b.currencyCode || defaultCurrency || '').toUpperCase()
               const rowSuffix = rowCurrency ? ` ${rowCurrency}` : ''
-              const shareRaw = b.shareIid || b.houseTopId || b.houseId || b.iid || null
+              const shareRaw = pickBetHistoryShareRaw(b)
               const shareId = formatStakeShareBetId(shareRaw)
               const canCopyShare = typeof shareId === 'string' && shareId.trim() !== ''
-              const sharePreview =
-                canCopyShare && shareId.length > 22 ? `${shareId.slice(0, 22)}…` : shareId || ''
+              const sharePreview = canCopyShare ? shortenId(shareId, compact || minimal ? 14 : 18) : ''
               const showWin = !(isBonus && b.stoppedBonus)
               const multiplierNum = bet > 0 ? (win / bet) : 0
               const multiplier = Number.isFinite(multiplierNum) ? multiplierNum.toFixed(2) : '0.00'
@@ -161,6 +168,29 @@ export default function BetList({
                     {fmt(bet, rowCurrency)}
                     {rowSuffix}
                   </td>
+                  {showIdCol && (
+                    <td className="terminal-td">
+                      {canCopyShare ? (
+                        <span className="terminal-inline">
+                          <span className="terminal-id-preview" title={shareId}>
+                            {sharePreview}
+                          </span>
+                          <button
+                            type="button"
+                            className="terminal-copy-btn"
+                            title={`Copy bet id (${shareId})`}
+                            onClick={() => {
+                              void navigator?.clipboard?.writeText(shareId)
+                            }}
+                          >
+                            Copy
+                          </button>
+                        </span>
+                      ) : (
+                        <span className="terminal-id-preview">—</span>
+                      )}
+                    </td>
+                  )}
                   <td
                     className={clsx(
                       'terminal-td',
@@ -215,40 +245,13 @@ export default function BetList({
                             className="terminal-copy-btn"
                             title={shareId}
                             onClick={() => {
-                              try {
-                                navigator?.clipboard?.writeText(shareId).catch(() => {})
-                              } catch (_) {}
+                              void navigator?.clipboard?.writeText(shareId)
                             }}
                           >
                             Copy
                           </button>
                         ) : null}
                       </span>
-                    </td>
-                  )}
-                  {showCopyHouse && (
-                    <td className="terminal-td">
-                      {canCopyShare ? (
-                        <span className="terminal-inline">
-                          <span className="terminal-id-preview" title={shareId}>
-                            {sharePreview}
-                          </span>
-                          <button
-                            type="button"
-                            className="terminal-copy-btn"
-                            title={`Copy bet id (${shareId})`}
-                            onClick={() => {
-                              try {
-                                navigator?.clipboard?.writeText(shareId).catch(() => {})
-                              } catch (_) {}
-                            }}
-                          >
-                            Copy
-                          </button>
-                        </span>
-                      ) : (
-                        <span className="terminal-id-preview">—</span>
-                      )}
                     </td>
                   )}
                   <td className={clsx('terminal-td', isHubPending && 'terminal-td--pending')} title={!isHubPending && showWin ? `${multiplier}× stake` : undefined}>

@@ -13,6 +13,46 @@ export function formatStakeShareBetId(raw) {
   return `casino:${s}`
 }
 
+/**
+ * Share-/Bet-ID raw from a slot/hub bet-history row (prefer houseBets iid).
+ * Falls back to roundId when house fields are not yet reconciled.
+ */
+export function pickBetHistoryShareRaw(b) {
+  if (!b || typeof b !== 'object') return null
+  for (const key of ['shareIid', 'iid', 'houseTopId', 'houseId', 'roundId']) {
+    const v = b[key]
+    if (v != null && String(v).trim() !== '') return String(v).trim()
+  }
+  return null
+}
+
+/**
+ * Top N multipliers in a session with associated share/bet ids.
+ * @returns {Array<{ multi: number, shareRaw: string|null, shareId: string|null }>}
+ */
+export function buildTopSessionMultis(bets, limit = 10) {
+  const n = Math.max(0, Math.floor(Number(limit) || 0))
+  if (!n || !Array.isArray(bets) || bets.length === 0) return []
+  const ranked = []
+  for (const b of bets) {
+    if (b?.isBonus && b?.stoppedBonus) continue
+    if (b?.hubSettlement === 'pending') continue
+    const bet = Number(b?.betAmount) || 0
+    const win = Number(b?.winAmount) || 0
+    if (bet <= 0 || win <= 0) continue
+    const multi = win / bet
+    if (!Number.isFinite(multi) || multi <= 0) continue
+    const shareRaw = pickBetHistoryShareRaw(b)
+    ranked.push({
+      multi,
+      shareRaw,
+      shareId: formatStakeShareBetId(shareRaw),
+    })
+  }
+  ranked.sort((a, b) => b.multi - a.multi || String(b.shareId || '').localeCompare(String(a.shareId || '')))
+  return ranked.slice(0, n)
+}
+
 /** GraphQL `CasinoBet.id` / houseBets `bet.id` — nur numerisch, kein Provider-roundId. */
 export function pickNumericCasinoBetId(...candidates) {
   for (const v of candidates) {

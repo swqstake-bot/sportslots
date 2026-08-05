@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.243': [
+    '✨ Slots: Bet-ID-Spalte in der Spin-Liste + Top 10 Multis mit Bet-IDs im Stats-Panel',
+    '✨ Packs/Originals Session-Log: neue Einträge oben (nicht unten)',
+  ],
   '1.0.242': [
     '✨ Slots Autospin: Delay ms/spin einstellbar (wie Originals/Ante Request-Interval) — 0 = max. Tempo',
   ],

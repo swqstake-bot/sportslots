@@ -132,6 +132,17 @@ function betHistoryCurrencyKey(code) {
   return c
 }
 
+/** Persist houseBets share fields onto bet-history rows (for Bet ID column / Top 10). */
+function houseShareFieldsFromParsed(parsed) {
+  if (!parsed || typeof parsed !== 'object') return {}
+  const out = {}
+  if (parsed.shareIid != null && String(parsed.shareIid).trim() !== '') out.shareIid = String(parsed.shareIid).trim()
+  if (parsed.iid != null && String(parsed.iid).trim() !== '') out.iid = String(parsed.iid).trim()
+  if (parsed.houseTopId != null && String(parsed.houseTopId).trim() !== '') out.houseTopId = String(parsed.houseTopId).trim()
+  if (parsed.houseId != null && String(parsed.houseId).trim() !== '') out.houseId = String(parsed.houseId).trim()
+  return out
+}
+
 function findPendingRowForHouseReconcile(prev, { betAmount, signature, now, sessionStartAt }) {
   // 1) Prefer newest unreconciled stop-on-bonus row (Hacksaw: otherwise FIFO steals settlement → duplicate wins).
   let bonusIdx = -1
@@ -863,6 +874,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             const rowSource = String(row?.source || '')
             clone[bestIdx] = {
               ...row,
+              ...houseShareFieldsFromParsed(parsed),
               ...(!row.roundId && rid ? { roundId: rid } : {}),
               currencyCode: settledCurr,
               betAmount: settledBet,
@@ -946,6 +958,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           const settledBetUsd = convertMinorToUsdMajor(settledBet, settledCurr, currencyRates)
           clone[pendingIdx] = {
             ...clone[pendingIdx],
+            ...houseShareFieldsFromParsed(parsed),
             source,
             roundId: rid ?? clone[pendingIdx]?.roundId,
             currencyCode: settledCurr,
@@ -1106,6 +1119,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         balance: parsed.balance,
         currencyCode,
         roundId: roundId ?? undefined,
+        ...houseShareFieldsFromParsed(parsed),
         addedAt: now,
         source,
       }
@@ -2329,6 +2343,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         currencyCode="usd"
         compact={wbCompact}
         minimal={settingsCollapsed}
+        showBetId
         onOpenSlot={handleOpenSlotFromBet}
       />
   )

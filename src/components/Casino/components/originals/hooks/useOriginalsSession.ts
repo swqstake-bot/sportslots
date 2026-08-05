@@ -99,7 +99,8 @@ export function useOriginalsSession(accessToken?: string, wbSettings?: Workbench
   }, [betList])
 
   const addLog = useCallback((msg: string) => {
-    setLogLines((prev) => [...prev.slice(-199), `[${new Date().toLocaleTimeString()}] ${msg}`])
+    // Newest first (packs hunt / general session log)
+    setLogLines((prev) => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 200))
   }, [])
 
   const startCooldown = useCallback(() => {

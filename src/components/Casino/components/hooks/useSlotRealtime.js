@@ -110,6 +110,10 @@ export function useSlotRealtime({
         balance: undefined,
         currencyCode,
         roundId: b?.id,
+        shareIid: b?.shareIid ?? b?.iid ?? null,
+        iid: b?.iid ?? b?.shareIid ?? null,
+        houseTopId: b?.houseTopId ?? null,
+        houseId: b?.houseId ?? null,
         source: b?.source || 'housebets',
       })
     }).then((s) => {

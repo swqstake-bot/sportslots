@@ -6,6 +6,7 @@ import {
   aggregateToStatsSnapshot,
   recomputeCasinoAggregate,
 } from '../../../utils/casinoStatsEngine'
+import { buildTopSessionMultis } from '../../../utils/stakeBetShareId'
 
 export type WorkbenchSessionPublish = {
   instanceId: string
@@ -82,6 +83,51 @@ function enrichBiggestMulti(stats: any, bets: any[]) {
   )
 }
 
+function shortenBetId(id: string, max = 16) {
+  if (!id || id.length <= max) return id
+  return `${id.slice(0, Math.max(6, max - 1))}…`
+}
+
+function TopMultisList({ items }: { items: ReturnType<typeof buildTopSessionMultis> }) {
+  if (!items.length) return null
+  return (
+    <div className="slot-wb-top-multis">
+      <div className="slot-wb-top-multis-head">Top 10 multis</div>
+      <ol className="slot-wb-top-multis-list">
+        {items.map((row, i) => {
+          const multiLabel = `${row.multi.toFixed(2)}×`
+          const id = row.shareId
+          return (
+            <li key={`${multiLabel}:${id ?? i}:${i}`} className="slot-wb-top-multis-row">
+              <span className="slot-wb-top-multis-rank">{i + 1}</span>
+              <span className="slot-wb-top-multis-x tabular-nums">{multiLabel}</span>
+              {id ? (
+                <span className="slot-wb-top-multis-id">
+                  <span className="slot-wb-top-multis-id-text" title={id}>
+                    {shortenBetId(id, 18)}
+                  </span>
+                  <button
+                    type="button"
+                    className="terminal-copy-btn"
+                    title={`Copy bet id (${id})`}
+                    onClick={() => {
+                      void navigator?.clipboard?.writeText(id)
+                    }}
+                  >
+                    Copy
+                  </button>
+                </span>
+              ) : (
+                <span className="slot-wb-top-multis-id-text">—</span>
+              )}
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}
+
 export function SlotWorkbenchStatsPanel({
   instances,
   sessionsById,
@@ -91,7 +137,7 @@ export function SlotWorkbenchStatsPanel({
 }: SlotWorkbenchStatsPanelProps) {
   const activeFilter = filterId === 'all' || instances.some((i) => i.id === filterId) ? filterId : 'all'
 
-  const { stats, chartCum, chartDomainKey, titleSuffix, spinCount } = useMemo(() => {
+  const { stats, chartCum, chartDomainKey, titleSuffix, spinCount, topMultis } = useMemo(() => {
     if (activeFilter !== 'all') {
       const session = sessionsById[activeFilter]
       const bets = Array.isArray(session?.sessionBetsDeduped) ? session.sessionBetsDeduped : []
@@ -102,6 +148,7 @@ export function SlotWorkbenchStatsPanel({
         chartDomainKey: session?.sessionStartAt ?? `one:${activeFilter}`,
         titleSuffix: session?.name || instances.find((i) => i.id === activeFilter)?.label || 'Slot',
         spinCount: bets.length,
+        topMultis: buildTopSessionMultis(bets, 10),
       }
     }
 
@@ -131,6 +178,7 @@ export function SlotWorkbenchStatsPanel({
       chartDomainKey: earliestStart ?? `all:${instances.map((i) => i.id).join(',')}`,
       titleSuffix: 'All slots',
       spinCount: deduped.length,
+      topMultis: buildTopSessionMultis(deduped, 10),
     }
   }, [activeFilter, sessionsById, instances, currencyRates])
 
@@ -197,6 +245,7 @@ export function SlotWorkbenchStatsPanel({
               </div>
             </div>
           )}
+          <TopMultisList items={topMultis} />
         </>
       )}
     </aside>

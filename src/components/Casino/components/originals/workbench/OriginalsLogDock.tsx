@@ -9,12 +9,12 @@ interface OriginalsLogDockProps {
 
 export default function OriginalsLogDock({ open, onToggle, logLines, running }: OriginalsLogDockProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const lastLine = logLines[logLines.length - 1]
+  const newestLine = logLines[0]
 
   useEffect(() => {
     if (!open || !scrollRef.current) return
-    scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-  }, [open, logLines.length, lastLine])
+    scrollRef.current.scrollTop = 0
+  }, [open, logLines.length, newestLine])
 
   if (!open) {
     return (

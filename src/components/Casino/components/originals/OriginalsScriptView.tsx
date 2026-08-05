@@ -197,7 +197,7 @@ export default function OriginalsScriptView() {
   }, [])
 
   const addLog = useCallback((msg: string) => {
-    setLogLines((prev) => [...prev.slice(-99), `[${new Date().toLocaleTimeString()}] ${msg}`])
+    setLogLines((prev) => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 100))
   }, [])
 
   const executeScriptUiFlush = useCallback(() => {
