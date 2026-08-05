@@ -126,7 +126,8 @@ export function useSlotRealtime({
         shareIid,
         iid: shareIid,
         houseTopId: b?.houseTopId ?? null,
-        source: b?.source || 'housebets',
+        // Normalized lowercase — SlotControl reconcile keys on `housebets` / `mybetupdated`.
+        source: String(b?.source || 'housebets').toLowerCase(),
       })
     }).then((s) => {
       if (cancelled) {

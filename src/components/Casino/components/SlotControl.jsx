@@ -130,6 +130,16 @@ const FALLBACK_RECONCILE_WINDOW_MS = 60000
 const STOPPED_BONUS_RECONCILE_WINDOW_MS = 30 * 60 * 1000
 const PENDING_HOUSE_RECONCILE_SOURCES = new Set(['placebet', 'http_fallback'])
 
+/** WS emits camelCase (`houseBets`); reconcile/orphan paths always use lowercase. */
+function normalizeBetHistorySource(source) {
+  return String(source || 'unknown').trim().toLowerCase()
+}
+
+function isHouseBetHistorySource(source) {
+  const s = normalizeBetHistorySource(source)
+  return s === 'housebets' || s === 'mybetupdated'
+}
+
 /** Normalize currency for bet-history signatures (gold ↔ XGC, sweeps ↔ XSC). */
 function betHistoryCurrencyKey(code) {
   const c = String(code || '').toLowerCase()
@@ -863,8 +873,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     const now = Date.now()
     const roundId = parsed.roundId
     const rid = roundId != null ? String(roundId) : null
-    const source = String(parsed?.source || 'unknown')
-    const isHouseSettlement = source === 'housebets' || source === 'mybetupdated'
+    // WS emits camelCase (`houseBets`); all reconcile/orphan paths require lowercase.
+    const source = normalizeBetHistorySource(parsed?.source)
+    const isHouseSettlement = isHouseBetHistorySource(source)
     // FX must follow the bet's real currency (house/API). Session target is fallback only.
     // Forcing effectiveTarget caused EUR stakes to be valued as SOL/ARS → ~10× USD vs Stake.
     const apiCurr = String(parsed.currencyCode || '').toLowerCase()
@@ -872,6 +883,16 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     const parsedBet = Number(parsed.betAmount) || 0
     const parsedWin = Number(parsed.stoppedBonus ? 0 : (parsed.winAmount ?? 0)) || 0
     const signature = `${currencyCode}|${parsedBet}|${parsedWin}|${parsed.isBonus ? 1 : 0}`
+    const incomingShare = houseShareFieldsFromParsed(parsed)
+
+    /** Patch shareIid onto an existing row (SSP-style: row first, iid after WS). */
+    const patchShareOntoRow = (clone, idx, row) => {
+      if (!incomingShare.shareIid) return false
+      if (houseShareFieldsFromParsed(row).shareIid) return false
+      clone[idx] = { ...row, ...incomingShare }
+      return true
+    }
+
     setBetHistory((prev) => {
       const last = prev[prev.length - 1]
       // Stake houseBets-IDs sind global eindeutig; Provider-roundIds (z. B. Playnetic `n`) nicht in den Seen-Set.
@@ -880,7 +901,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           rid &&
           last &&
           String(last.roundId ?? '') === rid &&
-          String(last.source || '') === 'placebet' &&
+          normalizeBetHistorySource(last.source) === 'placebet' &&
           (now - Number(last.addedAt || 0)) < 150
         ) {
           recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-placebet-roundId', roundId: rid })
@@ -897,8 +918,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             const age = now - Number(row?.addedAt || 0)
             if (age > FALLBACK_RECONCILE_WINDOW_MS) break
             if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
-            const rowSource = String(row?.source || '')
-            if (rowSource !== 'housebets' && rowSource !== 'mybetupdated') continue
+            if (!isHouseBetHistorySource(row?.source)) continue
             if (row?.houseBetReconciled) continue
             const rowBet = Number(row?.betAmount) || 0
             let score = 0
@@ -936,10 +956,19 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             const settledBet = rowBet > 0 ? rowBet : parsedBet
             const settledWinUsd = convertMinorToUsdMajor(mergedWin, settledCurr, currencyRates)
             const settledBetUsd = convertMinorToUsdMajor(settledBet, settledCurr, currencyRates)
-            const rowSource = String(row?.source || '')
+            const claimed =
+              !houseShareFieldsFromParsed(row).shareIid
+                ? claimOrphanHouseShare(orphanHouseShareBufferRef.current, {
+                    betAmount: settledBet || parsedBet,
+                    currencyCode: settledCurr,
+                    now,
+                  })
+                : {}
             clone[bestIdx] = {
               ...row,
-              ...houseShareFieldsFromParsed(parsed),
+              // Keep house shareIid from the WS row; placeBet has none.
+              ...houseShareFieldsFromParsed(row),
+              ...claimed,
               ...(!row.roundId && rid ? { roundId: rid } : {}),
               currencyCode: settledCurr,
               betAmount: settledBet,
@@ -950,7 +979,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
               ),
               isBonus: !!(row?.isBonus || parsed.isBonus),
               houseBetReconciled: true,
-              source: rowSource,
+              source: normalizeBetHistorySource(row?.source) || 'housebets',
               ...(settledBetUsd?.fxStatus === 'ok' &&
               settledBetUsd.usd != null &&
               Number.isFinite(Number(settledBetUsd.usd))
@@ -989,10 +1018,41 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       if (rid && isHouseSettlement) {
         const roundKey = `round:${rid}`
         if (seenBetDedupKeysRef.current.has(roundKey)) {
+          // Dedup — but still attach shareIid if the earlier row never got it (SSP: iid after WS).
+          if (incomingShare.shareIid) {
+            const clone = prev.slice()
+            let patched = false
+            for (let i = clone.length - 1; i >= 0; i--) {
+              const row = clone[i]
+              if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) break
+              if (String(row?.roundId ?? '') === rid || houseShareFieldsFromParsed(row).shareIid === incomingShare.shareIid) {
+                if (patchShareOntoRow(clone, i, row)) patched = true
+                break
+              }
+              const rowBet = Number(row?.betAmount) || 0
+              if (row?.houseBetReconciled && parsedBet > 0 && rowBet > 0) {
+                const tol = Math.max(1, rowBet * 0.08)
+                if (Math.abs(rowBet - parsedBet) <= tol && patchShareOntoRow(clone, i, row)) {
+                  patched = true
+                  break
+                }
+              }
+            }
+            if (patched) {
+              recordBetHistoryAudit({ slotSlug: slot.slug, event: 'patch-share-after-dedup-roundId', roundId: rid })
+              return clone
+            }
+          }
           recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-roundId-set', roundId: rid })
           return prev
         }
         if (last && String(last.roundId ?? '') === rid) {
+          if (incomingShare.shareIid && !houseShareFieldsFromParsed(last).shareIid) {
+            const clone = prev.slice()
+            clone[clone.length - 1] = { ...last, ...incomingShare }
+            recordBetHistoryAudit({ slotSlug: slot.slug, event: 'patch-share-on-last-roundId', roundId: rid })
+            return clone
+          }
           recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-roundId', roundId: rid })
           return prev
         }
@@ -1023,8 +1083,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           const settledBetUsd = convertMinorToUsdMajor(settledBet, settledCurr, currencyRates)
           clone[pendingIdx] = {
             ...clone[pendingIdx],
-            ...houseShareFieldsFromParsed(parsed),
-            source,
+            ...incomingShare,
+            source: 'housebets',
             roundId: rid ?? clone[pendingIdx]?.roundId,
             currencyCode: settledCurr,
             betAmount: settledBet,
@@ -1067,10 +1127,22 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           const rowWin = Number(row?.stoppedBonus ? 0 : (row?.winAmount ?? 0)) || 0
           const rowSig = `${rowCurr}|${Number(row?.betAmount) || 0}|${rowWin}|${row?.isBonus ? 1 : 0}`
           if (rowSig !== signature) continue
-          const rowSource = String(row?.source || '')
+          const rowSource = normalizeBetHistorySource(row?.source)
           const isOpenPlace = PENDING_HOUSE_RECONCILE_SOURCES.has(rowSource) && !row?.houseBetReconciled
           const isRecentEcho = age <= 2500
           if (!isOpenPlace && !isRecentEcho) continue
+          if (incomingShare.shareIid) {
+            const clone = prev.slice()
+            if (patchShareOntoRow(clone, i, row)) {
+              recordBetHistoryAudit({
+                slotSlug: slot.slug,
+                event: 'patch-share-on-signature-echo',
+                roundId: rid ?? null,
+                source,
+              })
+              return clone
+            }
+          }
           recordBetHistoryAudit({
             slotSlug: slot.slug,
             event: 'dedup-house-settlement-signature',
@@ -1100,6 +1172,18 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           if (parsedBet > 0 && rowBet > 0) {
             const tol = Math.max(1, rowBet * 0.08)
             if (Math.abs(rowBet - parsedBet) > tol) continue
+          }
+          if (incomingShare.shareIid) {
+            const clone = prev.slice()
+            if (patchShareOntoRow(clone, i, row)) {
+              recordBetHistoryAudit({
+                slotSlug: slot.slug,
+                event: 'patch-share-after-reconcile',
+                roundId: rid ?? null,
+                source,
+              })
+              return clone
+            }
           }
           recordBetHistoryAudit({
             slotSlug: slot.slug,
@@ -1134,8 +1218,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         for (let i = prev.length - 1; i >= 0; i--) {
           const row = prev[i]
           if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) break
-          const rowSource = String(row?.source || '').toLowerCase()
-          if (rowSource !== 'housebets' && rowSource !== 'mybetupdated') continue
+          if (!isHouseBetHistorySource(row?.source)) continue
           if (rid && String(row?.roundId ?? '') === rid) {
             recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-placebet-vs-house-settlement', roundId: rid })
             return prev
