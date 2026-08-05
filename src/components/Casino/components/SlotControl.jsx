@@ -200,26 +200,31 @@ function bufferOrphanHouseShare(buf, parsed, currencyCode, now = Date.now()) {
 
 function claimOrphanHouseShare(buf, { betAmount, winAmount, payoutMultiplier, currencyCode, now = Date.now() }) {
   pruneOrphanHouseShareBuffer(buf, now)
+  const wantBet = Number(betAmount) || 0
   const wantMulti = Number(payoutMultiplier)
   const wantFromAmounts =
     Number(betAmount) > 0 && Number(winAmount) >= 0 ? Number(winAmount) / Number(betAmount) : NaN
-  const want = Number.isFinite(wantMulti) && wantMulti > 0 ? wantMulti : wantFromAmounts
+  const want = Number.isFinite(wantMulti) && wantMulti >= 0 ? wantMulti : wantFromAmounts
   let bestIdx = -1
   let bestScore = -Infinity
   for (let i = 0; i < buf.length; i++) {
     const row = buf[i]
     const age = now - Number(row?.at || 0)
     if (age > ORPHAN_HOUSE_SHARE_TTL_MS) continue
+    const rowBet = Number(row?.betAmount) || 0
+    if (wantBet > 0 && rowBet > 0) {
+      const tol = Math.max(1, Math.max(wantBet, rowBet) * 0.25)
+      if (Math.abs(wantBet - rowBet) > tol) continue
+    }
     const rowMulti = Number(row?.payoutMultiplier)
     const rowFromAmounts =
-      Number(row?.betAmount) > 0 && Number(row?.winAmount) >= 0
-        ? Number(row.winAmount) / Number(row.betAmount)
-        : NaN
-    const got = Number.isFinite(rowMulti) && rowMulti > 0 ? rowMulti : rowFromAmounts
+      rowBet > 0 && Number(row?.winAmount) >= 0 ? Number(row.winAmount) / rowBet : NaN
+    const got = Number.isFinite(rowMulti) && rowMulti >= 0 ? rowMulti : rowFromAmounts
     if (!Number.isFinite(want) || !Number.isFinite(got) || want < 0 || got < 0) continue
     const rel = Math.abs(want - got) / Math.max(want, got, 1e-9)
     if (rel > 0.08 && Math.abs(want - got) > 0.15) continue
-    const score = 1_000_000 * (1 - Math.min(1, rel)) - age
+    // Oldest matching orphan first (FIFO with placeBet order).
+    const score = 1_000_000 * (1 - Math.min(1, rel)) + age
     if (score > bestScore) {
       bestScore = score
       bestIdx = i
@@ -231,13 +236,13 @@ function claimOrphanHouseShare(buf, { betAmount, winAmount, payoutMultiplier, cu
 }
 
 /**
- * Pick spin row for houseBets.iid — match by multiplier + recency (not FIFO amount).
+ * Pick spin row for houseBets.iid — multi + stake; pending FIFO (not any 0× newest).
  * @returns {number} index or -1
  */
 function findRowIndexForShareAttach(prev, { parsedBet, parsedWin, payoutMultiplier, now, sessionStartAt }) {
   const houseMultiRaw = Number(payoutMultiplier)
   const houseMulti =
-    Number.isFinite(houseMultiRaw) && houseMultiRaw > 0
+    Number.isFinite(houseMultiRaw) && houseMultiRaw >= 0
       ? houseMultiRaw
       : parsedBet > 0 && parsedWin >= 0
         ? parsedWin / parsedBet
@@ -257,16 +262,26 @@ function findRowIndexForShareAttach(prev, { parsedBet, parsedWin, payoutMultipli
     const rowBet = Number(row?.betAmount) || 0
     const rowWin = Number(row?.stoppedBonus ? 0 : row?.winAmount) || 0
     if (rowBet <= 0) continue
+    // Stake gate — identical 0× losses must not thrash across every open row.
+    if (parsedBet > 0) {
+      const tol = Math.max(1, Math.max(rowBet, parsedBet) * 0.25)
+      if (Math.abs(rowBet - parsedBet) > tol) continue
+    }
     const rowMulti = rowWin / rowBet
     if (!Number.isFinite(rowMulti) || rowMulti < 0) continue
 
     const rel = Math.abs(houseMulti - rowMulti) / Math.max(houseMulti, rowMulti, 1e-9)
     const abs = Math.abs(houseMulti - rowMulti)
-    // Tight multi match; allow tiny absolute slack for near-zero wins.
     if (rel > 0.08 && abs > 0.15) continue
 
-    // Prefer better multi match, then newer spins (house usually arrives right after placeBet).
-    const score = 1_000_000 * (1 - Math.min(1, rel)) - age * 0.5 + (row?.houseBetReconciled ? 0 : 50_000)
+    const src = normalizeBetHistorySource(row?.source)
+    const isPending = PENDING_HOUSE_RECONCILE_SOURCES.has(src) && !row?.houseBetReconciled
+    // Align with FIFO reconcile: prefer oldest open placeBet.
+    const score =
+      (isPending ? 2_000_000 : 0) +
+      1_000_000 * (1 - Math.min(1, rel)) +
+      (isPending ? age * 0.5 : -age * 0.5) -
+      (row?.houseBetReconciled ? 100_000 : 0)
     if (score > bestScore) {
       bestScore = score
       bestIdx = i
@@ -1276,14 +1291,14 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           }
           return rows
         }
-        // Already reconciled this spin via placeBet FIFO — a second house/myBetUpdated
-        // (net vs gross payout) must not append or the chart flips length/net every event.
+        // Same-spin echo only (net vs gross within ~2.5s). Do NOT collapse later same-stake losses.
         for (let i = rows.length - 1; i >= 0; i--) {
           const row = rows[i]
           const age = now - Number(row?.addedAt || 0)
           if (age > FALLBACK_RECONCILE_WINDOW_MS) break
           if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
           if (!row?.houseBetReconciled) continue
+          if (age > 2500) continue
           const rowBet = Number(row?.betAmount) || 0
           if (parsedBet > 0 && rowBet > 0) {
             const tol = Math.max(1, rowBet * 0.08)
@@ -1318,7 +1333,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           }
           return rows
         }
-        // Last chance: attach by multiplier + recency (not stake FIFO).
+        // Last chance: attach share id only (no reconcile / source flip).
         if (incomingShare.shareIid) {
           const shareIdx = findRowIndexForShareAttach(rows, {
             parsedBet,
@@ -1330,30 +1345,23 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           if (shareIdx >= 0) {
             const row = rows[shareIdx]
             const clone = rows.slice()
-            clone[shareIdx] = {
-              ...row,
-              ...incomingShare,
-              houseBetReconciled: true,
-              source:
-                normalizeBetHistorySource(row?.source) === 'placebet'
-                  ? 'housebets'
-                  : normalizeBetHistorySource(row?.source) || 'housebets',
-            }
-            recordBetHistoryAudit({
-              slotSlug: slot.slug,
-              event: 'patch-share-last-chance',
-              roundId: rid ?? null,
-              source,
-            })
-            try {
-              console.warn('[slot-bet-id]', {
-                phase: 'attached-last-chance',
-                idx: shareIdx,
-                shareIid: incomingShare.shareIid,
-                houseMulti: housePayoutMultiplier,
+            if (patchShareOntoRow(clone, shareIdx, row)) {
+              recordBetHistoryAudit({
+                slotSlug: slot.slug,
+                event: 'patch-share-last-chance',
+                roundId: rid ?? null,
+                source,
               })
-            } catch (_) {}
-            return clone
+              try {
+                console.warn('[slot-bet-id]', {
+                  phase: 'attached-last-chance',
+                  idx: shareIdx,
+                  shareIid: incomingShare.shareIid,
+                  houseMulti: housePayoutMultiplier,
+                })
+              } catch (_) {}
+              return clone
+            }
           }
         }
         // houseBets/myBetUpdated ohne offenes placeBet: nicht als eigene Zeile anlegen.
@@ -1371,12 +1379,15 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       } else if (source === 'placebet') {
         for (let i = rows.length - 1; i >= 0; i--) {
           const row = rows[i]
-          if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) break
+          const age = now - Number(row?.addedAt || 0)
+          if (age > FALLBACK_RECONCILE_WINDOW_MS) break
           if (!isHouseBetHistorySource(row?.source)) continue
           if (rid && String(row?.roundId ?? '') === rid) {
             recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-placebet-vs-house-settlement', roundId: rid })
             return rows
           }
+          // Same-spin echo only (~2.5s). Consecutive same-stake losses must append.
+          if (age > 2500) continue
           const rowCurr = betHistoryCurrencyKey(row?.currencyCode || effectiveTarget || 'usd')
           const rowSig = `${rowCurr}|${Number(row?.betAmount) || 0}|${Number(row?.winAmount) || 0}|${row?.isBonus ? 1 : 0}`
           if (rowSig === signature) {
@@ -1387,7 +1398,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       } else if (source === 'http_fallback') {
         for (let i = rows.length - 1; i >= 0; i--) {
           const row = rows[i]
-          if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) break
+          const age = now - Number(row?.addedAt || 0)
+          if (age > FALLBACK_RECONCILE_WINDOW_MS) break
+          if (age > 2500) continue
           const rowSource = String(row?.source || '')
           if (rowSource === 'http_fallback') continue
           const rowCurr = String(row?.currencyCode || effectiveTarget || 'usd').toLowerCase()

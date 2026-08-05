@@ -55,8 +55,9 @@ export default function BetList({
     return Number.isFinite(Number(maxRows)) && Number(maxRows) > 0 ? sorted.slice(0, Number(maxRows)) : sorted
   }, [bets, maxRows])
 
+  // Stable head only — shareId/win patches must not reset scroll (list "jump").
   const headKey = displayBets[0]
-    ? `${displayBets[0].id ?? ''}|${displayBets[0].addedAt ?? ''}|${displayBets[0].roundId ?? ''}|${displayBets[0].winAmount ?? ''}`
+    ? `${displayBets[0].id ?? ''}|${displayBets[0].addedAt ?? ''}`
     : ''
 
   useEffect(() => {
