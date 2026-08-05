@@ -1166,7 +1166,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           const isOpenPlace = PENDING_HOUSE_RECONCILE_SOURCES.has(rowSource) && !row?.houseBetReconciled
           const isRecentEcho = age <= 2500
           if (!isOpenPlace && !isRecentEcho) continue
-          if (incomingShare.shareIid) {
+          // Only attach share onto an *open* placeBet — never stamp the next house
+          // settlement onto a recent reconciled same-stake loss (looks like deletes).
+          if (isOpenPlace && incomingShare.shareIid) {
             const clone = rows.slice()
             if (patchShareOntoRow(clone, i, row)) {
               recordBetHistoryAudit({
@@ -1178,8 +1180,6 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
               return clone
             }
           }
-          // Same share already on row, or open place awaiting — drop echo. Otherwise keep looking
-          // so a later same-stake house event can still orphan-buffer for the next placeBet.
           const rowShare = houseShareFieldsFromParsed(row).shareIid
           if (isOpenPlace || (rowShare && rowShare === incomingShare.shareIid)) {
             recordBetHistoryAudit({
@@ -1213,20 +1213,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             const tol = Math.max(1, rowBet * 0.08)
             if (Math.abs(rowBet - parsedBet) > tol) continue
           }
-          if (incomingShare.shareIid) {
-            const clone = rows.slice()
-            if (patchShareOntoRow(clone, i, row)) {
-              recordBetHistoryAudit({
-                slotSlug: slot.slug,
-                event: 'patch-share-after-reconcile',
-                roundId: rid ?? null,
-                source,
-              })
-              return clone
-            }
-          }
+          // Only dedup the exact same share / round — never absorb the next 0× loss.
           const rowShare = houseShareFieldsFromParsed(row).shareIid
-          if (rowShare && rowShare === incomingShare.shareIid) {
+          if (incomingShare.shareIid && rowShare === incomingShare.shareIid) {
             recordBetHistoryAudit({
               slotSlug: slot.slug,
               event: 'dedup-house-after-reconcile',
@@ -1242,6 +1231,25 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
                 if (old) seenBetDedupKeysRef.current.delete(old)
               }
             }
+            return rows
+          }
+          if (rid && String(row?.roundId ?? '') === rid) {
+            const clone = rows.slice()
+            if (incomingShare.shareIid && patchShareOntoRow(clone, i, row)) {
+              recordBetHistoryAudit({
+                slotSlug: slot.slug,
+                event: 'patch-share-after-reconcile',
+                roundId: rid ?? null,
+                source,
+              })
+              return clone
+            }
+            recordBetHistoryAudit({
+              slotSlug: slot.slug,
+              event: 'dedup-house-after-reconcile',
+              roundId: rid ?? null,
+              source,
+            })
             return rows
           }
         }
@@ -1287,41 +1295,38 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         })
         return rows
       } else if (source === 'placebet') {
-        for (let i = rows.length - 1; i >= 0; i--) {
-          const row = rows[i]
-          const age = now - Number(row?.addedAt || 0)
-          if (age > FALLBACK_RECONCILE_WINDOW_MS) break
-          if (!isHouseBetHistorySource(row?.source)) continue
-          if (rid && String(row?.roundId ?? '') === rid) {
-            recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-placebet-vs-house-settlement', roundId: rid })
-            return rows
-          }
-          // Same-spin echo only (~2.5s). Consecutive same-stake losses must append.
-          if (age > 2500) continue
-          const rowCurr = betHistoryCurrencyKey(row?.currencyCode || effectiveTarget || 'usd')
-          const rowSig = `${rowCurr}|${Number(row?.betAmount) || 0}|${Number(row?.winAmount) || 0}|${row?.isBonus ? 1 : 0}`
-          if (rowSig === signature) {
-            recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-placebet-vs-house-settlement-sig' })
-            return rows
+        // Only same-spin roundId — never signature. Same-stake 0× losses must always append.
+        if (rid) {
+          for (let i = rows.length - 1; i >= 0; i--) {
+            const row = rows[i]
+            if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) break
+            if (!isHouseBetHistorySource(row?.source)) continue
+            if (String(row?.roundId ?? '') === rid) {
+              recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-placebet-vs-house-settlement', roundId: rid })
+              return rows
+            }
           }
         }
       } else if (source === 'http_fallback') {
-        for (let i = rows.length - 1; i >= 0; i--) {
-          const row = rows[i]
-          const age = now - Number(row?.addedAt || 0)
-          if (age > FALLBACK_RECONCILE_WINDOW_MS) break
-          if (age > 2500) continue
-          const rowSource = String(row?.source || '')
-          if (rowSource === 'http_fallback') continue
-          const rowCurr = String(row?.currencyCode || effectiveTarget || 'usd').toLowerCase()
-          const rowSig = `${rowCurr}|${Number(row?.betAmount) || 0}|${Number(row?.winAmount) || 0}|${row?.isBonus ? 1 : 0}`
-          if (rowSig === signature) {
-            recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-http-fallback-vs-existing' })
-            return rows
+        // roundId-only; signature would collapse consecutive same-stake losses.
+        if (rid) {
+          for (let i = rows.length - 1; i >= 0; i--) {
+            const row = rows[i]
+            if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) break
+            if (String(row?.roundId ?? '') === rid) {
+              recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-http-fallback-vs-existing', roundId: rid })
+              return rows
+            }
           }
         }
       }
-      if (!rid && last && (now - (last.addedAt ?? 0)) < 150) {
+      // Do not time-window-dedup placeBet: fast autospin same-stake losses are real spins.
+      if (
+        source !== 'placebet' &&
+        !rid &&
+        last &&
+        (now - (last.addedAt ?? 0)) < 150
+      ) {
         const same = (last.betAmount ?? 0) === (parsed.betAmount ?? 0) &&
           (last.winAmount ?? 0) === (parsed.winAmount ?? 0) &&
           !!last.isBonus === !!parsed.isBonus

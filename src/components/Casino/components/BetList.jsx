@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import clsx from 'clsx'
 import { formatAmount } from '../utils/formatAmount'
 import { pickBetHistoryShareRaw } from '../utils/stakeBetShareId'
@@ -41,11 +41,9 @@ export default function BetList({
   onOpenSlot = null,
 }) {
   const scrollRef = useRef(null)
-  const lastHeadIdRef = useRef('')
   const showIdCol = !!(showBetId || showCopyHouse)
 
-  // Newest first via reverse of chronological input — do NOT re-sort by addedAt
-  // (reconcile patches must not reshuffle / jump the list).
+  // Newest first via reverse of chronological input — do NOT re-sort by addedAt.
   const displayBets = useMemo(() => {
     const nonZero = (bets || []).filter((b) => (b.betAmount ?? 0) !== 0 || (b.winAmount ?? 0) !== 0)
     const newestFirst = nonZero.slice().reverse()
@@ -54,16 +52,7 @@ export default function BetList({
       : newestFirst
   }, [bets, maxRows])
 
-  const headId = displayBets[0]?.id != null ? String(displayBets[0].id) : ''
-
-  useEffect(() => {
-    // Scroll to top only when a genuinely new spin becomes the head — never on
-    // shareId / win / source patches of an existing head row.
-    if (!headId || headId === lastHeadIdRef.current) return
-    lastHeadIdRef.current = headId
-    const el = scrollRef.current
-    if (el) el.scrollTop = 0
-  }, [headId])
+  // No auto scrollTop — patch/dedupe updates were yanking the list during autospin.
 
   const panelClass = clsx('terminal-panel', minimal && 'terminal-panel--minimal', compact && 'terminal-panel--compact')
   const scrollClass = clsx(

@@ -43,56 +43,14 @@ function betEntrySourceRank(entry) {
   return rank
 }
 
-function betEntrySpinSignature(entry) {
-  const curr = String(entry?.currencyCode || 'usd').toLowerCase()
-  const bet = Number(entry?.betAmount) || 0
-  const win = Number(entry?.isBonus && entry?.stoppedBonus ? 0 : entry?.winAmount) || 0
-  return `${curr}|${bet}|${win}|${entry?.isBonus ? 1 : 0}`
-}
-
-/** Dedup für KPI-Aggregation: roundId bevorzugt, sonst Signatur-Fenster (placeBet + houseBets). */
+/** Dedup für KPI/BetList: nur gleiche roundId. Nie per Stake|Win-Signatur — sonst kollabieren schnelle 0×-Losses. */
 export function dedupeBetHistoryForAggregate(entries) {
   const list = Array.isArray(entries) ? entries : []
   const result = []
   const roundIndex = new Map()
-  /** placeBet→house echo window — keep real consecutive same-stake losses apart. */
-  const SIG_WINDOW_MS = 2500
 
   for (const entry of list) {
     const rid = entry?.roundId != null ? String(entry.roundId).trim() : ''
-    const sig = betEntrySpinSignature(entry)
-    const ts = Number(entry?.addedAt) || 0
-    const entrySource = String(entry?.source || '').toLowerCase()
-
-    let sigDupIdx = -1
-    for (let i = result.length - 1; i >= 0; i--) {
-      const row = result[i]
-      if (ts - (Number(row?.addedAt) || 0) > SIG_WINDOW_MS) break
-      if (betEntrySpinSignature(row) !== sig) continue
-      const rowSource = String(row?.source || '').toLowerCase()
-      // Never collapse two placeBets (consecutive same-stake losses).
-      if (entrySource === 'placebet' && rowSource === 'placebet') continue
-      sigDupIdx = i
-      break
-    }
-    if (sigDupIdx >= 0) {
-      if (betEntrySourceRank(entry) >= betEntrySourceRank(result[sigDupIdx])) {
-        const prev = result[sigDupIdx]
-        const prevRid = prev?.roundId != null ? String(prev.roundId).trim() : ''
-        // Preserve list identity/order — never let a later house echo reshuffle by new id/addedAt.
-        result[sigDupIdx] = {
-          ...entry,
-          id: prev?.id ?? entry?.id,
-          addedAt: prev?.addedAt ?? entry?.addedAt,
-          shareIid: entry?.shareIid ?? prev?.shareIid,
-          iid: entry?.iid ?? prev?.iid,
-        }
-        if (prevRid) roundIndex.delete(prevRid)
-        if (rid) roundIndex.set(rid, sigDupIdx)
-      }
-      continue
-    }
-
     if (rid) {
       const existingIdx = roundIndex.get(rid)
       if (existingIdx != null) {
@@ -104,6 +62,7 @@ export function dedupeBetHistoryForAggregate(entries) {
             addedAt: prev?.addedAt ?? entry?.addedAt,
             shareIid: entry?.shareIid ?? prev?.shareIid,
             iid: entry?.iid ?? prev?.iid,
+            roundId: prev?.roundId ?? entry?.roundId,
           }
         }
         continue
