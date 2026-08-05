@@ -107,7 +107,8 @@ export function useSlotRealtime({
         isBonus: false,
         balance: undefined,
         currencyCode,
-        roundId: shareIid || b?.id,
+        // Never use shareIid as roundId — that overwrote placeBet RGS ids and thrash-deduped the list.
+        roundId: b?.id != null ? String(b.id) : undefined,
         shareIid,
         iid: shareIid,
         houseTopId: b?.houseTopId ?? null,

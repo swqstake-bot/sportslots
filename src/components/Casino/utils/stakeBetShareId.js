@@ -35,7 +35,8 @@ export function buildTopSessionMultis(bets, limit = 10) {
   const n = Math.max(0, Math.floor(Number(limit) || 0))
   if (!n || !Array.isArray(bets) || bets.length === 0) return []
   const ranked = []
-  for (const b of bets) {
+  for (let i = 0; i < bets.length; i++) {
+    const b = bets[i]
     if (b?.isBonus && b?.stoppedBonus) continue
     if (b?.hubSettlement === 'pending') continue
     const bet = Number(b?.betAmount) || 0
@@ -48,10 +49,13 @@ export function buildTopSessionMultis(bets, limit = 10) {
       multi,
       shareRaw: shareId,
       shareId,
+      _ord: i,
+      _at: Number(b?.addedAt) || 0,
     })
   }
-  ranked.sort((a, b) => b.multi - a.multi || String(b.shareId || '').localeCompare(String(a.shareId || '')))
-  return ranked.slice(0, n)
+  // Stable: multi desc, then original session order — shareId attach must not reshuffle ties.
+  ranked.sort((a, b) => b.multi - a.multi || a._ord - b._ord || a._at - b._at)
+  return ranked.slice(0, n).map(({ multi, shareRaw, shareId }) => ({ multi, shareRaw, shareId }))
 }
 
 /**

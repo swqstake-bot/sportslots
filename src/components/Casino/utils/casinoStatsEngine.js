@@ -77,8 +77,16 @@ export function dedupeBetHistoryForAggregate(entries) {
     }
     if (sigDupIdx >= 0) {
       if (betEntrySourceRank(entry) >= betEntrySourceRank(result[sigDupIdx])) {
-        const prevRid = result[sigDupIdx]?.roundId != null ? String(result[sigDupIdx].roundId).trim() : ''
-        result[sigDupIdx] = entry
+        const prev = result[sigDupIdx]
+        const prevRid = prev?.roundId != null ? String(prev.roundId).trim() : ''
+        // Preserve list identity/order — never let a later house echo reshuffle by new id/addedAt.
+        result[sigDupIdx] = {
+          ...entry,
+          id: prev?.id ?? entry?.id,
+          addedAt: prev?.addedAt ?? entry?.addedAt,
+          shareIid: entry?.shareIid ?? prev?.shareIid,
+          iid: entry?.iid ?? prev?.iid,
+        }
         if (prevRid) roundIndex.delete(prevRid)
         if (rid) roundIndex.set(rid, sigDupIdx)
       }
@@ -89,7 +97,14 @@ export function dedupeBetHistoryForAggregate(entries) {
       const existingIdx = roundIndex.get(rid)
       if (existingIdx != null) {
         if (betEntrySourceRank(entry) >= betEntrySourceRank(result[existingIdx])) {
-          result[existingIdx] = entry
+          const prev = result[existingIdx]
+          result[existingIdx] = {
+            ...entry,
+            id: prev?.id ?? entry?.id,
+            addedAt: prev?.addedAt ?? entry?.addedAt,
+            shareIid: entry?.shareIid ?? prev?.shareIid,
+            iid: entry?.iid ?? prev?.iid,
+          }
         }
         continue
       }

@@ -235,61 +235,6 @@ function claimOrphanHouseShare(buf, { betAmount, winAmount, payoutMultiplier, cu
   return houseShareFieldsFromParsed(claimed)
 }
 
-/**
- * Pick spin row for houseBets.iid — multi + stake; pending FIFO (not any 0× newest).
- * @returns {number} index or -1
- */
-function findRowIndexForShareAttach(prev, { parsedBet, parsedWin, payoutMultiplier, now, sessionStartAt }) {
-  const houseMultiRaw = Number(payoutMultiplier)
-  const houseMulti =
-    Number.isFinite(houseMultiRaw) && houseMultiRaw >= 0
-      ? houseMultiRaw
-      : parsedBet > 0 && parsedWin >= 0
-        ? parsedWin / parsedBet
-        : NaN
-  if (!Number.isFinite(houseMulti) || houseMulti < 0) return -1
-
-  let bestIdx = -1
-  let bestScore = -Infinity
-  for (let i = 0; i < prev.length; i++) {
-    const row = prev[i]
-    if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
-    const age = now - Number(row?.addedAt || 0)
-    if (age > ORPHAN_HOUSE_SHARE_TTL_MS) continue
-    if (row?.shareIid || row?.iid) continue
-    if (row?.isBonus && row?.stoppedBonus) continue
-
-    const rowBet = Number(row?.betAmount) || 0
-    const rowWin = Number(row?.stoppedBonus ? 0 : row?.winAmount) || 0
-    if (rowBet <= 0) continue
-    // Stake gate — identical 0× losses must not thrash across every open row.
-    if (parsedBet > 0) {
-      const tol = Math.max(1, Math.max(rowBet, parsedBet) * 0.25)
-      if (Math.abs(rowBet - parsedBet) > tol) continue
-    }
-    const rowMulti = rowWin / rowBet
-    if (!Number.isFinite(rowMulti) || rowMulti < 0) continue
-
-    const rel = Math.abs(houseMulti - rowMulti) / Math.max(houseMulti, rowMulti, 1e-9)
-    const abs = Math.abs(houseMulti - rowMulti)
-    if (rel > 0.08 && abs > 0.15) continue
-
-    const src = normalizeBetHistorySource(row?.source)
-    const isPending = PENDING_HOUSE_RECONCILE_SOURCES.has(src) && !row?.houseBetReconciled
-    // Align with FIFO reconcile: prefer oldest open placeBet.
-    const score =
-      (isPending ? 2_000_000 : 0) +
-      1_000_000 * (1 - Math.min(1, rel)) +
-      (isPending ? age * 0.5 : -age * 0.5) -
-      (row?.houseBetReconciled ? 100_000 : 0)
-    if (score > bestScore) {
-      bestScore = score
-      bestIdx = i
-    }
-  }
-  return bestIdx
-}
-
 function findPendingRowForHouseReconcile(prev, { betAmount, signature, now, sessionStartAt }) {
   // 1) Prefer newest unreconciled stop-on-bonus row (Hacksaw: otherwise FIFO steals settlement → duplicate wins).
   let bonusIdx = -1
@@ -960,12 +905,6 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     const parsedWin = Number(parsed.stoppedBonus ? 0 : (parsed.winAmount ?? 0)) || 0
     const signature = `${currencyCode}|${parsedBet}|${parsedWin}|${parsed.isBonus ? 1 : 0}`
     const incomingShare = houseShareFieldsFromParsed(parsed)
-    const housePayoutMultiplier =
-      Number(parsed?.payoutMultiplier) > 0
-        ? Number(parsed.payoutMultiplier)
-        : parsedBet > 0
-          ? parsedWin / parsedBet
-          : 0
 
     /** Patch shareIid onto an existing spin row once houseBets.iid arrives. */
     const patchShareOntoRow = (clone, idx, row) => {
@@ -976,44 +915,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     }
 
     setBetHistory((prev) => {
-      // Attach houseBets.iid first — by multiplier + time (not FIFO stake).
+      // Do NOT early-attach share ids — that stamped wrong rows and made the list thrash.
+      // Share ids land only via FIFO reconcile, orphan claim, or pending-only last chance.
       let rows = prev
-      if (isHouseSettlement && incomingShare.shareIid) {
-        const shareIdx = findRowIndexForShareAttach(prev, {
-          parsedBet,
-          parsedWin,
-          payoutMultiplier: housePayoutMultiplier,
-          now,
-          sessionStartAt,
-        })
-        if (shareIdx >= 0 && !prev[shareIdx]?.shareIid && !prev[shareIdx]?.iid) {
-          rows = prev.slice()
-          rows[shareIdx] = { ...rows[shareIdx], ...incomingShare }
-          try {
-            console.warn('[slot-bet-id]', {
-              phase: 'attached-early',
-              idx: shareIdx,
-              shareIid: incomingShare.shareIid,
-              houseMulti: housePayoutMultiplier,
-              rowMulti:
-                (Number(rows[shareIdx]?.betAmount) || 0) > 0
-                  ? (Number(rows[shareIdx]?.winAmount) || 0) / (Number(rows[shareIdx]?.betAmount) || 1)
-                  : null,
-              rowSource: rows[shareIdx]?.source,
-            })
-          } catch (_) {}
-        } else if (shareIdx < 0) {
-          try {
-            console.warn('[slot-bet-id]', {
-              phase: 'no-row-yet',
-              shareIid: incomingShare.shareIid,
-              rows: prev.length,
-              houseMulti: housePayoutMultiplier,
-              parsedBet,
-            })
-          } catch (_) {}
-        }
-      }
       const last = rows[rows.length - 1]
       // Stake houseBets-IDs sind global eindeutig; Provider-roundIds (z. B. Playnetic `n`) nicht in den Seen-Set.
       if (source === 'placebet') {
@@ -1093,7 +997,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
               // Keep house shareIid from the WS row; placeBet has none.
               ...houseShareFieldsFromParsed(row),
               ...claimed,
-              ...(!row.roundId && rid ? { roundId: rid } : {}),
+              ...(!row.roundId && rid && !/^(house|casino):/i.test(String(rid)) ? { roundId: rid } : {}),
               currencyCode: settledCurr,
               betAmount: settledBet,
               winAmount: mergedWin,
@@ -1104,6 +1008,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
               isBonus: !!(row?.isBonus || parsed.isBonus),
               houseBetReconciled: true,
               source: normalizeBetHistorySource(row?.source) || 'housebets',
+              id: row?.id,
+              addedAt: row?.addedAt,
               ...(settledBetUsd?.fxStatus === 'ok' &&
               settledBetUsd.usd != null &&
               Number.isFinite(Number(settledBetUsd.usd))
@@ -1142,24 +1048,19 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       if (rid && isHouseSettlement) {
         const roundKey = `round:${rid}`
         if (seenBetDedupKeysRef.current.has(roundKey)) {
-          // Dedup — still attach shareIid if the earlier row never got it.
+          // Dedup — attach shareIid only onto the row that already carries this round/share key.
           if (incomingShare.shareIid) {
             const clone = rows.slice()
             let patched = false
             for (let i = clone.length - 1; i >= 0; i--) {
               const row = clone[i]
               if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) break
-              if (String(row?.roundId ?? '') === rid || houseShareFieldsFromParsed(row).shareIid === incomingShare.shareIid) {
+              if (
+                String(row?.roundId ?? '') === rid ||
+                houseShareFieldsFromParsed(row).shareIid === incomingShare.shareIid
+              ) {
                 if (patchShareOntoRow(clone, i, row)) patched = true
                 break
-              }
-              const rowBet = Number(row?.betAmount) || 0
-              if (row?.houseBetReconciled && parsedBet > 0 && rowBet > 0) {
-                const tol = Math.max(1, rowBet * 0.08)
-                if (Math.abs(rowBet - parsedBet) <= tol && patchShareOntoRow(clone, i, row)) {
-                  patched = true
-                  break
-                }
               }
             }
             if (patched) {
@@ -1209,7 +1110,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             ...clone[pendingIdx],
             ...incomingShare,
             source: 'housebets',
-            roundId: rid ?? clone[pendingIdx]?.roundId,
+            // Keep placeBet RGS roundId; share lives in shareIid (don't overwrite with house:/…).
+            roundId: clone[pendingIdx]?.roundId ?? rid,
             currencyCode: settledCurr,
             betAmount: settledBet,
             winAmount: settledWin,
@@ -1218,6 +1120,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             stoppedBonus: false,
             isBonus: wasStoppedBonus ? true : !!clone[pendingIdx]?.isBonus,
             houseBetReconciled: true,
+            id: clone[pendingIdx]?.id,
+            addedAt: clone[pendingIdx]?.addedAt,
             ...(settledBetUsd?.fxStatus === 'ok' && settledBetUsd.usd != null && Number.isFinite(Number(settledBetUsd.usd))
               ? { betUsdSnapshotMajor: Number(settledBetUsd.usd) }
               : {}),
@@ -1274,22 +1178,27 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
               return clone
             }
           }
-          recordBetHistoryAudit({
-            slotSlug: slot.slug,
-            event: 'dedup-house-settlement-signature',
-            roundId: rid ?? null,
-            source,
-          })
-          if (rid) {
-            const roundKey = `round:${rid}`
-            seenBetDedupKeysRef.current.add(roundKey)
-            seenBetDedupOrderRef.current.push(roundKey)
-            while (seenBetDedupOrderRef.current.length > BET_HISTORY_DEDUP_MAX) {
-              const old = seenBetDedupOrderRef.current.shift()
-              if (old) seenBetDedupKeysRef.current.delete(old)
+          // Same share already on row, or open place awaiting — drop echo. Otherwise keep looking
+          // so a later same-stake house event can still orphan-buffer for the next placeBet.
+          const rowShare = houseShareFieldsFromParsed(row).shareIid
+          if (isOpenPlace || (rowShare && rowShare === incomingShare.shareIid)) {
+            recordBetHistoryAudit({
+              slotSlug: slot.slug,
+              event: 'dedup-house-settlement-signature',
+              roundId: rid ?? null,
+              source,
+            })
+            if (rid) {
+              const roundKey = `round:${rid}`
+              seenBetDedupKeysRef.current.add(roundKey)
+              seenBetDedupOrderRef.current.push(roundKey)
+              while (seenBetDedupOrderRef.current.length > BET_HISTORY_DEDUP_MAX) {
+                const old = seenBetDedupOrderRef.current.shift()
+                if (old) seenBetDedupKeysRef.current.delete(old)
+              }
             }
+            return rows
           }
-          return rows
         }
         // Same-spin echo only (net vs gross within ~2.5s). Do NOT collapse later same-stake losses.
         for (let i = rows.length - 1; i >= 0; i--) {
@@ -1316,36 +1225,38 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
               return clone
             }
           }
-          recordBetHistoryAudit({
-            slotSlug: slot.slug,
-            event: 'dedup-house-after-reconcile',
-            roundId: rid ?? null,
-            source,
-          })
-          if (rid) {
-            const roundKey = `round:${rid}`
-            seenBetDedupKeysRef.current.add(roundKey)
-            seenBetDedupOrderRef.current.push(roundKey)
-            while (seenBetDedupOrderRef.current.length > BET_HISTORY_DEDUP_MAX) {
-              const old = seenBetDedupOrderRef.current.shift()
-              if (old) seenBetDedupKeysRef.current.delete(old)
+          const rowShare = houseShareFieldsFromParsed(row).shareIid
+          if (rowShare && rowShare === incomingShare.shareIid) {
+            recordBetHistoryAudit({
+              slotSlug: slot.slug,
+              event: 'dedup-house-after-reconcile',
+              roundId: rid ?? null,
+              source,
+            })
+            if (rid) {
+              const roundKey = `round:${rid}`
+              seenBetDedupKeysRef.current.add(roundKey)
+              seenBetDedupOrderRef.current.push(roundKey)
+              while (seenBetDedupOrderRef.current.length > BET_HISTORY_DEDUP_MAX) {
+                const old = seenBetDedupOrderRef.current.shift()
+                if (old) seenBetDedupKeysRef.current.delete(old)
+              }
             }
+            return rows
           }
-          return rows
         }
-        // Last chance: attach share id only (no reconcile / source flip).
+        // Last chance: share-only on the same pending FIFO row (never stamp random 0× rows).
         if (incomingShare.shareIid) {
-          const shareIdx = findRowIndexForShareAttach(rows, {
-            parsedBet,
-            parsedWin,
-            payoutMultiplier: housePayoutMultiplier,
+          const pendingShareIdx = findPendingRowForHouseReconcile(rows, {
+            betAmount: parsedBet,
+            signature,
             now,
             sessionStartAt,
           })
-          if (shareIdx >= 0) {
-            const row = rows[shareIdx]
+          if (pendingShareIdx >= 0) {
+            const row = rows[pendingShareIdx]
             const clone = rows.slice()
-            if (patchShareOntoRow(clone, shareIdx, row)) {
+            if (patchShareOntoRow(clone, pendingShareIdx, row)) {
               recordBetHistoryAudit({
                 slotSlug: slot.slug,
                 event: 'patch-share-last-chance',
@@ -1355,9 +1266,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
               try {
                 console.warn('[slot-bet-id]', {
                   phase: 'attached-last-chance',
-                  idx: shareIdx,
+                  idx: pendingShareIdx,
                   shareIid: incomingShare.shareIid,
-                  houseMulti: housePayoutMultiplier,
                 })
               } catch (_) {}
               return clone

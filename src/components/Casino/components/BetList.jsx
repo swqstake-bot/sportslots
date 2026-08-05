@@ -41,31 +41,29 @@ export default function BetList({
   onOpenSlot = null,
 }) {
   const scrollRef = useRef(null)
-  const lastHeadKeyRef = useRef('')
+  const lastHeadIdRef = useRef('')
   const showIdCol = !!(showBetId || showCopyHouse)
 
+  // Newest first via reverse of chronological input — do NOT re-sort by addedAt
+  // (reconcile patches must not reshuffle / jump the list).
   const displayBets = useMemo(() => {
     const nonZero = (bets || []).filter((b) => (b.betAmount ?? 0) !== 0 || (b.winAmount ?? 0) !== 0)
-    const sorted = [...nonZero].sort((a, b) => {
-      const ta = Number(a?.addedAt ?? 0)
-      const tb = Number(b?.addedAt ?? 0)
-      if (Number.isFinite(ta) && Number.isFinite(tb) && (ta > 0 || tb > 0)) return tb - ta
-      return 0
-    })
-    return Number.isFinite(Number(maxRows)) && Number(maxRows) > 0 ? sorted.slice(0, Number(maxRows)) : sorted
+    const newestFirst = nonZero.slice().reverse()
+    return Number.isFinite(Number(maxRows)) && Number(maxRows) > 0
+      ? newestFirst.slice(0, Number(maxRows))
+      : newestFirst
   }, [bets, maxRows])
 
-  // Stable head only — shareId/win patches must not reset scroll (list "jump").
-  const headKey = displayBets[0]
-    ? `${displayBets[0].id ?? ''}|${displayBets[0].addedAt ?? ''}`
-    : ''
+  const headId = displayBets[0]?.id != null ? String(displayBets[0].id) : ''
 
   useEffect(() => {
-    if (!headKey || headKey === lastHeadKeyRef.current) return
-    lastHeadKeyRef.current = headKey
+    // Scroll to top only when a genuinely new spin becomes the head — never on
+    // shareId / win / source patches of an existing head row.
+    if (!headId || headId === lastHeadIdRef.current) return
+    lastHeadIdRef.current = headId
     const el = scrollRef.current
     if (el) el.scrollTop = 0
-  }, [headKey])
+  }, [headId])
 
   const panelClass = clsx('terminal-panel', minimal && 'terminal-panel--minimal', compact && 'terminal-panel--compact')
   const scrollClass = clsx(
@@ -153,10 +151,11 @@ export default function BetList({
                   ? Number(b.scatterCount)
                   : null
               const canOpenSlot = !showWin && typeof onOpenSlot === 'function' && typeof b.slotSlug === 'string' && b.slotSlug.length > 0
+              const rowKey = b.id != null ? String(b.id) : `idx-${i}-${b.addedAt ?? 0}`
 
               return (
                 <tr
-                  key={b.id ?? i}
+                  key={rowKey}
                   className={clsx(isBonus && 'terminal-row--bonus', compact && 'terminal-tr--compact')}
                 >
                   <td className="terminal-td terminal-td--num">{i + 1}</td>
