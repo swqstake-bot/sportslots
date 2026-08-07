@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.254': [
+    '🐛 Stake.eu GC/SC: Reconcile-Guard gegen 100×-zu-kleine houseBets-Stakes (placeBet bleibt Quelle wenn House vergiftet)',
+  ],
   '1.0.253': [
     '🐛 Stake.eu GC/SC: houseBets-Einsätze nicht mehr 100× zu klein (1 SC ≠ $0.01) — Bet-Liste/Hunter Feed + GC-Rundung wie Fiat',
   ],

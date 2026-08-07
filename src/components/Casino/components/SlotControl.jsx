@@ -1191,9 +1191,18 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           const placeWin = Number(clone[pendingIdx]?.stoppedBonus ? 0 : clone[pendingIdx]?.winAmount) || 0
           const houseWin = Number(parsed.winAmount ?? parsedWin) || 0
           // House/Stake history is source of truth, but avoid net+gross double vs placeBet.
-          const settledBet = parsedBet > 0
-            ? parsedBet
-            : (Math.max(Number(clone[pendingIdx]?.betAmount) || 0, 0) || 0)
+          const placeBetMinor = Math.max(Number(clone[pendingIdx]?.betAmount) || 0, 0)
+          let settledBet = parsedBet > 0 ? parsedBet : placeBetMinor
+          // Guard: poisoned house major→minor (1 SC read as 1¢) vs placeBet 100¢.
+          if (
+            placeBetMinor > 0 &&
+            parsedBet > 0 &&
+            isGoldCoinCurrency(apiCurr || clone[pendingIdx]?.currencyCode || effectiveTarget) &&
+            placeBetMinor >= parsedBet * 50 &&
+            placeBetMinor <= parsedBet * 150
+          ) {
+            settledBet = placeBetMinor
+          }
           const settledWin = resolveReconcileWin(
             placeWin,
             houseWin,
