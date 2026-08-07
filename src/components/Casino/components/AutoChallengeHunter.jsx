@@ -7,6 +7,7 @@ import {
 } from '../api/stakeChallenges'
 import { getProvider } from '../api/providers'
 import { isFiat, isStable, formatAmount, formatBetLabel, formatChallengeAmountWithSymbol, toUnits, toMinor, ZERO_DECIMAL_CURRENCIES } from '../utils/formatAmount'
+import { isGoldCoinCurrency } from '../utils/currencyMeta'
 import { parseBetResponse } from '../utils/parseBetResponse'
 import { Button } from './ui/Button'
 import { CURRENCY_GROUPS, EU_CURRENCIES, PROVIDER_CURRENCIES, isEuGoldCoinCode } from '../constants/currencies'
@@ -178,7 +179,7 @@ function effectiveUsdAfterRounding(minBetUsd, rate, tCurr) {
   let targetBetUnits = minBetUsd / rate
   if (ZERO_DECIMAL_CURRENCIES.includes(c)) {
     targetBetUnits = Math.ceil(targetBetUnits)
-  } else if (isFiat(c)) {
+  } else if (isFiat(c) || isGoldCoinCurrency(c)) {
     targetBetUnits = Math.ceil(targetBetUnits * 100) / 100
   } else {
     targetBetUnits = Math.ceil(targetBetUnits * 1e8) / 1e8
@@ -314,7 +315,7 @@ function computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd) {
   let targetBetUnits = minBetUsd / rate
   if (ZERO_DECIMAL_CURRENCIES.includes(tCurr)) {
     targetBetUnits = Math.ceil(targetBetUnits)
-  } else if (isFiat(tCurr)) {
+  } else if (isFiat(tCurr) || isGoldCoinCurrency(tCurr)) {
     targetBetUnits = Math.ceil(targetBetUnits * 100) / 100
   } else {
     targetBetUnits = Math.ceil(targetBetUnits * 1e8) / 1e8

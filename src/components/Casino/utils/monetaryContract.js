@@ -105,16 +105,19 @@ export function convertToUsd(value, currencyCode, unit = 'minor', currencyRates 
   return convertMinorToUsdMajor(value, currencyCode, currencyRates)
 }
 
-export function inferHouseBetAmountUnit(rawAmount) {
+export function inferHouseBetAmountUnit(rawAmount, currencyCode) {
   const raw = Number(rawAmount)
   if (!Number.isFinite(raw) || raw <= 0) return 'major'
-  // GraphQL houseBets often sends integer tokens for minor amounts.
+  // Stake.eu GC/SC: GraphQL houseBets amounts are always major (0.1, 1, 1000), even when integer.
+  // Treating integers as minor made 1 SC → $0.01 in the bet list after reconcile.
+  if (isGoldCoinCurrency(currencyCode)) return 'major'
+  // GraphQL houseBets often sends integer tokens for crypto/fiat minor amounts.
   if (Number.isInteger(raw)) return 'minor'
   return 'major'
 }
 
 export function normalizeHouseBetAmount(rawAmount, currencyCode) {
-  const unit = inferHouseBetAmountUnit(rawAmount)
+  const unit = inferHouseBetAmountUnit(rawAmount, currencyCode)
   return normalizeMonetaryAmount(rawAmount, currencyCode, unit)
 }
 

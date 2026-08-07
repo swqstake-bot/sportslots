@@ -12,7 +12,7 @@ export const FIAT_CURRENCIES = [
 
 /** Stake.eu GoldCoins — wallet codes + RGS aliases.
  * Wallet: gold/sweeps. RGS/providers: XGC/XSC (Stake Engine) and XSWP (Hacksaw/Pragmatic HAR). */
-export const GOLD_COIN_CURRENCIES = ['gold', 'sweeps', 'xgc', 'xsc', 'xswp']
+export const GOLD_COIN_CURRENCIES = ['gold', 'sweeps', 'xgc', 'xsc', 'xswp', 'gc', 'sc']
 
 export const USD_LIKE_CURRENCIES = ['usd', 'usdc', 'usdt']
 

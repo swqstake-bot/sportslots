@@ -125,14 +125,16 @@ export function convertToUsd(value: unknown, currencyCode: unknown, unit: Moneta
   }
 }
 
-export function inferHouseBetAmountUnit(rawAmount: unknown): MonetaryUnit {
+export function inferHouseBetAmountUnit(rawAmount: unknown, currencyCode?: unknown): MonetaryUnit {
   const raw = Number(rawAmount)
   if (!Number.isFinite(raw) || raw <= 0) return 'major'
+  // Stake.eu GC/SC: houseBets amounts are always major, even when integer (1 = 1.00 SC).
+  if (isGoldCoinCurrency(currencyCode)) return 'major'
   return Number.isInteger(raw) ? 'minor' : 'major'
 }
 
 export function normalizeHouseBetAmount(rawAmount: unknown, currencyCode: unknown): MonetaryAmount {
-  return normalizeAmount(rawAmount, currencyCode, inferHouseBetAmountUnit(rawAmount))
+  return normalizeAmount(rawAmount, currencyCode, inferHouseBetAmountUnit(rawAmount, currencyCode))
 }
 
 export function netMinor(winMinor: unknown, betMinor: unknown): number {

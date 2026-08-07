@@ -2,6 +2,7 @@
  * Bet sizing for Autorun (same rounding / bet-level logic as Challenge Hunter).
  */
 import { isFiat, toMinor, toUnits, ZERO_DECIMAL_CURRENCIES } from '../../utils/formatAmount'
+import { isGoldCoinCurrency } from '../../utils/currencyMeta'
 
 export function pickSmallestBetLevelForMinUsd(
   betLevels: number[],
@@ -34,7 +35,8 @@ export function computeBetFromMinBetAndSession(
   let targetBetUnits = minBetUsd / rate
   if (ZERO_DECIMAL_CURRENCIES.includes(tCurr)) {
     targetBetUnits = Math.ceil(targetBetUnits)
-  } else if (isFiat(tCurr)) {
+  } else if (isFiat(tCurr) || isGoldCoinCurrency(tCurr)) {
+    // GC/SC are 2-decimal like fiat — not crypto 1e8 (that undersized EU stakes).
     targetBetUnits = Math.ceil(targetBetUnits * 100) / 100
   } else {
     targetBetUnits = Math.ceil(targetBetUnits * 1e8) / 1e8

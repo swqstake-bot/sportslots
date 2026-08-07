@@ -1052,8 +1052,17 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
               apiCurr || row?.currencyCode || effectiveTarget || 'usd'
             )
             const rowBet = Number(row?.betAmount) || 0
-            // House/Stake amount is source of truth when both present (matches bet list).
-            const settledBet = rowBet > 0 ? rowBet : parsedBet
+            // Prefer placeBet when house stake looks 100× too small (legacy integer-as-minor poison).
+            let settledBet = rowBet > 0 ? rowBet : parsedBet
+            if (
+              parsedBet > 0 &&
+              rowBet > 0 &&
+              isGoldCoinCurrency(settledCurr) &&
+              parsedBet >= rowBet * 50 &&
+              parsedBet <= rowBet * 150
+            ) {
+              settledBet = parsedBet
+            }
             const mergedWin = resolveReconcileWin(
               placeWin,
               houseWin,
