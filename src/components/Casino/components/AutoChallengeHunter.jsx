@@ -898,6 +898,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     let didFlush = false
     if (activeRunsUiDirtyRef.current) {
       activeRunsUiDirtyRef.current = false
+      // Ref is source of truth while dirty — never drop runs that only exist in React.
       setActiveRuns({ ...(activeRunsRef.current || {}) })
       didFlush = true
     }
@@ -931,6 +932,16 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     },
     [flushActiveRunsToReact]
   )
+  /** Create/replace a run in the ref first so a delayed flush cannot wipe a brand-new card. */
+  const upsertActiveRunInRef = useCallback(
+    (runId, runData, { immediate = true } = {}) => {
+      const rid = String(runId || '')
+      if (!rid || !runData || typeof runData !== 'object') return
+      activeRunsRef.current = { ...(activeRunsRef.current || {}), [rid]: runData }
+      scheduleActiveRunsUiFlush({ immediate })
+    },
+    [scheduleActiveRunsUiFlush]
+  )
   const patchActiveRunInRef = useCallback((runId, patch) => {
     const rid = String(runId || '')
     if (!rid || !patch || typeof patch !== 'object') return
@@ -940,6 +951,17 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     activeRunsRef.current = { ...ar, [rid]: { ...run, ...patch } }
     activeRunsUiDirtyRef.current = true
   }, [])
+  const removeActiveRunFromRef = useCallback(
+    (runId, { immediate = true } = {}) => {
+      const rid = String(runId || '')
+      if (!rid) return
+      const ar = { ...(activeRunsRef.current || {}) }
+      delete ar[rid]
+      activeRunsRef.current = ar
+      scheduleActiveRunsUiFlush({ immediate })
+    },
+    [scheduleActiveRunsUiFlush]
+  )
   const resolveChallengeSlugById = useCallback(
     (challengeId) => {
       const row = (challenges || []).find((c) => String(c?.id || '') === String(challengeId || ''))
@@ -1780,35 +1802,34 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     if (!isEuGoldCoins && isEuGoldCoinCode(forced)) forced = ''
     runnersRef.current[runId] = { stop: false }
     runBestMultiSyncRef.current[runId] = 0
-    setActiveRuns((prev) => ({
-      ...prev,
-      [runId]: {
-        challengeId,
-        runId,
-        currencySlotIndex,
-        status: 'running',
-        spins: 0,
-        wagered: 0,
-        /** Gleiche USD-Einsatz-Spur wie Session-KPI (kpi.wagered), nicht nachträglich minorToUsd(Summe Minor). */
-        wageredUsd: 0,
-        /** Kumuliertes Spin-Netto in USD: Σ(win − bet) = Σ(kpi.profit). */
-        wonUsd: 0,
-        balance: 0,
-        currentBet: 0,
-        slotName: slot.name,
-        slotSlug: gSlug,
-        providerId: slot.providerId || 'stakeEngine',
-        bestMultiRun: 0,
-        bestBetId: null,
-        stakeRgsSeedResetEvery: initialStakeRgsSeedResetEvery,
-        targetMultiplier: challenge.targetMultiplier,
-        prizeDisplay: prizeParts.main,
-        prizeHint: prizeParts.hint,
-        startTime: Date.now(),
-        forcedTargetCurrency: forced || null,
-        runSourceCurrency: sCurr,
-      },
-    }))
+    const newRunCard = {
+      challengeId,
+      runId,
+      currencySlotIndex,
+      status: 'running',
+      spins: 0,
+      wagered: 0,
+      /** Gleiche USD-Einsatz-Spur wie Session-KPI (kpi.wagered), nicht nachträglich minorToUsd(Summe Minor). */
+      wageredUsd: 0,
+      /** Kumuliertes Spin-Netto in USD: Σ(win − bet) = Σ(kpi.profit). */
+      wonUsd: 0,
+      balance: 0,
+      currentBet: 0,
+      slotName: slot.name,
+      slotSlug: gSlug,
+      providerId: slot.providerId || 'stakeEngine',
+      bestMultiRun: 0,
+      bestBetId: null,
+      stakeRgsSeedResetEvery: initialStakeRgsSeedResetEvery,
+      targetMultiplier: challenge.targetMultiplier,
+      prizeDisplay: prizeParts.main,
+      prizeHint: prizeParts.hint,
+      startTime: Date.now(),
+      forcedTargetCurrency: forced || null,
+      runSourceCurrency: sCurr,
+    }
+    // Ref first + immediate flush — otherwise a dirty 400ms flush can overwrite React and drop this card.
+    upsertActiveRunInRef(runId, newRunCard, { immediate: true })
 
     const copyLabel = currencySlotIndex > 0 ? ` (Copy #${currencySlotIndex + 1})` : ''
     const manualCurrLabel = forced ? ` · ${forced.toUpperCase()} (manual)` : ''
@@ -2088,14 +2109,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           (betUsdLine != null ? ` (≈ $${betUsdLine} USD)` : '') +
           ` · challenge minimum (Stake, USD-only constraint): $${minBetUsd}`
       )
-      setActiveRuns((prev) => ({
-        ...prev,
-        [runId]: {
-          ...prev[runId],
-          currentBet: betAmount,
-          runCurrency: tCurr,
-        },
-      }))
+      patchActiveRunInRef(runId, { currentBet: betAmount, runCurrency: tCurr })
+      scheduleActiveRunsUiFlush({ immediate: true })
 
       let stopReason = null
       let targetHit = false
@@ -2621,14 +2636,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     noteSessionFairnessId(session)
                     const computed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
                     betAmount = computed.betAmount
-                    setActiveRuns((prev) => ({
-                      ...prev,
-                      [runId]: {
-                        ...prev[runId],
-                        currentBet: betAmount,
-                        runCurrency: tCurr,
-                      },
-                    }))
+                    patchActiveRunInRef(runId, { currentBet: betAmount, runCurrency: tCurr })
+                    scheduleActiveRunsUiFlush({ immediate: true })
                     log(
                       `Seed rotated (RGS game ${stakeGameIdForFairness} · client ${rotated.seed ?? '—'}) · new session · ${String(tCurr).toUpperCase()} · stake ${formatAmount(betAmount, tCurr)}`
                     )
@@ -2716,14 +2725,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 noteSessionFairnessId(session)
                 const computed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
                 betAmount = computed.betAmount
-                setActiveRuns((prev) => ({
-                  ...prev,
-                  [runId]: {
-                    ...prev[runId],
-                    currentBet: betAmount,
-                    runCurrency: tCurr,
-                  },
-                }))
+                patchActiveRunInRef(runId, { currentBet: betAmount, runCurrency: tCurr })
+                scheduleActiveRunsUiFlush({ immediate: true })
                 log(
                   `Session restarted · ${String(tCurr).toUpperCase()} · stake ${formatAmount(betAmount, tCurr)} (≈ $${computed.usdAt.toFixed(2)} USD)`
                 )
@@ -2753,14 +2756,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               noteSessionFairnessId(session)
               const computed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
               betAmount = computed.betAmount
-              setActiveRuns((prev) => ({
-                ...prev,
-                [runId]: {
-                  ...prev[runId],
-                  currentBet: betAmount,
-                  runCurrency: tCurr,
-                },
-              }))
+              patchActiveRunInRef(runId, { currentBet: betAmount, runCurrency: tCurr })
+              scheduleActiveRunsUiFlush({ immediate: true })
               await new Promise((r) => setTimeout(r, 350))
               continue
             } catch (recoveryErr) {
@@ -2786,10 +2783,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
 
     } catch (e) {
       log(`Challenge start error: ${e.message}`)
-      setActiveRuns((prev) => ({
-        ...prev,
-        [runId]: { ...prev[runId], status: 'failed' },
-      }))
+      patchActiveRunInRef(runId, { status: 'failed' })
+      scheduleActiveRunsUiFlush({ immediate: true })
     } finally {
       delete runnersRef.current[runId]
       clearPendingHouseBetsForRun(pendingHouseBetMatchRef.current, runId)
@@ -3044,11 +3039,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       }
 
       // Remove old finished run card before starting/re-queueing.
-      setActiveRuns((prev) => {
-        const next = { ...prev }
-        delete next[runId]
-        return next
-      })
+      removeActiveRunFromRef(runId, { immediate: true })
       try {
         delete runBestMultiSyncRef.current[runId]
       } catch (_) {}
@@ -3066,7 +3057,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       setQueue((q) => [...q, nextQueueItem])
       log(`Run re-queued: ${run.slotName || run.challengeId}`)
     },
-    [log, maxParallelClamped, runningCount]
+    [log, maxParallelClamped, runningCount, removeActiveRunFromRef]
   )
 
   const removeRun = (runId) => {
@@ -3076,11 +3067,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       runnersRef.current[runId].stop = true
       delete runnersRef.current[runId]
     }
-    setActiveRuns((prev) => {
-      const next = { ...prev }
-      delete next[runId]
-      return next
-    })
+    removeActiveRunFromRef(runId, { immediate: true })
     setQueue((q) => q.filter((item) => normalizeQueueItem(item).runId !== runId))
     setTimeout(() => {
       if (!cid) return
@@ -4151,11 +4138,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                     bestMultiBySlot={bestMultiBySlot}
                     onLog={log}
                     onSeedResetChange={(runId, n) => {
-                      setActiveRuns((prev) => {
-                        const cur = prev[runId]
-                        if (!cur) return prev
-                        return { ...prev, [runId]: { ...cur, stakeRgsSeedResetEvery: n } }
-                      })
+                      patchActiveRunInRef(runId, { stakeRgsSeedResetEvery: n })
+                      scheduleActiveRunsUiFlush({ immediate: true })
                     }}
                     onStopRun={stopRunByRunId}
                     onRestartRun={restartRunByRunId}

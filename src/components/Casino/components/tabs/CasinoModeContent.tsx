@@ -1,3 +1,4 @@
+import { useEffect, useState, type ReactNode } from 'react'
 import OriginalsView from '../OriginalsView'
 import BonusHuntControl from '../BonusHuntControl'
 import BetList from '../BetList'
@@ -6,6 +7,8 @@ import { PlayModeContent } from './PlayModeContent'
 import { SectionCard } from '../ui/SectionCard'
 import { ChallengeHubView } from '../ChallengeHubView'
 import type { CasinoSlotInstance, SlotSet, CasinoChallengeSelection } from '../../types'
+
+const HUB_MODES = new Set(['challengeHub', 'challenges', 'telegram', 'forum'])
 
 interface CasinoModeContentProps {
   mode: string
@@ -93,10 +96,19 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
     handleDiscoveredSlots,
     handleSelectChallenge,
   } = props
-  if (mode === 'originals') return <OriginalsView accessToken={token} />
 
-  if (mode === 'play') {
-    return (
+  const isHubMode = HUB_MODES.has(mode)
+  // Keep hub mounted after first visit so queue/activeRuns survive Slots ↔ Hub switches.
+  const [hubKeepAlive, setHubKeepAlive] = useState(false)
+  useEffect(() => {
+    if (isHubMode) setHubKeepAlive(true)
+  }, [isHubMode])
+
+  let primary: ReactNode = null
+  if (mode === 'originals') {
+    primary = <OriginalsView accessToken={token} />
+  } else if (mode === 'play') {
+    primary = (
       <PlayModeContent
         webSlots={webSlots}
         slotsLoading={slotsLoading}
@@ -133,22 +145,8 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
         handlePlayLogUpdate={handlePlayLogUpdate}
       />
     )
-  }
-
-  if (mode === 'challengeHub' || mode === 'challenges' || mode === 'telegram' || mode === 'forum') {
-    return (
-      <ChallengeHubView
-        accessToken={token}
-        webSlots={webSlots as any}
-        onDiscoveredSlots={handleDiscoveredSlots}
-        onSelectChallenge={handleSelectChallenge}
-        onHubStatsChange={() => {}}
-      />
-    )
-  }
-
-  if (mode === 'bonushunt') {
-    return (
+  } else if (mode === 'bonushunt') {
+    primary = (
       <div className="bonushunt-wrapper">
         <BonusHuntControl
           accessToken={token}
@@ -176,10 +174,8 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
         />
       </div>
     )
-  }
-
-  if (mode === 'logs') {
-    return (
+  } else if (mode === 'logs') {
+    primary = (
       <div className="space-y-6">
         <SectionCard title="Recent bets">
           <BetList bets={recentBets} totalCount={recentBets?.length ?? 0} currencyCode="usd" emptyMessage="No bets found" />
@@ -189,5 +185,22 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
     )
   }
 
-  return null
+  const showHub = hubKeepAlive || isHubMode
+
+  return (
+    <>
+      {showHub ? (
+        <div className={isHubMode ? 'min-w-0' : 'hidden'} aria-hidden={!isHubMode}>
+          <ChallengeHubView
+            accessToken={token}
+            webSlots={webSlots as any}
+            onDiscoveredSlots={handleDiscoveredSlots}
+            onSelectChallenge={handleSelectChallenge}
+            onHubStatsChange={() => {}}
+          />
+        </div>
+      ) : null}
+      {!isHubMode ? primary : null}
+    </>
+  )
 }

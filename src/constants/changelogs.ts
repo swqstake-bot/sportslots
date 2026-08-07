@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.256': [
+    '🐛 Challenge Hub: Übersicht bleibt beim Wechsel zu Slots (Hub bleibt gemountet)',
+    '🐛 Challenge Hub: neue Runs nicht mehr von Ref-Flush aus der Übersicht geworfen (spinnt ohne Karte)',
+  ],
   '1.0.255': [
     '🐛 Stake.eu Stake Engine (Reel Racing): RGS-Currency XEC nur auf .eu als SC (1e6) — nicht mehr als Crypto → immer 10c; .com XEC bleibt eCash',
   ],
