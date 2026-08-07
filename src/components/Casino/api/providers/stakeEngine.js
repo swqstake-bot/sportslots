@@ -21,8 +21,30 @@
 import { startThirdPartySession } from '../stake'
 import { getEffectiveBetAmount } from '../../constants/bet'
 import { logApiCall } from '../../utils/apiLogger'
-import { isFiatCurrency, isGoldCoinCurrency, isZeroDecimalCurrency, canonicalizeGoldCoinCode } from '../../utils/currencyMeta'
+import {
+  isFiatCurrency,
+  isGoldCoinCurrency,
+  isZeroDecimalCurrency,
+  canonicalizeStakeEngineRgsCurrency,
+} from '../../utils/currencyMeta'
 import { normalizeProviderError } from './providerErrors'
+
+/** EU GoldCoins wallet (gold/sweeps) — never true for .com crypto/fiat sessions. */
+function isEuGoldCoinWallet(sourceCurrency, targetCurrency) {
+  return isGoldCoinCurrency(sourceCurrency) || isGoldCoinCurrency(targetCurrency)
+}
+
+/** Currency used for cent/crypto amount math (may differ from RGS play `currency`, e.g. XEC→sweeps on .eu). */
+function sessionAmountMathCurrency(session) {
+  return (
+    session?.amountMathCurrency ||
+    (session?.euGoldSession
+      ? canonicalizeStakeEngineRgsCurrency(session?.currencyCode, { euGoldSession: true })
+      : null) ||
+    session?.currencyCode ||
+    'eur'
+  )
+}
 
 /** RGS: ganzzahliger Betrag; 1.000.000 = 1,0 Währungseinheit (vgl. stake-engine API_MULTIPLIER). */
 export const STAKE_ENGINE_API_MULTIPLIER = 1_000_000
@@ -272,13 +294,12 @@ async function rgsPost(rgsUrl, body) {
 }
 
 export async function startSession(accessToken, slotSlug, sourceCurrency, targetCurrency, opts = {}) {
-  const session = await startThirdPartySession(
-    accessToken,
-    slotSlug,
-    sourceCurrency?.toLowerCase() || 'usdc',
-    targetCurrency?.toLowerCase() || 'eur',
-    opts
-  )
+  const src = sourceCurrency?.toLowerCase() || 'usdc'
+  const tgt = targetCurrency?.toLowerCase() || 'eur'
+  // Only stake.eu uses gold/sweeps wallets; gate XEC→SC math so .com eCash (XEC) stays crypto.
+  const euGoldSession = isEuGoldCoinWallet(src, tgt)
+
+  const session = await startThirdPartySession(accessToken, slotSlug, src, tgt, opts)
   const config = typeof session?.config === 'string' ? session.config : session?.config?.url
   const parsed = parseConfigFromUrl(config)
   if (!parsed?.sessionID || !parsed?.rgsUrl) {
@@ -306,9 +327,12 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const configMode = configData?.mode || configData?.baseMode || configData?.defaultMode || null
   const playMode = configMode || getStakeEnginePlayModeForSlot(slotSlug) || null
   const betLevelsRaw = configData?.betLevels?.map((v) => Number(v)).filter((b) => b > 0) ?? []
+  // API play currency (may be XEC on .eu); math currency is wallet-facing (sweeps/gold).
+  const apiCurrencyCode = String(authData?.balance?.currency || tgt || 'eur').toUpperCase()
+  const amountMathCurrency = canonicalizeStakeEngineRgsCurrency(apiCurrencyCode, { euGoldSession }) || tgt
   const betLevels = betLevelsRaw.map((v) => {
     const units = v / STAKE_ENGINE_API_MULTIPLIER
-    const curr = (targetCurrency || 'eur').toLowerCase()
+    const curr = amountMathCurrency
 
     if (isZeroDecimalCurrency(curr)) {
       return Math.round(units)
@@ -326,10 +350,9 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
 
   const authBalance = authData?.balance
   const authBalanceRaw = authBalance?.amount != null ? Number(authBalance.amount) : null
-  const authCurrency = (authBalance?.currency || targetCurrency || 'eur').toLowerCase()
   const authBalanceUnits = authBalanceRaw != null ? authBalanceRaw / STAKE_ENGINE_API_MULTIPLIER : null
   const initialBalance = authBalanceUnits != null
-    ? isZeroDecimalCurrency(authCurrency)
+    ? isZeroDecimalCurrency(amountMathCurrency)
       ? Math.round(authBalanceUnits)
       : Math.round(authBalanceUnits * 100)
     : null
@@ -339,7 +362,11 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     rgsUrl: parsed.rgsUrl,
     betLevels: betLevels.filter((b) => b > 0),
     betLevelsRaw,
-    currencyCode: authData?.balance?.currency || (targetCurrency || 'eur').toUpperCase(),
+    /** Exact RGS play currency (HAR Reel Racing: XEC). */
+    currencyCode: apiCurrencyCode,
+    /** Wallet math code — on .eu XEC→sweeps; on .com XEC stays xec (crypto). */
+    amountMathCurrency,
+    euGoldSession,
     stepBet,
     minBet,
     maxBet,
@@ -384,7 +411,8 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
   const useAnte = extraBet && slotSlug.startsWith('paperclip-')
   const effectiveBet = getEffectiveBetAmount(betAmount, extraBet, slotSlug || undefined)
   const amountForApi = useAnte ? betAmount : effectiveBet
-  let amount = toStakeEngineAmount(amountForApi, session?.currencyCode || 'eur')
+  // Use wallet math currency (sweeps), not raw RGS code (XEC) — else EU SC bets collapse to min/10c.
+  let amount = toStakeEngineAmount(amountForApi, sessionAmountMathCurrency(session))
 
   const stepBet = session?.stepBet ?? 100_000
   const minBet = session?.minBet ?? 100_000
@@ -524,18 +552,18 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
     // Falls RGS sowohl winAmount als auch payoutMultiplier liefert: payoutMultiplier bevorzugen,
     // da einige Slots (z.B. Maze Quest) winAmount in anderem Format liefern können.
     const winInUnitsFromRaw = winAmount / STAKE_ENGINE_API_MULTIPLIER
-    const curr = (playData?.balance?.currency || session?.currencyCode || 'eur').toLowerCase()
+    const curr = sessionAmountMathCurrency(session).toLowerCase()
     const centCurrency = isFiatCurrency(curr) || isGoldCoinCurrency(curr)
     const wouldBeZero = centCurrency && winInUnitsFromRaw < 0.001
     if (wouldBeZero) winAmount = fromPayoutMult
   }
   const balanceObj = playData?.balance || {}
   const balanceRaw = balanceObj?.amount != null ? Number(balanceObj.amount) : null
-  // RGS uses XGC/XSC; wallet/UI/houseBets use gold/sweeps — keep cent math on either code.
+  // RGS: XGC/XSC/XEC(.eu only); wallet/UI/houseBets: gold/sweeps.
   const respCurrencyRaw = (balanceObj?.currency || session?.currencyCode || 'EUR').toLowerCase()
-  const respCurrency = isGoldCoinCurrency(respCurrencyRaw)
-    ? canonicalizeGoldCoinCode(respCurrencyRaw)
-    : respCurrencyRaw
+  const respCurrency = canonicalizeStakeEngineRgsCurrency(respCurrencyRaw, {
+    euGoldSession: Boolean(session?.euGoldSession),
+  })
   const balanceUnits = balanceRaw != null ? balanceRaw / STAKE_ENGINE_API_MULTIPLIER : null
   const balanceMinor = balanceUnits != null
     ? isZeroDecimalCurrency(respCurrency)

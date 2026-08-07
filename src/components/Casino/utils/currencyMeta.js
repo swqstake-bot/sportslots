@@ -11,7 +11,9 @@ export const FIAT_CURRENCIES = [
 ]
 
 /** Stake.eu GoldCoins — wallet codes + RGS aliases.
- * Wallet: gold/sweeps. RGS/providers: XGC/XSC (Stake Engine) and XSWP (Hacksaw/Pragmatic HAR). */
+ * Wallet: gold/sweeps. RGS/providers: XGC/XSC (Stake Engine) and XSWP (Hacksaw/Pragmatic HAR).
+ * XEC is NOT global: on stake.com it is eCash crypto; on stake.eu RGS (Reel Racing) it means Sweeps.
+ * Remap only via canonicalizeStakeEngineRgsCurrency(..., { euGoldSession: true }). */
 export const GOLD_COIN_CURRENCIES = ['gold', 'sweeps', 'xgc', 'xsc', 'xswp', 'gc', 'sc']
 
 export const USD_LIKE_CURRENCIES = ['usd', 'usdc', 'usdt']
@@ -20,11 +22,23 @@ export function normalizeCurrencyCode(currencyCode) {
   return String(currencyCode || '').toLowerCase()
 }
 
-/** Map RGS aliases → wallet codes used in the UI (gold/sweeps). */
+/** Map RGS aliases → wallet codes used in the UI (gold/sweeps). Does not remap XEC (.com eCash). */
 export function canonicalizeGoldCoinCode(currencyCode) {
   const c = normalizeCurrencyCode(currencyCode)
   if (c === 'xgc' || c === 'gold' || c === 'gc') return 'gold'
   if (c === 'xsc' || c === 'xswp' || c === 'sweeps' || c === 'sc') return 'sweeps'
+  return c
+}
+
+/**
+ * Stake Engine authenticate/play currency → amount-math wallet code.
+ * HAR Reel Racing (stake.eu): play `{ currency: "XEC", amount: 100000 }` = 0.10 SC.
+ * Only remap XEC when the session wallet is EU GoldCoins — never on .com (eCash).
+ */
+export function canonicalizeStakeEngineRgsCurrency(currencyCode, { euGoldSession = false } = {}) {
+  const c = normalizeCurrencyCode(currencyCode)
+  if (euGoldSession && c === 'xec') return 'sweeps'
+  if (isGoldCoinCurrency(c)) return canonicalizeGoldCoinCode(c)
   return c
 }
 

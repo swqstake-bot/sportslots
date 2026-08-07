@@ -6,7 +6,8 @@ const FIAT = new Set([
   'eur', 'usd', 'usdc', 'usdt', 'ars', 'brl', 'mxn', 'cad', 'aud', 'clp', 'jpy', 'krw', 'inr', 'idr', 'php',
   'pkr', 'pln', 'ngn', 'cny', 'rub', 'try', 'dkk', 'pen', 'cop',
 ])
-/** Stake.eu GoldCoins — wallet + RGS aliases (XGC/XSC/XSWP). 2-decimal minor; display FX 1:1. */
+/** Stake.eu GoldCoins — wallet + RGS aliases (XGC/XSC/XSWP). 2-decimal minor; display FX 1:1.
+ * XEC is not included: .com = eCash crypto; .eu RGS Sweeps is remapped only in stakeEngine. */
 const GOLD_COINS = new Set(['gold', 'sweeps', 'xgc', 'xsc', 'xswp', 'gc', 'sc'])
 const USD_LIKE = new Set(['usd', 'usdc', 'usdt'])
 

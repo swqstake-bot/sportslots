@@ -7,6 +7,7 @@
 export function normalizeStakeSessionCurrency(code) {
   const c = String(code || '').toLowerCase().trim()
   if (c === 'gc' || c === 'xgc') return 'gold'
+  // Do not map xec→sweeps here: on stake.com XEC is eCash. EU RGS XEC is handled in stakeEngine.
   if (c === 'sc' || c === 'xsc' || c === 'xswp') return 'sweeps'
   return c
 }

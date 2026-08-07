@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.255': [
+    '🐛 Stake.eu Stake Engine (Reel Racing): RGS-Currency XEC nur auf .eu als SC (1e6) — nicht mehr als Crypto → immer 10c; .com XEC bleibt eCash',
+  ],
   '1.0.254': [
     '🐛 Stake.eu GC/SC: Reconcile-Guard gegen 100×-zu-kleine houseBets-Stakes (placeBet bleibt Quelle wenn House vergiftet)',
   ],

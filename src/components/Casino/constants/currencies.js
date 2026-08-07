@@ -103,7 +103,7 @@ export const EU_CURRENCY_CODES = ['gold', 'sweeps']
 export const EU_CURRENCIES = CURRENCY_GROUPS.goldCoins
 
 export function isEuGoldCoinCode(code) {
-  // Wallet: gold/sweeps; RGS may report XGC/XSC
+  // Wallet: gold/sweeps; known RGS aliases XGC/XSC/XSWP (XEC→SC only in stakeEngine on .eu)
   return isGoldCoinCurrency(code)
 }
 
