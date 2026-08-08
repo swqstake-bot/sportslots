@@ -1,4 +1,11 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.258': [
+    '🐛 Challenge Hunter: große Wins wieder in Net/Session-P/L — Multi×Einsatz wenn placeBet win=0, houseBets top-up',
+    '✨ Challenge Hub Resource mode: P/L, Bets/s, Session-Highest-Multis, Start/Stop All (weniger UI-Last, kein Bet-Feed)',
+    '⚡ Session-Highest-Multis: sofort nach Spin (nicht erst nach houseBets-Defer)',
+    '⚡ Hunter: Max-Speed Fast-Path — kein client-side Spin-Throttle / adaptive Pace / 429-Connection-Reset',
+    '🐛 Challenges/Hunter: Claimed/Completed-Liste nutzt ChallengeFilterType finished (nicht completed/claimed → kein GraphQL 400)',
+  ],
   '1.0.257': [
     '✨ LK7 Flower Poker (Stake Engine): Provider + Play mode "base" (HAR), ohne currency im play-Body',
   ],

@@ -513,10 +513,12 @@ export async function fetchAllChallenges(accessToken, options = {}) {
   return { challenges: filtered, totalCount: filtered.length || totalCount }
 }
 
-const CLAIMED_LIST_CANDIDATES = [
-  { type: 'claimed', count: 'claimed', sort: 'startAt', direction: 'desc' },
-  { type: 'claimed', count: 'claimed', sort: 'prize', direction: 'desc' },
-  { type: 'completed', count: 'completed', sort: 'startAt', direction: 'desc' },
+/** Stake ChallengeFilterType / ChallengeCountType for all-claimed / completed list. */
+const CHALLENGE_FILTER_FINISHED = 'finished'
+
+const FINISHED_LIST_CANDIDATES = [
+  { type: CHALLENGE_FILTER_FINISHED, count: CHALLENGE_FILTER_FINISHED, sort: 'startAt', direction: 'desc' },
+  { type: CHALLENGE_FILTER_FINISHED, count: CHALLENGE_FILTER_FINISHED, sort: 'prize', direction: 'desc' },
 ]
 
 function isChallengeClaimedRow(c) {
@@ -529,10 +531,11 @@ function isChallengeClaimedRow(c) {
 
 /**
  * Erste Seite der Stake „All Claimed“-Liste (casino/challenges/all-claimed).
+ * GraphQL: type/count = finished (nicht claimed/completed — die Enums existieren nicht).
  * Reicht zum Abgleich laufender Hunter-Runs — neueste Claims stehen oben.
  */
 export async function fetchClaimedChallengesFirstPage(accessToken) {
-  for (const cand of CLAIMED_LIST_CANDIDATES) {
+  for (const cand of FINISHED_LIST_CANDIDATES) {
     try {
       const { challenges, totalCount } = await fetchChallengeList(accessToken, {
         limit: PAGE_SIZE,
@@ -548,21 +551,34 @@ export async function fetchClaimedChallengesFirstPage(accessToken) {
         .map(mapChallengeRow)
       return { challenges: rows, totalCount, filter: cand }
     } catch (err) {
-      console.warn('[stakeChallenges] claimed list candidate failed:', cand.type, err?.message || err)
+      console.warn('[stakeChallenges] finished list candidate failed:', cand.type, err?.message || err)
     }
   }
   return { challenges: [], totalCount: 0, filter: null }
 }
 
 /**
- * Lädt abgeschlossene Challenges (type: completed).
+ * Lädt abgeschlossene Challenges (ChallengeFilterType: finished).
  */
 export async function fetchCompletedChallenges(accessToken, options = {}) {
   const { segment = 'all' } = options
-  // Stake enum variants for "completed" differ between environments and can trigger HTTP 400.
-  // Keep this function non-breaking by deriving completion from the safe available feed.
-  const { challenges: safeRows = [] } = await fetchAllChallenges(accessToken, { segment })
-  const all = safeRows.filter((row) => !!row?.completedAt || row?.active === false)
-  const filtered = segment === 'weekly' ? all.filter(isWeeklyChallenge) : all
-  return { challenges: filtered }
+  const { challenges: raw, totalCount, truncated, loadedCount } = await fetchChallengeListMerged(
+    accessToken,
+    {
+      maxPagesPerSort: STAKE_CHALLENGE_MAX_PAGES,
+      type: CHALLENGE_FILTER_FINISHED,
+      count: CHALLENGE_FILTER_FINISHED,
+      direction: 'desc',
+    }
+  )
+  const mapped = raw
+    .filter((c) => c.type === 'casino' && c.game?.slug)
+    .map(mapChallengeRow)
+  const filtered = segment === 'weekly' ? mapped.filter(isWeeklyChallenge) : mapped
+  if (truncated && totalCount > loadedCount) {
+    console.warn(
+      `[stakeChallenges] Loaded ${loadedCount} of ${totalCount} finished challenges (Stake offset cap ~${STAKE_CHALLENGE_MAX_OFFSET}).`
+    )
+  }
+  return { challenges: filtered, totalCount: filtered.length || totalCount }
 }

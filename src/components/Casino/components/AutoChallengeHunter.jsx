@@ -16,6 +16,7 @@ import { notifyChallengeStart, requestNotificationPermission } from '../utils/no
 import { addDiscoveredFromChallenges, inferProviderId } from '../utils/discoveredSlots'
 import {
   effectiveSpinMultiplierFromParsed,
+  resolveStakeEnginePayoutMultiplier,
   skipStakeEngineEndRoundAfterSuccessfulPlay,
 } from '../api/providers/stakeEngine'
 import { ProfitCircularBuffer } from '../utils/profitCircularBuffer'
@@ -38,6 +39,7 @@ import {
 } from '../utils/hunterPendingHouseBetMatch'
 import { setHunterSlotTargets } from '../utils/hunterSlotTargetsBridge'
 import { attachHunterHouseBetCoordinator } from '../utils/hunterHouseBetCoordinator'
+import { isChallengeHubResourceMode, setChallengeHubResourceMode } from '../utils/challengeHubResourceMode'
 import { betShareIdRegistry } from '../utils/betShareIdRegistry'
 import {
   usdLimitToInputStr,
@@ -88,6 +90,7 @@ const HOUSEBET_DEFERRED_UI_MULTI_MS = 5000
 const HUNTER_SEEN_ROUND_DEDUP_MAX = 8000
 const PROFIT_CHART_CAPACITY = 1000
 const HUNTER_ACTIVE_RUNS_UI_FLUSH_MS = 400
+const HUNTER_ACTIVE_RUNS_UI_FLUSH_MS_RESOURCE = 2000
 const HUNTER_ACTIVE_RUNS_UI_FLUSH_EVERY_SPINS = 6
 /** UI-Obergrenze parallele Hunter-Läufe. */
 const CHALLENGE_PARALLEL_SLIDER_MAX = 100
@@ -155,10 +158,25 @@ function getRateForCurrency(rates, tCurr) {
 
 /**
  * Netto-Statistik pro Spin in USD (gleiche Spur wie challengeHub Bet-Liste).
- * houseBets bleibt für Share-IDs / Anreicherung, nicht doppelt in`s KPI zählen.
+ * houseBets bleibt für Share-IDs / Anreicherung; fehlende Wins werden aus dem Multi rekonstruiert
+ * (sonst: Max/Highlights 5821x, Net ohne den Win).
  */
 function hunterSpinKpiUsdDeltas(betMinor, winMinor, tCurr, rates) {
   return buildUsdSpinDelta(betMinor, winMinor ?? 0, tCurr || 'usd', rates || {})
+}
+
+/** Wenn placeBet den Multi kennt aber winAmount=0 liefert → Win für KPI aus Multi×Einsatz. */
+function resolveHunterWinForStats(betMinor, winMinor, multi) {
+  const bet = Number(betMinor) || 0
+  let win = Number(winMinor) || 0
+  const m = Number(multi) || 0
+  if (bet <= 0 || m <= 0) return Math.max(0, win)
+  const implied = Math.round(bet * m)
+  if (implied <= 0) return Math.max(0, win)
+  if (win <= 0) return implied
+  // Großer Multi, aber Win stark zu klein (fehlende Bonus-Summe / leeres payout-Feld).
+  if (m >= 5 && win < implied * 0.85) return implied
+  return win
 }
 
 /** Minor units → USD (wie im Spin-Loop: toUnits * Kurs) */
@@ -292,9 +310,7 @@ function sortTargetCandidatesForProbe(allowedList, rates, minBetUsd, preferred, 
 const SESSION_PROBE_DELAY_MS = 400
 /**
  * Extra-Pause nach jedem erfolgreichen Spin vor dem nächsten `placeBet`.
- * `stakeEngine.placeBet` erzwingt bereits mindestens 50 ms zwischen Plays (`STAKEENGINE_MIN_DELAY_MS`) — zusätzliche
- * 150 ms hier summierten spürbar (z. B. ~9 s / 100 Spins) und machte uns langsamer als Clients ohne dieses Lag.
- * Bei ERR_VAL / Rate-Limits ggf. auf 50–100 ms erhöhen.
+ * Basis 0 für Max-Speed — kein client-side adaptive pacing; Stake limitiert selbst.
  */
 const HUNTER_SPIN_DELAY_MS = 0
 /** Nach RGS play/end-round vor GraphQL `rotateSeed`: Monolith-Sync; zu niedrig → Fehler, zu hoch → unnötig langsam. */
@@ -681,7 +697,13 @@ const STYLES = {
   }
 }
 
-export default function AutoChallengeHunter({ accessToken, webSlots = [], onDiscoveredSlots, onHubStatsChange }) {
+export default function AutoChallengeHunter({
+  accessToken,
+  webSlots = [],
+  onDiscoveredSlots,
+  onHubStatsChange,
+  resourceMode = false,
+}) {
   const preferredSite = useStakeSiteStore((s) => s.preferredSite)
   const isEuGoldCoins = preferredSite === 'eu'
   const [minMinBet, setMinMinBet] = useState(hunterFiltersInitial.minMinBet)
@@ -773,6 +795,9 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   useEffect(() => {
     ratesRef.current = rates
   }, [rates])
+
+  /** Filled after flush helpers exist — houseBets may top up Net when multi > booked win. */
+  const applyHouseBetKpiWinDeltaRef = useRef(null)
   const [logs, setLogs] = useState([])
   const [lastRefresh, setLastRefresh] = useState(null)
   const [totalSessionStats, setTotalSessionStats] = useState({ wagered: 0, payout: 0, profit: 0 })
@@ -783,6 +808,22 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   const sessionNetTotalSpinsRef = useRef(0)
   const sessionSpinStartMsRef = useRef(null)
   const [sessionBetsPerSec, setSessionBetsPerSec] = useState(0)
+  /** Session-only best multi per slot (resets with session stats — not lifetime map). */
+  const [sessionBestMultiBySlot, setSessionBestMultiBySlot] = useState({})
+  const sessionBestMultiBySlotRef = useRef({})
+  const bumpSessionBestMulti = useCallback((slug, multi, name) => {
+    const key = String(slug || '').toLowerCase()
+    const m = Number(multi)
+    if (!key || !Number.isFinite(m) || m <= 0) return
+    const prev = sessionBestMultiBySlotRef.current[key]
+    const prevM = Number(prev?.multi) || 0
+    if (m <= prevM + 1e-9) return
+    sessionBestMultiBySlotRef.current = {
+      ...sessionBestMultiBySlotRef.current,
+      [key]: { multi: m, name: name || prev?.name || key },
+    }
+    setSessionBestMultiBySlot({ ...sessionBestMultiBySlotRef.current })
+  }, [])
   const [sessionNetSeriesVersion, setSessionNetSeriesVersion] = useState(0)
   const [sessionChartDomainKey, setSessionChartDomainKey] = useState(0)
   const [sessionNetSpinCount, setSessionNetSpinCount] = useState(0)
@@ -800,6 +841,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
   }, [sessionNetSpinCount, sessionNetSeriesVersion])
   /** Höchster getroffener Multiplikator pro Slot-Slug (persistiert). */
   const [bestMultiBySlot, setBestMultiBySlot] = useState(() => loadBestMultiMap())
+
+  useEffect(() => {
+    setChallengeHubResourceMode(Boolean(resourceMode))
+  }, [resourceMode])
+
   useEffect(() => {
     if (typeof onHubStatsChange !== 'function') return
     const running = Object.values(activeRuns).filter((run) => run?.status === 'running').length
@@ -814,9 +860,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
       running,
       completed,
       bestMulti,
+      profitUsd: Number(totalSessionStats.profit) || 0,
+      betsPerSec: Number(sessionBetsPerSec) || 0,
       ts: Date.now(),
     })
-  }, [queue.length, activeRuns, bestMultiBySlot, onHubStatsChange])
+  }, [queue.length, activeRuns, bestMultiBySlot, totalSessionStats.profit, sessionBetsPerSec, onHubStatsChange])
 
   const setBestMultiBySlotRef = useRef(setBestMultiBySlot)
   setBestMultiBySlotRef.current = setBestMultiBySlot
@@ -925,10 +973,13 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         return
       }
       if (activeRunsUiFlushTimerRef.current != null) return
+      const flushMs = isChallengeHubResourceMode()
+        ? HUNTER_ACTIVE_RUNS_UI_FLUSH_MS_RESOURCE
+        : HUNTER_ACTIVE_RUNS_UI_FLUSH_MS
       activeRunsUiFlushTimerRef.current = setTimeout(() => {
         activeRunsUiFlushTimerRef.current = null
         flushActiveRunsToReact()
-      }, HUNTER_ACTIVE_RUNS_UI_FLUSH_MS)
+      }, flushMs)
     },
     [flushActiveRunsToReact]
   )
@@ -962,6 +1013,34 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     },
     [scheduleActiveRunsUiFlush]
   )
+  applyHouseBetKpiWinDeltaRef.current = (runId, deltaWinMinor, currency) => {
+    const rid = String(runId || '')
+    const deltaMinor = Number(deltaWinMinor)
+    if (!rid || !Number.isFinite(deltaMinor) || deltaMinor <= 0) return
+    const curr = String(currency || 'usd').toLowerCase()
+    const delta = buildUsdSpinDelta(0, deltaMinor, curr, ratesRef.current || {})
+    if (!delta || !Number.isFinite(delta.payout) || delta.payout <= 0) return
+    const ts = totalSessionStatsRef.current
+    totalSessionStatsRef.current = {
+      wagered: ts.wagered,
+      payout: ts.payout + delta.payout,
+      profit: ts.profit + delta.payout,
+    }
+    totalStatsRef.current = totalSessionStatsRef.current
+    sessionStatsUiDirtyRef.current = true
+    const run = activeRunsRef.current?.[rid]
+    if (run) {
+      activeRunsRef.current = {
+        ...(activeRunsRef.current || {}),
+        [rid]: {
+          ...run,
+          wonUsd: (Number(run.wonUsd) || 0) + delta.payout,
+        },
+      }
+      activeRunsUiDirtyRef.current = true
+    }
+    scheduleActiveRunsUiFlush()
+  }
   const resolveChallengeSlugById = useCallback(
     (challengeId) => {
       const row = (challenges || []).find((c) => String(c?.id || '') === String(challengeId || ''))
@@ -1321,6 +1400,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
         bumpHunterStorageRef,
         setActiveRuns,
         setBestMultiBySlotRef,
+        applyHouseBetKpiWinDeltaRef,
       },
       shouldPersistOverallBetId,
       loadBestBetIdMap,
@@ -2167,6 +2247,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               log(
                 `TARGET HIT! Best multi ${best.toFixed(2)}x (target: ${targetM.toFixed(2)}x) — houseBets/state · one extra spin for round/challenge finalization`
               )
+              bumpSessionBestMulti(gSlug, best, gName)
               if (!challengeHitPersisted) {
                 persistChallengeHitRecord({
                   challengeId,
@@ -2259,7 +2340,18 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             let m = Number(safeMulti) || 0
             if (betN > 0 && win > 0) m = Math.max(m, win / betN)
             if (Number.isFinite(payoutMultRaw) && payoutMultRaw > 0) {
-              m = Math.max(m, normalizeHunterMultiByProvider(payoutMultRaw, providerId))
+              const pid = String(providerId || '').toLowerCase()
+              const isStakeRgs =
+                pid === 'stakeengine' ||
+                pid === 'stake-engine' ||
+                pid === '1000lakes' ||
+                pid === 'lk7' ||
+                pid === 'lk7-com' ||
+                pid === 'paperclip'
+              const norm = isStakeRgs
+                ? resolveStakeEnginePayoutMultiplier(payoutMultRaw)
+                : normalizeHunterMultiByProvider(payoutMultRaw, providerId)
+              if (norm > 0) m = Math.max(m, norm)
             }
             const pm = Number(parsed?.multiplier)
             if (Number.isFinite(pm) && pm > 0) {
@@ -2268,9 +2360,15 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             return m
           })()
 
+          // Session highs immediately (not after 5s houseBets defer) — resource mode clears those timers on stop.
+          if (multiForStop > 0) {
+            bumpSessionBestMulti(gSlug, multiForStop, gName)
+          }
+
           const hubListCc = (parsed.currencyCode || tCurr || 'usd').toUpperCase()
           const hubListBet = betAmount
-          const hubListWinDb = win
+          const winForStats = resolveHunterWinForStats(betAmount, win, multiForStop)
+          const hubListWinDb = winForStats
 
           const spinSeq =
             (hunterSpinSeqByRunRef.current[runId] = (hunterSpinSeqByRunRef.current[runId] || 0) + 1)
@@ -2301,7 +2399,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             if (oldK != null) runSeenRounds.delete(oldK)
           }
 
-          const kpi = hunterSpinKpiUsdDeltas(betAmount, win, tCurr, rates)
+          const kpi = hunterSpinKpiUsdDeltas(betAmount, winForStats, tCurr, rates)
           if (kpi) {
             const ts = totalSessionStatsRef.current
             totalSessionStatsRef.current = {
@@ -2312,11 +2410,11 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             totalStatsRef.current = totalSessionStatsRef.current
             sessionStatsUiDirtyRef.current = true
             scheduleActiveRunsUiFlush()
-            if (ENABLE_SESSION_NET_CHART) {
-              if (sessionSpinStartMsRef.current == null) {
-                sessionSpinStartMsRef.current = Date.now()
-              }
-              sessionNetTotalSpinsRef.current += 1
+            if (sessionSpinStartMsRef.current == null) {
+              sessionSpinStartMsRef.current = Date.now()
+            }
+            sessionNetTotalSpinsRef.current += 1
+            if (ENABLE_SESSION_NET_CHART && !isChallengeHubResourceMode()) {
               sessionNetBufferRef.current.push(totalSessionStatsRef.current.profit)
               scheduleSessionNetChartFlush()
             }
@@ -2341,6 +2439,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             multi: multiForStop,
             spinSeq,
             feedEntryId: `${runId}:${spinSeq}`,
+            /** Win already booked into Net/Session KPI — houseBets may top-up if multi was higher. */
+            bookedWinMinor: winForStats,
           }
           {
             const pmap = pendingHouseBetMatchRef.current
@@ -2382,6 +2482,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
                 persistBestMultiMap(nmap)
                 return nmap
               })
+              bumpSessionBestMulti(gSlug, multiForStop, gName)
               patchActiveRunInRef(runId, {
                 bestMultiRun: Math.max(
                   activeRunsRef.current?.[runId]?.bestMultiRun ?? 0,
@@ -2392,23 +2493,27 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               const prevS = runBestMultiSyncRef.current[runId] ?? 0
               runBestMultiSyncRef.current[runId] = Math.max(Number(prevS) || 0, multiForStop)
               try {
-                const curFeed = getChallengeHubRecentBets()
-                const curRow = curFeed.find((x) => String(x?.id ?? '') === dk)
-                if (curRow && curRow.hubSettlement === 'pending') {
-                  const deferredWin =
-                    win > 0 ? win : Math.max(0, Math.round(Number(hubListBet) * Number(multiForStop)))
-                  publishChallengeHubBet({
-                    id: dk,
-                    slotSlug: gSlug,
-                    slotName: gName,
-                    betAmount: hubListBet,
-                    winAmount: deferredWin,
-                    multiplier: multiForStop,
-                    currencyCode: hubListCc,
-                    hubSettlement: 'settled',
-                    settlementSource: 'http_deferred',
-                    sourceTag: `casino:${gSlug}`,
-                  })
+                if (!isChallengeHubResourceMode()) {
+                  const curFeed = getChallengeHubRecentBets()
+                  const curRow = curFeed.find((x) => String(x?.id ?? '') === dk)
+                  if (curRow && curRow.hubSettlement === 'pending') {
+                    const deferredWin =
+                      winForStats > 0
+                        ? winForStats
+                        : Math.max(0, Math.round(Number(hubListBet) * Number(multiForStop)))
+                    publishChallengeHubBet({
+                      id: dk,
+                      slotSlug: gSlug,
+                      slotName: gName,
+                      betAmount: hubListBet,
+                      winAmount: deferredWin,
+                      multiplier: multiForStop,
+                      currencyCode: hubListCc,
+                      hubSettlement: 'settled',
+                      settlementSource: 'http_deferred',
+                      sourceTag: `casino:${gSlug}`,
+                    })
+                  }
                 }
               } catch (_) {}
             }, HOUSEBET_DEFERRED_UI_MULTI_MS)
@@ -2428,14 +2533,14 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               ? provisionalRunBetId
               : null
 
-          if (win > 0) {
+          if (winForStats > 0) {
             void saveFirstSlotWinIfNeeded({
               slotSlug: gSlug,
               slotName: gName,
               providerId: slot.providerId,
               providerGroupSlug: challenge.providerGroupSlug ?? extractProviderGroupSlug(challenge.game),
               betAmountMinor: betAmount,
-              winAmountMinor: win,
+              winAmountMinor: winForStats,
               currency: tCurr,
               multiplier: safeMulti,
               roundId: resolvedRoundId,
@@ -2499,18 +2604,20 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
             },
             gName
           )
-          const pendingFeedId = `${runId}:${spinSeq}`
-          publishChallengeHubBet({
-            id: pendingFeedId,
-            slotSlug: gSlug,
-            slotName: gName,
-            betAmount: hubListBet,
-            winAmount: 0,
-            currencyCode: hubListCc,
-            roundId: resolvedRoundId ?? null,
-            sourceTag: `casino:${gSlug}`,
-            hubSettlement: 'pending',
-          })
+          if (!isChallengeHubResourceMode()) {
+            const pendingFeedId = `${runId}:${spinSeq}`
+            publishChallengeHubBet({
+              id: pendingFeedId,
+              slotSlug: gSlug,
+              slotName: gName,
+              betAmount: hubListBet,
+              winAmount: 0,
+              currencyCode: hubListCc,
+              roundId: resolvedRoundId ?? null,
+              sourceTag: `casino:${gSlug}`,
+              hubSettlement: 'pending',
+            })
+          }
 
           const multi = multiForStop
           if (targetOk && multi >= targetM) {
@@ -2519,6 +2626,7 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
               finalizeSpinsRemaining = 1
               targetDetectedThisLoop = true
               log(`TARGET HIT! Multi: ${multi.toFixed(2)}x (target: ${targetM.toFixed(2)}x) — one extra spin for round/challenge finalization`)
+              bumpSessionBestMulti(gSlug, multi, gName)
             }
             const rawR = data?._stakeEngine?.raw?.round
             const roundId =
@@ -2778,6 +2886,16 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
           : targetHit
             ? 'target_hit'
             : stopReason || 'stopped'
+      {
+        const finishMulti = Math.max(
+          Number(activeRunsRef.current?.[runId]?.bestMultiRun) || 0,
+          Number(runBestMultiSyncRef.current[runId]) || 0,
+          targetHit && targetOk ? targetM : 0
+        )
+        if (finishMulti > 0) {
+          bumpSessionBestMulti(gSlug, finishMulti, gName)
+        }
+      }
       patchActiveRunInRef(runId, { status })
       scheduleActiveRunsUiFlush({ immediate: true })
 
@@ -2854,6 +2972,8 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     totalSessionStatsRef.current = emptyStats
     totalStatsRef.current = emptyStats
     setTotalSessionStats(emptyStats)
+    sessionBestMultiBySlotRef.current = {}
+    setSessionBestMultiBySlot({})
     if (ENABLE_SESSION_NET_CHART) {
       sessionNetBufferRef.current.reset()
       sessionNetTotalSpinsRef.current = 0
@@ -3622,6 +3742,83 @@ export default function AutoChallengeHunter({ accessToken, webSlots = [], onDisc
     estimateSize: () => 74,
     overscan: 6,
   })
+
+  const resourceTopMultis = useMemo(() => {
+    return Object.entries(sessionBestMultiBySlot || {})
+      .map(([slug, row]) => ({
+        slug,
+        name: row?.name || slug,
+        multi: Number(row?.multi) || 0,
+      }))
+      .filter((row) => row.multi > 0)
+      .sort((a, b) => b.multi - a.multi)
+      .slice(0, 12)
+  }, [sessionBestMultiBySlot])
+
+  if (resourceMode) {
+    const pl = Number(totalSessionStats.profit) || 0
+    return (
+      <div className="hunter-resource-lite">
+        <div className="hunter-resource-lite-kpis">
+          <div className="hunter-resource-lite-kpi">
+            <div className="hunter-resource-lite-label">P/L (USD)</div>
+            <div
+              className="hunter-resource-lite-value"
+              style={{ color: pl >= 0 ? 'var(--success)' : 'var(--error)' }}
+            >
+              ${pl.toFixed(2)}
+            </div>
+          </div>
+          <div className="hunter-resource-lite-kpi">
+            <div className="hunter-resource-lite-label">Bets / sec</div>
+            <div className="hunter-resource-lite-value">
+              {sessionBetsPerSec > 0 ? sessionBetsPerSec.toFixed(2) : '—'}
+            </div>
+          </div>
+          <div className="hunter-resource-lite-kpi">
+            <div className="hunter-resource-lite-label">Running</div>
+            <div className="hunter-resource-lite-value">
+              {runningCount} / {maxParallelClamped}
+            </div>
+          </div>
+        </div>
+        <div className="hunter-resource-lite-actions">
+          <Button
+            onClick={startAllRunners}
+            variant="primary"
+            title="Enable scan + queue auto and reload challenges when needed"
+          >
+            Start All
+          </Button>
+          <Button
+            onClick={stopAllRunners}
+            variant="danger"
+            disabled={!hasAnythingToStop}
+            title={hasAnythingToStop ? 'Stop active spins and clear queue' : 'Nothing is active'}
+          >
+            Stop All
+          </Button>
+        </div>
+        <div className="hunter-resource-lite-multis">
+          <div className="hunter-resource-lite-multis-title">Session highest multis</div>
+          {resourceTopMultis.length === 0 ? (
+            <div className="hunter-resource-lite-empty">No multis this session yet</div>
+          ) : (
+            <ul className="hunter-resource-lite-multis-list">
+              {resourceTopMultis.map((row) => (
+                <li key={row.slug}>
+                  <span className="hunter-resource-lite-multi-name" title={row.slug}>
+                    {row.name}
+                  </span>
+                  <span className="hunter-resource-lite-multi-val">{row.multi.toFixed(2)}×</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="hunter-dashboard" style={STYLES.container}>

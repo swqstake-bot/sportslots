@@ -20,6 +20,7 @@ export interface ChallengeHubTabContentProps {
   telegramEnabled: boolean
   setTelegramEnabled: Dispatch<SetStateAction<boolean>>
   telegramUsage: number
+  resourceMode?: boolean
 }
 
 /** Casino hunter stays mounted (hidden off-tab) so active hunts keep running. Other tabs mount on demand. */
@@ -33,11 +34,13 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
   telegramEnabled,
   setTelegramEnabled,
   telegramUsage,
+  resourceMode = false,
 }: ChallengeHubTabContentProps) {
   const TelegramChallengeHunterAny = TelegramChallengeHunter as any
-  const casinoVisible = tab === 'casino'
+  const casinoVisible = resourceMode || tab === 'casino'
 
   const otherTabPanel = (() => {
+    if (resourceMode) return null
     switch (tab) {
       case 'casino':
         return null
@@ -130,6 +133,7 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
             webSlots={webSlots as any}
             onDiscoveredSlots={onDiscoveredSlots}
             onHubStatsChange={onHubStatsChange}
+            resourceMode={resourceMode}
           />
         </SectionCard>
       </div>

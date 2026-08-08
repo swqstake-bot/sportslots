@@ -873,6 +873,112 @@ html[data-theme='light'] .casino-root {
   transform: translateY(-1px);
 }
 
+.casino-root .challenge-hub-action.is-active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg-deep));
+  color: var(--accent);
+}
+
+.casino-root .challenge-hub-resource-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 0.2rem 0.15rem;
+}
+
+.casino-root .challenge-hub-root.is-resource-mode .challenge-hub-workbench {
+  grid-template-columns: 1fr;
+}
+
+.casino-root .hunter-resource-lite {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.35rem 0.15rem 0.6rem;
+}
+
+.casino-root .hunter-resource-lite-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.casino-root .hunter-resource-lite-kpi {
+  padding: 0.7rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+}
+
+.casino-root .hunter-resource-lite-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.casino-root .hunter-resource-lite-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.casino-root .hunter-resource-lite-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.casino-root .hunter-resource-lite-multis {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  padding: 0.65rem 0.75rem;
+}
+
+.casino-root .hunter-resource-lite-multis-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 0.45rem;
+}
+
+.casino-root .hunter-resource-lite-empty {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.casino-root .hunter-resource-lite-multis-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.casino-root .hunter-resource-lite-multis-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.casino-root .hunter-resource-lite-multi-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.casino-root .hunter-resource-lite-multi-val {
+  flex: 0 0 auto;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
 .casino-root .challenge-hub-action--ghost {
   background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
   color: var(--text-muted);

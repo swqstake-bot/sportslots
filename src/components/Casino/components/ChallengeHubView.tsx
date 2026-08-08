@@ -3,6 +3,11 @@ import { SESSION_ONLY_HUB_AND_LOGGER } from '../../../config/sessionData'
 import { ensureChallengeHubSessionReset, resetChallengeHubRecentBets } from '../utils/challengeHubLiveFeed'
 import { clearHubHouseBetRetryBuffer } from '../utils/challengeHubBetIdPatch'
 import { clearTopEntries } from '../utils/topDomain'
+import {
+  isChallengeHubResourceMode,
+  setChallengeHubResourceMode,
+  subscribeChallengeHubResourceMode,
+} from '../utils/challengeHubResourceMode'
 import { ChallengeHubBetListPanel } from './challengeHub/ChallengeHubBetListPanel'
 import { ChallengeHubBetListProvider } from './challengeHub/ChallengeHubBetListContext'
 import { ChallengeHubNotificationCenter } from './challengeHub/ChallengeHubNotificationCenter'
@@ -32,6 +37,7 @@ export function ChallengeHubView({
 }: ChallengeHubViewProps) {
   const [tab, setTab] = useState<HubTab>('casino')
   const [, setHubStatsBySource] = useState<Record<string, HubStatsPayload>>({})
+  const [resourceMode, setResourceMode] = useState(() => isChallengeHubResourceMode())
   const [sideCollapsed, setSideCollapsed] = useState(() => {
     try {
       return localStorage.getItem('challengeHubBetSideCollapsed') === '1'
@@ -54,6 +60,8 @@ export function ChallengeHubView({
       clearTopEntries()
     })
   }, [])
+
+  useEffect(() => subscribeChallengeHubResourceMode(setResourceMode), [])
 
   const [telegramUsage, setTelegramUsage] = useState<number>(() => {
     try {
@@ -137,31 +145,49 @@ export function ChallengeHubView({
     onHubStatsChange?.(payload)
   }, [onHubStatsChange])
 
+  const hideSide = sideCollapsed || resourceMode
+
   return (
-    <div className="challenge-hub-root flex flex-col gap-2.5">
+    <div className={`challenge-hub-root flex flex-col gap-2.5${resourceMode ? ' is-resource-mode' : ''}`}>
       <div className="challenge-hub-topbar">
-        <ChallengeHubTabStrip tab={tab} onTabChange={handleTabChange} />
+        {!resourceMode ? (
+          <ChallengeHubTabStrip tab={tab} onTabChange={handleTabChange} />
+        ) : (
+          <div className="challenge-hub-resource-title">Resource mode</div>
+        )}
         <div className="challenge-hub-topbar-inbox">
           <button
             type="button"
-            className="challenge-hub-action"
-            title={sideCollapsed ? 'Show bet feed' : 'Hide bet feed'}
-            onClick={() => setSideCollapsed((c) => !c)}
+            className={`challenge-hub-action${resourceMode ? ' is-active' : ''}`}
+            title={
+              resourceMode
+                ? 'Exit resource mode — full Challenge Hub UI'
+                : 'Resource mode — P/L, bet speed, top multis only (less UI load)'
+            }
+            onClick={() => setChallengeHubResourceMode(!resourceMode)}
           >
-            {sideCollapsed ? 'Show feed' : 'Hide feed'}
+            {resourceMode ? 'Full UI' : 'Resource'}
           </button>
+          {!resourceMode && (
+            <button
+              type="button"
+              className="challenge-hub-action"
+              title={sideCollapsed ? 'Show bet feed' : 'Hide bet feed'}
+              onClick={() => setSideCollapsed((c) => !c)}
+            >
+              {sideCollapsed ? 'Show feed' : 'Hide feed'}
+            </button>
+          )}
           <ChallengeHubNotificationCenter />
         </div>
       </div>
 
       <ChallengeHubBetListProvider>
         <div className="challenge-hub-canvas">
-          <div
-            className={`challenge-hub-workbench${sideCollapsed ? ' is-side-collapsed' : ''}`}
-          >
+          <div className={`challenge-hub-workbench${hideSide ? ' is-side-collapsed' : ''}`}>
             <div className="min-w-0">
               <ChallengeHubTabContent
-                tab={tab}
+                tab={resourceMode ? 'casino' : tab}
                 accessToken={accessToken}
                 webSlots={webSlots}
                 onDiscoveredSlots={onDiscoveredSlots}
@@ -170,10 +196,11 @@ export function ChallengeHubView({
                 telegramEnabled={telegramEnabled}
                 setTelegramEnabled={setTelegramEnabled}
                 telegramUsage={telegramUsage}
+                resourceMode={resourceMode}
               />
             </div>
 
-            {!sideCollapsed && (
+            {!hideSide && (
               <div className="challenge-hub-side-column">
                 <ChallengeHubBetListPanel accessToken={accessToken} />
               </div>

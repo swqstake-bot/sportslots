@@ -186,6 +186,8 @@ export function attachHunterHouseBetCoordinator(ctx) {
 
     setBestMultiBySlotRef,
 
+    applyHouseBetKpiWinDeltaRef,
+
   } = refs
 
 
@@ -477,6 +479,18 @@ export function attachHunterHouseBetCoordinator(ctx) {
               : { currencyCode: patchCurr.toUpperCase() }
 
           patchHubFeedEntryFromHouseBet(p.feedEntryId, bItem, amountPatch)
+
+          // Net/Session KPI: houseBets multi often arrives after placeBet booked win=0.
+          try {
+            const houseWinMinor = Number(amountPatch?.winAmount)
+            const booked = Number(p.bookedWinMinor)
+            const prevBooked = Number.isFinite(booked) ? booked : 0
+            if (Number.isFinite(houseWinMinor) && houseWinMinor > prevBooked + 0.5) {
+              const delta = houseWinMinor - prevBooked
+              p.bookedWinMinor = houseWinMinor
+              applyHouseBetKpiWinDeltaRef?.current?.(runId, delta, patchCurr)
+            }
+          } catch (_) {}
 
           if (p.spinSeq != null) {
 
