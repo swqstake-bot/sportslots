@@ -1,5 +1,5 @@
-# Tag v1.2.3 pushen → Release-Build. Oder manuell: Actions → „Release“ → Run workflow.
-# Feed: swqstake-bot/sportslots-releases. Dual-Publish auf sportslots während Migration.
+# Tag v*.*.* push -> Release build. Or manual: Actions -> Release -> Run workflow.
+# Feed: swqstake-bot/sportslots-releases. Dual-publish to sportslots during migration.
 # Docs: docs/auto-update-feed.md
 name: Release
 
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Leer lassen = Version aus package.json (empfohlen für Auto-Update)'
+        description: 'Leer lassen = Version aus package.json (empfohlen fuer Auto-Update)'
         required: false
         default: ''
 
@@ -29,6 +29,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Require RELEASES_GITHUB_TOKEN
+        shell: pwsh
+        env:
+          RELEASES_GITHUB_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RELEASES_GITHUB_TOKEN)) {
+            Write-Error @"
+RELEASES_GITHUB_TOKEN is not set. Dual-publish to sportslots-releases requires a PAT (repo scope) stored as this secret.
+Default GITHUB_TOKEN cannot create releases in another repo (403 Resource not accessible by integration).
+See docs/auto-update-feed.md
+"@
+            exit 1
+          }
+          Write-Host "RELEASES_GITHUB_TOKEN is configured"
 
       - name: Set version from tag, input, or package.json
         shell: pwsh
@@ -64,12 +79,13 @@ jobs:
           npm run qa:gate
 
       # electron-builder downloads NSIS/winCodeSign from GitHub Releases; 502s are transient.
-      # RELEASES_GITHUB_TOKEN: PAT (repo) für sportslots-releases + sportslots (Dual-Publish).
+      # RELEASES_GITHUB_TOKEN: PAT (repo) for sportslots-releases + sportslots (dual-publish).
+      # Do not fall back to GITHUB_TOKEN — it cannot publish cross-repo.
       - name: Build and Publish
         uses: nick-fields/retry@v3
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN }}
         with:
           timeout_minutes: 45
           max_attempts: 3

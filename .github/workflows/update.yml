@@ -1,8 +1,8 @@
-# Build + electron-builder --publish → GitHub Release + latest.yml (electron-updater).
-# Feed: swqstake-bot/sportslots-releases (öffentlich). Dual-Publish auch auf sportslots (Migration).
+# Build + electron-builder --publish -> GitHub Release + latest.yml (electron-updater).
+# Feed: swqstake-bot/sportslots-releases (public). Dual-publish also to sportslots (migration).
 # Docs: docs/auto-update-feed.md
-# Start: GitHub → Actions → „Update“ → „Run workflow“ (Branch auswählen, z. B. main).
-# Kontinuierliche Checks ohne Publish: Workflow „CI“ (bei Push auf main / restore/**).
+# Start: GitHub -> Actions -> Update -> Run workflow (pick branch, e.g. main).
+# Continuous checks without publish: Workflow CI (push to main / restore/**).
 
 name: Update
 
@@ -25,11 +25,26 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Require RELEASES_GITHUB_TOKEN
+        shell: pwsh
+        env:
+          RELEASES_GITHUB_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RELEASES_GITHUB_TOKEN)) {
+            Write-Error @"
+RELEASES_GITHUB_TOKEN is not set. Dual-publish to sportslots-releases requires a PAT (repo scope) stored as this secret.
+Default GITHUB_TOKEN cannot create releases in another repo (403 Resource not accessible by integration).
+See docs/auto-update-feed.md
+"@
+            exit 1
+          }
+          Write-Host "RELEASES_GITHUB_TOKEN is configured"
+
       - name: Show version from package.json
         shell: pwsh
         run: |
           $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          Write-Host "Publishing swqbot v$v → sportslots-releases (+ sportslots dual-publish)"
+          Write-Host "Publishing swqbot v$v -> sportslots-releases (+ sportslots dual-publish)"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -45,10 +60,10 @@ jobs:
           npm run lint
           npm run qa:gate
 
-      # RELEASES_GITHUB_TOKEN: PAT (repo) mit Schreibzugriff auf sportslots-releases und sportslots.
-      # Default GITHUB_TOKEN reicht nicht für Cross-Repo-Publish.
+      # RELEASES_GITHUB_TOKEN: PAT (repo) with write access to sportslots-releases and sportslots.
+      # Do not fall back to GITHUB_TOKEN — it cannot publish cross-repo.
       - name: Build and Publish
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN }}
         run: npm run build:publish
