@@ -7,6 +7,8 @@ export const SUPPORTED_SLOTS = []
 export const PROVIDERS = {
   hacksaw: { id: 'hacksaw', name: 'Hacksaw Gaming', impl: 'web' },
   stakeEngine: { id: 'stakeEngine', name: 'Stake Engine', impl: 'web' },
+  lk7: { id: 'lk7', name: 'LK7', impl: 'web' },
+  'lk7-com': { id: 'lk7-com', name: 'LK7', impl: 'web' },
   avatarux: { id: 'avatarux', name: 'Avatarux', impl: 'web' },
   mascot: { id: 'mascot', name: 'Mascot', impl: 'web' },
   hub88: { id: 'hub88', name: 'Mascot (Hub88)', impl: 'web' },

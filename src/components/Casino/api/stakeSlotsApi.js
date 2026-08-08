@@ -16,6 +16,7 @@ const QUICK_LOAD_EXTRA_GROUPS = [
   { slug: 'mascot', pages: 6 },
   // Fat Panda studio provider group only — never pragmatic-play-fat-panda (that slug is a GAME).
   { slug: 'fat-panda', pages: 4 },
+  { slug: 'lk7-com', pages: 3 },
 ]
 const SESSION_CACHE_TTL_MS = 10 * 60 * 1000 // 10 min – kein Refetch beim Tab-Wechsel
 
@@ -104,6 +105,10 @@ const PROVIDER_MAP = {
   'colorful-play-gaming': 'stakeEngine',
   'colorfulplay': 'stakeEngine',
   'colorfulplaygaming': 'stakeEngine',
+  // LK7 / Flower Poker (HAR: lk7.live.stake-engine.com, mode "base", no play currency)
+  lk7: 'stakeEngine',
+  'lk7-com': 'stakeEngine',
+  'lk7-gaming': 'stakeEngine',
   'sexy-rabbit': 'pragmatic', // Rabbit Heist – gleiches gs2c/html5Game.do-Protokoll wie Pragmatic
   'sexyrabbit': 'pragmatic',
   'videoslots': 'pragmatic',

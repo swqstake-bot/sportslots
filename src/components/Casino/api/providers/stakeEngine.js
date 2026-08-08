@@ -143,6 +143,12 @@ const STAKE_ENGINE_PLAY_MODE_BY_SLOT_PREFIX = {
   'coreffectinteractive-cut-n-crash': '688_base',
 }
 
+/** flowerpoker.har: play body has no `currency` (session already bound on authenticate). */
+function shouldOmitStakeEnginePlayCurrency(slotSlug) {
+  const s = String(slotSlug || '').toLowerCase()
+  return s.startsWith('lk7-')
+}
+
 function getStakeEnginePlayModeForSlot(slotSlug) {
   const slug = String(slotSlug || '').toLowerCase()
   if (!slug) return null
@@ -150,6 +156,24 @@ function getStakeEnginePlayModeForSlot(slotSlug) {
     if (slug.startsWith(prefix)) return mode
   }
   return null
+}
+
+/**
+ * Prefer exact mode string from RGS `config.gameModes` (Flower Poker: "base").
+ * Do not uppercase — some studios reject "BASE" when only "base" is listed.
+ */
+function pickStakeEnginePlayMode(configData, slotSlug) {
+  const modes = Array.isArray(configData?.gameModes) ? configData.gameModes : []
+  const baseEntry = modes.find((m) => String(m?.mode || '').toLowerCase() === 'base')
+  if (baseEntry?.mode != null && String(baseEntry.mode).trim() !== '') {
+    return String(baseEntry.mode)
+  }
+  const explicit = configData?.mode || configData?.baseMode || configData?.defaultMode
+  if (explicit != null && String(explicit).trim() !== '') return String(explicit)
+  const fromSlug = getStakeEnginePlayModeForSlot(slotSlug)
+  if (fromSlug) return fromSlug
+  // Legacy default (Waylanders / many studios): uppercase BASE
+  return 'BASE'
 }
 
 function parseConfigFromUrl(config) {
@@ -324,8 +348,8 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   logApiCall({ type: 'stakeEngine/authenticate', endpoint: authUrl, request: { sessionID: parsed.sessionID }, response: { config: authData?.config, balance: authData?.balance }, error: null, durationMs: null })
 
   const configData = authData?.config || {}
-  const configMode = configData?.mode || configData?.baseMode || configData?.defaultMode || null
-  const playMode = configMode || getStakeEnginePlayModeForSlot(slotSlug) || null
+  const playMode = pickStakeEnginePlayMode(configData, slotSlug)
+  const omitPlayCurrency = shouldOmitStakeEnginePlayCurrency(slotSlug)
   const betLevelsRaw = configData?.betLevels?.map((v) => Number(v)).filter((b) => b > 0) ?? []
   // API play currency (may be XEC on .eu); math currency is wallet-facing (sweeps/gold).
   const apiCurrencyCode = String(authData?.balance?.currency || tgt || 'eur').toUpperCase()
@@ -373,6 +397,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     initialBalance,
     slotSlug: slotSlug || '',
     playMode,
+    omitPlayCurrency,
     /** Wenn die Session-Config-URL eine Stake-Spiel-UUID enthält — sonst über Slot `stakeGameId` aus Kurator. */
     stakeGameId: parsed.gameId || null,
   }
@@ -446,9 +471,13 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
   let mode = useAnte
     ? 'ANTE'
     : (options?.mode || session?.playMode || getStakeEnginePlayModeForSlot(slotSlug) || 'BASE')
-  // waylanders.har / offizieller Client: "BASE" nicht "base"; Sondermodi (z. B. 688_base) unverändert.
-  if (!useAnte && String(mode).toLowerCase() === 'base') mode = 'BASE'
-  const playBody = { sessionID: session.sessionID, amount, mode, currency }
+  // Preserve exact RGS mode casing from authenticate.gameModes (Flower Poker HAR: "base").
+  // Do NOT force "BASE" — LK7 rejects uppercase when only "base" is listed.
+  const omitCurrency =
+    Boolean(session?.omitPlayCurrency) || shouldOmitStakeEnginePlayCurrency(slotSlug)
+  const playBody = omitCurrency
+    ? { sessionID: session.sessionID, amount, mode }
+    : { sessionID: session.sessionID, amount, mode, currency }
   const t0 = Date.now()
   let playRes = await rgsPost(playUrl, playBody)
 

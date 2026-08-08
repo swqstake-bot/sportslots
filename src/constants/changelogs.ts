@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.257': [
+    '✨ LK7 Flower Poker (Stake Engine): Provider + Play mode "base" (HAR), ohne currency im play-Body',
+  ],
   '1.0.256': [
     '🐛 Challenge Hub: Übersicht bleibt beim Wechsel zu Slots (Hub bleibt gemountet)',
     '🐛 Challenge Hub: neue Runs nicht mehr von Ref-Flush aus der Übersicht geworfen (spinnt ohne Karte)',

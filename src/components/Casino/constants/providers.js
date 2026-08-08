@@ -58,6 +58,16 @@ export const PROVIDERS = {
     name: '1000 Lakes Studios',
     aliasOf: 'stakeEngine',
   },
+  lk7: {
+    id: 'lk7',
+    name: 'LK7',
+    aliasOf: 'stakeEngine',
+  },
+  'lk7-com': {
+    id: 'lk7-com',
+    name: 'LK7',
+    aliasOf: 'stakeEngine',
+  },
   nolimit: {
     id: 'nolimit',
     name: 'Nolimit City',

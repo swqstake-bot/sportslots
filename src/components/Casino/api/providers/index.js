@@ -159,6 +159,8 @@ const WEB_PROVIDERS = {
   mascot,
   hub88: mascot,
   '1000lakes': stakeEngine, // Alias für 1000 Lakes Studios
+  lk7: stakeEngine,
+  'lk7-com': stakeEngine,
   relax: genericProviders.relax,
   blueprint: genericProviders.blueprint,
   bg: genericProviders.blueprint,
