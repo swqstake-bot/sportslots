@@ -1,5 +1,5 @@
-# Tag v*.*.* push -> Release build. Or manual: Actions -> Release -> Run workflow.
-# Feed: swqstake-bot/sportslots-releases. Dual-publish to sportslots during migration.
+# Tag v1.2.3 pushen ÔåÆ Release-Build. Oder manuell: Actions ÔåÆ ÔÇ×ReleaseÔÇ£ ÔåÆ Run workflow.
+# Feed: swqstake-bot/sportslots-releases. Dual-Publish auf sportslots w├ñhrend Migration.
 # Docs: docs/auto-update-feed.md
 name: Release
 
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Leer lassen = Version aus package.json (empfohlen fuer Auto-Update)'
+        description: 'Leer lassen = Version aus package.json (empfohlen f├╝r Auto-Update)'
         required: false
         default: ''
 
@@ -36,14 +36,10 @@ jobs:
           RELEASES_GITHUB_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:RELEASES_GITHUB_TOKEN)) {
-            Write-Error @"
-RELEASES_GITHUB_TOKEN is not set. Dual-publish to sportslots-releases requires a PAT (repo scope) stored as this secret.
-Default GITHUB_TOKEN cannot create releases in another repo (403 Resource not accessible by integration).
-See docs/auto-update-feed.md
-"@
+            Write-Error 'RELEASES_GITHUB_TOKEN is not set. Dual-publish needs a PAT (repo scope). See docs/auto-update-feed.md'
             exit 1
           }
-          Write-Host "RELEASES_GITHUB_TOKEN is configured"
+          Write-Host 'RELEASES_GITHUB_TOKEN is configured'
 
       - name: Set version from tag, input, or package.json
         shell: pwsh
@@ -79,8 +75,7 @@ See docs/auto-update-feed.md
           npm run qa:gate
 
       # electron-builder downloads NSIS/winCodeSign from GitHub Releases; 502s are transient.
-      # RELEASES_GITHUB_TOKEN: PAT (repo) for sportslots-releases + sportslots (dual-publish).
-      # Do not fall back to GITHUB_TOKEN — it cannot publish cross-repo.
+      # RELEASES_GITHUB_TOKEN: PAT (repo) f├╝r sportslots-releases + sportslots (Dual-Publish).
       - name: Build and Publish
         uses: nick-fields/retry@v3
         env:
