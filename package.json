@@ -2,7 +2,7 @@
   "name": "swqbot",
   "private": true,
   "type": "module",
-  "version": "1.0.259",
+  "version": "1.0.260",
   "description": "swqbot - Stake automation desktop app",
   "author": "swqbot",
   "repository": {
@@ -90,6 +90,12 @@
       "forceCodeSigning": false
     },
     "publish": [
+      {
+        "provider": "github",
+        "owner": "swqstake-bot",
+        "repo": "sportslots-releases",
+        "releaseType": "release"
+      },
       {
         "provider": "github",
         "owner": "swqstake-bot",

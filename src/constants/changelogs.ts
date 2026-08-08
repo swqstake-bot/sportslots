@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.260': [
+    '🔧 Auto-Update: Feed auf öffentliches Releases-Repo sportslots-releases (Source kann später privat werden) — Migration siehe docs/auto-update-feed.md',
+  ],
   '1.0.259': [
     '🐛 Challenge Hunter: Session-Profit nicht mehr aufgeblasen — kein Win-Doppelbooking (houseBets≠Loss-Pending), placeBet-Win nie per Display-Multi überschreiben',
   ],

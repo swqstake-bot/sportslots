@@ -1,4 +1,6 @@
 # Tag v1.2.3 pushen → Release-Build. Oder manuell: Actions → „Release“ → Run workflow.
+# Feed: swqstake-bot/sportslots-releases. Dual-Publish auf sportslots während Migration.
+# Docs: docs/auto-update-feed.md
 name: Release
 
 on:
@@ -62,11 +64,12 @@ jobs:
           npm run qa:gate
 
       # electron-builder downloads NSIS/winCodeSign from GitHub Releases; 502s are transient.
+      # RELEASES_GITHUB_TOKEN: PAT (repo) für sportslots-releases + sportslots (Dual-Publish).
       - name: Build and Publish
         uses: nick-fields/retry@v3
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
         with:
           timeout_minutes: 45
           max_attempts: 3

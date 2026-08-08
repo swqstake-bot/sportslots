@@ -1,4 +1,4 @@
 provider: github
 owner: swqstake-bot
-repo: sportslots
+repo: sportslots-releases
 updaterCacheDirName: swqbot-updater
