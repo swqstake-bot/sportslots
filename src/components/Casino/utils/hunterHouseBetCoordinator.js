@@ -480,15 +480,37 @@ export function attachHunterHouseBetCoordinator(ctx) {
 
           patchHubFeedEntryFromHouseBet(p.feedEntryId, bItem, amountPatch)
 
-          // Net/Session KPI: houseBets multi often arrives after placeBet booked win=0.
+          // Net/Session KPI: houseBets may arrive after placeBet booked win=0 — top up delta once.
+          // Guard: never book a house win onto a loss pending (mismatch → doppeltes Payout).
           try {
-            const houseWinMinor = Number(amountPatch?.winAmount)
-            const booked = Number(p.bookedWinMinor)
-            const prevBooked = Number.isFinite(booked) ? booked : 0
-            if (Number.isFinite(houseWinMinor) && houseWinMinor > prevBooked + 0.5) {
-              const delta = houseWinMinor - prevBooked
-              p.bookedWinMinor = houseWinMinor
-              applyHouseBetKpiWinDeltaRef?.current?.(runId, delta, patchCurr)
+            const pendingMulti = Number(p.multi) || 0
+            const houseMulti = Number(effectiveMulti) || 0
+            const mismatchWinOnLoss = houseMulti >= 1.01 && pendingMulti < 0.5
+            if (!mismatchWinOnLoss) {
+              let houseWinMinor = Number(amountPatch?.winAmount)
+              const payoutMinorDirect = Number(bItem?.payoutMinor)
+              const payoutMajorDirect = Number(bItem?.payoutMajor ?? bItem?.payout)
+              if (Number.isFinite(payoutMinorDirect) && payoutMinorDirect >= 0) {
+                houseWinMinor = payoutMinorDirect
+              } else if (Number.isFinite(payoutMajorDirect) && payoutMajorDirect >= 0 && Number.isFinite(stakeMajor) && stakeMajor > 0) {
+                // houseBets.payout can be net (profit) or gross — align with multi when needed.
+                let payoutMajor = payoutMajorDirect
+                if (houseMulti > 0) {
+                  const fromRaw = payoutMajor / stakeMajor
+                  const fromNet = (payoutMajor + stakeMajor) / stakeMajor
+                  if (Math.abs(fromNet - houseMulti) + 0.02 < Math.abs(fromRaw - houseMulti)) {
+                    payoutMajor = payoutMajor + stakeMajor
+                  }
+                }
+                houseWinMinor = toMinor(payoutMajor, patchCurr)
+              }
+              const booked = Number(p.bookedWinMinor)
+              const prevBooked = Number.isFinite(booked) ? booked : 0
+              if (Number.isFinite(houseWinMinor) && houseWinMinor > prevBooked + 0.5) {
+                const delta = houseWinMinor - prevBooked
+                p.bookedWinMinor = houseWinMinor
+                applyHouseBetKpiWinDeltaRef?.current?.(runId, delta, patchCurr)
+              }
             }
           } catch (_) {}
 

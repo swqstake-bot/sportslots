@@ -165,18 +165,20 @@ function hunterSpinKpiUsdDeltas(betMinor, winMinor, tCurr, rates) {
   return buildUsdSpinDelta(betMinor, winMinor ?? 0, tCurr || 'usd', rates || {})
 }
 
-/** Wenn placeBet den Multi kennt aber winAmount=0 liefert → Win für KPI aus Multi×Einsatz. */
+/**
+ * Win für Session-KPI / Run-Net.
+ * - placeBet-Win > 0 immer bevorzugen (nie mit Display-Multi überschreiben).
+ * - Nur wenn win=0 und ein echter Cashout-Multi (≥1.01×) bekannt ist → Multi×Einsatz.
+ *   houseBets darf danach nur noch die fehlende Delta nachziehen, nicht doppelt buchen.
+ */
 function resolveHunterWinForStats(betMinor, winMinor, multi) {
   const bet = Number(betMinor) || 0
-  let win = Number(winMinor) || 0
+  const win = Number(winMinor) || 0
+  if (win > 0) return win
   const m = Number(multi) || 0
-  if (bet <= 0 || m <= 0) return Math.max(0, win)
+  if (bet <= 0 || m < 1.01) return Math.max(0, win)
   const implied = Math.round(bet * m)
-  if (implied <= 0) return Math.max(0, win)
-  if (win <= 0) return implied
-  // Großer Multi, aber Win stark zu klein (fehlende Bonus-Summe / leeres payout-Feld).
-  if (m >= 5 && win < implied * 0.85) return implied
-  return win
+  return implied > 0 ? implied : 0
 }
 
 /** Minor units → USD (wie im Spin-Loop: toUnits * Kurs) */
@@ -2367,7 +2369,14 @@ export default function AutoChallengeHunter({
 
           const hubListCc = (parsed.currencyCode || tCurr || 'usd').toUpperCase()
           const hubListBet = betAmount
-          const winForStats = resolveHunterWinForStats(betAmount, win, multiForStop)
+          // KPI-Cash-Multi: disambiguierte RGS-Effective bevorzugen (nicht max(Display, Raw)).
+          const cashMultiForStats = (() => {
+            const seEff = Number(data?._stakeEngine?.payoutMultiplierEffective)
+            if (Number.isFinite(seEff) && seEff > 0) return seEff
+            if (betN > 0 && win > 0) return win / betN
+            return multiForStop
+          })()
+          const winForStats = resolveHunterWinForStats(betAmount, win, cashMultiForStats)
           const hubListWinDb = winForStats
 
           const spinSeq =

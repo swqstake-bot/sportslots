@@ -104,6 +104,20 @@ function pickPendingClosestToHouseBetTime(entries, bItem) {
   return best
 }
 
+/** Win-houseBet darf nicht auf Loss-Pending (multi≈0) gematcht werden — sonst KPI-Doppelbuchung. */
+function houseBetMultiCompatibleWithPending(pendingMulti, bItem) {
+  const hbMult = Number(bItem?.payoutMultiplier)
+  const pm = Number(pendingMulti)
+  if (!Number.isFinite(hbMult) || hbMult < 0) return true
+  if (!Number.isFinite(pm) || pm < 0) return true
+  // Beide Verluste / Zero-Return
+  if (hbMult < 0.05 && pm < 0.05) return true
+  // Haus-Win gegen Pending-Loss (oder umgekehrt) → warten auf passenden Pending (Retry-Buffer)
+  if (hbMult >= 1.01 && pm < 0.5) return false
+  if (pm >= 1.01 && hbMult < 0.5) return false
+  return houseBetPayoutMultiplierMatchesPending(pm, bItem) || Math.abs(pm - hbMult) <= Math.max(0.5, hbMult * 0.08)
+}
+
 function trySpliceSinglePendingHouseBet(pendingMap, payloadSlug, payloadCurr, bItem, currencyStrict) {
   const candidates = collectPendingHouseBetCandidates(
     pendingMap,
@@ -113,6 +127,7 @@ function trySpliceSinglePendingHouseBet(pendingMap, payloadSlug, payloadCurr, bI
   )
   if (candidates.length !== 1) return null
   const chosen = candidates[0]
+  if (!houseBetMultiCompatibleWithPending(chosen.p?.multi, bItem)) return null
   const amountOk = houseBetStakeMajorMatchesPending(chosen.p.betAmountMajor, bItem)
   if (!amountOk) {
     const hb = Number(bItem?.amountMajor ?? bItem?.amount)
@@ -131,34 +146,32 @@ function trySpliceSinglePendingHouseBet(pendingMap, payloadSlug, payloadCurr, bI
 
 function selectPendingEntryForHouseBet(candidates, bItem) {
   if (!candidates.length) return null
-  if (candidates.length === 1) return candidates[0]
+  if (candidates.length === 1) {
+    return houseBetMultiCompatibleWithPending(candidates[0].p?.multi, bItem) ? candidates[0] : null
+  }
 
   const hbMult = Number(bItem?.payoutMultiplier)
   const hasHbMult = Number.isFinite(hbMult) && hbMult >= 0
 
   const byAmount = candidates.filter(({ p }) => houseBetStakeMajorMatchesPending(p.betAmountMajor, bItem))
+  const byAmountCompat = byAmount.filter(({ p }) => houseBetMultiCompatibleWithPending(p?.multi, bItem))
 
-  if (byAmount.length === 1) return byAmount[0]
+  if (byAmountCompat.length === 1) return byAmountCompat[0]
 
-  if (byAmount.length > 1 && hasHbMult) {
-    const byAmtMult = byAmount.filter(({ p }) => houseBetPayoutMultiplierMatchesPending(p.multi, bItem))
+  if (byAmountCompat.length > 1 && hasHbMult) {
+    const byAmtMult = byAmountCompat.filter(({ p }) => houseBetPayoutMultiplierMatchesPending(p.multi, bItem))
     if (byAmtMult.length === 1) return byAmtMult[0]
     if (byAmtMult.length > 1) return pickPendingClosestToHouseBetTime(byAmtMult, bItem)
-    const scored = byAmount
-      .map((c) => ({ c, dist: Math.abs(Number(c.p.multi) - hbMult) }))
-      .sort((a, b) => {
-        if (a.dist !== b.dist) return a.dist - b.dist
-        if (a.c.at !== b.c.at) return a.c.at - b.c.at
-        return String(a.c.runId).localeCompare(String(b.c.runId))
-      })
-    return scored[0].c
+    // Kein Multi-Match → nicht den „nächstbesten“ Loss nehmen (KPI würde Win doppelt buchen).
+    // Retry-Buffer wartet auf den passenden Pending.
+    return null
   }
 
-  if (byAmount.length > 1 && !hasHbMult) {
-    return pickOldestPendingEntry(byAmount)
+  if (byAmountCompat.length > 1 && !hasHbMult) {
+    return pickOldestPendingEntry(byAmountCompat)
   }
 
-  if (byAmount.length === 0) {
+  if (byAmountCompat.length === 0) {
     if (hasHbMult) {
       const byMult = candidates.filter(({ p }) => houseBetPayoutMultiplierMatchesPending(p.multi, bItem))
       if (byMult.length === 1) return byMult[0]
@@ -168,6 +181,7 @@ function selectPendingEntryForHouseBet(candidates, bItem) {
 
   if (hasHbMult && hbMult >= 15 && candidates.length > 0) {
     const scored = candidates
+      .filter(({ p }) => houseBetMultiCompatibleWithPending(p?.multi, bItem))
       .map((c) => ({ c, dist: Math.abs(Number(c.p.multi) - hbMult) }))
       .sort((a, b) => {
         if (a.dist !== b.dist) return a.dist - b.dist
@@ -175,6 +189,7 @@ function selectPendingEntryForHouseBet(candidates, bItem) {
         return String(a.c.runId).localeCompare(String(b.c.runId))
       })
     const best = scored[0]
+    if (!best) return null
     const rel = best.dist / Math.max(hbMult, 1e-9)
     if (rel <= 0.04 || best.dist <= 0.5) return best.c
   }
@@ -184,10 +199,18 @@ function selectPendingEntryForHouseBet(candidates, bItem) {
 
 function pickPendingWhenAmbiguous(candidates, bItem) {
   if (!candidates.length) return null
-  const byAmount = candidates.filter(({ p }) => houseBetStakeMajorMatchesPending(p.betAmountMajor, bItem))
+  const hbMult = Number(bItem?.payoutMultiplier)
+  const hasWinHouse = Number.isFinite(hbMult) && hbMult >= 1.01
+  // Bei Win-houseBets kein blindes FIFO auf Loss-Pendings — das war die KPI-Doppelbuchung.
+  if (hasWinHouse) return null
+  const byAmount = candidates.filter(
+    ({ p }) =>
+      houseBetStakeMajorMatchesPending(p.betAmountMajor, bItem) &&
+      houseBetMultiCompatibleWithPending(p?.multi, bItem)
+  )
   if (byAmount.length === 1) return byAmount[0]
   if (byAmount.length > 1) return pickOldestPendingEntry(byAmount)
-  return pickOldestPendingEntry(candidates)
+  return null
 }
 
 export function splicePendingHouseBetMatch(pendingMap, payloadSlug, payloadCurr, bItem) {
@@ -258,7 +281,10 @@ export function splicePendingHouseBetMatchWithoutSlug(pendingMap, payloadCurr, b
     }
     if (sluglessCandidates.length === 1) {
       const chosen = sluglessCandidates[0]
-      if (houseBetStakeMajorMatchesPending(chosen.p.betAmountMajor, bItem)) {
+      if (
+        houseBetStakeMajorMatchesPending(chosen.p.betAmountMajor, bItem) &&
+        houseBetMultiCompatibleWithPending(chosen.p?.multi, bItem)
+      ) {
         const q = pendingMap[chosen.runId]
         if (Array.isArray(q) && chosen.idx >= 0 && chosen.idx < q.length) {
           const [removed] = q.splice(chosen.idx, 1)

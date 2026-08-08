@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.259': [
+    '🐛 Challenge Hunter: Session-Profit nicht mehr aufgeblasen — kein Win-Doppelbooking (houseBets≠Loss-Pending), placeBet-Win nie per Display-Multi überschreiben',
+  ],
   '1.0.258': [
     '🐛 Challenge Hunter: große Wins wieder in Net/Session-P/L — Multi×Einsatz wenn placeBet win=0, houseBets top-up',
     '✨ Challenge Hub Resource mode: P/L, Bets/s, Session-Highest-Multis, Start/Stop All (weniger UI-Last, kein Bet-Feed)',
