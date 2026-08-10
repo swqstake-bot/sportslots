@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.263': [
+    '⚡ Originals turbo: default/floor gelockert auf 90ms (~11/s) / min 70ms — aggressiver als Hunter; Hunter/Slots bleiben bei ~125ms Pace + Stake Engine Serialize',
+  ],
   '1.0.262': [
     '⚡ Casino rate defaults from Dev probe: Originals turbo floor/default ~125ms (~8/s); Stake Engine play serialized per session; Challenge Hunter shared account pace ~125ms between placeBets',
     '🧹 Casino Dev tab / bet-speed probe entfernt (Ergebnisse als Produktions-Caps übernommen)',

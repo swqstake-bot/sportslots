@@ -2,7 +2,7 @@
   "name": "swqbot",
   "private": true,
   "type": "module",
-  "version": "1.0.262",
+  "version": "1.0.263",
   "description": "swqbot - Stake automation desktop app",
   "author": "swqbot",
   "repository": {

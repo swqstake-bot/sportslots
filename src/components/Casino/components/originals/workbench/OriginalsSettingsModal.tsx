@@ -192,10 +192,10 @@ function SettingsForm({
 
       <SettingsSection title="Turbo ⚡ (parallel bets)">
         <p className="originals-field-hint originals-field-hint--block">
-          Toggle Turbo in the header. Recommended fire interval on Stake is {STAKE_TURBO_DEFAULT_INTERVAL_MS}ms (~
-          {turboSpawnRatePerSec(STAKE_TURBO_DEFAULT_INTERVAL_MS).toFixed(1)}/s). Dev probe: account soft budget ~{' '}
-          {STAKE_SOFT_MAX_BETS_PER_SEC}/s (429s from ~10/s). Turbo uses a flat bet — B2B / combo chains run in normal
-          mode only.
+          Toggle Turbo in the header. Recommended fire interval is {STAKE_TURBO_DEFAULT_INTERVAL_MS}ms (~
+          {turboSpawnRatePerSec(STAKE_TURBO_DEFAULT_INTERVAL_MS).toFixed(1)}/s). Originals may push ~10–12/s with some
+          429 risk; clean ~{STAKE_SOFT_MAX_BETS_PER_SEC}/s was the Dice probe (Hunter/Slots stay stricter at ~125ms).
+          Turbo uses a flat bet — B2B / combo chains run in normal mode only.
         </p>
         <label className="originals-field">
           <span className="originals-field-label">Max bets in flight</span>
@@ -222,7 +222,8 @@ function SettingsForm({
           />
           <span className="originals-field-hint">
             Spawn rate ~{turboSpawnRatePerSec(draft.turboFireIntervalMs || STAKE_TURBO_DEFAULT_INTERVAL_MS).toFixed(1)}
-            /s. Min {MIN_TURBO_FIRE_INTERVAL_MS}ms (~{STAKE_SOFT_MAX_BETS_PER_SEC}/s). Recommended:{' '}
+            /s. Min {MIN_TURBO_FIRE_INTERVAL_MS}ms (~
+            {turboSpawnRatePerSec(MIN_TURBO_FIRE_INTERVAL_MS).toFixed(1)}/s). Recommended:{' '}
             {STAKE_TURBO_DEFAULT_INTERVAL_MS}ms.
           </span>
         </label>

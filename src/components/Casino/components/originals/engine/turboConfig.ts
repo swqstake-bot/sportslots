@@ -19,30 +19,33 @@ export function isTurboCompatibleGame(slug: string): boolean {
 }
 
 /**
- * Account-wide Stake soft budget from Dev bet-speed probe (Dice 4 workers):
- * stable ~8 bets/s; from ~10/s upward → 429s. Interval floor = 1000/8.
+ * Dice probe clean rate (~8 bets/s). Challenge Hunter / Slots still target this
+ * via casinoAccountPace (125ms). Originals turbo may push higher (see below).
  */
 export const STAKE_ACCOUNT_SOFT_BETS_PER_SEC = 8
 export const STAKE_ACCOUNT_PACE_INTERVAL_MS = Math.round(1000 / STAKE_ACCOUNT_SOFT_BETS_PER_SEC)
 
-/** @deprecated Prefer STAKE_TURBO_DEFAULT_INTERVAL_MS / STAKE_ACCOUNT_PACE_INTERVAL_MS */
-export const TURBO_GLOBAL_DEFAULT_INTERVAL_MS = STAKE_ACCOUNT_PACE_INTERVAL_MS
-
-/** Recommended async fire interval for Stake / Stake.us / Shuffle (~8/s). */
-export const STAKE_TURBO_DEFAULT_INTERVAL_MS = STAKE_ACCOUNT_PACE_INTERVAL_MS
-
-/** Soft account cap used in settings copy (Dev probe). */
+/** Soft clean probe rate used in settings copy (Dice). */
 export const STAKE_SOFT_MAX_BETS_PER_SEC = STAKE_ACCOUNT_SOFT_BETS_PER_SEC
+
+/**
+ * Originals turbo default — ~11.1 bets/s (90ms).
+ * More aggressive than Hunter/Slots 125ms; some 429 risk above ~10/s.
+ */
+export const STAKE_TURBO_DEFAULT_INTERVAL_MS = 90
+
+/** @deprecated Prefer STAKE_TURBO_DEFAULT_INTERVAL_MS */
+export const TURBO_GLOBAL_DEFAULT_INTERVAL_MS = STAKE_TURBO_DEFAULT_INTERVAL_MS
 
 export const DEFAULT_TURBO_FIRE_INTERVAL_MS = STAKE_TURBO_DEFAULT_INTERVAL_MS
 /** Probe: 4 in-flight at ~8/s spawn was clean; 2 workers more fragile at same target. */
 export const DEFAULT_TURBO_MAX_IN_FLIGHT = 4
 
 /**
- * Hard floor: do not spawn faster than ~8/s (was 55ms/~18/s — instant 429 risk).
- * Saved settings below this are clamped on load via normalizeTurboSettings.
+ * Hard floor for Originals turbo: 70ms (~14/s).
+ * Users can go below the 90ms default, but not back to the old 55ms/~18/s zone.
  */
-export const MIN_TURBO_FIRE_INTERVAL_MS = STAKE_ACCOUNT_PACE_INTERVAL_MS
+export const MIN_TURBO_FIRE_INTERVAL_MS = 70
 export const MAX_TURBO_FIRE_INTERVAL_MS = 500
 export const MAX_TURBO_MAX_IN_FLIGHT = 8
 
