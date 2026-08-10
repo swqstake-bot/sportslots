@@ -87,6 +87,10 @@ function percentile(sortedAsc: number[], p: number): number | null {
 
 export function isThrottleHttpError(err: unknown): boolean {
   if (isRateLimitError(err)) return true
+  if (err && typeof err === 'object') {
+    const status = Number((err as { status?: unknown; statusCode?: unknown }).status ?? (err as { statusCode?: unknown }).statusCode)
+    if (status === 429 || status === 502 || status === 503 || status === 504) return true
+  }
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
   return (
     msg.includes('503') ||
@@ -110,6 +114,14 @@ export function isInsufficientBalanceError(err: unknown): boolean {
     msg.includes('not enough') ||
     msg.includes('err_ipb')
   )
+}
+
+export function isSessionClosedError(err: unknown): boolean {
+  if (err && typeof err === 'object' && (err as { sessionClosed?: boolean }).sessionClosed) {
+    return true
+  }
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
+  return msg.includes('session abgelaufen') || msg.includes('session closed') || msg.includes('err_is')
 }
 
 /** webSlots entry looks like Stake Engine / RGS (providerId or known slug prefix). */
@@ -155,13 +167,22 @@ type SlotWorker = {
   slug: string
 }
 
+type StakeEngineSessionLike = {
+  betLevels?: number[]
+  amountMathCurrency?: string
+}
+
 async function prepareSlotWorkers(
   config: BetSpeedProbeConfig,
   workers: number,
+  signal: ProbeSignal,
   onLog?: (msg: string) => void
 ): Promise<{ workers: SlotWorker[]; usdAt: number }> {
   const slug = String(config.slotSlug || '').toLowerCase()
   if (!slug) throw new Error('Pick a Stake Engine slot slug')
+  if (!String(config.accessToken || '').trim()) {
+    throw new Error('Missing accessToken for Stake Engine session')
+  }
   const providerId = config.slotProviderId || 'stakeEngine'
   const provider = getProvider(providerId) as {
     startSession?: (t: string, sl: string, src: string, tgt: string) => Promise<unknown>
@@ -171,28 +192,30 @@ async function prepareSlotWorkers(
     throw new Error(`Provider ${providerId} missing startSession/placeBet`)
   }
 
-  const rate =
-    isGoldCoinCurrency(config.targetCurrency)
-      ? 1
-      : Number(config.usdRates?.[config.targetCurrency.toLowerCase()] || 0)
-  if (!(rate > 0) && !isGoldCoinCurrency(config.targetCurrency)) {
-    throw new Error(`No FX rate for ${config.targetCurrency}`)
-  }
-  const effectiveRate = rate > 0 ? rate : 1
-
   const sessions: SlotWorker[] = []
   let usdAt = 0
   for (let i = 0; i < workers; i++) {
+    if (signal.cancelled) throw new Error('Cancelled during session start')
     if (i > 0) await sleep(150)
-    const session = await provider.startSession(
+    if (signal.cancelled) throw new Error('Cancelled during session start')
+    const session = (await provider.startSession(
       config.accessToken,
       slug,
       config.sourceCurrency,
       config.targetCurrency
-    )
+    )) as StakeEngineSessionLike
+    // Size in wallet math currency (EU XEC→sweeps), not raw RGS code.
+    const mathCur = String(session?.amountMathCurrency || config.targetCurrency || 'eur').toLowerCase()
+    const rate = isGoldCoinCurrency(mathCur)
+      ? 1
+      : Number(config.usdRates?.[mathCur] || config.usdRates?.[config.targetCurrency.toLowerCase()] || 0)
+    if (!(rate > 0) && !isGoldCoinCurrency(mathCur)) {
+      throw new Error(`No FX rate for ${mathCur}`)
+    }
+    const effectiveRate = rate > 0 ? rate : 1
     const sized = computeBetFromMinBetAndSession(
-      session as { betLevels?: number[] },
-      config.targetCurrency,
+      session,
+      mathCur,
       effectiveRate,
       Math.max(0.01, config.betUsd || 0.01)
     )
@@ -204,10 +227,26 @@ async function prepareSlotWorkers(
       slug,
     })
     onLog?.(
-      `Slot session ${i + 1}/${workers}: ${slug} bet≈$${sized.usdAt.toFixed(3)} (minor ${sized.betAmount})`
+      `Slot session ${i + 1}/${workers}: ${slug} math=${mathCur} bet≈$${sized.usdAt.toFixed(3)} (minor ${sized.betAmount})`
     )
   }
   return { workers: sessions, usdAt }
+}
+
+/** Wait until all in-flight bets finish — never start the next stage while a session is still busy. */
+async function drainInFlight(
+  getInFlight: () => number,
+  onLog?: (msg: string) => void
+): Promise<void> {
+  let lastLogAt = 0
+  while (getInFlight() > 0) {
+    const now = Date.now()
+    if (now - lastLogAt >= 15_000) {
+      onLog?.(`Draining ${getInFlight()} in-flight bet(s)…`)
+      lastLogAt = now
+    }
+    await sleep(25)
+  }
 }
 
 async function runStage(
@@ -238,6 +277,7 @@ async function runStage(
   let nextWorker = 0
   const t0 = Date.now()
   let lastProgressAt = 0
+  let activeUntilMs = 0
 
   const pushProgress = (force = false) => {
     const now = Date.now()
@@ -277,6 +317,10 @@ async function runStage(
         hardStop = true
         signal.cancelled = true
         callbacks.onLog?.('Insufficient balance — stopping probe.')
+      } else if (isSessionClosedError(e)) {
+        hardStop = true
+        signal.cancelled = true
+        callbacks.onLog?.('Session closed — stopping probe.')
       }
     } finally {
       inFlight -= 1
@@ -299,17 +343,27 @@ async function runStage(
 
     inFlight += 1
     void fireOne()
-    await sleep(spawnIntervalMs)
+
+    // Avoid sleeping a full interval after the stage window already ended (off-by-one overrun).
+    if (config.stageStop === 'duration') {
+      const remaining = durationMs - (Date.now() - t0)
+      if (remaining <= 0) break
+      await sleep(Math.min(spawnIntervalMs, remaining))
+    } else if (bets + inFlight >= betCap) {
+      break
+    } else {
+      await sleep(spawnIntervalMs)
+    }
   }
 
-  // Drain in-flight (bounded) so we don't leave runaway bets after Stop.
-  const drainDeadline = Date.now() + 15_000
-  while (inFlight > 0 && Date.now() < drainDeadline) {
-    await sleep(20)
-  }
+  activeUntilMs = Date.now() - t0
+
+  // Fully drain before returning so the next stage cannot double-hit a Stake Engine session.
+  await drainInFlight(() => inFlight, callbacks.onLog)
   pushProgress(true)
 
-  const elapsedMs = Math.max(1, Date.now() - t0)
+  // Achieved rate uses active spawn window (excludes drain wait) so slow tails don't under-report.
+  const elapsedMs = Math.max(1, activeUntilMs)
   const achievedBps = (bets * 1000) / elapsedMs
   const sorted = [...latencies].sort((a, b) => a - b)
   const errorRate = bets + errors > 0 ? errors / (bets + errors) : 1
@@ -338,6 +392,10 @@ export async function runBetSpeedProbe(
   const workers = Math.max(1, Math.min(4, config.workers || 1)) as 1 | 2 | 4
   const stages: ProbeStageResult[] = []
 
+  if (!String(config.accessToken || '').trim()) {
+    throw new Error('Missing accessToken')
+  }
+
   callbacks.onLog?.(
     `Probe start: ${config.kind}, ~$${config.betUsd}/bet, workers=${workers}, stages=${stagesBps.join(',')}`
   )
@@ -345,29 +403,47 @@ export async function runBetSpeedProbe(
   let slotWorkers: SlotWorker[] | null = null
   let originalsAmount: number | null = null
 
-  if (config.kind === 'stake-engine') {
-    const prepared = await prepareSlotWorkers(config, workers, callbacks.onLog)
-    slotWorkers = prepared.workers
-  } else {
-    originalsAmount = resolveOriginalsAmount(config.betUsd, config.currency, config.usdRates)
-    callbacks.onLog?.(
-      `Originals amount: ${originalsAmount} ${config.currency} (from ~$${config.betUsd})`
-    )
-  }
+  try {
+    if (config.kind === 'stake-engine') {
+      try {
+        const prepared = await prepareSlotWorkers(config, workers, signal, callbacks.onLog)
+        slotWorkers = prepared.workers
+      } catch (e) {
+        if (signal.cancelled || (e instanceof Error && /cancelled/i.test(e.message))) {
+          callbacks.onLog?.('Probe cancelled during session start.')
+          return {
+            stages: [],
+            recommendedIntervalMs: null,
+            recommendedBps: null,
+            stopped: true,
+          }
+        }
+        throw e
+      }
+    } else {
+      originalsAmount = resolveOriginalsAmount(config.betUsd, config.currency, config.usdRates)
+      callbacks.onLog?.(
+        `Originals amount: ${originalsAmount} ${config.currency} (from ~$${config.betUsd})`
+      )
+    }
 
-  for (let i = 0; i < stagesBps.length; i++) {
-    if (signal.cancelled) break
-    const targetBps = stagesBps[i]
-    callbacks.onStageStart?.(i, targetBps)
-    const result = await runStage(config, targetBps, signal, slotWorkers, originalsAmount, callbacks, i)
-    stages.push(result)
-    callbacks.onStageDone?.(i, result)
-    callbacks.onLog?.(
-      `Stage ${i + 1} done: ${result.achievedBps.toFixed(2)}/s, bets=${result.bets}, err=${result.errors}, 429/5xx=${result.throttleErrors}, p50=${result.latencyP50Ms ?? '—'}ms, p95=${result.latencyP95Ms ?? '—'}ms ${result.ok ? 'OK' : 'NOISY'}`
-    )
-    if (signal.cancelled) break
-    // Brief cool-down between stages
-    await sleep(500)
+    for (let i = 0; i < stagesBps.length; i++) {
+      if (signal.cancelled) break
+      const targetBps = stagesBps[i]
+      callbacks.onStageStart?.(i, targetBps)
+      const result = await runStage(config, targetBps, signal, slotWorkers, originalsAmount, callbacks, i)
+      stages.push(result)
+      callbacks.onStageDone?.(i, result)
+      callbacks.onLog?.(
+        `Stage ${i + 1} done: ${result.achievedBps.toFixed(2)}/s, bets=${result.bets}, err=${result.errors}, 429/5xx=${result.throttleErrors}, p50=${result.latencyP50Ms ?? '—'}ms, p95=${result.latencyP95Ms ?? '—'}ms ${result.ok ? 'OK' : 'NOISY'}`
+      )
+      if (signal.cancelled) break
+      // Brief cool-down between stages
+      await sleep(500)
+    }
+  } finally {
+    // Stake Engine has no explicit logout; end-round already runs per bet. Drop refs so GC can collect.
+    slotWorkers = null
   }
 
   let recommendedIntervalMs: number | null = null

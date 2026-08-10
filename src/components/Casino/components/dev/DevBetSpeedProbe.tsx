@@ -77,6 +77,8 @@ export function DevBetSpeedProbe({
   )
 
   const signalRef = useRef<ProbeSignal | null>(null)
+  const startLockRef = useRef(false)
+  const mountedRef = useRef(true)
   const logEndRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -89,7 +91,9 @@ export function DevBetSpeedProbe({
 
   // Hard stop on unmount — never leave runaway betting.
   useEffect(() => {
+    mountedRef.current = true
     return () => {
+      mountedRef.current = false
       if (signalRef.current) signalRef.current.cancelled = true
     }
   }, [])
@@ -102,6 +106,14 @@ export function DevBetSpeedProbe({
       return hay.includes(q)
     }).slice(0, 80)
   }, [stakeEngineSlots, slotFilter])
+
+  // Keep the selected slug visible even if the current filter excludes it.
+  const slotOptions = useMemo(() => {
+    if (!slotSlug) return filteredSlots
+    if (filteredSlots.some((s) => s.slug === slotSlug)) return filteredSlots
+    const selected = stakeEngineSlots.find((s) => s.slug === slotSlug)
+    return selected ? [selected, ...filteredSlots] : filteredSlots
+  }, [filteredSlots, slotSlug, stakeEngineSlots])
 
   const currency = (selectedCurrency || (preferredSite === 'eu' ? 'sweeps' : 'usdc')).toLowerCase()
   const sourceCurrency = (
@@ -116,6 +128,7 @@ export function DevBetSpeedProbe({
   ).toLowerCase()
 
   const pushLog = useCallback((msg: string) => {
+    if (!mountedRef.current) return
     const line = `[${new Date().toLocaleTimeString()}] ${msg}`
     setLogs((prev) => [...prev.slice(-400), line])
   }, [])
@@ -130,7 +143,7 @@ export function DevBetSpeedProbe({
       pushLog('No session token — login / refresh session first.')
       return
     }
-    if (running) return
+    if (running || startLockRef.current) return
 
     const stagesBps = parseStages(stagesText)
     if (!stagesBps.length) {
@@ -142,6 +155,7 @@ export function DevBetSpeedProbe({
       return
     }
 
+    startLockRef.current = true
     setRunning(true)
     setStageResults([])
     setRecommendation(null)
@@ -159,6 +173,17 @@ export function DevBetSpeedProbe({
       pushLog(`FX rates loaded (${Object.keys(usdRates).length}).`)
     } catch {
       pushLog('FX load failed — using 1:1 / GC fallbacks.')
+    }
+
+    if (signalRef.current?.cancelled) {
+      pushLog('Probe cancelled before start.')
+      startLockRef.current = false
+      if (mountedRef.current) {
+        setRunning(false)
+        setLive(null)
+      }
+      signalRef.current = null
+      return
     }
 
     const selected = stakeEngineSlots.find((s) => s.slug === slotSlug)
@@ -181,27 +206,37 @@ export function DevBetSpeedProbe({
     }
 
     try {
-      const summary = await runBetSpeedProbe(config, signalRef.current, {
+      const summary = await runBetSpeedProbe(config, signalRef.current!, {
         onLog: pushLog,
         onStageStart: (i, bps) => {
+          if (!mountedRef.current) return
           setLive({ stageIndex: i, targetBps: bps, bets: 0, errors: 0, throttleErrors: 0, elapsedMs: 0 })
         },
-        onProgress: (info) => setLive(info),
+        onProgress: (info) => {
+          if (!mountedRef.current) return
+          setLive(info)
+        },
         onStageDone: (_i, result) => {
+          if (!mountedRef.current) return
           setStageResults((prev) => [...prev, result])
         },
       })
-      setRecommendation({
-        intervalMs: summary.recommendedIntervalMs,
-        bps: summary.recommendedBps,
-      })
+      if (mountedRef.current) {
+        setRecommendation({
+          intervalMs: summary.recommendedIntervalMs,
+          bps: summary.recommendedBps,
+        })
+      }
       if (summary.stopped) pushLog('Probe stopped.')
       else pushLog('Probe finished.')
     } catch (e) {
       pushLog(`Probe failed: ${e instanceof Error ? e.message : String(e)}`)
     } finally {
-      setRunning(false)
-      setLive(null)
+      startLockRef.current = false
+      if (mountedRef.current) {
+        setRunning(false)
+        setLive(null)
+      }
       signalRef.current = null
     }
   }, [
@@ -352,8 +387,8 @@ export function DevBetSpeedProbe({
               disabled={running}
               onChange={(e) => setSlotSlug(e.target.value)}
             >
-              {!filteredSlots.length && <option value="">No slots</option>}
-              {filteredSlots.map((s) => (
+              {!slotOptions.length && <option value="">No slots</option>}
+              {slotOptions.map((s) => (
                 <option key={s.slug} value={s.slug}>
                   {(s.name || s.slug).slice(0, 80)}
                 </option>
