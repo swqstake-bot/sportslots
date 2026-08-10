@@ -44,7 +44,7 @@ interface ToastState {
 
 interface UiState {
   currentView: 'sports' | 'casino' | 'logger';
-  casinoMode: 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs';
+  casinoMode: 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs' | 'dev';
   /** Ausgewählter Sport-Slug (z. B. soccer, tennis). */
   selectedSportSlug: string | null;
   /** Live/Upcoming-Filter bei Sportansicht (z.B. Soccer) */
@@ -67,7 +67,7 @@ interface UiState {
 
   setFixtureSearchQuery: (q: string) => void;
   setCurrentView: (view: 'sports' | 'casino' | 'logger') => void;
-  setCasinoMode: (mode: 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs') => void;
+  setCasinoMode: (mode: 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs' | 'dev') => void;
   setSelectedSportSlug: (sportSlug: string | null) => void;
   setSportFilterType: (type: 'live' | 'upcoming') => void;
   setRightSidebarTab: (tab: 'autobet' | 'activebets') => void;

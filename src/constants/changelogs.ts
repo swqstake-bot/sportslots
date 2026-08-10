@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.261': [
+    '✨ Casino Dev tab: bet-speed staircase probe (Originals dice/limbo + Stake Engine) at ~$0.01 — measures bets/s, 429/5xx, latency; recommend interval_ms only (not auto-applied)',
+  ],
   '1.0.260': [
     '🔧 Auto-Update: Feed auf öffentliches Releases-Repo sportslots-releases (Source kann später privat werden) — Migration siehe docs/auto-update-feed.md',
   ],
