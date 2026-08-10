@@ -1,4 +1,4 @@
-type CasinoMode = 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs' | 'dev'
+type CasinoMode = 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs'
 
 interface CasinoTopNavProps {
   mode: string
@@ -16,7 +16,6 @@ const MODES: { id: CasinoMode; label: string; title: string }[] = [
   },
   { id: 'bonushunt', label: 'Bonus Hunt', title: 'Pick slots and hunt until bonus triggers (Casino → Bonus Hunt)' },
   { id: 'logs', label: 'Logs', title: 'Internal casino logs / diagnostics' },
-  { id: 'dev', label: 'Dev', title: 'Dev tools — bet-speed probe (burns money)' },
 ]
 
 export function CasinoTopNav({ mode, onChangeMode }: CasinoTopNavProps) {
@@ -37,4 +36,3 @@ export function CasinoTopNav({ mode, onChangeMode }: CasinoTopNavProps) {
     </nav>
   )
 }
-

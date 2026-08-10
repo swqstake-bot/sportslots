@@ -138,7 +138,34 @@ function winRawFromPayoutMultiplierDisambiguated(
   return win
 }
 
+/**
+ * Optional min gap between plays on one session. Primary protection is the per-session
+ * play lock below — Stake Engine RGS is sequential per session (multi in-flight → errors).
+ */
 const STAKEENGINE_MIN_DELAY_MS = 0
+
+/** Serialize wallet/play (+ end-round retry) per sessionID — one in-flight play at a time. */
+const sessionPlayLocks = new Map()
+
+async function withSessionPlayLock(session, fn) {
+  const key = String(session?.sessionID || session?.sessionId || '')
+  if (!key) return fn()
+  const prev = sessionPlayLocks.get(key) || Promise.resolve()
+  let release
+  const gate = new Promise((r) => {
+    release = r
+  })
+  const next = prev.catch(() => {}).then(() => gate)
+  sessionPlayLocks.set(key, next)
+  await prev.catch(() => {})
+  try {
+    return await fn()
+  } finally {
+    release()
+    if (sessionPlayLocks.get(key) === next) sessionPlayLocks.delete(key)
+  }
+}
+
 const STAKE_ENGINE_PLAY_MODE_BY_SLOT_PREFIX = {
   'coreffectinteractive-cut-n-crash': '688_base',
 }
@@ -460,6 +487,8 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
 
   const currency = (session?.currencyCode || 'EUR').toUpperCase()
 
+  // RGS is sequential per session — never overlap play/end-round on the same sessionID.
+  return withSessionPlayLock(session, async () => {
   const lastPlayAt = session?.lastPlayAt || 0
   const waitMs = STAKEENGINE_MIN_DELAY_MS - (Date.now() - lastPlayAt)
   if (waitMs > 0) {
@@ -697,4 +726,5 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
       lastPlayAt: Date.now(),
     },
   }
+  })
 }

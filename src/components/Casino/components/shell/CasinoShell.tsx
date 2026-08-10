@@ -7,7 +7,7 @@ interface CasinoShellProps {
   slotsLoading: boolean
   token: string
   mode: string
-  onChangeMode: (mode: 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs' | 'dev') => void
+  onChangeMode: (mode: 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs') => void
   onRefreshSession: () => void | Promise<void>
   children: ReactNode
 }

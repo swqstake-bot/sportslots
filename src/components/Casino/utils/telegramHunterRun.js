@@ -22,6 +22,7 @@ import { effectiveSpinMultiplierFromParsed } from '../api/providers/stakeEngine'
 import { appendBet } from '../utils/betHistoryDb'
 import { formatStakeShareBetId } from '../utils/stakeBetShareId'
 import { publishChallengeHubBet } from '../utils/challengeHubLiveFeed'
+import { waitCasinoAccountPace } from './casinoAccountPace'
 import {
   extractPacksBetFromStakeData,
   packsChallengeConditionMet,
@@ -81,7 +82,8 @@ function sortTargetCandidatesForProbe(allowedList, rates, minBetUsd, preferred) 
 
 /** Telegram-Hunter: alle klassischen Fiat-Proben wie AutoChallengeHunter (kein künstliches Limit). */
 const SESSION_PROBE_DELAY_MS = 400
-export const HUNTER_SPIN_DELAY_MS = 150
+/** Soft per-run gap; account-wide ~8/s is waitCasinoAccountPace before each placeBet. */
+export const HUNTER_SPIN_DELAY_MS = 0
 export const HUNTER_SPIN_ERROR_RETRY_MS = 0
 const AUTO_PROBE_EXCLUDED_CURRENCIES = new Set(['usdc', 'usdt'])
 const DIRECT_ORIGINALS_SLUGS = new Set(['packs', 'dice', 'limbo', 'mines', 'plinko', 'keno'])
@@ -500,6 +502,7 @@ export async function runTelegramChallengeSession(ctx) {
 
         if (isDirectOriginals) {
           const amountFloat = toUnits(betAmount, tCurr)
+          await waitCasinoAccountPace()
           const directBet = await placeDirectOriginalsBet(
             gSlug,
             amountFloat,
@@ -544,6 +547,7 @@ export async function runTelegramChallengeSession(ctx) {
             casesBetIdentity = String(directBet.id)
           }
         } else {
+          await waitCasinoAccountPace()
           const result = await provider.placeBet(session, betAmount, false, false)
           const { data: d, nextSeq, session: updatedSession } = result || {}
           data = d

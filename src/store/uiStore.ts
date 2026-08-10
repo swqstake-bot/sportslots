@@ -44,7 +44,7 @@ interface ToastState {
 
 interface UiState {
   currentView: 'sports' | 'casino' | 'logger';
-  casinoMode: 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs' | 'dev';
+  casinoMode: 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs';
   /** Ausgewählter Sport-Slug (z. B. soccer, tennis). */
   selectedSportSlug: string | null;
   /** Live/Upcoming-Filter bei Sportansicht (z.B. Soccer) */
@@ -67,7 +67,7 @@ interface UiState {
 
   setFixtureSearchQuery: (q: string) => void;
   setCurrentView: (view: 'sports' | 'casino' | 'logger') => void;
-  setCasinoMode: (mode: 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs' | 'dev') => void;
+  setCasinoMode: (mode: 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs') => void;
   setSelectedSportSlug: (sportSlug: string | null) => void;
   setSportFilterType: (type: 'live' | 'upcoming') => void;
   setRightSidebarTab: (tab: 'autobet' | 'activebets') => void;
@@ -207,6 +207,9 @@ export const useUiStore = create<UiState>()(
           persistedState.casinoMode === 'forum'
         ) {
           next = { ...next, casinoMode: 'challengeHub' }
+        }
+        if (persistedState.casinoMode === 'dev') {
+          next = { ...next, casinoMode: 'play' }
         }
         if (persistedState.selectedSportSlug) return next
         const legacySport = persistedState.selectedSport ?? 'soccer'

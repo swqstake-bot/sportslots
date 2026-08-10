@@ -60,6 +60,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { usePrefersReducedMotion } from '../../../hooks/usePrefersReducedMotion'
 import { TipMenu } from '../../ui/TipMenu'
 import OriginalsProfitChart, { profitsToChartData } from './OriginalsProfitChart'
+import { waitCasinoAccountPace } from '../utils/casinoAccountPace'
 import { HunterRunCard } from './HunterRunCard'
 import ChallengeDifficultyBadge from './challengeHub/ChallengeDifficultyBadge'
 import {
@@ -311,8 +312,8 @@ function sortTargetCandidatesForProbe(allowedList, rates, minBetUsd, preferred, 
 /** Pause zwischen Session-Probes gegen „Please slow down“ / Rate-Limits */
 const SESSION_PROBE_DELAY_MS = 400
 /**
- * Extra-Pause nach jedem erfolgreichen Spin vor dem nächsten `placeBet`.
- * Basis 0 für Max-Speed — kein client-side adaptive pacing; Stake limitiert selbst.
+ * Extra per-run pause after a successful spin (in addition to account-wide pace gate).
+ * Account soft budget ~8/s is enforced via waitCasinoAccountPace before placeBet.
  */
 const HUNTER_SPIN_DELAY_MS = 0
 /** Nach RGS play/end-round vor GraphQL `rotateSeed`: Monolith-Sync; zu niedrig → Fehler, zu hoch → unnötig langsam. */
@@ -2288,6 +2289,7 @@ export default function AutoChallengeHunter({
             playThroughBonus: isHacksawFamily,
             gambleOnBonus: false,
           }
+          await waitCasinoAccountPace()
           const result = await provider.placeBet(
             session,
             betAmount,

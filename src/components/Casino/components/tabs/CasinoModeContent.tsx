@@ -6,7 +6,6 @@ import LogViewer from '../LogViewer'
 import { PlayModeContent } from './PlayModeContent'
 import { SectionCard } from '../ui/SectionCard'
 import { ChallengeHubView } from '../ChallengeHubView'
-import { DevBetSpeedProbe } from '../dev/DevBetSpeedProbe'
 import type { CasinoSlotInstance, SlotSet, CasinoChallengeSelection } from '../../types'
 
 const HUB_MODES = new Set(['challengeHub', 'challenges', 'telegram', 'forum'])
@@ -183,15 +182,6 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
         </SectionCard>
         <LogViewer refreshKey={playLogRefreshKey} />
       </div>
-    )
-  } else if (mode === 'dev') {
-    primary = (
-      <DevBetSpeedProbe
-        accessToken={token}
-        webSlots={webSlots as any}
-        sharedSourceCurrency={sharedSourceCurrency}
-        sharedTargetCurrency={sharedTargetCurrency}
-      />
     )
   }
 

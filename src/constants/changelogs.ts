@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.262': [
+    '⚡ Casino rate defaults from Dev probe: Originals turbo floor/default ~125ms (~8/s); Stake Engine play serialized per session; Challenge Hunter shared account pace ~125ms between placeBets',
+    '🧹 Casino Dev tab / bet-speed probe entfernt (Ergebnisse als Produktions-Caps übernommen)',
+  ],
   '1.0.261': [
     '✨ Casino Dev tab: bet-speed staircase probe (Originals dice/limbo + Stake Engine) at ~$0.01 — measures bets/s, 429/5xx, latency; recommend interval_ms only (not auto-applied)',
   ],
