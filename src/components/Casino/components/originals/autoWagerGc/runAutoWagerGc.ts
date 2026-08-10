@@ -1,9 +1,9 @@
 /**
  * Auto Wager GC — Stake.eu top-up claim + Dice gold wager loop.
  * States: META → WAGER_LOOP (gold ≥ 10) → TURNSTILE → CLAIM → …
- * Claim wait is derived from API lastClaim + interval (if any), GraphQL errors,
- * VipMeta refresh — not a user-configured cooldown. Soft lastClaim+5m only as logged fallback;
- * otherwise poll every ~45s while gold < 10.
+ * On claim cooldown/error: hard-wait until VipMeta next-claim ETA
+ * (nextClaimAt, or lastClaim+interval, or lastClaim+5m soft). Poll ~45s only
+ * when meta has no usable ETA and error text has no retry-after.
  */
 import { placeDiceBet } from '../../../api/stakeOriginalsBets'
 import {
@@ -13,9 +13,8 @@ import {
   isTopUpCooldownError,
   parseClaimWaitMsFromMessage,
   TOPUP_CLAIM_POLL_MS,
-  TOPUP_SOFT_COOLDOWN_MS,
   topUpIntervalMsFromMeta,
-  topUpReadyAtMs,
+  topUpNextReadyFromMeta,
 } from '../../../api/stakeTopUpBonus'
 import { refreshWalletBalances, walletBalanceMajor } from '../../../../../utils/walletBalance'
 import { multiplierToRollUnder } from '../games/targetMath'
@@ -136,48 +135,34 @@ export async function runAutoWagerGc(
     `Start Auto Wager GC — bet ${cfg.betGold} GC @ ${cfg.targetMultiplier}× (RU ${rollUnder.toFixed(2)}), pace ${cfg.paceMs}ms, claim when gold < ${cfg.claimBelowGold}`
   )
 
-  /** Absolute ms when claim is believed available (from error / lastClaim+interval). */
+  /** Absolute ms when claim is believed available (from error / meta ETA). */
   let claimReadyAt = 0
   /** Interval from API meta if present; otherwise null (HAR: topUp has no claimInterval). */
   let knownIntervalMs: number | null = null
-  /** Soft lastClaim+5m estimate for UI only while polling. */
-  let softReadyAt = 0
 
-  /** Update known interval + soft lastClaim+5m UI estimate. Does not block claiming. */
-  const noteMetaTiming = (lastClaim: string | null | undefined, intervalMs: number | null) => {
-    if (intervalMs != null && intervalMs > 0) knownIntervalMs = intervalMs
-    if (lastClaim) {
-      const soft = topUpReadyAtMs(lastClaim, TOPUP_SOFT_COOLDOWN_MS)
-      if (soft > Date.now()) softReadyAt = Math.max(softReadyAt, soft)
-    }
-  }
+  const formatReadyClock = (readyAt: number) =>
+    new Date(readyAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
   /**
-   * After a failed claim: arm wait from lastClaim + API interval when present.
-   * Soft lastClaim+5m is UI/log only — polling remains the no-interval fallback.
+   * After a failed claim: arm hard wait from VipMeta next-claim ETA when known.
+   * Prefer nextClaimAt → lastClaim+interval → lastClaim+5m soft. No 45s poll while ETA known.
    */
-  const armWaitFromMetaAfterFail = (
-    lastClaim: string | null | undefined,
-    intervalMs: number | null,
-    source: string
-  ) => {
-    noteMetaTiming(lastClaim, intervalMs)
-    if (intervalMs != null && intervalMs > 0) {
-      const ready = topUpReadyAtMs(lastClaim, intervalMs)
-      if (ready > Date.now()) {
-        claimReadyAt = Math.max(claimReadyAt, ready)
-        log(
-          `Claim wait from ${source}: lastClaim + interval ${Math.round(intervalMs / 1000)}s → next in ${formatClaimWait(ready - Date.now())}`
-        )
-      }
-    } else if (lastClaim && softReadyAt > Date.now()) {
+  const armWaitFromMetaAfterFail = (topUp: Parameters<typeof topUpNextReadyFromMeta>[0], tag: string) => {
+    const intervalMs = topUpIntervalMsFromMeta(topUp) ?? knownIntervalMs
+    if (intervalMs != null && intervalMs > 0) knownIntervalMs = intervalMs
+
+    const { readyAt, source } = topUpNextReadyFromMeta(topUp, knownIntervalMs)
+    if (readyAt > Date.now()) {
+      claimReadyAt = Math.max(claimReadyAt, readyAt)
       log(
-        `No claim interval in API (${source}) — soft fallback lastClaim+5m est. ${formatClaimWait(softReadyAt - Date.now())} (poll, not hard wait)`
+        `waiting until ${formatReadyClock(readyAt)} from meta (${source}, ${tag}) — ${formatClaimWait(readyAt - Date.now())}`
       )
+      return true
     }
+    return false
   }
 
-  /** Sleep until readyAt (or poll window), updating "next claim in Xm Ys". */
+  /** Sleep until readyAt, updating "next claim in Xm Ys" (respects cancel signal). */
   async function waitForClaimSlot(readyAt: number, label: string) {
     while (!signal.cancelled) {
       const remaining = readyAt - Date.now()
@@ -194,16 +179,14 @@ export async function runAutoWagerGc(
     while (!signal.cancelled) {
       phase('meta', 'Fetching balance / top-up meta')
       let gold = goldFromStore()
-      let lastClaim: string | null | undefined
       let topUpActive = true
 
       try {
         const meta = await fetchTopUpMeta()
         gold = meta.goldBalance
-        lastClaim = meta.topUpBonus?.lastClaim
         topUpActive = meta.topUpBonus?.active !== false
-        const intervalMs = topUpIntervalMsFromMeta(meta.topUpBonus) ?? knownIntervalMs
-        noteMetaTiming(lastClaim, intervalMs)
+        const intervalMs = topUpIntervalMsFromMeta(meta.topUpBonus)
+        if (intervalMs != null && intervalMs > 0) knownIntervalMs = intervalMs
         try {
           await refreshWalletBalances()
           gold = goldFromStore() || gold
@@ -310,7 +293,9 @@ export async function runAutoWagerGc(
 
       if (claimReadyAt > Date.now()) {
         const left = claimReadyAt - Date.now()
-        log(`Waiting for claim — ${formatClaimWait(left)} (from server/meta)`)
+        log(
+          `waiting until ${formatReadyClock(claimReadyAt)} from meta — ${formatClaimWait(left)}`
+        )
         await waitForClaimSlot(claimReadyAt, 'Claim wait')
         continue
       }
@@ -343,7 +328,6 @@ export async function runAutoWagerGc(
         log(`Claimed ${amount} GC (claim #${stats.claims}) — resuming wager`)
         // No forced client cooldown after success — wager immediately on next loop.
         claimReadyAt = 0
-        softReadyAt = 0
         try {
           await refreshWalletBalances()
         } catch {
@@ -369,17 +353,17 @@ export async function runAutoWagerGc(
         const parsed = parseClaimWaitMsFromMessage(msg)
         if (parsed != null && parsed > 0) {
           claimReadyAt = Date.now() + parsed
-          log(`Claim wait from GraphQL error: ${formatClaimWait(parsed)}`)
+          log(
+            `waiting until ${formatReadyClock(claimReadyAt)} from error retry-after — ${formatClaimWait(parsed)}`
+          )
           await waitForClaimSlot(claimReadyAt, 'Error cooldown')
           continue
         }
 
-        // Refresh VipMeta after failed claim — pick up lastClaim / interval
+        // Refresh VipMeta after failed claim — hard-wait on meta ETA when known
         try {
           const meta = await fetchTopUpMeta()
-          lastClaim = meta.topUpBonus?.lastClaim
-          const intervalMs = topUpIntervalMsFromMeta(meta.topUpBonus) ?? knownIntervalMs
-          armWaitFromMetaAfterFail(lastClaim, intervalMs, 'VipMeta after claim fail')
+          armWaitFromMetaAfterFail(meta.topUpBonus, 'VipMeta after claim fail')
           stats.goldBalance = meta.goldBalance
           emitStats()
         } catch (metaErr) {
@@ -392,23 +376,22 @@ export async function runAutoWagerGc(
           continue
         }
 
-        // No API interval / error wait — poll every ~45s; soft lastClaim+5m only for UI/log
+        // Last resort: no meta ETA and no retry-after — poll every ~45s
         if (isTopUpCooldownError(msg)) {
           log(
-            `Cooldown-like claim error without parseable wait — polling every ${Math.round(TOPUP_CLAIM_POLL_MS / 1000)}s`
+            `polling (no meta ETA) — cooldown-like claim error, every ${Math.round(TOPUP_CLAIM_POLL_MS / 1000)}s`
           )
         } else {
-          log(`Claim error — retry in ${Math.round(TOPUP_CLAIM_POLL_MS / 1000)}s`)
+          log(
+            `polling (no meta ETA) — claim error, retry in ${Math.round(TOPUP_CLAIM_POLL_MS / 1000)}s`
+          )
         }
 
         const pollUntil = Date.now() + TOPUP_CLAIM_POLL_MS
         while (!signal.cancelled && Date.now() < pollUntil) {
-          const est = softReadyAt > Date.now() ? softReadyAt - Date.now() : 0
           phase(
             'cooldown',
-            est > 0
-              ? `next claim in ${formatClaimWait(est)} (est.) — polling`
-              : `waiting — retry claim in ${formatClaimWait(pollUntil - Date.now())}`
+            `waiting — retry claim in ${formatClaimWait(pollUntil - Date.now())}`
           )
           await sleep(Math.min(1000, pollUntil - Date.now()), signal)
         }

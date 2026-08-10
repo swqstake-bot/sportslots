@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.272': [
+    '🐛 Auto Wager GC: nach Claim-Cooldown/Error hart bis VipMeta-ETA warten (lastClaim+Interval/5m bzw. nextClaimAt) — 45s-Poll nur noch ohne Meta-ETA und ohne retry-after',
+  ],
   '1.0.271': [
     '✨ Stake.eu Auto Wager GC (Originals Dice): Top-Up Claim (1000 GC via Turnstile) → Dice Gold-Loop → Repeat',
     '🐛 Auto Wager GC: VipMeta HTTP 400 behoben (kein currency auf UserBalance; ungenutztes $dailyBonusEnabled entfernt)',

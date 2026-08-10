@@ -54,6 +54,7 @@ export const TOPUP_CLAIM_POLL_MS = 45_000
  *   claimCount?: number,
  *   claimInterval?: number | null,
  *   lastClaim?: string | null,
+ *   nextClaimAt?: string | number | null,
  *   createdAt?: string,
  *   updatedAt?: string,
  * }} TopUpBonus
@@ -144,6 +145,51 @@ export function topUpReadyAtMs(lastClaim, intervalMs) {
   const t = Date.parse(String(lastClaim))
   if (!Number.isFinite(t)) return 0
   return t + Number(intervalMs)
+}
+
+/**
+ * Next claimable timestamp from VipMeta topUpBonus.
+ * Prefers nextClaimAt when present; else lastClaim + claimInterval;
+ * else lastClaim + soft 5m fallback (same ETA status shows).
+ * @param {TopUpBonus | null | undefined} topUp
+ * @param {number | null} [knownIntervalMs] remembered API interval from a prior response
+ * @returns {{ readyAt: number, source: string | null }}
+ */
+export function topUpNextReadyFromMeta(topUp, knownIntervalMs = null) {
+  if (!topUp) return { readyAt: 0, source: null }
+
+  const nextRaw = topUp.nextClaimAt
+  if (nextRaw != null && nextRaw !== '') {
+    const t =
+      typeof nextRaw === 'number' && Number.isFinite(nextRaw)
+        ? nextRaw < 1e12
+          ? nextRaw * 1000
+          : nextRaw
+        : Date.parse(String(nextRaw))
+    if (Number.isFinite(t) && t > 0) {
+      return { readyAt: t, source: 'nextClaimAt' }
+    }
+  }
+
+  const intervalMs = topUpIntervalMsFromMeta(topUp) ?? knownIntervalMs
+  if (intervalMs != null && intervalMs > 0 && topUp.lastClaim) {
+    const ready = topUpReadyAtMs(topUp.lastClaim, intervalMs)
+    if (ready > 0) {
+      return {
+        readyAt: ready,
+        source: `lastClaim + interval ${Math.round(intervalMs / 1000)}s`,
+      }
+    }
+  }
+
+  if (topUp.lastClaim) {
+    const ready = topUpReadyAtMs(topUp.lastClaim, TOPUP_SOFT_COOLDOWN_MS)
+    if (ready > 0) {
+      return { readyAt: ready, source: 'lastClaim + 5m (soft)' }
+    }
+  }
+
+  return { readyAt: 0, source: null }
 }
 
 /**
