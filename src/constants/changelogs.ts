@@ -1,4 +1,11 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.271': [
+    '✨ Stake.eu Auto Wager GC (Originals Dice): Top-Up Claim (1000 GC via Turnstile) → Dice Gold-Loop → Repeat',
+    '🐛 Auto Wager GC: VipMeta HTTP 400 behoben (kein currency auf UserBalance; ungenutztes $dailyBonusEnabled entfernt)',
+    '🐛 Auto Wager GC: Claim bei gold < 10; dynamischer Einsatz nahe Schwelle (Loss landet unter 10 GC)',
+    '🐛 Auto Wager GC: Claim-Wartezeit aus VipMeta/lastClaim, GraphQL-Errors oder Poll (~45s) — kein festes Cooldown-Feld; nach Claim sofort weiter wetten',
+    '✨ Auto Wager GC: Session-Stat „Wagered“ zeigt kumulierten GC-Einsatz',
+  ],
   '1.0.263': [
     '⚡ Originals turbo: default/floor gelockert auf 90ms (~11/s) / min 70ms — aggressiver als Hunter; Hunter/Slots bleiben bei ~125ms Pace + Stake Engine Serialize',
   ],

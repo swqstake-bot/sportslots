@@ -148,6 +148,12 @@ export interface ElectronAPI {
   } | null>;
   /** Telegram GramJS (Main-Prozess): siehe IPC-Namen in electron/main.ts */
   on: (channel: string, callback: (...args: any[]) => void) => () => void;
+  /** Stake.eu Turnstile (ClaimTopUpBonus) — hidden BrowserWindow + CF api.js. */
+  solveEuTurnstile?: (payload?: { sitekey?: string; timeoutMs?: number }) => Promise<{
+    ok: boolean;
+    token?: string;
+    error?: string;
+  }>;
 }
 
 declare global {

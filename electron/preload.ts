@@ -132,5 +132,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
             error?: string;
             result?: unknown;
         }>,
+    /** Stake.eu Turnstile token (ClaimTopUpBonus) via hidden BrowserWindow. */
+    solveEuTurnstile: (payload?: { sitekey?: string; timeoutMs?: number }) =>
+        ipcRenderer.invoke('solve-eu-turnstile', payload ?? {}) as Promise<{
+            ok: boolean;
+            token?: string;
+            error?: string;
+        }>,
 });
 

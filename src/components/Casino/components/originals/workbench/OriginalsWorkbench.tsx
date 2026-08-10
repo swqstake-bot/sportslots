@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 
 import './originals-workbench.css'
 import DiceRunnerTab from '../DiceRunnerTab'
+import AutoWagerGcPanel from '../autoWagerGc/AutoWagerGcPanel'
 
 import OriginalsScriptView from '../OriginalsScriptView'
 
@@ -13,6 +14,7 @@ import { DEFAULT_WORKBENCH_OPTIONS } from '../schema/workbenchOptions'
 
 import { useOriginalsSession } from '../hooks/useOriginalsSession'
 import { useUserStore } from '../../../../../store/userStore'
+import { useStakeSiteStore } from '../../../../../store/stakeSiteStore'
 
 import OriginalsAutomaticPanel from './OriginalsAutomaticPanel'
 
@@ -74,6 +76,7 @@ function loadWorkbenchSettingsForGame(slug: string): WorkbenchSettings {
 
 export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: OriginalsWorkbenchProps) {
   const game = getOriginalsGame(gameSlug)
+  const preferredSite = useStakeSiteStore((s) => s.preferredSite)
   const [mode, setMode] = useState<OriginalsBettingMode>(() =>
     normalizeModeForGame(loadBettingMode(), gameSlug, getOriginalsGame(gameSlug))
   )
@@ -304,6 +307,8 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
               />
             </div>
           )}
+
+          {game.slug === 'dice' && preferredSite === 'eu' && <AutoWagerGcPanel />}
 
           {showBetHistory && (
             <OriginalsBetBrowser

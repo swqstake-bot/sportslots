@@ -47,6 +47,7 @@ import {
   configureStakeBrowserUserAgent,
   stakeClientHintHeaders,
 } from './stakeBrowserChrome.js';
+import { destroyEuTurnstileWindow, solveEuTopUpTurnstile } from './euTurnstile.js';
 
 configureStakeBrowserUserAgent();
 
@@ -414,6 +415,7 @@ function destroyAuxiliaryBrowserWindows(): void {
     }
     forumLoginWin = null;
   }
+  destroyEuTurnstileWindow();
 }
 
 /**
@@ -1793,6 +1795,17 @@ async function stakeGraphqlInvoke(
 }
 
 ipcMain.handle('api-request', async (_event, payload) => stakeGraphqlInvoke(payload));
+
+/** Stake.eu ClaimTopUpBonus Turnstile — hidden window on defaultSession (same cookies as login). */
+ipcMain.handle(
+  'solve-eu-turnstile',
+  async (_event, payload?: { sitekey?: string; timeoutMs?: number }) => {
+    return solveEuTopUpTurnstile({
+      sitekey: typeof payload?.sitekey === 'string' ? payload.sitekey : undefined,
+      timeoutMs: typeof payload?.timeoutMs === 'number' ? payload.timeoutMs : undefined,
+    });
+  }
+);
 
 /** StakeCruncher tracker API (GET only, public stats / lookup tables). */
 function stakeCruncherRefererForPath(path: string): string | undefined {
