@@ -1,4 +1,9 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.275': [
+    '✨ Promos: Weekly Wrapped / Weekly RNG — Lucky Wins (Beste Gewinne) Top-3 per Slot via SlugKuratorGroup + SlugKuratorGameIndex (EU Session)',
+    '🐛 Challenge Hub: Promotions-Tab wieder sichtbar als Primär-Tab (war unter „More“ versteckt) — Weekly Wrapped + Stake vs Eddie',
+    '🐛 Weekly Wrapped: fehlende/leere Leaderboard-Usernames als „hidden“ anzeigen (statt leer)',
+  ],
   '1.0.272': [
     '🐛 Auto Wager GC: nach Claim-Cooldown/Error hart bis VipMeta-ETA warten (lastClaim+Interval/5m bzw. nextClaimAt) — 45s-Poll nur noch ohne Meta-ETA und ohne retry-after',
   ],

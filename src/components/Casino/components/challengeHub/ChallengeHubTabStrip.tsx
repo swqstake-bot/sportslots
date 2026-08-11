@@ -16,10 +16,10 @@ const PRIMARY_TABS: { id: HubTab; label: string; title: string }[] = [
   },
   { id: 'telegram', label: 'Telegram', title: 'Challenges from Telegram channels' },
   { id: 'forum', label: 'Forum', title: 'Forum challenge view' },
+  { id: 'promotions', label: 'Promotions', title: 'Stake promotions and campaigns (Weekly Wrapped + Stake vs Eddie)' },
 ]
 
 const MORE_TABS: { id: HubTab; label: string; title: string }[] = [
-  { id: 'promotions', label: 'Promotions', title: 'Stake promotions and campaigns' },
   { id: 'archive', label: 'Archive', title: 'Session review, trends, top games and exports from stored bet history' },
 ]
 
@@ -71,7 +71,7 @@ export const ChallengeHubTabStrip = memo(function ChallengeHubTabStrip({ tab, on
           aria-selected={!!activeMore}
           aria-expanded={moreOpen}
           aria-haspopup="menu"
-          title="Promotions and Archive"
+          title="Archive and more"
           className={`challenge-hub-tab challenge-hub-tab--more ${activeMore ? 'is-active' : ''} ${moreOpen ? 'is-open' : ''}`.trim()}
           onClick={() => setMoreOpen((o) => !o)}
         >

@@ -1,6 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchStakeVsEddiePromotion, resolvePromotionGameSlots, STAKE_PROMOTION_KEYS } from '../../api/stakePromotions'
+import { fetchWeeklyWrappedBoard } from '../../api/stakeWeeklyWrapped'
 import { useUiStore } from '../../../../store/uiStore'
+import { useStakeSiteStore } from '../../../../store/stakeSiteStore'
 import { clearPromotionCompletions, getPromotionCompletionHistory, markPromotionCompleted } from '../../utils/promoCompletion'
 
 interface PromotionItem {
@@ -15,6 +17,20 @@ interface PromotionItem {
   minStakeUsd?: number | null
   taskText?: string
   isSportsPromotion?: boolean
+}
+
+interface WeeklyTopEntry {
+  position: number
+  payoutMultiplier: number
+  username: string
+}
+
+interface WeeklySlotBoard {
+  slug: string
+  name: string
+  thumbnailUrl?: string | null
+  top: WeeklyTopEntry[]
+  error?: string | null
 }
 
 interface PromotionsViewProps {
@@ -36,11 +52,25 @@ function loadPromoCompletionState() {
   return out
 }
 
+function formatMulti(value: number) {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return '—'
+  return `${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}x`
+}
+
 export const PromotionsView = memo(function PromotionsView({ accessToken, webSlots }: PromotionsViewProps) {
+  const preferredSite = useStakeSiteStore((s) => s.preferredSite)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [stakeVsEddiePromo, setStakeVsEddiePromo] = useState<PromotionItem | null>(null)
   const [completionBySlug, setCompletionBySlug] = useState<Record<string, { ts: number; note: string }>>(() => loadPromoCompletionState())
+
+  const [wrappedLoading, setWrappedLoading] = useState(false)
+  const [wrappedError, setWrappedError] = useState('')
+  const [wrappedSlots, setWrappedSlots] = useState<WeeklySlotBoard[]>([])
+  const [wrappedSource, setWrappedSource] = useState<'group' | 'fallback' | ''>('')
+  const [wrappedCached, setWrappedCached] = useState(false)
+  const [wrappedFetchedAt, setWrappedFetchedAt] = useState<number | null>(null)
 
   const loadPromotions = useCallback(async () => {
     if (!accessToken) return // keep auth-gate behavior aligned with other tabs
@@ -58,9 +88,33 @@ export const PromotionsView = memo(function PromotionsView({ accessToken, webSlo
     }
   }, [accessToken])
 
+  const loadWeeklyWrapped = useCallback(async (force = false) => {
+    if (!accessToken) return
+    setWrappedLoading(true)
+    setWrappedError('')
+    try {
+      const board = await fetchWeeklyWrappedBoard({ locale: 'en', concurrency: 4, force })
+      setWrappedSlots(Array.isArray(board?.slots) ? board.slots : [])
+      setWrappedSource(board?.source === 'fallback' ? 'fallback' : 'group')
+      setWrappedCached(Boolean(board?.cached))
+      setWrappedFetchedAt(Number(board?.fetchedAt) || Date.now())
+    } catch (e: any) {
+      setWrappedSlots([])
+      setWrappedSource('')
+      setWrappedCached(false)
+      setWrappedError(String(e?.message || 'Failed to load Weekly Wrapped'))
+    } finally {
+      setWrappedLoading(false)
+    }
+  }, [accessToken])
+
   useEffect(() => {
     loadPromotions()
   }, [loadPromotions])
+
+  useEffect(() => {
+    loadWeeklyWrapped(false)
+  }, [loadWeeklyWrapped])
 
   const matchedSlots = useMemo(() => {
     if (!stakeVsEddiePromo) return []
@@ -136,8 +190,76 @@ export const PromotionsView = memo(function PromotionsView({ accessToken, webSlo
     return () => window.removeEventListener('casino-bet-added', onCasinoBetAdded as EventListener)
   }, [matchedSlots, stakeVsEddiePromo])
 
+  const wrappedPromoUrl =
+    preferredSite === 'eu'
+      ? 'https://stake.eu/en/promotions/promotion/weekly-wrapped'
+      : 'https://stake.com/en/promotions/promotion/weekly-wrapped'
+
   return (
     <div className="space-y-3">
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-3">
+        <h3 className="text-sm font-semibold text-[var(--text)]">Weekly Wrapped</h3>
+        <p className="text-xs text-[var(--text-muted)] mt-1">
+          Weekly RNG / Lucky Wins (Beste Gewinne) — top 3 multiplier leaderboard per promo slot. Uses active Stake session
+          {preferredSite === 'eu' ? ' (EU).' : ` (site: ${preferredSite}; EU recommended).`}
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="challenge-hub-action"
+            onClick={() => void loadWeeklyWrapped(true)}
+            disabled={wrappedLoading || !accessToken}
+          >
+            {wrappedLoading ? 'Loading…' : 'Refresh'}
+          </button>
+          <button type="button" className="challenge-hub-action" onClick={() => openExternal(wrappedPromoUrl)}>
+            Open Weekly Wrapped
+          </button>
+          <span className="text-xs text-[var(--text-muted)]">
+            Source: {wrappedSource || '—'}
+            {wrappedCached ? ' · cached' : ''}
+            {wrappedFetchedAt ? ` · ${new Date(wrappedFetchedAt).toLocaleTimeString()}` : ''}
+          </span>
+        </div>
+        {wrappedError && <div className="text-xs text-[var(--error)] mt-2">{wrappedError}</div>}
+        {wrappedLoading && wrappedSlots.length === 0 && (
+          <div className="text-xs text-[var(--text-muted)] mt-2">Loading Weekly Wrapped leaderboards…</div>
+        )}
+        {!wrappedLoading && !wrappedError && wrappedSlots.length === 0 && (
+          <div className="text-xs text-[var(--text-muted)] mt-2">No Weekly Wrapped slots found.</div>
+        )}
+        {wrappedSlots.length > 0 && (
+          <div className="mt-2 space-y-1.5">
+            {wrappedSlots.map((slot) => (
+              <div
+                key={slot.slug}
+                className="rounded border border-[var(--border)] bg-[var(--bg-deep)] px-2 py-1.5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs font-medium text-[var(--text)] truncate" title={slot.slug}>
+                    {slot.name || slot.slug}
+                  </div>
+                  <div className="text-[10px] text-[var(--text-muted)] truncate max-w-[40%]">{slot.slug}</div>
+                </div>
+                {slot.error ? (
+                  <div className="text-[11px] text-[var(--error)] mt-1">{slot.error}</div>
+                ) : (
+                  <div className="mt-1 space-y-0.5">
+                    {(slot.top?.length ? slot.top : [1, 2, 3].map((p) => ({ position: p, username: 'hidden', payoutMultiplier: 0 }))).map((row) => (
+                      <div key={`${slot.slug}-${row.position}`} className="flex items-center justify-between gap-2 text-[11px]">
+                        <span className="text-[var(--text-muted)] w-6 shrink-0">#{row.position}</span>
+                        <span className="text-[var(--text)] truncate flex-1">{row.username || 'hidden'}</span>
+                        <span className="text-[var(--accent)] tabular-nums shrink-0">{formatMulti(row.payoutMultiplier)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-3">
         <h3 className="text-sm font-semibold text-[var(--text)]">Stake vs Eddie Hunt</h3>
         <p className="text-xs text-[var(--text-muted)] mt-1">
@@ -216,4 +338,3 @@ export const PromotionsView = memo(function PromotionsView({ accessToken, webSlo
     </div>
   )
 })
-
