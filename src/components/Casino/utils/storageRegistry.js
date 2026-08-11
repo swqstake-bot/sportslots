@@ -11,7 +11,7 @@ export const CASINO_STORAGE_KEYS = {
   discoveredSlots: 'slotbot_discovered_slots',
   stakeSlotsCache: 'slotbot_stake_slots_cache',
   stakeOriginalsCache: 'stake_originals_cache',
-  weeklyWrappedCache: 'slotbot_weekly_wrapped_cache_v1',
+  weeklyWrappedCache: 'slotbot_weekly_wrapped_cache_v2',
   debugHouseBets: 'slotbot_debug_housebets',
 }
 

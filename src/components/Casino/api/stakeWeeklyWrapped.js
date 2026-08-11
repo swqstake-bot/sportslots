@@ -34,18 +34,8 @@ const SLUG_KURATOR_GROUP_QUERY = `query SlugKuratorGroup($slug: String!, $limit:
   }
 }`
 
-/** Lean SlugKuratorGameIndex — multiplierLeaderboard (Lucky Wins / Beste Gewinne) only */
-const SLUG_KURATOR_GAME_INDEX_QUERY = `query SlugKuratorGameIndex($slug: String!) {
-  slugKuratorGame(slug: $slug) {
-    id
-    name
-    slug
-    showMultiplierLeaderboard
-    multiplierLeaderboard {
-      id
-      position
-      payoutMultiplier
-      updatedAt
+/** Lean SlugKuratorGameIndex — multiplier + profit leaderboards (Beste / Große Gewinne) */
+const LEADERBOARD_BET_USER_FRAGMENT = `
       bet {
         id
         bet {
@@ -71,7 +61,28 @@ const SLUG_KURATOR_GAME_INDEX_QUERY = `query SlugKuratorGameIndex($slug: String!
             user { name preferenceHideBets }
           }
         }
-      }
+      }`
+
+const SLUG_KURATOR_GAME_INDEX_QUERY = `query SlugKuratorGameIndex($slug: String!) {
+  slugKuratorGame(slug: $slug) {
+    id
+    name
+    slug
+    showMultiplierLeaderboard
+    showProfitLeaderboard
+    multiplierLeaderboard {
+      id
+      position
+      payoutMultiplier
+      updatedAt
+      ${LEADERBOARD_BET_USER_FRAGMENT}
+    }
+    profitLeaderboard {
+      id
+      position
+      profitValue
+      updatedAt
+      ${LEADERBOARD_BET_USER_FRAGMENT}
     }
   }
 }`
@@ -98,7 +109,7 @@ function extractLeaderboardUsername(entry) {
   return name || 'hidden'
 }
 
-function normalizeTopEntries(rawList, limit = 3) {
+function normalizeTopMultiplierEntries(rawList, limit = 3) {
   const rows = Array.isArray(rawList) ? rawList.slice() : []
   rows.sort((a, b) => {
     const pa = Number(a?.position)
@@ -109,6 +120,23 @@ function normalizeTopEntries(rawList, limit = 3) {
   return rows.slice(0, limit).map((row, idx) => ({
     position: Number.isFinite(Number(row?.position)) ? Number(row.position) : idx + 1,
     payoutMultiplier: Number(row?.payoutMultiplier) || 0,
+    username: extractLeaderboardUsername(row),
+    updatedAt: row?.updatedAt || null,
+    id: row?.id || null,
+  }))
+}
+
+function normalizeTopProfitEntries(rawList, limit = 3) {
+  const rows = Array.isArray(rawList) ? rawList.slice() : []
+  rows.sort((a, b) => {
+    const pa = Number(a?.position)
+    const pb = Number(b?.position)
+    if (Number.isFinite(pa) && Number.isFinite(pb) && pa !== pb) return pa - pb
+    return Number(b?.profitValue || 0) - Number(a?.profitValue || 0)
+  })
+  return rows.slice(0, limit).map((row, idx) => ({
+    position: Number.isFinite(Number(row?.position)) ? Number(row.position) : idx + 1,
+    profitValue: Number(row?.profitValue) || 0,
     username: extractLeaderboardUsername(row),
     updatedAt: row?.updatedAt || null,
     id: row?.id || null,
@@ -185,7 +213,7 @@ export async function fetchWeeklyWrappedSlots({ locale = 'en', limit = 20 } = {}
 }
 
 /**
- * Fetch multiplierLeaderboard (top Lucky Wins) for a single game slug.
+ * Fetch multiplier + profit leaderboards (Beste / Große Gewinne) for a single game slug.
  */
 export async function fetchGameMultiplierLeaderboard(slug) {
   const gameSlug = String(slug || '').toLowerCase().trim()
@@ -194,12 +222,17 @@ export async function fetchGameMultiplierLeaderboard(slug) {
   try {
     const res = await StakeApi.query(SLUG_KURATOR_GAME_INDEX_QUERY, { slug: gameSlug })
     const game = res?.data?.slugKuratorGame
-    const top = normalizeTopEntries(game?.multiplierLeaderboard, 3)
+    const top = normalizeTopMultiplierEntries(game?.multiplierLeaderboard, 3)
+    const topProfit = normalizeTopProfitEntries(game?.profitLeaderboard, 3)
     logApiCall({
       type: 'stake/weekly-wrapped/leaderboard',
       endpoint: gameSlug,
       request: { slug: gameSlug },
-      response: { count: top.length, name: game?.name },
+      response: {
+        count: top.length,
+        profitCount: topProfit.length,
+        name: game?.name,
+      },
       error: null,
       durationMs: Date.now() - t0,
     })
@@ -207,7 +240,9 @@ export async function fetchGameMultiplierLeaderboard(slug) {
       slug: String(game?.slug || gameSlug).toLowerCase(),
       name: String(game?.name || humanizeSlug(gameSlug)).trim(),
       showMultiplierLeaderboard: Boolean(game?.showMultiplierLeaderboard),
+      showProfitLeaderboard: Boolean(game?.showProfitLeaderboard),
       top,
+      topProfit,
       error: null,
     }
   } catch (error) {
@@ -223,7 +258,9 @@ export async function fetchGameMultiplierLeaderboard(slug) {
       slug: gameSlug,
       name: humanizeSlug(gameSlug),
       showMultiplierLeaderboard: false,
+      showProfitLeaderboard: false,
       top: [],
+      topProfit: [],
       error: error?.message || String(error),
     }
   }
@@ -244,7 +281,7 @@ async function mapWithConcurrency(items, concurrency, mapper) {
 }
 
 /**
- * Full Weekly Wrapped MVP payload: 10 slots + top-3 Lucky Wins each.
+ * Full Weekly Wrapped payload: 10 slots + top-3 Beste Gewinne + Große Gewinne each.
  * Light in-memory + localStorage cache (TTL ~3 min).
  */
 export async function fetchWeeklyWrappedBoard({
@@ -273,6 +310,7 @@ export async function fetchWeeklyWrappedBoard({
       name: lb.name || slot.name,
       thumbnailUrl: slot.thumbnailUrl,
       top: lb.top,
+      topProfit: lb.topProfit,
       error: lb.error,
     }
   })

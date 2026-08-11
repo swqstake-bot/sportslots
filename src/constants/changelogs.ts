@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.276': [
+    '✨ Weekly Wrapped: Große Gewinne (Big Wins / profitLeaderboard) Top-3 zusätzlich zu Beste Gewinne (Lucky Wins) pro Promo-Slot',
+  ],
   '1.0.275': [
     '✨ Promos: Weekly Wrapped / Weekly RNG — Lucky Wins (Beste Gewinne) Top-3 per Slot via SlugKuratorGroup + SlugKuratorGameIndex (EU Session)',
     '🐛 Challenge Hub: Promotions-Tab wieder sichtbar als Primär-Tab (war unter „More“ versteckt) — Weekly Wrapped + Stake vs Eddie',

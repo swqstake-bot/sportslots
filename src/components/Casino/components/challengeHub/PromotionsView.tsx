@@ -25,11 +25,18 @@ interface WeeklyTopEntry {
   username: string
 }
 
+interface WeeklyProfitEntry {
+  position: number
+  profitValue: number
+  username: string
+}
+
 interface WeeklySlotBoard {
   slug: string
   name: string
   thumbnailUrl?: string | null
   top: WeeklyTopEntry[]
+  topProfit?: WeeklyProfitEntry[]
   error?: string | null
 }
 
@@ -56,6 +63,20 @@ function formatMulti(value: number) {
   const n = Number(value)
   if (!Number.isFinite(n) || n <= 0) return '—'
   return `${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}x`
+}
+
+function formatProfit(value: number) {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n === 0) return '—'
+  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+}
+
+function placeholderMultiRows(): WeeklyTopEntry[] {
+  return [1, 2, 3].map((p) => ({ position: p, username: 'hidden', payoutMultiplier: 0 }))
+}
+
+function placeholderProfitRows(): WeeklyProfitEntry[] {
+  return [1, 2, 3].map((p) => ({ position: p, username: 'hidden', profitValue: 0 }))
 }
 
 export const PromotionsView = memo(function PromotionsView({ accessToken, webSlots }: PromotionsViewProps) {
@@ -200,7 +221,8 @@ export const PromotionsView = memo(function PromotionsView({ accessToken, webSlo
       <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-3">
         <h3 className="text-sm font-semibold text-[var(--text)]">Weekly Wrapped</h3>
         <p className="text-xs text-[var(--text-muted)] mt-1">
-          Weekly RNG / Lucky Wins (Beste Gewinne) — top 3 multiplier leaderboard per promo slot. Uses active Stake session
+          Weekly RNG — Beste Gewinne (Lucky Wins) + Große Gewinne (Big Wins), top 3 each per promo slot. Uses active Stake
+          session
           {preferredSite === 'eu' ? ' (EU).' : ` (site: ${preferredSite}; EU recommended).`}
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -244,14 +266,45 @@ export const PromotionsView = memo(function PromotionsView({ accessToken, webSlo
                 {slot.error ? (
                   <div className="text-[11px] text-[var(--error)] mt-1">{slot.error}</div>
                 ) : (
-                  <div className="mt-1 space-y-0.5">
-                    {(slot.top?.length ? slot.top : [1, 2, 3].map((p) => ({ position: p, username: 'hidden', payoutMultiplier: 0 }))).map((row) => (
-                      <div key={`${slot.slug}-${row.position}`} className="flex items-center justify-between gap-2 text-[11px]">
-                        <span className="text-[var(--text-muted)] w-6 shrink-0">#{row.position}</span>
-                        <span className="text-[var(--text)] truncate flex-1">{row.username || 'hidden'}</span>
-                        <span className="text-[var(--accent)] tabular-nums shrink-0">{formatMulti(row.payoutMultiplier)}</span>
+                  <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-0.5">
+                        Beste Gewinne
                       </div>
-                    ))}
+                      <div className="space-y-0.5">
+                        {(slot.top?.length ? slot.top : placeholderMultiRows()).map((row) => (
+                          <div
+                            key={`${slot.slug}-multi-${row.position}`}
+                            className="flex items-center justify-between gap-2 text-[11px]"
+                          >
+                            <span className="text-[var(--text-muted)] w-6 shrink-0">#{row.position}</span>
+                            <span className="text-[var(--text)] truncate flex-1">{row.username || 'hidden'}</span>
+                            <span className="text-[var(--accent)] tabular-nums shrink-0">
+                              {formatMulti(row.payoutMultiplier)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-0.5">
+                        Große Gewinne
+                      </div>
+                      <div className="space-y-0.5">
+                        {(slot.topProfit?.length ? slot.topProfit : placeholderProfitRows()).map((row) => (
+                          <div
+                            key={`${slot.slug}-profit-${row.position}`}
+                            className="flex items-center justify-between gap-2 text-[11px]"
+                          >
+                            <span className="text-[var(--text-muted)] w-6 shrink-0">#{row.position}</span>
+                            <span className="text-[var(--text)] truncate flex-1">{row.username || 'hidden'}</span>
+                            <span className="text-[var(--accent)] tabular-nums shrink-0">
+                              {formatProfit(row.profitValue)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
