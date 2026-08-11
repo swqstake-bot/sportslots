@@ -46,7 +46,7 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
         return null
       case 'autorun':
         return (
-          <div id="hub-panel-autorun" role="tabpanel" aria-labelledby="hub-tab-autorun" className="min-w-0">
+          <div id="hub-panel-autorun" role="tabpanel" aria-labelledby="hub-tab-autorun" className="min-w-0 min-h-0">
             <SectionCard title="Balance rules">
               <AutorunTab
                 accessToken={accessToken}
@@ -58,7 +58,7 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
         )
       case 'telegram':
         return (
-          <div id="hub-panel-telegram" role="tabpanel" aria-labelledby="hub-tab-telegram" className="min-w-0">
+          <div id="hub-panel-telegram" role="tabpanel" aria-labelledby="hub-tab-telegram" className="min-w-0 min-h-0">
             <SectionCard title="Telegram challenges">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs text-[var(--text-muted)]">
@@ -91,7 +91,7 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
         )
       case 'forum':
         return (
-          <div id="hub-panel-forum" role="tabpanel" aria-labelledby="hub-tab-forum" className="min-w-0">
+          <div id="hub-panel-forum" role="tabpanel" aria-labelledby="hub-tab-forum" className="min-w-0 min-h-0">
             <SectionCard title="Forum challenges">
               <ForumChallengeView accessToken={accessToken} webSlots={webSlots as any} onSelectChallenge={onSelectChallenge} />
             </SectionCard>
@@ -99,7 +99,7 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
         )
       case 'promotions':
         return (
-          <div id="hub-panel-promotions" role="tabpanel" aria-labelledby="hub-tab-promotions" className="min-w-0">
+          <div id="hub-panel-promotions" role="tabpanel" aria-labelledby="hub-tab-promotions" className="min-w-0 min-h-0">
             <SectionCard title="Promotions">
               <PromotionsView accessToken={accessToken} webSlots={webSlots as any} />
             </SectionCard>
@@ -107,7 +107,7 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
         )
       case 'archive':
         return (
-          <div id="hub-panel-archive" role="tabpanel" aria-labelledby="hub-tab-archive" className="min-w-0">
+          <div id="hub-panel-archive" role="tabpanel" aria-labelledby="hub-tab-archive" className="min-w-0 min-h-0">
             <SectionCard title="Bet Archive">
               <BetArchiveTab accessToken={accessToken} />
             </SectionCard>
@@ -125,7 +125,7 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
         role="tabpanel"
         aria-labelledby="hub-tab-casino"
         aria-hidden={!casinoVisible}
-        className={casinoVisible ? 'min-w-0' : 'hidden'}
+        className={casinoVisible ? 'min-w-0 min-h-0' : 'hidden'}
       >
         <SectionCard>
           <AutoChallengeHunter

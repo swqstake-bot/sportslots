@@ -1,4 +1,5 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.277': [],
   '1.0.276': [
     '✨ Weekly Wrapped: Große Gewinne (Big Wins / profitLeaderboard) Top-3 zusätzlich zu Beste Gewinne (Lucky Wins) pro Promo-Slot',
   ],

@@ -429,6 +429,7 @@ html[data-theme='light'] .casino-root {
 
 .casino-root .challenge-hub-root {
   position: relative;
+  min-height: 0;
 }
 
 .casino-root .challenge-hub-topbar {
@@ -452,6 +453,14 @@ html[data-theme='light'] .casino-root {
 
 .casino-root .challenge-hub-side-column {
   min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.casino-root .challenge-hub-main-column {
+  min-width: 0;
+  min-height: 0;
 }
 
 /* Single merged surface for main + activity (Challenge Hub) */
@@ -460,7 +469,11 @@ html[data-theme='light'] .casino-root {
   border-radius: var(--radius-lg);
   background: var(--surface-1), var(--panel-bg);
   box-shadow: var(--shadow-soft), var(--surface-highlight);
-  overflow: hidden;
+  /* Scroll the hub body — overflow:hidden clipped Found Challenges / promo lists and ate wheel events */
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .casino-root .challenge-hub-workbench {
@@ -469,6 +482,7 @@ html[data-theme='light'] .casino-root {
   gap: 1rem;
   align-items: start;
   min-width: 0;
+  min-height: 0;
 }
 
 @media (min-width: 1280px) {
@@ -1555,6 +1569,14 @@ html[data-theme='light'] .casino-root {
 .casino-root .hunter-dashboard {
   position: relative;
   isolation: isolate;
+  min-height: 0;
+}
+
+/* Hub: never lock hunter to 100% height — that clipped Found Challenges below the fold */
+.casino-root .challenge-hub-root .hunter-dashboard {
+  height: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 .casino-root .hunter-header {
@@ -1901,6 +1923,7 @@ html[data-theme='light'] .casino-root {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--bg-elevated) 94%, var(--bg-deep));
@@ -1924,8 +1947,10 @@ html[data-theme='light'] .casino-root {
 
 .casino-root .hunter-found-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 0.65rem 0.75rem 0.85rem;
+  -webkit-overflow-scrolling: touch;
 }
 
 .casino-root .hunter-found-grid {

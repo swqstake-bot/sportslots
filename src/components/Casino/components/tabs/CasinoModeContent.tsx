@@ -190,7 +190,7 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
   return (
     <>
       {showHub ? (
-        <div className={isHubMode ? 'min-w-0' : 'hidden'} aria-hidden={!isHubMode}>
+        <div className={isHubMode ? 'min-w-0 min-h-0' : 'hidden'} aria-hidden={!isHubMode}>
           <ChallengeHubView
             accessToken={token}
             webSlots={webSlots as any}

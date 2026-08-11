@@ -671,8 +671,9 @@ const STYLES = {
     display: 'flex',
     flexDirection: 'column',
     gap: '1rem',
-    height: '100%',
-    overflow: 'hidden',
+    // Grow with content so Found Challenges (below the grid) stays reachable.
+    // height:100% + overflow:hidden clipped the bottom list and ate wheel events.
+    minHeight: 0,
   },
   inputGroup: {
     display: 'flex',

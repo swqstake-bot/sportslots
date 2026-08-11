@@ -148,8 +148,8 @@ export function ChallengeHubView({
   const hideSide = sideCollapsed || resourceMode
 
   return (
-    <div className={`challenge-hub-root flex flex-col gap-2.5${resourceMode ? ' is-resource-mode' : ''}`}>
-      <div className="challenge-hub-topbar">
+    <div className={`challenge-hub-root flex flex-col gap-2.5 min-h-0${resourceMode ? ' is-resource-mode' : ''}`}>
+      <div className="challenge-hub-topbar shrink-0">
         {!resourceMode ? (
           <ChallengeHubTabStrip tab={tab} onTabChange={handleTabChange} />
         ) : (
@@ -183,9 +183,9 @@ export function ChallengeHubView({
       </div>
 
       <ChallengeHubBetListProvider>
-        <div className="challenge-hub-canvas">
+        <div className="challenge-hub-canvas min-h-0 flex-1">
           <div className={`challenge-hub-workbench${hideSide ? ' is-side-collapsed' : ''}`}>
-            <div className="min-w-0">
+            <div className="challenge-hub-main-column min-w-0 min-h-0">
               <ChallengeHubTabContent
                 tab={resourceMode ? 'casino' : tab}
                 accessToken={accessToken}
@@ -201,7 +201,7 @@ export function ChallengeHubView({
             </div>
 
             {!hideSide && (
-              <div className="challenge-hub-side-column">
+              <div className="challenge-hub-side-column min-h-0">
                 <ChallengeHubBetListPanel accessToken={accessToken} />
               </div>
             )}
