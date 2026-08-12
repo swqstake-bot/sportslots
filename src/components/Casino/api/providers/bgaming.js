@@ -9,6 +9,7 @@
  *    Headers: Accept application/json, Origin=game, Referer=launchUrl(?token=…), Chrome UA
  *    - init  { jsonrpc:"2.0", method:"init", params:{ token } }
  *    - play  { method:"play", params:{ token, req:{ bet_type:"bet", bet }, state_lock } }
+ *    - Extra/Encore: req.purchased_feature = "buy_chance" (same base bet; +50% charged server-side)
  * Beträge in currency_attributes.subunits (EUR: 100 → Cent = App-Minor).
  *
  * HAR (stake.eu, bgaming-mystic-reels, sweeps→sweeps):
@@ -413,7 +414,10 @@ async function warmUpGamePage(launchUrl, origin) {
   }
 }
 
-function mapPurchasedFeatures(features) {
+/** Softswiss Encore / Chance — typically +50% total bet (Mystic Reels HAR + docs). */
+const BGAMING_BUY_CHANCE_MULTIPLIER = 1.5
+
+function mapPurchasedFeatures(features, { chanceMultiplier = BGAMING_BUY_CHANCE_MULTIPLIER } = {}) {
   if (!Array.isArray(features)) return []
   return features
     .filter((f) => typeof f === 'string' && f.trim())
@@ -421,8 +425,23 @@ function mapPurchasedFeatures(features) {
       id: key,
       key,
       label: key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
-      multiplier: 1,
+      // buy_chance = Extra/Encore; buy_bonus is a separate feature-buy (often 100×, charged server-side).
+      multiplier: key === 'buy_chance' ? chanceMultiplier : 1,
     }))
+}
+
+function resolvePurchasedFeatureKey(extraBet, options, session) {
+  const fromOpts =
+    options?.bonusKey ||
+    options?.purchasedFeature ||
+    (typeof options?.bonus === 'string' ? options.bonus : options?.bonus?.key) ||
+    null
+  if (fromOpts) return String(fromOpts)
+  if (extraBet) {
+    if (session?.supportsExtraBet === false) return null
+    return session?.extraBetFeature || 'buy_chance'
+  }
+  return null
 }
 
 /**
@@ -479,7 +498,12 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
               .map((v) => subunitsToAppMinor(v, subunits, amountMathCurrency))
               .filter((v) => Number.isFinite(v) && v > 0)
           : []
-        const bonusGames = mapPurchasedFeatures(result.config?.purchased_features)
+        const purchasedRaw = result.config?.purchased_features
+        const supportsExtraBet = Array.isArray(purchasedRaw) && purchasedRaw.includes('buy_chance')
+        const extraBetMultiplier = supportsExtraBet ? BGAMING_BUY_CHANCE_MULTIPLIER : null
+        const bonusGames = mapPurchasedFeatures(purchasedRaw, {
+          chanceMultiplier: extraBetMultiplier || BGAMING_BUY_CHANCE_MULTIPLIER,
+        })
         const balanceMinor = subunitsToAppMinor(result.balance, subunits, amountMathCurrency)
         const session = {
           provider: 'bgaming',
@@ -503,6 +527,10 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
           currencyCode,
           betLevels,
           bonusGames,
+          purchasedFeatures: Array.isArray(purchasedRaw) ? purchasedRaw.slice() : [],
+          supportsExtraBet,
+          extraBetFeature: supportsExtraBet ? 'buy_chance' : null,
+          extraBetMultiplier,
           initialBalance: balanceMinor,
         }
         logApiCall({
@@ -518,6 +546,8 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
             betLevels: betLevels.slice(0, 8),
             balance: balanceMinor,
             purchased: bonusGames.map((b) => b.key),
+            supportsExtraBet,
+            extraBetMultiplier,
             stateLock: !!session.stateLock,
           },
           error: null,
@@ -556,15 +586,25 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
           : []
         const featureOpts = data.options?.feature_options
         let bonusGames = []
+        let extraBetMultiplier = null
+        let supportsExtraBet = false
         if (featureOpts && typeof featureOpts === 'object') {
           const baseBet = Number(featureOpts.base_bet) || 0
+          if (featureOpts.buy_chance != null && baseBet > 0) {
+            supportsExtraBet = true
+            const m = Number(featureOpts.buy_chance) / baseBet
+            if (Number.isFinite(m) && m > 0) extraBetMultiplier = m
+          } else if (featureOpts.buy_chance != null) {
+            supportsExtraBet = true
+            extraBetMultiplier = BGAMING_BUY_CHANCE_MULTIPLIER
+          }
           bonusGames = Object.entries(featureOpts)
             .filter(([k]) => k !== 'base_bet' && !String(k).includes('_buy'))
             .map(([key, cost]) => ({
               id: key,
               key,
               label: `${key.replace(/_/g, ' ')} (x${baseBet > 0 ? Number(cost) / baseBet : 1})`,
-              multiplier: baseBet > 0 ? Number(cost) / baseBet : 1,
+              multiplier: baseBet > 0 ? Number(cost) / baseBet : key === 'buy_chance' ? BGAMING_BUY_CHANCE_MULTIPLIER : 1,
             }))
         }
         const balRaw = data.balance?.game ?? data.balance?.wallet ?? data.balance
@@ -589,6 +629,10 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
           currencyCode,
           betLevels,
           bonusGames,
+          purchasedFeatures: bonusGames.map((b) => b.key),
+          supportsExtraBet,
+          extraBetFeature: supportsExtraBet ? 'buy_chance' : null,
+          extraBetMultiplier,
           initialBalance: balanceMinor,
         }
         logApiCall({
@@ -603,6 +647,9 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
             subunits,
             betLevels: betLevels.slice(0, 8),
             balance: balanceMinor,
+            purchased: bonusGames.map((b) => b.key),
+            supportsExtraBet,
+            extraBetMultiplier,
           },
           error: null,
           durationMs: Date.now() - t0,
@@ -635,23 +682,23 @@ export async function placeBet(session, betAmount, extraBet = false, _autoplay =
   if (!session?.apiUrl || !session?.token) {
     throw bgamingError('BGaming: Session ohne apiUrl/token')
   }
-  const effectiveBet = Number(getEffectiveBetAmount(betAmount, extraBet, session?.slotSlug)) || 0
+  // Softswiss HAR: req.bet = selected base bet (subunits). Extra/Encore does NOT inflate bet —
+  // it adds purchased_feature:"buy_chance". Stats use getEffectiveBetAmount (1.5× for bgaming-).
+  const baseBetMinor = Number(betAmount) || 0
+  const effectiveBet = Number(getEffectiveBetAmount(baseBetMinor, extraBet, session?.slotSlug)) || 0
   const subunits = Number(session.subunits) > 0 ? Number(session.subunits) : 100
   // Use wallet math currency (sweeps/gold), not raw RGS code (STKC) — else EU SC bets collapse to crypto scale.
   const currencyCode = sessionAmountMathCurrency(session)
-  const apiBet = appMinorToSubunits(effectiveBet, subunits, currencyCode)
+  const apiBet = appMinorToSubunits(baseBetMinor, subunits, currencyCode)
   const t0 = Date.now()
   const stopOnBonus = !!(options?.stopOnBonus || options?.skipContinueOnBonus)
   const referer = session.launchUrl || `${session.gameOrigin || ''}/`
+  const featureKey = resolvePurchasedFeatureKey(extraBet, options, session)
 
   if (session.isJsonRpc) {
     const req = { bet_type: 'bet', bet: apiBet }
-    const featureKey =
-      options?.bonusKey ||
-      options?.purchasedFeature ||
-      (typeof options?.bonus === 'string' ? options.bonus : options?.bonus?.key) ||
-      null
-    if (featureKey) req.feature = featureKey
+    // Extra Bet / feature buy: purchased_feature (HAR). Never send on normal spins or continues.
+    if (featureKey) req.purchased_feature = featureKey
 
     const params = {
       token: session.token,
@@ -666,7 +713,13 @@ export async function placeBet(session, betAmount, extraBet = false, _autoplay =
       logApiCall({
         type: 'bgaming/play',
         endpoint: session.apiUrl,
-        request: { bet: apiBet, uiBetMinor: effectiveBet, feature: featureKey },
+        request: {
+          bet: apiBet,
+          uiBetMinor: baseBetMinor,
+          effectiveBetMinor: effectiveBet,
+          extraBet: !!extraBet,
+          purchased_feature: featureKey || null,
+        },
         response: res.json || res.text?.slice?.(0, 200),
         error: msg,
         durationMs: Date.now() - t0,
@@ -684,7 +737,13 @@ export async function placeBet(session, betAmount, extraBet = false, _autoplay =
     logApiCall({
       type: 'bgaming/play',
       endpoint: session.apiUrl,
-      request: { bet: apiBet, uiBetMinor: effectiveBet, feature: featureKey },
+      request: {
+        bet: apiBet,
+        uiBetMinor: baseBetMinor,
+        effectiveBetMinor: effectiveBet,
+        extraBet: !!extraBet,
+        purchased_feature: featureKey || null,
+      },
       response: {
         ok: true,
         cashWin: winSub,
@@ -719,6 +778,7 @@ export async function placeBet(session, betAmount, extraBet = false, _autoplay =
       guard += 1
       const contParams = {
         token: session.token,
+        // Continues: base bet only — never re-send purchased_feature
         req: { bet_type: 'bet', bet: apiBet },
       }
       if (session.stateLock) contParams.state_lock = session.stateLock
@@ -746,11 +806,6 @@ export async function placeBet(session, betAmount, extraBet = false, _autoplay =
 
   // Legacy Softswiss command:spin
   const optionsBody = { bet: apiBet }
-  const featureKey =
-    options?.bonusKey ||
-    options?.purchasedFeature ||
-    (typeof options?.bonus === 'string' ? options.bonus : options?.bonus?.key) ||
-    null
   if (featureKey) optionsBody.purchased_feature = featureKey
 
   const res = await postCommand(
@@ -764,7 +819,13 @@ export async function placeBet(session, betAmount, extraBet = false, _autoplay =
     logApiCall({
       type: 'bgaming/spin',
       endpoint: session.apiUrl,
-      request: { bet: apiBet, uiBetMinor: effectiveBet },
+      request: {
+        bet: apiBet,
+        uiBetMinor: baseBetMinor,
+        effectiveBetMinor: effectiveBet,
+        extraBet: !!extraBet,
+        purchased_feature: featureKey || null,
+      },
       response: res.text?.slice?.(0, 200),
       error: describeHttpFailure(res, 'spin'),
       durationMs: Date.now() - t0,
@@ -812,7 +873,13 @@ export async function placeBet(session, betAmount, extraBet = false, _autoplay =
   logApiCall({
     type: 'bgaming/spin',
     endpoint: session.apiUrl,
-    request: { bet: apiBet, uiBetMinor: effectiveBet, feature: featureKey },
+    request: {
+      bet: apiBet,
+      uiBetMinor: baseBetMinor,
+      effectiveBetMinor: effectiveBet,
+      extraBet: !!extraBet,
+      purchased_feature: featureKey || null,
+    },
     response: { ok: true, winSub, winMinor, balance: balanceMinor, steps: guard },
     error: null,
     durationMs: Date.now() - t0,

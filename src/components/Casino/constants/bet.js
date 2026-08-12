@@ -27,6 +27,10 @@ export function getExtraBetMultiplier(slotSlug) {
   if (String(slotSlug).startsWith('paperclip-')) {
     return 3 // Paperclip: Ante = Extra Bet = 3×
   }
+  if (String(slotSlug).startsWith('bgaming-') || String(slotSlug).startsWith('b-gaming-')) {
+    // Softswiss Encore / buy_chance: +50% total bet (API still sends base bet + purchased_feature)
+    return 1.5
+  }
   if (String(slotSlug).startsWith('hacksaw-')) {
     return HACKSAW_5X_SLOTS.has(slotSlug) ? 5 : HACKSAW_DEFAULT_MULTIPLIER
   }

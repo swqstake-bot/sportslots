@@ -245,6 +245,8 @@ export const PROVIDERS = {
     name: 'BGaming',
     sessionFields: ['token', 'apiUrl', 'stateLock', 'subunits'],
     betLevelsSource: 'sessionConfig',
+    /** Softswiss Encore: init.purchased_features includes buy_chance → session.supportsExtraBet */
+    supportsExtraBet: true,
   },
   gamomat: {
     id: 'gamomat',

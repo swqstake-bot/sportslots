@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.283': [
+    '✨ BGaming Softswiss Extra Bet: Extra-Checkbox → play `purchased_feature:"buy_chance"` (Encore +50%); Normal-Spins ohne Feature-Feld',
+    '✨ BGaming init: purchased_features / supportsExtraBet / extraBetMultiplier aus Softswiss-Config für Extra-UI',
+  ],
   '1.0.282': [
     '✨ BGaming: Softswiss/JSON-RPC Provider (init/play + state_lock) statt Generic — Session aus ignition/interlayer (_subdomain + token)',
     '✨ BGaming (Stake.eu): SC/sweeps (+ GC) — Softswiss RGS `STKC` / attributes `SC|GC` → wallet sweeps/gold, subunits=100',
