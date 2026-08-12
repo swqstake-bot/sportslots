@@ -273,7 +273,7 @@ function findPendingRowForHouseReconcile(
     const row = prev[i]
     if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
     if (!row?.stoppedBonus) continue
-    if (!PENDING_HOUSE_RECONCILE_SOURCES.has(String(row?.source || ''))) continue
+    if (!PENDING_HOUSE_RECONCILE_SOURCES.has(normalizeBetHistorySource(row?.source))) continue
     if (row?.houseBetReconciled) continue
     if ((now - Number(row?.addedAt || 0)) > STOPPED_BONUS_RECONCILE_WINDOW_MS) continue
     const at = Number(row?.addedAt) || 0
@@ -299,7 +299,7 @@ function findPendingRowForHouseReconcile(
   for (let i = 0; i < prev.length; i++) {
     const row = prev[i]
     if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
-    if (!PENDING_HOUSE_RECONCILE_SOURCES.has(String(row?.source || ''))) continue
+    if (!PENDING_HOUSE_RECONCILE_SOURCES.has(normalizeBetHistorySource(row?.source))) continue
     if (row?.houseBetReconciled) continue
     if (row?.stoppedBonus) continue
     const age = now - Number(row?.addedAt || 0)
@@ -337,7 +337,7 @@ function findPendingRowForHouseReconcile(
   for (let i = 0; i < prev.length; i++) {
     const row = prev[i]
     if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
-    if (!PENDING_HOUSE_RECONCILE_SOURCES.has(String(row?.source || ''))) continue
+    if (!PENDING_HOUSE_RECONCILE_SOURCES.has(normalizeBetHistorySource(row?.source))) continue
     if (row?.houseBetReconciled) continue
     if (row?.stoppedBonus) continue
     if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) continue
@@ -352,7 +352,7 @@ function findPendingRowForHouseReconcile(
   for (let i = prev.length - 1; i >= 0; i--) {
     const row = prev[i]
     if ((now - Number(row?.addedAt || 0)) > FALLBACK_RECONCILE_WINDOW_MS) break
-    if (!PENDING_HOUSE_RECONCILE_SOURCES.has(String(row?.source || ''))) continue
+    if (!PENDING_HOUSE_RECONCILE_SOURCES.has(normalizeBetHistorySource(row?.source))) continue
     if (row?.houseBetReconciled) continue
     const rowCurr = betHistoryCurrencyKey(row?.currencyCode || 'usd')
     const rowSig = `${rowCurr}|${Number(row?.betAmount) || 0}|${Number(row?.winAmount) || 0}|${row?.isBonus ? 1 : 0}`
@@ -1140,6 +1140,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         const roundKey = `round:${rid}`
         if (seenBetDedupKeysRef.current.has(roundKey)) {
           // Dedup — attach shareIid only onto the row that already carries this round/share key.
+          // Softswiss/BGaming: house rid is `house:…` while placeBet roundId is RGS ResultId —
+          // they never match. Also Strict Mode double-invokes this updater and the first run
+          // can poison seenBetDedupKeysRef before its clone is discarded → fall through to FIFO.
           if (incomingShare.shareIid) {
             const clone = rows.slice()
             let patched = false
@@ -1158,11 +1161,17 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
               recordBetHistoryAudit({ slotSlug: slot.slug, event: 'patch-share-after-dedup-roundId', roundId: rid })
               return clone
             }
+            recordBetHistoryAudit({
+              slotSlug: slot.slug,
+              event: 'dedup-roundId-set-miss-fallthrough',
+              roundId: rid,
+            })
+            // Fall through to FIFO reconcile (do not return bare rows).
+          } else {
+            recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-roundId-set', roundId: rid })
+            return rows
           }
-          recordBetHistoryAudit({ slotSlug: slot.slug, event: 'dedup-roundId-set', roundId: rid })
-          return rows
-        }
-        if (last && String(last.roundId ?? '') === rid) {
+        } else if (last && String(last.roundId ?? '') === rid) {
           if (incomingShare.shareIid && !houseShareFieldsFromParsed(last).shareIid) {
             const clone = rows.slice()
             clone[clone.length - 1] = { ...last, ...incomingShare }
@@ -1217,9 +1226,12 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           clone[pendingIdx] = {
             ...clone[pendingIdx],
             ...incomingShare,
+            // Explicit — Softswiss/BGaming share must land on the spin row for BetList.
+            shareIid: incomingShare.shareIid || clone[pendingIdx]?.shareIid,
+            iid: incomingShare.iid || incomingShare.shareIid || clone[pendingIdx]?.iid,
             source: 'housebets',
             // Keep placeBet RGS roundId; share lives in shareIid (don't overwrite with house:/…).
-            roundId: clone[pendingIdx]?.roundId ?? rid,
+            roundId: clone[pendingIdx]?.roundId ?? (rid && !/^(house|casino):/i.test(String(rid)) ? rid : undefined),
             currencyCode: settledCurr,
             betAmount: settledBet,
             winAmount: settledWin,
@@ -1240,7 +1252,8 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           if (prevRoundKey && prevRoundKey !== `round:${rid}`) {
             seenBetDedupKeysRef.current.delete(prevRoundKey)
           }
-          if (rid) {
+          // Only track non-share round ids in the seen set (RGS ResultId / Softswiss bet.id).
+          if (rid && !/^(house|casino):/i.test(String(rid))) {
             const roundKey = `round:${rid}`
             seenBetDedupKeysRef.current.add(roundKey)
             seenBetDedupOrderRef.current.push(roundKey)

@@ -107,8 +107,16 @@ export function useSlotRealtime({
         isBonus: false,
         balance: undefined,
         currencyCode,
-        // Never use shareIid as roundId — that overwrote placeBet RGS ids and thrash-deduped the list.
-        roundId: b?.id != null ? String(b.id) : undefined,
+        // Never use shareIid (`house:…`) as roundId — Softswiss/BGaming placeBet uses RGS ResultId;
+        // putting house iid here poisons seenBetDedupKeys and blanks the BET ID column (Strict Mode).
+        roundId:
+          b?.betId != null && String(b.betId).trim() !== '' && !/^(house|casino):/i.test(String(b.betId))
+            ? String(b.betId).trim()
+            : b?.houseTopId != null &&
+                String(b.houseTopId).trim() !== '' &&
+                !/^(house|casino):/i.test(String(b.houseTopId))
+              ? String(b.houseTopId).trim()
+              : undefined,
         shareIid,
         iid: shareIid,
         houseTopId: b?.houseTopId ?? null,

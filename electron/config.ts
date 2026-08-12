@@ -42,4 +42,5 @@ export const PROXY_ALLOWED_HOSTS = [
   'https://*.stake.eu',
   'https://*.cloudfront.net',
   'https://*.hacksawgaming.com',
+  'https://*.bgaming-network.com',
 ] as const;

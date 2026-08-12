@@ -11,10 +11,11 @@ export const FIAT_CURRENCIES = [
 ]
 
 /** Stake.eu GoldCoins — wallet codes + RGS aliases.
- * Wallet: gold/sweeps. RGS/providers: XGC/XSC (Stake Engine) and XSWP (Hacksaw/Pragmatic HAR).
+ * Wallet: gold/sweeps. RGS/providers: XGC/XSC (Stake Engine), XSWP (Hacksaw/Pragmatic HAR),
+ * STKC + attributes.code SC|GC (BGaming Softswiss HAR mystic-reels on stake.eu).
  * XEC is NOT global: on stake.com it is eCash crypto; on stake.eu RGS (Reel Racing) it means Sweeps.
- * Remap only via canonicalizeStakeEngineRgsCurrency(..., { euGoldSession: true }). */
-export const GOLD_COIN_CURRENCIES = ['gold', 'sweeps', 'xgc', 'xsc', 'xswp', 'gc', 'sc']
+ * Remap only via canonicalizeStakeEngineRgsCurrency / canonicalizeBgamingRgsCurrency with euGoldSession. */
+export const GOLD_COIN_CURRENCIES = ['gold', 'sweeps', 'xgc', 'xsc', 'xswp', 'gc', 'sc', 'stkc']
 
 export const USD_LIKE_CURRENCIES = ['usd', 'usdc', 'usdt']
 
@@ -22,7 +23,8 @@ export function normalizeCurrencyCode(currencyCode) {
   return String(currencyCode || '').toLowerCase()
 }
 
-/** Map RGS aliases → wallet codes used in the UI (gold/sweeps). Does not remap XEC (.com eCash). */
+/** Map RGS aliases → wallet codes used in the UI (gold/sweeps). Does not remap XEC (.com eCash).
+ * STKC is ambiguous (SC vs GC) — leave as `stkc`; use canonicalizeBgamingRgsCurrency with attributes.code. */
 export function canonicalizeGoldCoinCode(currencyCode) {
   const c = normalizeCurrencyCode(currencyCode)
   if (c === 'xgc' || c === 'gold' || c === 'gc') return 'gold'
@@ -38,8 +40,35 @@ export function canonicalizeGoldCoinCode(currencyCode) {
 export function canonicalizeStakeEngineRgsCurrency(currencyCode, { euGoldSession = false } = {}) {
   const c = normalizeCurrencyCode(currencyCode)
   if (euGoldSession && c === 'xec') return 'sweeps'
+  if (c === 'stkc') return c
   if (isGoldCoinCurrency(c)) return canonicalizeGoldCoinCode(c)
   return c
+}
+
+/**
+ * BGaming Softswiss init currency → wallet amount-math code.
+ * HAR stake.eu mystic-reels (sweeps): `currency: "STKC"`, `currency_attributes: { code: "SC", subunits: 100 }`.
+ * Prefer attributes.code (SC→sweeps, GC→gold); bare STKC falls back to wallet target on EU sessions.
+ */
+export function canonicalizeBgamingRgsCurrency(
+  currencyCode,
+  attrCode,
+  { euGoldSession = false, walletTarget = null } = {}
+) {
+  const attr = normalizeCurrencyCode(attrCode)
+  if (attr === 'sc' || attr === 'xsc' || attr === 'xswp') return 'sweeps'
+  if (attr === 'gc' || attr === 'xgc') return 'gold'
+  if (attr && attr !== 'stkc' && isGoldCoinCurrency(attr)) return canonicalizeGoldCoinCode(attr)
+
+  const c = normalizeCurrencyCode(currencyCode)
+  if (c === 'stkc' && euGoldSession) {
+    const w = canonicalizeGoldCoinCode(walletTarget)
+    if (w === 'gold' || w === 'sweeps') return w
+    return 'sweeps'
+  }
+  if (c && c !== 'stkc' && isGoldCoinCurrency(c)) return canonicalizeGoldCoinCode(c)
+  if (euGoldSession && isGoldCoinCurrency(walletTarget)) return canonicalizeGoldCoinCode(walletTarget)
+  return c || normalizeCurrencyCode(walletTarget) || 'eur'
 }
 
 export function isZeroDecimalCurrency(currencyCode) {

@@ -6,6 +6,7 @@ import * as playnetic from './playnetic'
 import * as avatarux from './avatarux'
 import * as nolimit from './nolimit'
 import * as mascot from './mascot'
+import * as bgaming from './bgaming'
 import * as genericProviders from './genericProviders'
 import { parseConfig } from './genericProviders'
 import { getEffectiveBetAmount } from '../../constants/bet'
@@ -172,7 +173,8 @@ const WEB_PROVIDERS = {
   btg: genericProviders.btg,
   oak: genericProviders.oak,
   redtiger: genericProviders.redtiger,
-  'b-gaming': genericProviders.bgaming,
+  'b-gaming': bgaming,
+  bgmng: bgaming,
   playngo: genericProviders.playngo,
   'playn-go': genericProviders.playngo,
   'print-studios': genericProviders.relax,
@@ -190,7 +192,7 @@ const WEB_PROVIDERS = {
   popiplay: genericProviders.popiplay,
   helio: genericProviders.helio,
   samurai: genericProviders.samurai,
-  bgaming: genericProviders.bgaming,
+  bgaming,
   gamomat: genericProviders.gamomat,
   justslots: genericProviders.justslots,
   massive: genericProviders.massive,

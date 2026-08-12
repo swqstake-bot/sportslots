@@ -67,6 +67,8 @@ const PROVIDER_MAP = {
   'slotmill': 'slotmill',
   'thunderkick': 'thunderkick',
   'bgaming': 'bgaming',
+  'b-gaming': 'bgaming',
+  bgmng: 'bgaming',
   'endorphina': 'endorphina',
   'gamomat': 'gamomat',
   'avatarux': 'avatarux',

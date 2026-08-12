@@ -15,14 +15,20 @@ export function formatStakeShareBetId(raw) {
 
 /**
  * Share-/Bet-ID for the spin list / Top-10 copy column.
- * Only houseBets fields (`shareIid` / `iid`) — never placeBet `roundId` (RGS).
+ * Prefer houseBets fields (`shareIid` / `iid` / `houseTopId`).
+ * Softswiss/BGaming: if share was only kept on `roundId` as `house:…` / `casino:…`, accept that —
+ * never bare RGS ResultIds.
  */
 export function pickBetHistoryShareRaw(b) {
   if (!b || typeof b !== 'object') return null
-  for (const key of ['shareIid', 'iid']) {
+  for (const key of ['shareIid', 'iid', 'houseTopId', 'houseId']) {
     const v = b[key]
     if (v == null || String(v).trim() === '') continue
     return formatStakeShareBetId(v) || String(v).trim()
+  }
+  const rid = b.roundId != null ? String(b.roundId).trim() : ''
+  if (rid && /^(house|casino):/i.test(rid)) {
+    return formatStakeShareBetId(rid) || rid
   }
   return null
 }

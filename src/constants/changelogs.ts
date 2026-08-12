@@ -1,4 +1,12 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.282': [
+    '✨ BGaming: Softswiss/JSON-RPC Provider (init/play + state_lock) statt Generic — Session aus ignition/interlayer (_subdomain + token)',
+    '✨ BGaming (Stake.eu): SC/sweeps (+ GC) — Softswiss RGS `STKC` / attributes `SC|GC` → wallet sweeps/gold, subunits=100',
+    '🐛 BGaming Softswiss: proxy Allowlist `*.bgaming-network.com` + Chrome-UA Fallback im Electron proxy-request',
+    '🐛 BGaming: nur `{slot}.bgaming-network.com` / EU `gamma` — kein publishing.bgaming-system.com (DNS ENOTFOUND)',
+    '🐛 BGaming Softswiss 403: HAR-Header (Accept + Referer `/?token=…` + Chrome-UA), Game-Page Warm-up, gamma-Fallback',
+    '🐛 Slots BET ID: Softswiss/BGaming `house:…` Share-IDs in der Spins-Tabelle (Strict-Mode seen-key Fallthrough + kein house-iid als roundId)',
+  ],
   '1.0.277': [],
   '1.0.276': [
     '✨ Weekly Wrapped: Große Gewinne (Big Wins / profitLeaderboard) Top-3 zusätzlich zu Beste Gewinne (Lucky Wins) pro Promo-Slot',

@@ -2948,6 +2948,8 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
             'mascot.host', 'mascot.games',
             // Truelab / Stake third-party: startThirdPartySession config → grandgames launcher, RGS play.launcher-gg.com
             'grandgames.io', 'launcher-gg.com',
+            // BGaming Softswiss RGS (HAR: {game}.bgaming-network.com/api + {game}.gamma.bgaming-network.com)
+            'bgaming-network.com',
         ];
         if (proxyHostname && allowed.some(h => hostnameMatches(proxyHostname, h))) {
             isAllowed = true;
@@ -3049,8 +3051,9 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
             }
         }
 
-        if (!requestHeaders['User-Agent'] && sessionData.userAgent) {
-            requestHeaders['User-Agent'] = sessionData.userAgent;
+        if (!requestHeaders['User-Agent']) {
+            // Prefer session UA, else Chrome-like fallback (Electron UA often CF-blocked on RGS hosts).
+            requestHeaders['User-Agent'] = sessionData.userAgent || STAKE_BROWSER_USER_AGENT;
         }
 
         const bodyStr =

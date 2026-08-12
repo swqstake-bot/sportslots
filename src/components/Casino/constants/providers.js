@@ -243,7 +243,7 @@ export const PROVIDERS = {
   bgaming: {
     id: 'bgaming',
     name: 'BGaming',
-    sessionFields: ['token', 'gameId', 'host'],
+    sessionFields: ['token', 'apiUrl', 'stateLock', 'subunits'],
     betLevelsSource: 'sessionConfig',
   },
   gamomat: {
