@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 export function UpdaterNotification() {
-    const [status, setStatus] = useState<'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'>('idle');
+    const [status, setStatus] = useState<'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error' | 'rate-limited'>('idle');
     const [progress, setProgress] = useState<number>(0);
     const [info, setInfo] = useState<any>(null);
     const [errorMsg, setErrorMsg] = useState<string>('');
@@ -23,14 +23,18 @@ export function UpdaterNotification() {
         if (!api?.invoke || !api?.on) return;
 
         const unsubscribe = api.on('update-status', (data: any) => {
+            if (data.status === 'rate-limited') {
+                setStatus('idle');
+                return;
+            }
             setStatus(data.status);
             if (data.progress) setProgress(data.progress.percent ?? 0);
             if (data.info) setInfo(data.info);
             if (data.error) setErrorMsg(data.error);
         });
 
-        // First check after a short delay so main process / window is ready
-        const t = setTimeout(triggerCheck, 2000);
+        // Delay first check — GitHub 429s if we hit the API right after install/download.
+        const t = setTimeout(triggerCheck, 45_000);
         // Then check periodically so long-running sessions see new releases
         intervalRef.current = setInterval(triggerCheck, CHECK_INTERVAL_MS);
 
@@ -50,7 +54,7 @@ export function UpdaterNotification() {
         setStatus('downloading'); // Optimistic update
     };
 
-    if (status === 'idle' || status === 'checking' || status === 'not-available') return null;
+    if (status === 'idle' || status === 'checking' || status === 'not-available' || status === 'rate-limited') return null;
 
     return (
         <div className="fixed bottom-4 right-4 bg-[#1a2c38] border border-[#2f4553] p-4 rounded-lg shadow-lg z-50 w-80 animate-fade-in">

@@ -8,6 +8,7 @@
 | `swqstake-bot/sportslots-releases` | **öffentlich** | Nur Release-Artifacts (`latest.yml`, Installer, Blockmap) |
 
 - **Updater-Feed** (Clients ab 1.0.260): `sportslots-releases`
+- **Runtime ab 1.0.287:** generic `…/releases/latest/download/` (`latest.yml`) — **nicht** `api.github.com` (unauth 60/h → HTTP 429)
 - **Publish** (Übergangsphase): dual → beide Repos (gleiche Version/Assets)
 - **`build.publish[0]`** = `sportslots-releases` (primär für generierte `app-update.yml`); zweites Ziel = `sportslots`
 

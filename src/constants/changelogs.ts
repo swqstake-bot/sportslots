@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.287': [
+    '🐛 Auto-Update HTTP 429: Feed über latest.yml (kein GitHub-API), 15-Min-Backoff, kein Error-Toast bei Rate-Limit',
+  ],
   '1.0.286': [
     '🐛 Auto-Update: GitHub HTML/CSP-Fehlerseite nicht mehr als Toast dumpen; kurze Meldung + Retry; Feed-Header vereinfacht',
   ],

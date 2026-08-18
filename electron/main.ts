@@ -1063,23 +1063,36 @@ async function openStakeLoginWindow(explicitOrigin?: string): Promise<void> {
  * Feed = öffentliches Releases-only-Repo (nicht Source). Migration: siehe docs/auto-update-feed.md
  */
 const UPDATER_GITHUB = { owner: 'swqstake-bot', repo: 'sportslots-releases' } as const;
+/** Direct latest.yml — avoids GitHub API (60 req/h unauthenticated → HTTP 429). */
+const UPDATER_GENERIC_FEED = `https://github.com/${UPDATER_GITHUB.owner}/${UPDATER_GITHUB.repo}/releases/latest/download/` as const;
 /** Keep in sync with src/config/sessionData.ts (SESSION_ONLY_CASINO_BETS) — legacy JSONL cleared on start + quit. */
 const SESSION_ONLY_BET_LOGS = true;
 
 const UPDATER_MAX_TRANSIENT_RETRIES = 3;
+const UPDATER_RATE_LIMIT_BACKOFF_MS = 15 * 60 * 1000;
 const UPDATER_TRANSIENT_NET_RE =
   /ERR_HTTP2_|ERR_CONNECTION_|ERR_NETWORK_CHANGED|ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|Empty reply|content-security-policy|<!doctype html|<html[\s>]|text\/html|blob\.core\.windows\.net|github\.githubassets\.com/i;
+const UPDATER_RATE_LIMIT_RE = /\b429\b|rate.?limit|too many requests/i;
 
 let updaterTransientRetries = 0;
 let updaterRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
+function isRateLimitUpdaterError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  return UPDATER_RATE_LIMIT_RE.test(msg);
+}
+
 function isTransientUpdaterError(err: unknown): boolean {
+  if (isRateLimitUpdaterError(err)) return true;
   const msg = err instanceof Error ? err.message : String(err ?? '');
   return UPDATER_TRANSIENT_NET_RE.test(msg);
 }
 
 function formatUpdaterError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err ?? 'Unknown update error');
+  if (isRateLimitUpdaterError(err)) {
+    return 'GitHub rate limit (HTTP 429). Automatic retry in 15 minutes — no need to reinstall.';
+  }
   const netErr = msg.match(/net::ERR_[A-Z0-9_]+/i)?.[0];
   if (netErr) {
     return `${netErr} — GitHub CDN/network glitch. Retry, or install from the releases page.`;
@@ -1115,17 +1128,12 @@ function sleepMs(ms: number): Promise<void> {
 function configureGithubAutoUpdater(): void {
   if (!app.isPackaged) return;
   try {
+    // Generic file feed (latest.yml) — GitHub provider hits api.github.com and 429s easily.
     autoUpdater.setFeedURL({
-      provider: 'github',
-      owner: UPDATER_GITHUB.owner,
-      repo: UPDATER_GITHUB.repo,
-      releaseType: 'release',
+      provider: 'generic',
+      url: UPDATER_GENERIC_FEED,
     });
-    // Keep headers minimal — extra Cache-Control on GitHub Releases can yield HTML/CSP error pages.
-    autoUpdater.requestHeaders = {
-      Accept: 'application/octet-stream, text/yaml, text/plain, */*',
-    };
-    logger.info('[Updater] GitHub feed:', `${UPDATER_GITHUB.owner}/${UPDATER_GITHUB.repo}`);
+    logger.info('[Updater] generic feed:', UPDATER_GENERIC_FEED);
   } catch (e) {
     logger.warn('[Updater] setFeedURL failed:', e);
   }
@@ -1141,6 +1149,7 @@ async function checkForUpdatesWithRetry(maxAttempts = UPDATER_MAX_TRANSIENT_RETR
       return result;
     } catch (e) {
       lastErr = e;
+      if (isRateLimitUpdaterError(e)) break;
       if (!isTransientUpdaterError(e) || attempt === maxAttempts) break;
       const delay = Math.min(8000, 1000 * 2 ** (attempt - 1));
       logger.warn(
@@ -1158,7 +1167,9 @@ function scheduleTransientUpdaterRetry(err: Error): boolean {
     return false;
   }
   updaterTransientRetries += 1;
-  const delay = Math.min(8000, 1000 * 2 ** (updaterTransientRetries - 1));
+  const delay = isRateLimitUpdaterError(err)
+    ? UPDATER_RATE_LIMIT_BACKOFF_MS
+    : Math.min(8000, 1000 * 2 ** (updaterTransientRetries - 1));
   logger.warn(
     `[Updater] transient error event (retry ${updaterTransientRetries}/${UPDATER_MAX_TRANSIENT_RETRIES}) in ${delay}ms:`,
     err.message
@@ -1205,8 +1216,8 @@ autoUpdater.on('error', (err) => {
   logger.error('[Updater] Error:', err);
   if (scheduleTransientUpdaterRetry(err)) {
     win?.webContents.send('update-status', {
-      status: 'checking',
-      error: formatUpdaterError(err),
+      status: isRateLimitUpdaterError(err) ? 'rate-limited' : 'checking',
+      error: isRateLimitUpdaterError(err) ? formatUpdaterError(err) : undefined,
     });
     return;
   }
@@ -1260,6 +1271,14 @@ ipcMain.handle('check-for-updates', async () => {
     return { skipped: false as const, result };
   } catch (e) {
     logger.error('[Updater] checkForUpdates:', e);
+    if (isRateLimitUpdaterError(e)) {
+      scheduleTransientUpdaterRetry(e instanceof Error ? e : new Error(String(e)));
+      win?.webContents.send('update-status', {
+        status: 'rate-limited',
+        error: formatUpdaterError(e),
+      });
+      return { skipped: false as const, rateLimited: true as const };
+    }
     win?.webContents.send('update-status', {
       status: 'error',
       error: formatUpdaterError(e),
