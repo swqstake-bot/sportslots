@@ -104,7 +104,11 @@ export function UpdaterNotification() {
                 <div className="text-sm text-red-500 space-y-3">
                     <div>
                         <p>Update failed.</p>
-                        {errorMsg && <p className="text-[10px] mt-1 text-red-400 break-words">{errorMsg}</p>}
+                        {errorMsg && (
+                          <p className="text-[10px] mt-1 text-red-400 break-words line-clamp-4 max-h-16 overflow-hidden">
+                            {errorMsg}
+                          </p>
+                        )}
                         <p className="text-[10px] mt-2 text-[#b1bad3]">
                             Often a temporary GitHub CDN issue. Retry, or reinstall from the releases page.
                         </p>

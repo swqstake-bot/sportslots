@@ -16,7 +16,7 @@
 ### HTTP/2 / CDN Hinweise
 
 Electron `net` + GitHub Releases CDN kann `net::ERR_HTTP2_SERVER_REFUSED_STREAM` werfen.
-Die App forciert HTTP/1.1 (`--disable-http2`), retried transient Network-Fehler und zeigt einen Retry-Button.
+Die App forciert HTTP/1.1 (`--disable-http2`), retried transient Network-/HTML-Fehler (GitHub CSP-Seiten statt `latest.yml`) und zeigt einen Retry-Button. Der Toast kürzt die Meldung — kein CSP-Dump.
 Workaround ohne neuen Build: Update später erneut prüfen oder Installer von
 https://github.com/swqstake-bot/sportslots-releases/releases neu installieren.
 

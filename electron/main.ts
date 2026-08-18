@@ -1068,7 +1068,7 @@ const SESSION_ONLY_BET_LOGS = true;
 
 const UPDATER_MAX_TRANSIENT_RETRIES = 3;
 const UPDATER_TRANSIENT_NET_RE =
-  /ERR_HTTP2_|ERR_CONNECTION_|ERR_NETWORK_CHANGED|ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|Empty reply/i;
+  /ERR_HTTP2_|ERR_CONNECTION_|ERR_NETWORK_CHANGED|ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|Empty reply|content-security-policy|<!doctype html|<html[\s>]|text\/html|blob\.core\.windows\.net|github\.githubassets\.com/i;
 
 let updaterTransientRetries = 0;
 let updaterRetryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1080,10 +1080,20 @@ function isTransientUpdaterError(err: unknown): boolean {
 
 function formatUpdaterError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err ?? 'Unknown update error');
-  if (/ERR_HTTP2_/i.test(msg)) {
-    return `${msg} — GitHub CDN/network glitch. Retry, or install from the releases page.`;
+  const netErr = msg.match(/net::ERR_[A-Z0-9_]+/i)?.[0];
+  if (netErr) {
+    return `${netErr} — GitHub CDN/network glitch. Retry, or install from the releases page.`;
   }
-  return msg;
+  const htmlOrCsp =
+    /content-security-policy|<!doctype html|<html[\s>]|text\/html|blob\.core\.windows\.net|github\.githubassets\.com/i.test(
+      msg
+    ) || msg.length > 500;
+  if (htmlOrCsp) {
+    const status = msg.match(/\b(403|404|429|500|502|503)\b/)?.[1];
+    const hint = status ? `HTTP ${status}` : 'HTML/CSP error page';
+    return `GitHub returned ${hint} instead of latest.yml. Retry, or reinstall from the releases page.`;
+  }
+  return msg.length > 220 ? `${msg.slice(0, 220)}…` : msg;
 }
 
 function clearUpdaterRetryTimer(): void {
@@ -1111,10 +1121,9 @@ function configureGithubAutoUpdater(): void {
       repo: UPDATER_GITHUB.repo,
       releaseType: 'release',
     });
-    // Avoid stale CDN/proxy responses for latest.yml / installer metadata.
+    // Keep headers minimal — extra Cache-Control on GitHub Releases can yield HTML/CSP error pages.
     autoUpdater.requestHeaders = {
-      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
-      Pragma: 'no-cache',
+      Accept: 'application/octet-stream, text/yaml, text/plain, */*',
     };
     logger.info('[Updater] GitHub feed:', `${UPDATER_GITHUB.owner}/${UPDATER_GITHUB.repo}`);
   } catch (e) {

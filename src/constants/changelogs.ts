@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.286': [
+    '🐛 Auto-Update: GitHub HTML/CSP-Fehlerseite nicht mehr als Toast dumpen; kurze Meldung + Retry; Feed-Header vereinfacht',
+  ],
   '1.0.285': [
     '⚡ Header VIP + Weekly Wager: Poll-Intervall 60s → 30s (schnellere Aktualisierung oben)',
   ],
