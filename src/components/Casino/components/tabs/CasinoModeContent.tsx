@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import OriginalsView from '../OriginalsView'
 import BonusHuntControl from '../BonusHuntControl'
 import BetList from '../BetList'
@@ -99,10 +99,9 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
 
   const isHubMode = HUB_MODES.has(mode)
   // Keep hub mounted after first visit so queue/activeRuns survive Slots ↔ Hub switches.
-  const [hubKeepAlive, setHubKeepAlive] = useState(false)
-  useEffect(() => {
-    if (isHubMode) setHubKeepAlive(true)
-  }, [isHubMode])
+  const hubVisitedRef = useRef(false)
+  if (isHubMode) hubVisitedRef.current = true
+  const showHub = hubVisitedRef.current
 
   let primary: ReactNode = null
   if (mode === 'originals') {
@@ -184,8 +183,6 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
       </div>
     )
   }
-
-  const showHub = hubKeepAlive || isHubMode
 
   return (
     <>
