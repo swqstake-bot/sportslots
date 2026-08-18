@@ -1,4 +1,11 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.285': [
+    '⚡ Header VIP + Weekly Wager: Poll-Intervall 60s → 30s (schnellere Aktualisierung oben)',
+  ],
+  '1.0.284': [
+    '🐛 Auto-Update: HTTP/2 CDN-Fehler (ERR_HTTP2_SERVER_REFUSED_STREAM) — Force HTTP/1.1, Retry/Backoff, klarere Fehler-UI + Retry-Button',
+    '🔧 Publish: sportslots-releases als primärer Feed (app-update.yml); dual-publish zu sportslots bleibt',
+  ],
   '1.0.283': [
     '✨ BGaming Softswiss Extra Bet: Extra-Checkbox → play `purchased_feature:"buy_chance"` (Encore +50%); Normal-Spins ohne Feature-Feld',
     '✨ BGaming init: purchased_features / supportsExtraBet / extraBetMultiplier aus Softswiss-Config für Extra-UI',

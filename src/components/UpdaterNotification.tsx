@@ -101,9 +101,24 @@ export function UpdaterNotification() {
                 </div>
             )}
             {status === 'error' && (
-                <div className="text-sm text-red-500">
-                    <p>Update failed.</p>
-                    {errorMsg && <p className="text-[10px] mt-1 text-red-400 break-words">{errorMsg}</p>}
+                <div className="text-sm text-red-500 space-y-3">
+                    <div>
+                        <p>Update failed.</p>
+                        {errorMsg && <p className="text-[10px] mt-1 text-red-400 break-words">{errorMsg}</p>}
+                        <p className="text-[10px] mt-2 text-[#b1bad3]">
+                            Often a temporary GitHub CDN issue. Retry, or reinstall from the releases page.
+                        </p>
+                    </div>
+                    <button
+                        onClick={() => {
+                            setStatus('checking');
+                            setErrorMsg('');
+                            triggerCheck();
+                        }}
+                        className="w-full bg-[#2f4553] hover:bg-[#3d5a6c] text-white font-bold py-2 rounded text-sm transition-colors"
+                    >
+                        Retry Update Check
+                    </button>
                 </div>
             )}
         </div>

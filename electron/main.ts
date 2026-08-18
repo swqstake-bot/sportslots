@@ -51,6 +51,11 @@ import { destroyEuTurnstileWindow, solveEuTopUpTurnstile } from './euTurnstile.j
 
 configureStakeBrowserUserAgent();
 
+// electron-updater uses Chromium `net` against GitHub Releases CDN.
+// HTTP/2 there can fail with net::ERR_HTTP2_SERVER_REFUSED_STREAM / PROTOCOL_ERROR.
+// Force HTTP/1.1 for the Chromium network stack (must be before app ready).
+app.commandLine.appendSwitch('disable-http2');
+
 function extractStakeJsonErrorMessage(parsed: unknown): string {
     if (parsed == null) return 'Leere Antwort';
     if (typeof parsed === 'string') return parsed.slice(0, 500);
@@ -1061,6 +1066,42 @@ const UPDATER_GITHUB = { owner: 'swqstake-bot', repo: 'sportslots-releases' } as
 /** Keep in sync with src/config/sessionData.ts (SESSION_ONLY_CASINO_BETS) — legacy JSONL cleared on start + quit. */
 const SESSION_ONLY_BET_LOGS = true;
 
+const UPDATER_MAX_TRANSIENT_RETRIES = 3;
+const UPDATER_TRANSIENT_NET_RE =
+  /ERR_HTTP2_|ERR_CONNECTION_|ERR_NETWORK_CHANGED|ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|Empty reply/i;
+
+let updaterTransientRetries = 0;
+let updaterRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+function isTransientUpdaterError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  return UPDATER_TRANSIENT_NET_RE.test(msg);
+}
+
+function formatUpdaterError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err ?? 'Unknown update error');
+  if (/ERR_HTTP2_/i.test(msg)) {
+    return `${msg} — GitHub CDN/network glitch. Retry, or install from the releases page.`;
+  }
+  return msg;
+}
+
+function clearUpdaterRetryTimer(): void {
+  if (updaterRetryTimer) {
+    clearTimeout(updaterRetryTimer);
+    updaterRetryTimer = null;
+  }
+}
+
+function resetUpdaterTransientRetries(): void {
+  updaterTransientRetries = 0;
+  clearUpdaterRetryTimer();
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function configureGithubAutoUpdater(): void {
   if (!app.isPackaged) return;
   try {
@@ -1070,10 +1111,55 @@ function configureGithubAutoUpdater(): void {
       repo: UPDATER_GITHUB.repo,
       releaseType: 'release',
     });
+    // Avoid stale CDN/proxy responses for latest.yml / installer metadata.
+    autoUpdater.requestHeaders = {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+      Pragma: 'no-cache',
+    };
     logger.info('[Updater] GitHub feed:', `${UPDATER_GITHUB.owner}/${UPDATER_GITHUB.repo}`);
   } catch (e) {
     logger.warn('[Updater] setFeedURL failed:', e);
   }
+}
+
+async function checkForUpdatesWithRetry(maxAttempts = UPDATER_MAX_TRANSIENT_RETRIES): Promise<Awaited<ReturnType<typeof autoUpdater.checkForUpdates>>> {
+  configureGithubAutoUpdater();
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const result = await autoUpdater.checkForUpdates();
+      resetUpdaterTransientRetries();
+      return result;
+    } catch (e) {
+      lastErr = e;
+      if (!isTransientUpdaterError(e) || attempt === maxAttempts) break;
+      const delay = Math.min(8000, 1000 * 2 ** (attempt - 1));
+      logger.warn(
+        `[Updater] transient check error (attempt ${attempt}/${maxAttempts}), retry in ${delay}ms:`,
+        e instanceof Error ? e.message : e
+      );
+      await sleepMs(delay);
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr ?? 'Update check failed'));
+}
+
+function scheduleTransientUpdaterRetry(err: Error): boolean {
+  if (!isTransientUpdaterError(err) || updaterTransientRetries >= UPDATER_MAX_TRANSIENT_RETRIES) {
+    return false;
+  }
+  updaterTransientRetries += 1;
+  const delay = Math.min(8000, 1000 * 2 ** (updaterTransientRetries - 1));
+  logger.warn(
+    `[Updater] transient error event (retry ${updaterTransientRetries}/${UPDATER_MAX_TRANSIENT_RETRIES}) in ${delay}ms:`,
+    err.message
+  );
+  clearUpdaterRetryTimer();
+  updaterRetryTimer = setTimeout(() => {
+    updaterRetryTimer = null;
+    checkForUpdatesWithRetry(1).catch((e) => logger.error('[Updater] retry check failed:', e));
+  }, delay);
+  return true;
 }
 
 // Production: Update im Hintergrund laden; Installation weiterhin über „Neustart“ (oder Quit).
@@ -1082,6 +1168,8 @@ autoUpdater.autoInstallOnAppQuit = true;
 autoUpdater.logger = logger;
 (autoUpdater.logger as any).transports.file.level = 'info';
 autoUpdater.allowDowngrade = false;
+// GitHub Releases rejects multi-range differential downloads (501) → avoid that path.
+autoUpdater.disableDifferentialDownload = true;
 
 autoUpdater.on('checking-for-update', () => {
   console.log('[Updater] Checking for update...');
@@ -1090,12 +1178,14 @@ autoUpdater.on('checking-for-update', () => {
 });
 
 autoUpdater.on('update-available', (info) => {
+  resetUpdaterTransientRetries();
   console.log('[Updater] Update available:', info);
   logger.info('[Updater] Update available:', info);
   win?.webContents.send('update-status', { status: 'available', info });
 });
 
 autoUpdater.on('update-not-available', (info) => {
+  resetUpdaterTransientRetries();
   console.log('[Updater] Update not available:', info);
   logger.info('[Updater] Update not available:', info);
   win?.webContents.send('update-status', { status: 'not-available', info });
@@ -1104,7 +1194,15 @@ autoUpdater.on('update-not-available', (info) => {
 autoUpdater.on('error', (err) => {
   console.error('[Updater] Error:', err);
   logger.error('[Updater] Error:', err);
-  win?.webContents.send('update-status', { status: 'error', error: err.message });
+  if (scheduleTransientUpdaterRetry(err)) {
+    win?.webContents.send('update-status', {
+      status: 'checking',
+      error: formatUpdaterError(err),
+    });
+    return;
+  }
+  resetUpdaterTransientRetries();
+  win?.webContents.send('update-status', { status: 'error', error: formatUpdaterError(err) });
 });
 
 autoUpdater.on('download-progress', (progressObj) => {
@@ -1112,6 +1210,7 @@ autoUpdater.on('download-progress', (progressObj) => {
 });
 
 autoUpdater.on('update-downloaded', (info) => {
+  resetUpdaterTransientRetries();
   console.log('[Updater] Update downloaded:', info);
   win?.webContents.send('update-status', { status: 'downloaded', info });
 });
@@ -1147,18 +1246,28 @@ ipcMain.handle('check-for-updates', async () => {
     console.log('[Updater] Skipping check in dev mode');
     return { skipped: true as const };
   }
-  configureGithubAutoUpdater();
   try {
-    const result = await autoUpdater.checkForUpdates();
+    const result = await checkForUpdatesWithRetry();
     return { skipped: false as const, result };
   } catch (e) {
     logger.error('[Updater] checkForUpdates:', e);
+    win?.webContents.send('update-status', {
+      status: 'error',
+      error: formatUpdaterError(e),
+    });
     throw e;
   }
 });
 
 ipcMain.handle('start-download', () => {
-    autoUpdater.downloadUpdate();
+    resetUpdaterTransientRetries();
+    autoUpdater.downloadUpdate().catch((e) => {
+      logger.error('[Updater] downloadUpdate:', e);
+      win?.webContents.send('update-status', {
+        status: 'error',
+        error: formatUpdaterError(e),
+      });
+    });
 });
 
 ipcMain.handle('quit-and-install', () => {
@@ -3384,7 +3493,7 @@ app.whenReady().then(() => {
       configureGithubAutoUpdater();
       const runUpdateCheck = () => {
         console.log('[Updater] Checking for updates…');
-        autoUpdater.checkForUpdates().catch((e) => logger.error('[Updater] check failed:', e));
+        checkForUpdatesWithRetry().catch((e) => logger.error('[Updater] check failed:', e));
       };
       // Kurz verzögern: Fenster/Netzwerk nach Start (Renderer prüft zusätzlich nach 2 s).
       setTimeout(runUpdateCheck, 8000);

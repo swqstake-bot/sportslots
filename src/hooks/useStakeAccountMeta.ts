@@ -4,7 +4,7 @@ import { Queries } from '../api/queries'
 import { calculateVipInfo, type VipProgressInfo } from '../utils/vipProgress'
 import { extractWeeklyWagerUsd, type ActiveRaffle } from '../utils/weeklyWager'
 
-const POLL_MS = 60_000
+const POLL_MS = 30_000
 
 export interface StakeAccountMeta {
   weeklyWagerUsd: number | null

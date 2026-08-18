@@ -9,8 +9,16 @@
 
 - **Updater-Feed** (Clients ab 1.0.260): `sportslots-releases`
 - **Publish** (Übergangsphase): dual → beide Repos (gleiche Version/Assets)
+- **`build.publish[0]`** = `sportslots-releases` (primär für generierte `app-update.yml`); zweites Ziel = `sportslots`
 
 `repository` in `package.json` zeigt weiter auf den Source-Repo (`sportslots`).
+
+### HTTP/2 / CDN Hinweise
+
+Electron `net` + GitHub Releases CDN kann `net::ERR_HTTP2_SERVER_REFUSED_STREAM` werfen.
+Die App forciert HTTP/1.1 (`--disable-http2`), retried transient Network-Fehler und zeigt einen Retry-Button.
+Workaround ohne neuen Build: Update später erneut prüfen oder Installer von
+https://github.com/swqstake-bot/sportslots-releases/releases neu installieren.
 
 ## Secret / Permissions
 
