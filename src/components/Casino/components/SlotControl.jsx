@@ -43,6 +43,7 @@ import {
   shouldDeferStakeRgsSeedReset,
   shouldTriggerStakeRgsSeedReset,
 } from '../utils/stakeRgsSeedRotate'
+import { isStakeEngineSlot } from '../utils/stakeRgsSlug'
 import {
   formatHouseBetShareIdForRow,
   pickStakeHouseBetShareRawId,
@@ -1572,9 +1573,11 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     })
   }, [slot.slug, slot.name, effectiveTarget, sessionStartAt, toUsdMajor, currencyRates])
 
-  const isStakeEngine =
-    effectiveProviderId === 'stakeEngine' ||
-    PROVIDERS_META[effectiveProviderId]?.aliasOf === 'stakeEngine'
+  const isStakeEngine = isStakeEngineSlot({
+    providerId: effectiveProviderId,
+    slug: slot?.slug,
+    session,
+  })
   // Stake Engine: Spin-Zeilen aus placeBet; houseBets trotzdem abonnieren für Share-IDs (Bet ID Spalte).
   const fillBetHistoryFromPlaceBet = isStakeEngine
   const subscribeHouseBetsForHistory = true
@@ -2475,10 +2478,31 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             </label>
           </div>
         </details>
-        {isStakeEngine && (
-          <details style={{ marginTop: '0.35rem', fontSize: '0.8rem' }}>
-            <summary style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>Seeds (Stake RGS) ▾</summary>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.35rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--border)' }}>
+        <details open style={{ marginTop: '0.35rem', fontSize: '0.8rem' }}>
+          <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            Seed reset
+            <span
+              title="Nur bei Stake RGS möglich"
+              onClick={(e) => e.preventDefault()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 14,
+                height: 14,
+                borderRadius: '50%',
+                border: '1px solid var(--text-muted)',
+                fontSize: '0.62rem',
+                fontWeight: 700,
+                lineHeight: 1,
+                color: 'var(--text-muted)',
+                cursor: 'help',
+              }}
+            >
+              ?
+            </span>
+          </summary>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.35rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--border)' }}>
               <label style={{ ...STYLES.checkboxRow, cursor: 'pointer' }} title="0 = off">
                 After spins
                 <input
@@ -2575,7 +2599,6 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
               </label>
             </div>
           </details>
-        )}
       </div>
       </>
   )

@@ -4,6 +4,34 @@
  */
 
 import { getStakeEngineGameSlugPrefixes } from '../api/stakeSlotsApi'
+import { PROVIDERS as PROVIDERS_META } from '../constants/providers'
+
+/** Catalog / alias IDs that run on Stake RGS (fairness seed rotate). */
+export function isStakeEngineProviderId(providerId) {
+  const pid = String(providerId || '').trim()
+  if (!pid) return false
+  const lower = pid.toLowerCase()
+  if (lower === 'stakeengine' || lower === 'stake-engine') return true
+  const meta = PROVIDERS_META[pid] || PROVIDERS_META[lower]
+  return meta?.aliasOf === 'stakeEngine' || meta?.id === 'stakeEngine'
+}
+
+/**
+ * True when this slot can use Stake-RGS seed reset (catalog id, slug prefix, or live session).
+ * @param {{ providerId?: string, slug?: string, session?: { rgsUrl?: string, __resolvedProviderImplId?: string, _stakeEngine?: unknown } }} [opts]
+ */
+export function isStakeEngineSlot(opts = {}) {
+  if (isStakeEngineProviderId(opts.providerId)) return true
+  if (isStakeEngineProviderId(opts.session?.__resolvedProviderImplId)) return true
+  if (opts.session?._stakeEngine) return true
+  if (/stake-engine|1000lakes/i.test(String(opts.session?.rgsUrl || ''))) return true
+  const slug = normalizeStakeGameSlug(opts.slug)
+  if (!slug) return false
+  for (const prefix of getStakeEngineGameSlugPrefixes()) {
+    if (slug.startsWith(prefix)) return true
+  }
+  return false
+}
 
 export function normalizeStakeGameSlug(slug) {
   return String(slug || '')

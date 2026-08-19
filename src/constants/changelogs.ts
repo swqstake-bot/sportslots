@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.289': [
+    '✨ Slots: Seed-Reset immer in den Settings (auch Meta Gaming / unbekannte RGS-Studios); (?) erklärt: nur bei Stake RGS aktiv',
+  ],
   '1.0.288': [
     '🐛 Login: disable-http2 entfernt — Cloudflare/Stake Login-Fenster hing durch erzwungenes HTTP/1.1',
   ],

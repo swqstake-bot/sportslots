@@ -356,15 +356,25 @@ export const PROVIDERS = {
     name: 'Valkyrie',
     aliasOf: 'twist',
   },
+  'meta-gaming': {
+    id: 'meta-gaming',
+    name: 'Meta Gaming',
+    aliasOf: 'stakeEngine',
+  },
+  metagaming: {
+    id: 'metagaming',
+    name: 'Meta Gaming alias',
+    aliasOf: 'stakeEngine',
+  },
   'print-studios': {
     id: 'print-studios',
     name: 'Print Studios',
-    aliasOf: 'relax',
+    aliasOf: 'stakeEngine',
   },
   printstudios: {
     id: 'printstudios',
     name: 'Print Studios alias',
-    aliasOf: 'relax',
+    aliasOf: 'stakeEngine',
   },
   petersons: {
     id: 'petersons',

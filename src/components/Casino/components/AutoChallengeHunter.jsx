@@ -32,6 +32,7 @@ import {
   isStakeRgsInternalBetId,
 } from '../utils/stakeBetShareId'
 import { normalizeBetSlugForHouseMatch } from '../utils/slotSlugMatching'
+import { isStakeEngineProviderId } from '../utils/stakeRgsSlug'
 import {
   normalizeHunterMultiByProvider,
   trimPendingQueues,
@@ -1931,7 +1932,7 @@ export default function AutoChallengeHunter({
       }
       const minBetUsd = challenge.minBetUsd
       const probeCacheKey = buildProbeCacheKey(providerId, slot.slug, sCurr, minBetUsd)
-      const isStakeRgsRun = String(providerId || '').toLowerCase() === 'stakeengine'
+      const isStakeRgsRun = isStakeEngineProviderId(providerId)
 
       let stakeGameIdForFairness = String(slot?.stakeGameId || challenge?.game?.id || '').trim()
       if (!stakeGameIdForFairness) {
@@ -2345,14 +2346,7 @@ export default function AutoChallengeHunter({
             let m = Number(safeMulti) || 0
             if (betN > 0 && win > 0) m = Math.max(m, win / betN)
             if (Number.isFinite(payoutMultRaw) && payoutMultRaw > 0) {
-              const pid = String(providerId || '').toLowerCase()
-              const isStakeRgs =
-                pid === 'stakeengine' ||
-                pid === 'stake-engine' ||
-                pid === '1000lakes' ||
-                pid === 'lk7' ||
-                pid === 'lk7-com' ||
-                pid === 'paperclip'
+              const isStakeRgs = isStakeEngineProviderId(providerId)
               const norm = isStakeRgs
                 ? resolveStakeEnginePayoutMultiplier(payoutMultRaw)
                 : normalizeHunterMultiByProvider(payoutMultRaw, providerId)
