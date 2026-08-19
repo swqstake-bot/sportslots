@@ -303,7 +303,11 @@ export const PromotionsView = memo(function PromotionsView({ accessToken, webSlo
     setCmsLoading(true)
     setCmsError('')
     try {
-      const payload = await loadStakeCmsPromotions({ site: preferredSite, webSlots: webSlotsRef.current, force })
+      const payload = await loadStakeCmsPromotions({ site: preferredSite, webSlots: webSlotsRef.current, force }) as {
+        promotions?: CmsPromo[]
+        fetchedAt?: number
+        error?: string
+      }
       setCmsPromos(Array.isArray(payload?.promotions) ? payload.promotions : [])
       setCmsFetchedAt(Number(payload?.fetchedAt) || Date.now())
       if (payload?.error) setCmsError(String(payload.error))
@@ -320,7 +324,11 @@ export const PromotionsView = memo(function PromotionsView({ accessToken, webSlo
     setForumLoading(true)
     setForumError('')
     try {
-      const payload = await loadForumPromotions({ webSlots: webSlotsRef.current, force })
+      const payload = await loadForumPromotions({ webSlots: webSlotsRef.current, force }) as {
+        promotions?: ForumPromo[]
+        fetchedAt?: number
+        error?: string
+      }
       setForumPromos(Array.isArray(payload?.promotions) ? payload.promotions : [])
       setForumFetchedAt(Number(payload?.fetchedAt) || Date.now())
       if (payload?.error) setForumError(String(payload.error))

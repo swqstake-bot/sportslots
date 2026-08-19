@@ -662,6 +662,10 @@ export function promotionTimeLeft(promo, now = Date.now()) {
   return Number.isFinite(end) ? end - now : null
 }
 
+/**
+ * @param {{ site?: string, webSlots?: any[], force?: boolean }} [opts]
+ * @returns {Promise<{ promotions: any[], fetchedAt: number, cached?: boolean, error?: string, version?: number }>}
+ */
 export async function loadStakeCmsPromotions({ site = 'com', webSlots = [], force = false } = {}) {
   if (!force) {
     const cached = readCache(site)

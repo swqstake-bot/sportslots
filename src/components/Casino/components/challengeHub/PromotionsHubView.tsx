@@ -129,7 +129,11 @@ export const PromotionsHubView = memo(function PromotionsHubView({
         <>
           <PromotionsView accessToken={accessToken} webSlots={webSlots} source="forum" />
           <SectionCard>
-            <ForumChallengeView accessToken={accessToken} webSlots={webSlots} onSelectChallenge={onSelectChallenge} />
+            <ForumChallengeView
+              accessToken={accessToken}
+              webSlots={webSlots as any[]}
+              onSelectChallenge={onSelectChallenge}
+            />
           </SectionCard>
         </>
       ) : (

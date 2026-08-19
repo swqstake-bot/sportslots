@@ -82,6 +82,9 @@ const STYLES = {
   rankBadge: { minWidth: 24, height: 24, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700 },
 }
 
+/**
+ * @param {{ accessToken?: string, webSlots?: any[], onSelectChallenge?: (challenge: any) => void }} props
+ */
 export default function ForumChallengeView({ accessToken = '', webSlots = [], onSelectChallenge }) {
   const [forumUrl, setForumUrl] = useState(() => {
     try {

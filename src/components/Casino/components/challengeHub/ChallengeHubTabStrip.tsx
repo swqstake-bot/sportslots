@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo } from 'react'
 
 export type HubTab = 'casino' | 'autorun' | 'archive'
 

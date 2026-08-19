@@ -5,13 +5,22 @@ let catalog = []
 const subscribers = new Set()
 let listening = false
 
+/**
+ * @param {any[]} [promos]
+ */
 export function setPromotionWatcherCatalog(promos) {
   catalog = Array.isArray(promos) ? promos : []
 }
 
+/**
+ * @param {(key: string, entry?: { ts: number, note: string } | null) => void} fn
+ * @returns {() => void}
+ */
 export function subscribePromotionCompletions(fn) {
   subscribers.add(fn)
-  return () => subscribers.delete(fn)
+  return () => {
+    subscribers.delete(fn)
+  }
 }
 
 function notify(key, entry) {

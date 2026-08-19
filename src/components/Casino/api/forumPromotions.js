@@ -681,6 +681,10 @@ export function getCachedForumPromotions() {
   return readCache()
 }
 
+/**
+ * @param {{ webSlots?: any[], force?: boolean }} [opts]
+ * @returns {Promise<{ promotions: any[], fetchedAt: number, cached?: boolean, error?: string, version?: number }>}
+ */
 export async function loadForumPromotions({ webSlots = [], force = false } = {}) {
   if (!force) {
     const cached = readCache()
