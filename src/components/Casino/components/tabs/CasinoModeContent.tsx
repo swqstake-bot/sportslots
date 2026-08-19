@@ -6,9 +6,10 @@ import LogViewer from '../LogViewer'
 import { PlayModeContent } from './PlayModeContent'
 import { SectionCard } from '../ui/SectionCard'
 import { ChallengeHubView } from '../ChallengeHubView'
+import { PromotionsHubView } from '../challengeHub/PromotionsHubView'
 import type { CasinoSlotInstance, SlotSet, CasinoChallengeSelection } from '../../types'
 
-const HUB_MODES = new Set(['challengeHub', 'challenges', 'telegram', 'forum'])
+const HUB_MODES = new Set(['challengeHub', 'challenges'])
 
 interface CasinoModeContentProps {
   mode: string
@@ -98,10 +99,14 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
   } = props
 
   const isHubMode = HUB_MODES.has(mode)
+  const isPromotionsMode = mode === 'promotions'
   // Keep hub mounted after first visit so queue/activeRuns survive Slots ↔ Hub switches.
   const [hubKeepAlive, setHubKeepAlive] = useState(false)
-  if (isHubMode && !hubKeepAlive) setHubKeepAlive(true)
+  const [promoKeepAlive, setPromoKeepAlive] = useState(false)
+  if ((isHubMode || isPromotionsMode) && !hubKeepAlive) setHubKeepAlive(true)
+  if (isPromotionsMode && !promoKeepAlive) setPromoKeepAlive(true)
   const showHub = hubKeepAlive
+  const showPromotions = promoKeepAlive
 
   let primary: ReactNode = null
   if (mode === 'originals') {
@@ -197,7 +202,18 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
           />
         </div>
       ) : null}
-      {!isHubMode ? primary : null}
+      {showPromotions ? (
+        <div className={isPromotionsMode ? 'min-w-0 min-h-0' : 'hidden'} aria-hidden={!isPromotionsMode}>
+          <PromotionsHubView
+            accessToken={token}
+            webSlots={webSlots as any}
+            onDiscoveredSlots={handleDiscoveredSlots}
+            onSelectChallenge={handleSelectChallenge}
+            onHubStatsChange={() => {}}
+          />
+        </div>
+      ) : null}
+      {!isHubMode && !isPromotionsMode ? primary : null}
     </>
   )
 }

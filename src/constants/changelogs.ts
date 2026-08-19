@@ -1,4 +1,11 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.290': [
+    '✨ Promotions als eigener Casino-Tab (Casino / Forum / Telegram); Challenges nur Hunter / Balance / Archive',
+    '✨ Casino-Promos aus CMS + Forum, Hunt-all, kompakte Poster, manuell abhaken',
+    '🐛 MintyFresh (Brew & Broom): play `mode:normal` + payload.requestType — kein ERR_VAL mehr',
+    '🐛 Forum-Refresh: Scrape-Window serialisiert (kein MaxListeners-Leak)',
+    '✨ Telegram-Hunter: Fallback-Einsatz USD wenn Min-Bet im Text fehlt',
+  ],
   '1.0.289': [
     '✨ Slots: Seed-Reset immer in den Settings (auch Meta Gaming / unbekannte RGS-Studios); (?) erklärt: nur bei Stake RGS aktiv',
   ],

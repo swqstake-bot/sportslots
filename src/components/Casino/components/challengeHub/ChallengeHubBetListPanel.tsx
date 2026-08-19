@@ -19,6 +19,7 @@ import {
 
 type ChallengeHubBetListPanelProps = {
   accessToken: string
+  onHide?: () => void
 }
 
 /**
@@ -27,6 +28,7 @@ type ChallengeHubBetListPanelProps = {
  */
 export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
   accessToken,
+  onHide,
 }: ChallengeHubBetListPanelProps) {
   const feedSnapshot = useChallengeHubRecentBets()
   const recentBets = useMemo(
@@ -35,7 +37,7 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
   )
   const [topMultisLimit, setTopMultisLimit] = useState<number>(10)
   const [feedOpen, setFeedOpen] = useState(true)
-  const [highlightsOpen, setHighlightsOpen] = useState(true)
+  const [highlightsOpen, setHighlightsOpen] = useState(false)
   const [highlightMode, setHighlightMode] = useState<'multis' | 'wins' | 'slots'>('multis')
   const [topMultisAll, setTopMultisAll] = useState<TopEntry[]>(() =>
     SESSION_ONLY_HUB_AND_LOGGER ? [] : dedupeTopEntries(parseStoredTopEntries())
@@ -114,12 +116,19 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
   }, [highlightMode, topMultis, topSlots, topWins])
 
   return (
-    <SectionCard title="Hub activity" className="challenge-hub-activity-panel">
+    <SectionCard className="challenge-hub-activity-panel">
       <div className="challenge-hub-activity-head">
         <p className="challenge-hub-activity-label">Feed</p>
-        <button type="button" className="challenge-hub-action challenge-hub-action--ghost" onClick={() => setFeedOpen((prev) => !prev)}>
-          {feedOpen ? 'Collapse' : 'Expand'}
-        </button>
+        <div className="challenge-hub-activity-controls">
+          <button type="button" className="challenge-hub-action challenge-hub-action--ghost" onClick={() => setFeedOpen((prev) => !prev)}>
+            {feedOpen ? 'Collapse' : 'Expand'}
+          </button>
+          {onHide ? (
+            <button type="button" className="challenge-hub-action challenge-hub-action--ghost" title="Hide feed column" onClick={onHide}>
+              Hide
+            </button>
+          ) : null}
+        </div>
       </div>
       {feedOpen ? (
         <div className="challenge-hub-activity-feed-wrap">

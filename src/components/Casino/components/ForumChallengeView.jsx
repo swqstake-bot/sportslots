@@ -1,5 +1,5 @@
 /**
- * Forum challenge for verification — paste a forum thread URL and load bets (SSP-style).
+ * Forum challenge for verification — paste a forum thread URL and load bets.
  */
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { scrapeForumBets } from '../api/forumScraper'
@@ -137,6 +137,21 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
     refreshForumSession()
   }, [refreshForumSession])
 
+  useEffect(() => {
+    function onSetUrl(ev) {
+      const url = String(ev?.detail?.url || '').trim()
+      if (!url) return
+      setForumUrl(url)
+      try {
+        localStorage.setItem(FORUM_URL_STORAGE_KEY, url)
+      } catch {
+        /* ignore */
+      }
+    }
+    window.addEventListener('forum-challenge-set-url', onSetUrl)
+    return () => window.removeEventListener('forum-challenge-set-url', onSetUrl)
+  }, [])
+
   const handleForumLogin = useCallback(async () => {
     if (!window.electronAPI?.forumOpenLogin) return
     await window.electronAPI.forumOpenLogin()
@@ -252,13 +267,17 @@ export default function ForumChallengeView({ accessToken = '', webSlots = [], on
 
   return (
     <div style={STYLES.container}>
-      <h2 style={STYLES.title}>Forum challenge (verify)</h2>
-      <p style={STYLES.help}>
-        Paste a forum thread URL to load and verify all casino bets from the thread. Bets are fetched via the Stake API.
-        {' '}
-        HTTP 403 usually means Cloudflare: the app loads pages in a Chromium window (same as Appeals Monitor).
-        If a challenge window appears, complete it; or use <strong>Stake Community login</strong> below, then <strong>Load</strong> again.
-      </p>
+      <details>
+        <summary style={{ ...STYLES.help, cursor: 'pointer', marginBottom: 'var(--space-2)' }}>
+          Paste a forum thread URL to verify bets
+        </summary>
+        <p style={STYLES.help}>
+          Bets are fetched via the Stake API.
+          {' '}
+          HTTP 403 usually means Cloudflare: the app loads pages in a Chromium window (same as Appeals Monitor).
+          If a challenge window appears, complete it; or use <strong>Stake Community login</strong> below, then <strong>Load</strong> again.
+        </p>
+      </details>
 
       {typeof window !== 'undefined' && window.electronAPI?.forumOpenLogin ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.65rem', marginBottom: 'var(--space-2)' }}>

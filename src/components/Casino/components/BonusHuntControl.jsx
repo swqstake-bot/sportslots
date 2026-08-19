@@ -26,6 +26,7 @@ import { saveSlotSpinSample, saveBonusSpinSample } from '../utils/slotSpinSample
 import { subscribeToHouseBets } from '../api/stakeRealtimeFacade'
 import { PROVIDERS as PROVIDERS_META } from '../constants/providers'
 import { houseBetSlugMatchesSessionSlug } from '../utils/slotSlugMatching'
+import { emitCasinoBetAdded } from '../utils/casinoBetEvents'
 import { TipMenu } from '../../ui/TipMenu'
 import { createEventEnvelope, generateCorrelationId } from '../../../utils/eventEnvelope'
 import { publishRealtimeEvent } from '../../../services/realtimeBus'
@@ -743,7 +744,7 @@ export default function BonusHuntControl({
         (p) => slotMatchesGame(p.slotSlug, gameSlug) && amountMatches(p)
       )
       if (idx >= 0) {
-        const { historyId, slotSlug } = pending[idx]
+        const { historyId, slotSlug, stoppedBonus } = pending[idx]
         const matchedSlot = toRun.find((s) => s.slug === slotSlug)
         const isStakeEngine = matchedSlot && (matchedSlot.providerId === 'stakeEngine' || PROVIDERS_META[matchedSlot.providerId]?.aliasOf === 'stakeEngine')
         pendingSpinsRef.current = pending.filter((_, i) => i !== idx)
@@ -792,6 +793,26 @@ export default function BonusHuntControl({
               }
             })
           )
+          if (!stoppedBonus && payoutMinor > 0) {
+            const betValue = amountTargetMinor > 0 ? amountTargetMinor : pending[idx]?.effectiveBet
+            const emitCurr = String(target || targetCurrency || 'usd').toLowerCase()
+            const betConv = convertMinorToUsdMajor(betValue, emitCurr, currencyRates || {})
+            const winConv = convertMinorToUsdMajor(payoutMinor, emitCurr, currencyRates || {})
+            const betUsd = Number(betConv?.usd)
+            const winUsd = Number(winConv?.usd)
+            emitCasinoBetAdded({
+              slotSlug,
+              slotName: matchedSlot?.name || slotSlug,
+              currencyCode: emitCurr,
+              betAmount: betValue,
+              winAmount: payoutMinor,
+              betUsd: Number.isFinite(betUsd) ? betUsd : null,
+              winUsd: Number.isFinite(winUsd) ? winUsd : null,
+              multiplier: betValue > 0 ? payoutMinor / betValue : 0,
+              roundId: b?.iid || b?.id || null,
+              addedAt: Date.now(),
+            })
+          }
         }
       } else {
         if (BONUS_HUNT_DEBUG && pending.length > 0) {
@@ -978,7 +999,7 @@ export default function BonusHuntControl({
           session = updatedSession || { ...session, seq: nextSeq }
           spinsSinceRefresh += 1
 
-          const effectiveBet = getEffectiveBetAmount(betAmount, usedExtraBet, slot.slug)
+          const effectiveBet = getEffectiveBetAmount(betAmount, usedExtraBet, slot.slug, session)
           const parsed = parseBetResponse(data, effectiveBet)
           const scatterForStat = initialBonusScatter ?? getImpliedScatterLevel(parsed, slot.slug) ?? parsed.scatterCount
           slotSpins += 1
@@ -1087,8 +1108,25 @@ export default function BonusHuntControl({
           const historyId = `${slot.slug}-${Date.now()}-${slotSpins}`
           pendingSpinsRef.current = [
             ...pendingSpinsRef.current,
-            { slotSlug: slot.slug, effectiveBet, baseBet: betAmount, historyId },
+            { slotSlug: slot.slug, effectiveBet, baseBet: betAmount, historyId, stoppedBonus: shouldStopOnBonus },
           ]
+          const huntCurr = String(parsed.currencyCode || targetCurrency || 'usd').toLowerCase()
+          const huntBetConv = convertMinorToUsdMajor(effectiveBet, huntCurr, currencyRates || {})
+          const huntWinConv = convertMinorToUsdMajor(winAmount, huntCurr, currencyRates || {})
+          const huntBetUsd = Number(huntBetConv?.usd)
+          const huntWinUsd = Number(huntWinConv?.usd)
+          emitCasinoBetAdded({
+            slotSlug: slot.slug,
+            slotName: slot.name,
+            currencyCode: huntCurr,
+            betAmount: effectiveBet,
+            winAmount,
+            betUsd: Number.isFinite(huntBetUsd) ? huntBetUsd : null,
+            winUsd: Number.isFinite(huntWinUsd) ? huntWinUsd : null,
+            multiplier: effectiveBet > 0 ? winAmount / effectiveBet : 0,
+            roundId: parsed.roundId ?? parsed.betId ?? null,
+            addedAt: Date.now(),
+          })
           setBetHistory((h) => [
             ...h,
             {
@@ -1423,79 +1461,7 @@ export default function BonusHuntControl({
   }
 
   return (
-    <div className="bonushunt-root" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      <div
-        className="casino-card"
-        style={{
-          padding: '1rem 1.25rem',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.5rem',
-          border: '1px solid var(--border-subtle)',
-          background:
-            'linear-gradient(120deg, rgba(var(--accent-rgb), 0.1) 0%, rgba(var(--accent-rgb), 0.03) 40%, transparent 100%), var(--bg-card)',
-        }}
-      >
-        <h2
-          className="text-sm font-semibold"
-          style={{ color: 'var(--text)', fontFamily: 'var(--font-heading)', letterSpacing: '0.04em' }}
-        >
-          Bonus hunt
-        </h2>
-        <p className="text-xs text-[var(--text-muted)]" style={{ maxWidth: '42rem' }}>
-          Pick games and stake, run the hunt, then open found bonuses (wheel, auto-open, or manual). Use the right column for
-          live progress.
-        </p>
-        <ol
-          className="bonushunt-stepper"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-            gap: '0.5rem',
-            listStyle: 'none',
-            margin: 0,
-            padding: 0,
-            marginTop: '0.25rem',
-          }}
-        >
-          {['Pick slots', 'Currency & bet', 'Run', 'Open bonuses'].map((label, i) => (
-            <li
-              key={label}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                fontSize: '0.7rem',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                color: 'var(--text-muted)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-md, 8px)',
-                padding: '0.35rem 0.5rem',
-                background: 'rgba(0,0,0,0.15)',
-              }}
-            >
-              <span
-                style={{
-                  minWidth: '1.1rem',
-                  height: '1.1rem',
-                  borderRadius: 999,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'rgba(var(--accent-rgb), 0.2)',
-                  color: 'var(--accent)',
-                  fontWeight: 800,
-                  fontSize: '0.65rem',
-                }}
-              >
-                {i + 1}
-              </span>
-              {label}
-            </li>
-          ))}
-        </ol>
-      </div>
+    <div className="bonushunt-root" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
       {(selectedSlots.length >= 2 || (huntComplete && wheelSlots.length >= 2)) && (
         <div className="casino-card" style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '1.25rem' }}>
           {huntComplete && <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.02em' }}>Bonus opening - choose the next bonus</div>}
@@ -1555,13 +1521,13 @@ export default function BonusHuntControl({
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(360px, 100%), 1fr))', gap: '1.25rem', alignItems: 'start' }}>
-      <div className="casino-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: 0 }}>
-        <h3 className="casino-card-header" style={{ marginBottom: '0.75rem' }}>
+      <div className="casino-card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', minWidth: 0 }}>
+        <h3 className="casino-card-header" style={{ marginBottom: '0.5rem' }}>
           <span className="casino-card-header-accent"></span>
           Slots & Settings
         </h3>
         <div className={styles.section}>
-          <span className={styles.label}>Slots (click to select)</span>
+          <span className={styles.label}>Slots</span>
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.35rem' }}>
           <select value={loadedSetId} onChange={(e) => onLoadSlotSet?.(e.target.value)} className={styles.select} style={{ width: 'auto', minWidth: 120 }} disabled={isRunning}>
             <option value="">— Load slot set —</option>
@@ -1649,6 +1615,49 @@ export default function BonusHuntControl({
         </div>
         </div>
 
+        <div className={`${styles.section} ${styles.sectionBlock}`}>
+          <span className={styles.label} style={{ marginBottom: '0.5rem' }}>Hunt settings</span>
+          <div className={styles.row} style={{ flexWrap: 'wrap', gap: '0.5rem 0.75rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="0 = unlimited">
+              Max Spins
+              <input type="number" min={0} value={maxSpinsPerSlot || ''} onChange={(e) => setMaxSpinsPerSlot(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0=∞" className={styles.select} style={{ width: 56 }} disabled={isRunning} />
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Stop after loss limit in selected currency">
+              Loss
+              <input type="number" min={0} value={maxLossLimit || ''} onChange={(e) => setMaxLossLimit(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 56 }} disabled={isRunning} />
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+              <input type="checkbox" checked={stopOnMulti} onChange={(e) => setStopOnMulti(e.target.checked)} disabled={isRunning} />
+              Multi
+              <input type="number" min={2} value={stopOnMultiplier} onChange={(e) => setStopOnMultiplier(Math.max(2, parseInt(e.target.value) || 2))} className={styles.select} style={{ width: 48 }} disabled={isRunning || !stopOnMulti} />×
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Minimum scatter count to stop on bonus">
+              Scatter
+              <select value={minScatterForStop} onChange={(e) => setMinScatterForStop(Number(e.target.value))} className={styles.select} style={{ width: 90 }} disabled={isRunning}>
+                <option value={0}>Any</option>
+                <option value={3}>3+</option>
+                <option value={4}>4+</option>
+                <option value={5}>5</option>
+              </select>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
+              Refresh
+              <input type="number" min={0} value={sessionRefreshSpins || ''} onChange={(e) => setSessionRefreshSpins(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 52 }} disabled={isRunning} />
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Gamble when bonus triggers">
+              <input type="checkbox" checked={gambleOption} onChange={(e) => setGambleOption(e.target.checked)} disabled={isRunning} />
+              Gamble
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Run multiple slots in parallel">
+              <input type="checkbox" checked={parallelHuntEnabled} onChange={(e) => setParallelHuntEnabled(e.target.checked)} disabled={isRunning} />
+              Parallel
+              <input type="range" min={2} max={12} value={maxParallelSlots} onChange={(e) => setMaxParallelSlots(Math.max(2, parseInt(e.target.value) || 2))} style={{ width: 90 }} disabled={isRunning || !parallelHuntEnabled} />
+              <span style={{ minWidth: 16 }}>{maxParallelSlots}</span>
+              slots
+            </label>
+          </div>
+        </div>
+
         <div className={styles.row} style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
           {!isRunning ? (
             <>
@@ -1669,39 +1678,9 @@ export default function BonusHuntControl({
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <details style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               <summary style={{ cursor: 'pointer', listStyle: 'none', userSelect: 'none' }}>
-                Advanced ▾
+                Logs & debug ▾
               </summary>
               <div style={{ marginTop: '0.5rem', padding: '0.5rem', border: '1px solid var(--border-subtle)', borderRadius: 8, background: 'var(--bg-deep)', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', maxWidth: 520 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
-                  Max Spins: <input type="number" min={0} value={maxSpinsPerSlot || ''} onChange={(e) => setMaxSpinsPerSlot(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0=∞" className={styles.select} style={{ width: 52 }} disabled={isRunning} title="0 = unlimited" />
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Stop after loss limit in selected currency">
-                  Loss: <input type="number" min={0} value={maxLossLimit || ''} onChange={(e) => setMaxLossLimit(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 52 }} disabled={isRunning} />
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={stopOnMulti} onChange={(e) => setStopOnMulti(e.target.checked)} disabled={isRunning} />
-                  Multi <input type="number" min={2} value={stopOnMultiplier} onChange={(e) => setStopOnMultiplier(Math.max(2, parseInt(e.target.value) || 2))} className={styles.select} style={{ width: 44 }} disabled={isRunning || !stopOnMulti} />×
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }} title="Minimum scatter count to stop on bonus">
-                  Scatter: <select value={minScatterForStop} onChange={(e) => setMinScatterForStop(Number(e.target.value))} className={styles.select} style={{ width: 90 }} disabled={isRunning}>
-                    <option value={0}>Any</option>
-                    <option value={3}>3+</option>
-                    <option value={4}>4+</option>
-                    <option value={5}>5</option>
-                  </select>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Gamble when bonus triggers">
-                  <input type="checkbox" checked={gambleOption} onChange={(e) => setGambleOption(e.target.checked)} disabled={isRunning} />
-                  Gamble
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
-                  Refresh: <input type="number" min={0} value={sessionRefreshSpins || ''} onChange={(e) => setSessionRefreshSpins(Math.max(0, parseInt(e.target.value) || 0))} placeholder="0" className={styles.select} style={{ width: 48 }} disabled={isRunning} />
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }} title="Run multiple slots in parallel">
-                  <input type="checkbox" checked={parallelHuntEnabled} onChange={(e) => setParallelHuntEnabled(e.target.checked)} disabled={isRunning} />
-                  <input type="range" min={2} value={maxParallelSlots} onChange={(e) => setMaxParallelSlots(Math.max(2, parseInt(e.target.value) || 2))} style={{ width: 80 }} disabled={isRunning || !parallelHuntEnabled} />
-                  <span style={{ minWidth: 16 }}>{maxParallelSlots}</span> parallel
-                </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', cursor: 'pointer' }}>
                   <input type="checkbox" checked={saveBonusLogs} onChange={(e) => handleToggleBonusLogs(e.target.checked)} disabled={isRunning} />
                   Bonus log

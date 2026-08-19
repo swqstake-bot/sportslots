@@ -16,6 +16,9 @@ import { ChallengeHubTabContent } from './challengeHub/ChallengeHubTabContent'
 import type { HubStatsPayload } from './challengeHub/hubTypes'
 import type { CasinoChallengeSelection } from '../types'
 import { useInAppNotificationStore } from '../../../store/inAppNotificationStore'
+import { useStakeSiteStore } from '../../../store/stakeSiteStore'
+import { useUiStore } from '../../../store/uiStore'
+import { startPromotionCompletionWatcher } from '../utils/promotionCompletionWatcher'
 
 interface ChallengeHubViewProps {
   accessToken: string
@@ -25,31 +28,21 @@ interface ChallengeHubViewProps {
   onHubStatsChange?: (payload: HubStatsPayload) => void
 }
 
-const TELEGRAM_GATE_KEY = 'slotbot_hub_telegram_enabled_v1'
-const TELEGRAM_USAGE_KEY = 'slotbot_hub_telegram_usage_count_v1'
-
 export function ChallengeHubView({
   accessToken,
   webSlots,
   onDiscoveredSlots,
-  onSelectChallenge,
   onHubStatsChange,
 }: ChallengeHubViewProps) {
   const [tab, setTab] = useState<HubTab>('casino')
+  const preferredSite = useStakeSiteStore((s) => s.preferredSite)
   const [, setHubStatsBySource] = useState<Record<string, HubStatsPayload>>({})
   const [resourceMode, setResourceMode] = useState(() => isChallengeHubResourceMode())
   const [sideCollapsed, setSideCollapsed] = useState(() => {
     try {
-      return localStorage.getItem('challengeHubBetSideCollapsed') === '1'
+      return localStorage.getItem('challengeHubBetSideCollapsed') !== '0'
     } catch {
-      return false
-    }
-  })
-  const [telegramEnabled, setTelegramEnabled] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(TELEGRAM_GATE_KEY) === '1'
-    } catch {
-      return false
+      return true
     }
   })
   useEffect(() => {
@@ -63,14 +56,7 @@ export function ChallengeHubView({
 
   useEffect(() => subscribeChallengeHubResourceMode(setResourceMode), [])
 
-  const [telegramUsage, setTelegramUsage] = useState<number>(() => {
-    try {
-      const n = Number(localStorage.getItem(TELEGRAM_USAGE_KEY) || 0)
-      return Number.isFinite(n) && n >= 0 ? n : 0
-    } catch {
-      return 0
-    }
-  })
+  useEffect(() => startPromotionCompletionWatcher(preferredSite === 'eu' ? 'eu' : 'com'), [preferredSite])
 
   useEffect(() => {
     try {
@@ -80,42 +66,20 @@ export function ChallengeHubView({
     }
   }, [sideCollapsed])
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(TELEGRAM_GATE_KEY, telegramEnabled ? '1' : '0')
-    } catch {
-      // ignore persistence errors in UI preference
-    }
-  }, [telegramEnabled])
-
   const handleTabChange = useCallback((next: HubTab) => {
     setTab(next)
-    if (next === 'telegram') {
-      setTelegramUsage((prev) => {
-        const n = prev + 1
-        try {
-          localStorage.setItem(TELEGRAM_USAGE_KEY, String(n))
-        } catch {
-          // ignore persistence errors in usage counter
-        }
-        return n
-      })
-    }
   }, [])
 
   useEffect(() => {
     function onExternalOpenTab(ev: Event) {
-      const detail = (ev as CustomEvent<any>)?.detail || {}
-      const wanted = String(detail.tab || '').toLowerCase()
-      if (
-        wanted === 'casino' ||
-        wanted === 'autorun' ||
-        wanted === 'telegram' ||
-        wanted === 'forum' ||
-        wanted === 'promotions' ||
-        wanted === 'archive'
-      ) {
+      const wanted = String((ev as CustomEvent<any>)?.detail?.tab || '').toLowerCase()
+      if (wanted === 'casino' || wanted === 'autorun' || wanted === 'archive') {
         setTab(wanted as HubTab)
+        return
+      }
+      if (wanted === 'telegram' || wanted === 'forum' || wanted === 'promotions') {
+        useUiStore.getState().setCasinoMode('promotions')
+        window.dispatchEvent(new CustomEvent('promotions-hub-open-tab', { detail: { tab: wanted } }))
       }
     }
     window.addEventListener('challenge-hub-open-tab', onExternalOpenTab as EventListener)
@@ -151,31 +115,33 @@ export function ChallengeHubView({
     <div className={`challenge-hub-root flex flex-col gap-2.5 min-h-0${resourceMode ? ' is-resource-mode' : ''}`}>
       <div className="challenge-hub-topbar shrink-0">
         {!resourceMode ? (
-          <ChallengeHubTabStrip tab={tab} onTabChange={handleTabChange} />
+          <ChallengeHubTabStrip
+            tab={tab}
+            onTabChange={handleTabChange}
+            resourceMode={resourceMode}
+            onToggleResourceMode={() => setChallengeHubResourceMode(true)}
+          />
         ) : (
           <div className="challenge-hub-resource-title">Resource mode</div>
         )}
         <div className="challenge-hub-topbar-inbox">
-          <button
-            type="button"
-            className={`challenge-hub-action${resourceMode ? ' is-active' : ''}`}
-            title={
-              resourceMode
-                ? 'Exit resource mode — full Challenge Hub UI'
-                : 'Resource mode — P/L, bet speed, top multis only (less UI load)'
-            }
-            onClick={() => setChallengeHubResourceMode(!resourceMode)}
-          >
-            {resourceMode ? 'Full UI' : 'Resource'}
-          </button>
-          {!resourceMode && (
+          {resourceMode ? (
             <button
               type="button"
-              className="challenge-hub-action"
-              title={sideCollapsed ? 'Show bet feed' : 'Hide bet feed'}
+              className="challenge-hub-action is-active"
+              title="Exit resource mode"
+              onClick={() => setChallengeHubResourceMode(false)}
+            >
+              Full UI
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={`challenge-hub-action${sideCollapsed ? '' : ' is-active'}`}
+              title={sideCollapsed ? 'Show live bet feed' : 'Hide live bet feed'}
               onClick={() => setSideCollapsed((c) => !c)}
             >
-              {sideCollapsed ? 'Show feed' : 'Hide feed'}
+              Feed
             </button>
           )}
           <ChallengeHubNotificationCenter />
@@ -191,18 +157,17 @@ export function ChallengeHubView({
                 accessToken={accessToken}
                 webSlots={webSlots}
                 onDiscoveredSlots={onDiscoveredSlots}
-                onSelectChallenge={onSelectChallenge}
                 onHubStatsChange={handleHubStatsChange}
-                telegramEnabled={telegramEnabled}
-                setTelegramEnabled={setTelegramEnabled}
-                telegramUsage={telegramUsage}
                 resourceMode={resourceMode}
               />
             </div>
 
             {!hideSide && (
               <div className="challenge-hub-side-column min-h-0">
-                <ChallengeHubBetListPanel accessToken={accessToken} />
+                <ChallengeHubBetListPanel
+                  accessToken={accessToken}
+                  onHide={() => setSideCollapsed(true)}
+                />
               </div>
             )}
           </div>

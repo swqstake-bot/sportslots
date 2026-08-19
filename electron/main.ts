@@ -156,83 +156,104 @@ function ensureForumScrapeWindow(): BrowserWindow {
   return forumScrapeWin;
 }
 
+function recycleForumScrapeWindow() {
+  const w = forumScrapeWin;
+  forumScrapeWin = null;
+  if (!w || w.isDestroyed()) return;
+  try {
+    w.webContents.stop();
+  } catch {
+    /* ignore */
+  }
+  try {
+    w.destroy();
+  } catch {
+    /* ignore */
+  }
+}
+
+/** One hidden window can only load one URL at a time; queue overlapping IPC fetches. */
+let forumScrapeTail: Promise<void> = Promise.resolve();
+
+function enqueueForumScrape<T>(fn: () => Promise<T>): Promise<T> {
+  const run = forumScrapeTail.then(fn, fn);
+  forumScrapeTail = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+function waitForForumContentOrCf(w: BrowserWindow): Promise<void> {
+  return w.webContents
+    .executeJavaScript(`
+      new Promise((res) => {
+        const isCf = () => {
+          const t = (document.title || '').toLowerCase();
+          return t.includes('just a moment')
+            || !!document.querySelector('#challenge-form, .cf-browser-verification, #cf-challenge-running, #challenge-body-text');
+        };
+        const hasTopic = () => !!document.querySelector(
+          '[data-role="commentContent"], .cPost_contentWrap, #comments .ipsComment_content, article.ipsComment, .ipsType_pageTitle'
+        );
+        const hasBoard = () => !!document.querySelector('a[href*="/board/"], a[href*="/topic/"]');
+        const looksRss = () => /<(rss|rdf:RDF|feed|item|entry)[\\s>]/i.test(document.documentElement.outerHTML);
+        if (hasTopic() || hasBoard() || looksRss()) return res('ok');
+        if (isCf()) {
+          const start = Date.now();
+          const checkCf = () => {
+            if (hasTopic() || hasBoard() || looksRss()) return res('ok');
+            if (!isCf()) return res('passed');
+            if (Date.now() - start > 14000) return res('cf');
+            setTimeout(checkCf, 250);
+          };
+          return checkCf();
+        }
+        const start = Date.now();
+        const check = () => {
+          if (hasTopic() || hasBoard() || looksRss()) return res('ok');
+          if (isCf()) return res('cf');
+          if (Date.now() - start > 6000) return res('timeout');
+          setTimeout(check, 150);
+        };
+        check();
+      });
+    `)
+    .then(() => undefined, () => undefined);
+}
+
 /**
  * Load a forum URL in the shared Chromium session (cookies + TLS fingerprint).
  * session.fetch / Node https cannot pass Cloudflare JS challenges — this can.
  */
 function loadForumUrlInScrapeWindow(url: string): Promise<{ html: string; finalUrl: string }> {
-  const w = ensureForumScrapeWindow();
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Forum page load timeout')), 45000);
-    const grabHtml = () => {
-      if (!w || w.isDestroyed()) {
-        clearTimeout(timeout);
-        reject(new Error('Forum scrape window closed'));
-        return;
-      }
-      w.webContents
-        .executeJavaScript('document.documentElement.outerHTML')
-        .then((html) => {
-          clearTimeout(timeout);
-          resolve({
-            html: String(html ?? ''),
-            finalUrl: w.webContents.getURL() || url,
-          });
-        })
-        .catch((e) => {
-          clearTimeout(timeout);
-          reject(e);
-        });
-    };
-
-    const waitForContentOrCf = () => {
-      w.webContents
-        .executeJavaScript(`
-          new Promise((res) => {
-            const isCf = () => {
-              const t = (document.title || '').toLowerCase();
-              return t.includes('just a moment')
-                || !!document.querySelector('#challenge-form, .cf-browser-verification, #cf-challenge-running, #challenge-body-text');
-            };
-            const hasTopic = () => !!document.querySelector(
-              '[data-role="commentContent"], .cPost_contentWrap, #comments .ipsComment_content, article.ipsComment, .ipsType_pageTitle'
-            );
-            if (hasTopic()) return res('ok');
-            if (isCf()) {
-              const start = Date.now();
-              const checkCf = () => {
-                if (hasTopic()) return res('ok');
-                if (!isCf()) return res('passed');
-                if (Date.now() - start > 14000) return res('cf');
-                setTimeout(checkCf, 250);
-              };
-              return checkCf();
-            }
-            const start = Date.now();
-            const check = () => {
-              if (hasTopic()) return res('ok');
-              if (isCf()) return res('cf');
-              if (Date.now() - start > 6000) return res('timeout');
-              setTimeout(check, 150);
-            };
-            check();
-          });
-        `)
-        .then(() => grabHtml())
-        .catch(() => grabHtml());
-    };
-
-    w.webContents.once('did-finish-load', () => {
-      waitForContentOrCf();
+  return enqueueForumScrape(async () => {
+    const w = ensureForumScrapeWindow();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error('Forum page load timeout')), 45000);
     });
-    w.loadURL(url).catch((e) => {
-      clearTimeout(timeout);
-      reject(e);
-    });
+    const load = (async () => {
+      await w.loadURL(url);
+      if (w.isDestroyed()) throw new Error('Forum scrape window closed');
+      await waitForForumContentOrCf(w);
+    })();
+    try {
+      await Promise.race([load, timedOut]);
+      if (w.isDestroyed()) throw new Error('Forum scrape window closed');
+      const html = String((await w.webContents.executeJavaScript('document.documentElement.outerHTML')) ?? '');
+      return { html, finalUrl: w.webContents.getURL() || url };
+    } catch (err) {
+      recycleForumScrapeWindow();
+      throw err;
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+      void load.catch(() => undefined);
+    }
   });
 }
 
-/** Visible window so the user (or Chromium) can complete Cloudflare / login — SSP openForumChallengeWindow. */
+/** Visible window so the user (or Chromium) can complete Cloudflare / login. */
 function openForumCloudflareChallenge(startUrl?: string): Promise<boolean> {
   if (forumChallengeInFlight) return forumChallengeInFlight;
   forumChallengeInFlight = new Promise<boolean>((resolve) => {
@@ -290,7 +311,6 @@ function openForumCloudflareChallenge(startUrl?: string): Promise<boolean> {
         }
         const stillCf = title.toLowerCase().includes('just a moment');
         if (!stillCf && title && (hasCf || cookies.length > 0)) {
-          // Let cookies propagate (SSP waits ~2s)
           clearInterval(poll);
           setTimeout(() => finish(true), 2000);
         }
@@ -332,6 +352,21 @@ async function openExternalSafe(url: string): Promise<void> {
     throw new Error('External URL scheme is not allowed');
   }
   await shell.openExternal(url);
+}
+
+function isAllowedForumPath(pathname: string): boolean {
+  const path = String(pathname || '');
+  return path.includes('/topic/') || path.includes('/board/') || /\.xml\/?$/i.test(path);
+}
+
+function isAllowedForumFetchUrl(raw: string): boolean {
+  try {
+    const parsed = new URL(String(raw || '').trim());
+    if (!hostnameMatches(parsed.hostname, 'stakecommunity.com')) return false;
+    return isAllowedForumPath(parsed.pathname);
+  } catch {
+    return false;
+  }
 }
 
 function hostnameMatches(hostname: string, allowed: string): boolean {
@@ -2623,7 +2658,7 @@ ipcMain.handle(
   'forum-fetch-topic-html',
   async (_event, payload: { url: string; referer?: string; allowChallenge?: boolean }) => {
     const url = String(payload?.url || '').trim();
-    if (!url.includes('stakecommunity.com/topic/')) {
+    if (!isAllowedForumFetchUrl(url)) {
       return {
         ok: false as const,
         skipped: false as const,
@@ -2640,7 +2675,7 @@ ipcMain.handle(
       let loaded = await loadForumUrlInScrapeWindow(url);
       let cloudflare = isCloudflareChallengeHtml(loaded.html);
 
-      // Interactive CF: open visible window once (SSP), then retry via same partition.
+      // Interactive CF: open visible window once, then retry via the same partition.
       if (cloudflare && allowChallenge) {
         console.warn('[forum-scraper] Cloudflare challenge detected — opening challenge window');
         await openForumCloudflareChallenge(url);
@@ -3066,7 +3101,7 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
         type = 'pragmatic';
     } 
     // 2. Forum Logic
-    else if (proxyHostname && hostnameMatches(proxyHostname, 'stakecommunity.com') && proxyPathname.startsWith('/topic/')) {
+    else if (proxyHostname && hostnameMatches(proxyHostname, 'stakecommunity.com') && isAllowedForumPath(proxyPathname)) {
         isAllowed = true;
         type = 'forum';
     }
@@ -3087,6 +3122,9 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
             'grandgames.io', 'launcher-gg.com',
             // BGaming Softswiss RGS (HAR: {game}.bgaming-network.com/api + {game}.gamma.bgaming-network.com)
             'bgaming-network.com',
+            'apicdn.sanity.io',
+            'cdn.sanity.io',
+            'sta.ke',
         ];
         if (proxyHostname && allowed.some(h => hostnameMatches(proxyHostname, h))) {
             isAllowed = true;

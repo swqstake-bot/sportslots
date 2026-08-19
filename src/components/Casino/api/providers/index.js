@@ -285,6 +285,7 @@ export function getProvider(providerId) {
             return {
               ...session,
               __resolvedProviderImplId: implId,
+              __catalogProviderId: providerId,
             }
           } catch (err) {
             lastErr = err
@@ -292,7 +293,12 @@ export function getProvider(providerId) {
         }
         if (lastErr) throw lastErr
       }
-      return executeProviderMethod(resolvedProviderId, 'startSession', () => impl.startSession(...args))
+      return executeProviderMethod(resolvedProviderId, 'startSession', async () => {
+        const session = await impl.startSession(...args)
+        return session && typeof session === 'object'
+          ? { ...session, __catalogProviderId: providerId }
+          : session
+      })
     },
     async placeBet(...args) {
       if (typeof impl.placeBet !== 'function') throw normalizeProviderError(resolvedProviderId, new Error('placeBet not implemented'))

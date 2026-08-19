@@ -12,9 +12,11 @@
 
 .slot-wb-header {
   display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  padding: 0.65rem 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem 0.75rem;
+  padding: 0.45rem 0.65rem;
   border: 1px solid var(--border-subtle, var(--border));
   border-radius: var(--radius-md, 8px);
   background: color-mix(in srgb, var(--bg-elevated) 88%, rgba(var(--accent-rgb), 0.04));
@@ -25,6 +27,8 @@
   flex-wrap: wrap;
   gap: 0.35rem;
   align-items: center;
+  flex: 1 1 12rem;
+  min-width: 0;
 }
 
 .slot-wb-tab {
@@ -87,6 +91,7 @@
   flex-wrap: wrap;
   gap: 0.45rem;
   align-items: center;
+  flex: 0 1 auto;
 }
 
 .slot-wb-fleet-hint {

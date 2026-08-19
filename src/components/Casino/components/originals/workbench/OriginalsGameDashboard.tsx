@@ -24,7 +24,6 @@ function GameTile({
   onSelect: (g: OriginalsGameEntry) => void
 }) {
   const disabled = !game.apiReady || !game.uiReady
-  const meta = getGameMeta(game.slug)
   const title = disabled ? `${game.name} — ${game.blockedReason ?? 'Coming soon'}` : game.name
 
   return (
@@ -39,19 +38,10 @@ function GameTile({
         <img src={game.thumbnailUrl} alt="" className="originals-game-tile-img" loading="lazy" />
         {disabled ? (
           <span className="originals-game-tile-badge">Soon</span>
-        ) : (
-          <span className="originals-game-tile-badge originals-game-tile-badge--ready">Live</span>
-        )}
+        ) : null}
       </div>
       <div className="originals-game-tile-body">
         <span className="originals-game-tile-name">{game.name}</span>
-        <span className="originals-game-tile-tagline">{meta.tagline}</span>
-        {!disabled && (
-          <div className="originals-game-tile-pills">
-            {game.supportsCombo && <span className="originals-pill originals-pill--combo">Combo</span>}
-            {game.supportsAsync && <span className="originals-pill">Async</span>}
-          </div>
-        )}
       </div>
     </button>
   )
@@ -60,15 +50,14 @@ function GameTile({
 export default function OriginalsGameDashboard({ selectedSlug, onSelect }: OriginalsGameDashboardProps) {
   const [query, setQuery] = useState('')
   const playable = getPlayableGames()
-  const blocked = ORIGINALS_REGISTRY.filter((g) => !g.apiReady || !g.uiReady)
-
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return ORIGINALS_REGISTRY
-    return ORIGINALS_REGISTRY.filter(
+    const pool = q ? ORIGINALS_REGISTRY : playable
+    if (!q) return pool
+    return pool.filter(
       (g) => g.name.toLowerCase().includes(q) || g.slug.includes(q) || getGameMeta(g.slug).tagline.toLowerCase().includes(q)
     )
-  }, [query])
+  }, [query, playable])
 
   const byCategory = useMemo(() => {
     const map = new Map<OriginalsGameCategory, OriginalsGameEntry[]>()
@@ -84,35 +73,12 @@ export default function OriginalsGameDashboard({ selectedSlug, onSelect }: Origi
 
   return (
     <div className="originals-dashboard">
-      <header className="originals-dashboard-hero casino-card">
-        <div className="originals-dashboard-hero-text">
-          <h2 className="originals-dashboard-title">Originals Workbench</h2>
-          <p className="originals-dashboard-subtitle">
-            {playable.length} games ready · automatic & profile strategies
-          </p>
-        </div>
-        <div className="originals-dashboard-hero-stats">
-          <div className="originals-hero-stat">
-            <span className="originals-hero-stat-value">{playable.length}</span>
-            <span className="originals-hero-stat-label">Playable</span>
-          </div>
-          <div className="originals-hero-stat">
-            <span className="originals-hero-stat-value">{blocked.length}</span>
-            <span className="originals-hero-stat-label">Pending API</span>
-          </div>
-          <div className="originals-hero-stat">
-            <span className="originals-hero-stat-value">{ORIGINALS_REGISTRY.length}</span>
-            <span className="originals-hero-stat-label">Total</span>
-          </div>
-        </div>
-      </header>
-
       <div className="originals-dashboard-toolbar">
         <label className="originals-dashboard-search">
           <span className="originals-dashboard-search-label">Search games</span>
           <input
             type="search"
-            placeholder="Search games…"
+            placeholder={`${playable.length} games — search…`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="originals-dashboard-search-input"

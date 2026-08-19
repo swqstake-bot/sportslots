@@ -30,7 +30,8 @@ const CHALLENGE_HITS_STORAGE_KEY = 'slotbot_hunter_challenge_hits'
 /** GraphQL casesBet — `identifier` aus Network-Variables (Spiel „Packs“). */
 const TG_CASES_BET_ID_KEY = 'slotbot_tg_cases_bet_identifier_v1'
 const TG_CASES_BET_CHAIN_KEY = 'slotbot_tg_cases_bet_chain_identifier_v1'
-const TG_CASES_BET_DIFFICULTY_KEY = 'slotbot_tg_cases_bet_difficulty_v1'
+const TG_FALLBACK_MIN_BET_KEY = 'slotbot_tg_fallback_min_bet_usd_v1'
+const TG_FALLBACK_MIN_BET_DEFAULT = 0.1
 const CASES_DIFFICULTY_OPTIONS = ['easy', 'medium', 'hard', 'expert']
 const DIRECT_ORIGINALS_SLUGS = new Set(['packs', 'dice', 'limbo', 'mines', 'plinko', 'keno'])
 
@@ -99,20 +100,34 @@ function getElectronApi() {
   return window.electronAPI ?? null
 }
 
-function buildTelegramChallenge(parsed, game, messageKey) {
+function loadFallbackMinBetUsd() {
+  try {
+    const n = Number(localStorage.getItem(TG_FALLBACK_MIN_BET_KEY))
+    if (Number.isFinite(n) && n > 0) return n
+  } catch {
+    /* ignore */
+  }
+  return TG_FALLBACK_MIN_BET_DEFAULT
+}
+
+function clampFallbackMinBetUsd(n) {
+  const v = Number(n)
+  if (!Number.isFinite(v) || v <= 0) return TG_FALLBACK_MIN_BET_DEFAULT
+  return Math.min(1000, v)
+}
+
+function parsedHasMinBet(parsed) {
+  return parsed?.minBetUsd != null && Number.isFinite(parsed.minBetUsd) && parsed.minBetUsd > 0
+}
+
+function buildTelegramChallenge(parsed, game, messageKey, fallbackMinBetUsd) {
   const id = `tg_${messageKey}_${game.slug}`.replace(/[^a-zA-Z0-9_-]/g, '_')
   const isOriginalBySlug = DIRECT_ORIGINALS_SLUGS.has(String(game?.slug || '').toLowerCase())
   const originalsOpenEnded = shouldUseOriginalsOpenEnded(parsed)
   const tgt = originalsOpenEnded ? 0 : pickPrimaryTargetMultiplier(parsed)
-  const defaultMin =
-    parsed.isOriginalsChallenge &&
-    (parsed.minBetUsd == null || !Number.isFinite(parsed.minBetUsd))
-      ? 0.01
-      : 0.1
-  const minBet =
-    parsed.minBetUsd != null && Number.isFinite(parsed.minBetUsd) && parsed.minBetUsd > 0
-      ? parsed.minBetUsd
-      : defaultMin
+  const minBet = parsedHasMinBet(parsed)
+    ? parsed.minBetUsd
+    : clampFallbackMinBetUsd(fallbackMinBetUsd)
   return {
     id,
     gameSlug: game.slug,
@@ -204,6 +219,10 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
   const [stopLossStr, setStopLossStr] = useState('')
   const [stopProfitStr, setStopProfitStr] = useState('')
   const [autoOptimalTargetCurrency, setAutoOptimalTargetCurrency] = useState(true)
+  const [fallbackMinBetUsd, setFallbackMinBetUsd] = useState(() => loadFallbackMinBetUsd())
+  const [fallbackMinBetStr, setFallbackMinBetStr] = useState(() => usdLimitToInputStr(loadFallbackMinBetUsd()) || String(TG_FALLBACK_MIN_BET_DEFAULT))
+  const fallbackMinBetUsdRef = useRef(fallbackMinBetUsd)
+  fallbackMinBetUsdRef.current = fallbackMinBetUsd
 
   useEffect(() => {
     if (isEuGoldCoins) {
@@ -278,6 +297,14 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
   useEffect(() => {
     webSlotsRef.current = webSlots
   }, [webSlots])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(TG_FALLBACK_MIN_BET_KEY, String(fallbackMinBetUsd))
+    } catch {
+      /* ignore */
+    }
+  }, [fallbackMinBetUsd])
 
   useEffect(() => {
     try {
@@ -380,7 +407,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
         const pairId = `${messageKey}::${g.slug}`
         if (processedPairRef.current.has(pairId)) continue
         processedPairRef.current.add(pairId)
-        newChallenges.push(buildTelegramChallenge(p, g, messageKey))
+        newChallenges.push(buildTelegramChallenge(p, g, messageKey, fallbackMinBetUsdRef.current))
       }
       if (newChallenges.length === 0) return
 
@@ -428,7 +455,12 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
         const additions = orderedChallenges.map((c) => c.id).filter((id) => !seen.has(id))
         return additions.length ? [...q, ...additions] : q
       })
-      log(`${orderedChallenges.length} Eintrag(e) aus Telegram in die Warteschlange.`)
+      log(
+        `${orderedChallenges.length} Eintrag(e) aus Telegram in die Warteschlange.` +
+          (parsedHasMinBet(p)
+            ? ` Min $${Number(p.minBetUsd).toFixed(2)}`
+            : ` Min nicht erkannt → Einsatz $${clampFallbackMinBetUsd(fallbackMinBetUsdRef.current).toFixed(2)}`)
+      )
 
       const known = new Set(webSlotsRef.current.map((s) => s.slug))
       const added = []
@@ -595,19 +627,10 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
 
   return (
     <div className="hunter-dashboard" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <div className="hunter-header">
-        <div className="hunter-title">Telegram Challenges</div>
-        <p className="hunter-meta" style={{ maxWidth: '56rem', lineHeight: 1.45 }}>
-          Runs <strong>standalone</strong> like the auto-hunter: queue, parallel runs, target multiplier —{' '}
-          <strong>without</strong> switching to the Slots tab. Telegram supplies new challenges (live or paste text into the queue).
-          {' '}Multi-slot posts are ranked via <strong>StakeCruncher</strong> (highest hit chance first) before queueing.
-        </p>
-      </div>
-
       {electron?.invoke && (
         <div className="hunter-card" style={{ padding: '1rem' }}>
           <div className="hunter-section-title" style={{ marginBottom: '0.5rem' }}>
-            Telegram (GramJS)
+            Account
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.5rem' }}>
             <input
@@ -801,6 +824,31 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
           </label>
             </>
           )}
+          <div style={{ marginBottom: '0.65rem' }}>
+            <label style={{ fontSize: '0.7rem' }}>Einsatz USD (wenn TG keinen Min-Bet hat)</label>
+            <input
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              value={fallbackMinBetStr}
+              onChange={(e) => {
+                const raw = e.target.value
+                if (!isUsdLimitInputCharsOk(raw)) return
+                setFallbackMinBetStr(raw)
+                const n = parseUsdLimitInput(raw)
+                if (n > 0) setFallbackMinBetUsd(clampFallbackMinBetUsd(n))
+              }}
+              onBlur={() => {
+                const v = clampFallbackMinBetUsd(parseUsdLimitInput(fallbackMinBetStr))
+                setFallbackMinBetUsd(v)
+                setFallbackMinBetStr(usdLimitToInputStr(v) || String(TG_FALLBACK_MIN_BET_DEFAULT))
+              }}
+              style={{ width: '100%', marginTop: '0.2rem' }}
+            />
+            <p style={{ margin: '0.25rem 0 0', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+              Erkannter Min-Bet aus dem Text hat Vorrang.
+            </p>
+          </div>
           <div
             style={{
               marginBottom: '0.65rem',
@@ -959,7 +1007,15 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
               Queue detected games
             </Button>
             <p className="hunter-meta" style={{ marginTop: '0.35rem', fontSize: '0.72rem' }}>
-              Detected: {parsed.games.length} game(s), min. ${parsed.minBetUsd?.toFixed(2) ?? '—'},{' '}
+              Detected: {parsed.games.length} game(s),{' '}
+              {parsedHasMinBet(parsed) ? (
+                <>min. ${Number(parsed.minBetUsd).toFixed(2)}</>
+              ) : (
+                <>
+                  min. — · using ${clampFallbackMinBetUsd(fallbackMinBetUsd).toFixed(2)}
+                </>
+              )}
+              {', '}
               {shouldUseOriginalsOpenEnded(parsed) ? (
                 <>Originals (no multiplier target in text — spin until limit/stop)</>
               ) : (
@@ -972,6 +1028,30 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
                 </span>
               )}
             </p>
+            {!parsedHasMinBet(parsed) && (
+              <div style={{ marginTop: '0.45rem' }}>
+                <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Einsatz USD für diesen Queue-Run</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={fallbackMinBetStr}
+                  onChange={(e) => {
+                    const raw = e.target.value
+                    if (!isUsdLimitInputCharsOk(raw)) return
+                    setFallbackMinBetStr(raw)
+                    const n = parseUsdLimitInput(raw)
+                    if (n > 0) setFallbackMinBetUsd(clampFallbackMinBetUsd(n))
+                  }}
+                  onBlur={() => {
+                    const v = clampFallbackMinBetUsd(parseUsdLimitInput(fallbackMinBetStr))
+                    setFallbackMinBetUsd(v)
+                    setFallbackMinBetStr(usdLimitToInputStr(v) || String(TG_FALLBACK_MIN_BET_DEFAULT))
+                  }}
+                  style={{ width: '8.5rem', marginTop: '0.2rem', marginLeft: '0.4rem' }}
+                />
+              </div>
+            )}
           </div>
 
           <div className="hunter-kpi-strip" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>

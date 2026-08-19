@@ -551,7 +551,6 @@ export async function fetchStakeVsEddiePromotion({ locale = 'de', withDetails = 
 
 /**
  * Scrapes Stake promotions pages via Electron session-aware proxy.
- * This keeps behavior close to SSP approach (web-sourced promo data, not challenge feed).
  */
 export async function fetchStakePromotions({ locale = 'de', category, maxItems = 16, withDetails = true, detailLimit = 8 } = {}) {
   const safeLocale = normalizePromoLocale(locale, 'de')

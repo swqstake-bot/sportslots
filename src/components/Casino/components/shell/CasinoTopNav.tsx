@@ -1,27 +1,33 @@
-type CasinoMode = 'play' | 'originals' | 'challengeHub' | 'bonushunt' | 'logs'
+import type { CasinoMode } from '../../../../store/uiStore'
 
 interface CasinoTopNavProps {
   mode: string
   onChangeMode: (mode: CasinoMode) => void
 }
 
-const MODES: { id: CasinoMode; label: string; title: string }[] = [
-  { id: 'play', label: 'Slots', title: 'Slots, wheel, and selected games' },
-  { id: 'originals', label: 'Originals', title: 'Stake Originals (Dice, Mines, …)' },
-  {
-    id: 'challengeHub',
-    label: 'Challenge Hub',
-    title:
-      'Stake Challenges, Balance rules, Telegram, Forum — not the same as Bonus Hunt (Casino → Bonus Hunt)',
-  },
-  { id: 'bonushunt', label: 'Bonus Hunt', title: 'Pick slots and hunt until bonus triggers (Casino → Bonus Hunt)' },
-  { id: 'logs', label: 'Logs', title: 'Internal casino logs / diagnostics' },
+const PLAY_MODES: { id: Exclude<CasinoMode, 'logs'>; label: string; title: string }[] = [
+  { id: 'play', label: 'Slots', title: 'Slots and autospin' },
+  { id: 'originals', label: 'Originals', title: 'Stake Originals' },
 ]
 
-export function CasinoTopNav({ mode, onChangeMode }: CasinoTopNavProps) {
+const HUNT_MODES: { id: Exclude<CasinoMode, 'logs'>; label: string; title: string }[] = [
+  { id: 'challengeHub', label: 'Challenges', title: 'Stake casino challenges and hunter' },
+  { id: 'promotions', label: 'Promotions', title: 'Casino promotions, forum competitions, Telegram' },
+  { id: 'bonushunt', label: 'Bonus Hunt', title: 'Hunt until bonus triggers' },
+]
+
+function NavButtons({
+  modes,
+  mode,
+  onChangeMode,
+}: {
+  modes: typeof PLAY_MODES
+  mode: string
+  onChangeMode: (mode: CasinoMode) => void
+}) {
   return (
-    <nav className="casino-topnav" aria-label="Casino sections">
-      {MODES.map((m) => (
+    <>
+      {modes.map((m) => (
         <button
           key={m.id}
           type="button"
@@ -33,6 +39,16 @@ export function CasinoTopNav({ mode, onChangeMode }: CasinoTopNavProps) {
           {m.label}
         </button>
       ))}
+    </>
+  )
+}
+
+export function CasinoTopNav({ mode, onChangeMode }: CasinoTopNavProps) {
+  return (
+    <nav className="casino-topnav" aria-label="Casino sections">
+      <NavButtons modes={PLAY_MODES} mode={mode} onChangeMode={onChangeMode} />
+      <span className="casino-topnav-split" aria-hidden />
+      <NavButtons modes={HUNT_MODES} mode={mode} onChangeMode={onChangeMode} />
     </nav>
   )
 }

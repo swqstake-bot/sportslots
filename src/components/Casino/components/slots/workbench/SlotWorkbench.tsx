@@ -68,11 +68,6 @@ export function SlotWorkbench({
         </div>
         <div className="slot-wb-fleet">
           {fleet}
-          {instances.length >= 2 && (
-            <span className="slot-wb-fleet-hint">
-              {instances.length} slots · Start all runs in parallel
-            </span>
-          )}
         </div>
       </div>
       <div className="slot-wb-shell">

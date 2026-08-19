@@ -71,6 +71,25 @@ export function markPromotionCompleted(slug, payload = {}) {
   writeJson(PROMO_COMPLETION_HISTORY_KEY, deduped.slice(0, MAX_HISTORY_ITEMS))
 }
 
+export function unmarkPromotionCompleted(slug) {
+  const key = normalizeSlug(slug)
+  if (!key) return
+  const ids = getCompletedPromotionIds()
+  ids.delete(key)
+  writeJson(PROMO_COMPLETED_IDS_KEY, Array.from(ids))
+}
+
+export function togglePromotionCompleted(slug, payload = {}) {
+  const key = normalizeSlug(slug)
+  if (!key) return false
+  if (isPromotionCompleted(key)) {
+    unmarkPromotionCompleted(key)
+    return false
+  }
+  markPromotionCompleted(key, payload)
+  return true
+}
+
 export function clearPromotionCompletions() {
   try {
     localStorage.removeItem(PROMO_COMPLETED_IDS_KEY)

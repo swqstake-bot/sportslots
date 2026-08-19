@@ -404,26 +404,6 @@ export default function TelegramChallengesView({
 
   return (
     <div className="hunter-dashboard" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <div className="hunter-header" style={{ position: 'relative' }}>
-        <div>
-          <div className="hunter-title">Telegram Challenges</div>
-          <p className="hunter-meta" style={{ marginTop: '0.35rem', maxWidth: '52rem', lineHeight: 1.45 }}>
-            Paste text, <strong>load history</strong> or <strong>listen live to channel</strong> (new posts): like Auto Hunter,
-            the <strong>minimum stake (USD)</strong> and <strong>target multipliers</strong> are transferred to slots (bridge). API ID
-            / hash from{' '}
-            <a
-              href="https://my.telegram.org"
-              target="_blank"
-              rel="noreferrer"
-              style={{ color: 'var(--accent)' }}
-            >
-              my.telegram.org
-            </a>
-            .
-          </p>
-        </div>
-      </div>
-
       {!electron?.invoke && (
         <div className="hunter-card" style={{ padding: '0.85rem', borderColor: 'var(--warning)' }}>
           <div className="hunter-section-title">Only in the Electron app</div>
@@ -437,7 +417,7 @@ export default function TelegramChallengesView({
       {electron?.invoke && (
         <div className="hunter-card" style={{ padding: '1rem' }}>
           <div className="hunter-section-title" style={{ marginBottom: '0.65rem' }}>
-            Telegram account (own API, own account)
+            Account
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.65rem' }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>

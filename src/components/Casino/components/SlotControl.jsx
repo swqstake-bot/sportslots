@@ -1600,7 +1600,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   }, [])
 
   const updateStatsFromResult = useCallback((result, betAmt, useExtraBet = false) => {
-    const effectiveBet = getEffectiveBetAmount(betAmt ?? 0, useExtraBet, slot?.slug)
+    const effectiveBet = getEffectiveBetAmount(betAmt ?? 0, useExtraBet, slot?.slug, sessionRef.current)
     const parsed = parseBetResponse(result, effectiveBet)
     lastBalanceRef.current = parsed.balance ?? lastBalanceRef.current
     if (parsed.balance != null) setBalanceFromPlaceBet(parsed.balance)
@@ -1753,7 +1753,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       spinsSinceRefreshRef.current += 1
       updateStatsFromResult(data, betAmount, extraBet)
       setSession((prev) => (updatedSession ? updatedSession : prev ? { ...prev, seq: nextSeq } : null))
-      const effectiveBet = getEffectiveBetAmount(betAmount, extraBet, slot.slug)
+      const effectiveBet = getEffectiveBetAmount(betAmount, extraBet, slot.slug, updatedSession || currentSession)
       const parsed = parseBetResponse(data, effectiveBet)
       appendSpinHistoryFromPlaceBet(parsed)
       if (isSaveBonusLogsEnabled() && parsed.isBonus) {
@@ -1884,7 +1884,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         currentSession = updatedSession || { ...currentSession, seq: nextSeq }
         sessionRef.current = currentSession
         spinsSinceRefresh += 1
-        const effectiveBet = getEffectiveBetAmount(betAmount, extraBet, slot.slug)
+        const effectiveBet = getEffectiveBetAmount(betAmount, extraBet, slot.slug, currentSession)
         const parsed = parseBetResponse(data, effectiveBet)
         const bonusMeetsScatter = autospinMinScatter <= 0 ||
           (parsed.scatterCount != null && parsed.scatterCount >= autospinMinScatter) ||
@@ -2365,6 +2365,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         </div>
       </div>
 
+      {!isWorkbench && (
       <details style={{ ...STYLES.section, fontSize: '0.75rem' }}>
         <summary style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>Stake Engine / Debug</summary>
         <div style={{ marginTop: '0.35rem', padding: '0.4rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-card)', fontSize: '0.72rem' }}>
@@ -2374,6 +2375,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           {Array.isArray(providerMeta.zeroDecimalCurrencies) && providerMeta.zeroDecimalCurrencies.length > 0 && ` · ZeroDec: ${providerMeta.zeroDecimalCurrencies.join(', ')}`}
         </div>
       </details>
+      )}
 
       <div style={{ ...STYLES.section, marginTop: wbCompact ? '0.2rem' : '0.75rem', marginBottom: wbCompact ? '0.3rem' : '1rem' }}>
         <div style={{ ...STYLES.row, flexWrap: 'wrap', gap: '0.4rem' }}>
@@ -2478,7 +2480,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             </label>
           </div>
         </details>
-        <details open style={{ marginTop: '0.35rem', fontSize: '0.8rem' }}>
+        <details style={{ marginTop: '0.35rem', fontSize: '0.8rem' }}>
           <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
             Seed reset
             <span
@@ -2663,7 +2665,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const collapsedRunBar = settingsCollapsed && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.58rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-            {formatBetLabel(getEffectiveBetAmount(betAmount, extraBet, slot.slug), effectiveTarget, (providerMeta?.betDisplayDivisor && (!Array.isArray(providerMeta?.betDisplayDivisorSlots) || providerMeta.betDisplayDivisorSlots.includes(slot?.slug))) ? { displayDivisor: providerMeta.betDisplayDivisor } : undefined)}
+            {formatBetLabel(getEffectiveBetAmount(betAmount, extraBet, slot.slug, session), effectiveTarget, (providerMeta?.betDisplayDivisor && (!Array.isArray(providerMeta?.betDisplayDivisorSlots) || providerMeta.betDisplayDivisorSlots.includes(slot?.slug))) ? { displayDivisor: providerMeta.betDisplayDivisor } : undefined)}
           </span>
           <button
             onClick={handleStopAutospin}
@@ -2780,7 +2782,6 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       <div className="slot-wb-instance" hidden={!workbenchActive} aria-hidden={!workbenchActive}>
         <div className="slot-wb-body slot-wb-body--controls">
           <aside className="slot-wb-left">
-            <div className="slot-wb-col-title">Settings</div>
             {settingsCollapsed && challengeTargetLabels.length > 0 && (
               <div style={{ fontSize: '0.58rem', fontWeight: 600, color: 'var(--accent)', lineHeight: 1.2 }}>
                 {slot.name} · Target {challengeTargetLabels.join(' · ')}x
@@ -2791,7 +2792,6 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             {collapsedRunBar}
           </aside>
           <main className="slot-wb-main">
-            <div className="slot-wb-col-title">Run & bets</div>
             <div className="slot-wb-run-card">
               {runButtonsBlock}
               {sessionStatusBlock}

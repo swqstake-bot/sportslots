@@ -1296,74 +1296,108 @@ export default function AutoChallengeHunter({
   }, [flushLogsNow])
 
   useEffect(() => {
-    function onExternalPromoQueue(ev) {
-      const detail = ev?.detail || {}
-      const slotSlug = String(detail.gameSlug || '').trim().toLowerCase()
-      if (!slotSlug) return
-      const gameName = String(detail.gameName || slotSlug)
-      const providerId = String(detail.providerId || 'stakeEngine')
-      const promoSource = String(detail.promoSource || 'promotion').trim().toLowerCase()
-      const targetMultiplierRaw = Number(detail.targetMultiplier || 0)
-      const targetMultiplier = Number.isFinite(targetMultiplierRaw) && targetMultiplierRaw > 1 ? targetMultiplierRaw : 2
-      const minBetUsdRaw = Number(detail.minBetUsd || 0)
+    function normalizePromoQueueRows(detail) {
+      const promoSource = String(detail?.promoSource || 'promotion').trim().toLowerCase()
+      const minBetUsdRaw = Number(detail?.minBetUsd || 0)
       const minBetUsd = Number.isFinite(minBetUsdRaw) && minBetUsdRaw > 0 ? minBetUsdRaw : 0.09
-      const challengeId =
-        String(detail.challengeId || '').trim() ||
-        `promo:${promoSource}:${slotSlug}:${targetMultiplier.toFixed(2)}`
-
-      const syntheticChallenge = {
-        id: challengeId,
-        title: `${gameName} (${promoSource})`,
-        gameSlug: slotSlug,
-        gameName,
-        game: { slug: slotSlug, name: gameName, providerId },
-        targetMultiplier,
-        minBetUsd,
-        award: Math.max(1, minBetUsd * 10),
-        currency: 'usd',
-        active: true,
-        completedAt: null,
-        source: promoSource,
-        createdAt: new Date().toISOString(),
+      const manual = String(detail?.forcedTargetCurrency || detail?.targetCurrency || '').trim().toLowerCase()
+      const rawGames = Array.isArray(detail?.games) && detail.games.length
+        ? detail.games
+        : detail?.gameSlug
+          ? [detail]
+          : []
+      const rows = []
+      for (const item of rawGames) {
+        const slotSlug = String(item?.gameSlug || item?.slug || '').trim().toLowerCase()
+        if (!slotSlug) continue
+        const gameName = String(item?.gameName || item?.name || slotSlug)
+        const providerId = String(item?.providerId || item?.provider || detail?.providerId || 'stakeEngine')
+        const targetMultiplierRaw = Number(item?.targetMultiplier ?? detail?.targetMultiplier ?? 0)
+        const targetMultiplier = Number.isFinite(targetMultiplierRaw) && targetMultiplierRaw > 1 ? targetMultiplierRaw : 2
+        const challengeId =
+          String(item?.challengeId || detail?.challengeId || '').trim() ||
+          `promo:${promoSource}:${slotSlug}:${targetMultiplier.toFixed(2)}`
+        rows.push({
+          slotSlug,
+          gameName,
+          providerId,
+          promoSource,
+          targetMultiplier,
+          minBetUsd,
+          challengeId,
+          manual,
+        })
       }
+      return rows
+    }
 
-      setChallenges((prev) => [
-        syntheticChallenge,
-        ...prev.filter((c) => String(c?.id || '') !== challengeId),
-      ])
+    function onExternalPromoQueue(ev) {
+      const rows = normalizePromoQueueRows(ev?.detail || {})
+      if (!rows.length) return
 
-      let queuedNow = false
-      setQueue((prev) => {
-        if (prev.some((item) => normalizeQueueItem(item).challengeId === challengeId)) return prev
-        queuedNow = true
-        const manual = String(detail.forcedTargetCurrency || detail.targetCurrency || '').trim().toLowerCase()
-        return [
-          ...prev,
-          buildQueueItemForChallenge(
-            challengeId,
-            prev,
-            manual || null,
-            sourceCurrency,
-            slotSlug
-          ),
-        ]
+      setChallenges((prev) => {
+        let next = prev
+        for (const row of rows) {
+          const syntheticChallenge = {
+            id: row.challengeId,
+            title: `${row.gameName} (${row.promoSource})`,
+            gameSlug: row.slotSlug,
+            gameName: row.gameName,
+            game: { slug: row.slotSlug, name: row.gameName, providerId: row.providerId },
+            targetMultiplier: row.targetMultiplier,
+            minBetUsd: row.minBetUsd,
+            award: Math.max(1, row.minBetUsd * 10),
+            currency: 'usd',
+            active: true,
+            completedAt: null,
+            source: row.promoSource,
+            createdAt: new Date().toISOString(),
+          }
+          next = [syntheticChallenge, ...next.filter((c) => String(c?.id || '') !== row.challengeId)]
+        }
+        return next
       })
 
-      processedIdsRef.current.add(challengeId)
-      dismissedChallengeIdsRef.current.delete(challengeId)
+      const addedNames = []
+      setQueue((prev) => {
+        let q = prev
+        const names = []
+        for (const row of rows) {
+          if (q.some((item) => normalizeQueueItem(item).challengeId === row.challengeId)) continue
+          q = [
+            ...q,
+            buildQueueItemForChallenge(
+              row.challengeId,
+              q,
+              row.manual || null,
+              sourceCurrency,
+              row.slotSlug
+            ),
+          ]
+          names.push(`${row.gameName} (${row.targetMultiplier.toFixed(2)}x)`)
+        }
+        addedNames.length = 0
+        addedNames.push(...names)
+        return q
+      })
+
+      for (const row of rows) {
+        processedIdsRef.current.add(row.challengeId)
+        dismissedChallengeIdsRef.current.delete(row.challengeId)
+      }
       try {
-        onDiscoveredSlotsRef.current?.([{ slug: slotSlug, name: gameName, providerId }])
+        onDiscoveredSlotsRef.current?.(
+          rows.map((row) => ({ slug: row.slotSlug, name: row.gameName, providerId: row.providerId }))
+        )
       } catch {
         // ignore discovery sync errors
       }
-      // Promo-queued items should appear as cards only; start remains manual (Start Next / Start auto).
       setAutoStart(false)
       setLastRefresh(Date.now())
-      log(
-        queuedNow
-          ? `Promo queued: ${gameName} (${targetMultiplier.toFixed(2)}x)`
-          : `Promo already queued: ${gameName} (${targetMultiplier.toFixed(2)}x)`
-      )
+      if (addedNames.length === 1) log(`Promo queued: ${addedNames[0]}`)
+      else if (addedNames.length > 1) log(`Promo hunt all: ${addedNames.length} slots — ${addedNames.join(', ')}`)
+      else if (rows.length === 1) log(`Promo already queued: ${rows[0].gameName} (${rows[0].targetMultiplier.toFixed(2)}x)`)
+      else log(`Promo hunt all: ${rows.length} already queued`)
     }
 
     window.addEventListener('challenge-hunt-queue-add', onExternalPromoQueue)
@@ -3805,23 +3839,21 @@ export default function AutoChallengeHunter({
             Stop All
           </Button>
         </div>
+        {resourceTopMultis.length > 0 ? (
         <div className="hunter-resource-lite-multis">
           <div className="hunter-resource-lite-multis-title">Session highest multis</div>
-          {resourceTopMultis.length === 0 ? (
-            <div className="hunter-resource-lite-empty">No multis this session yet</div>
-          ) : (
-            <ul className="hunter-resource-lite-multis-list">
-              {resourceTopMultis.map((row) => (
-                <li key={row.slug}>
-                  <span className="hunter-resource-lite-multi-name" title={row.slug}>
-                    {row.name}
-                  </span>
-                  <span className="hunter-resource-lite-multi-val">{row.multi.toFixed(2)}×</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ul className="hunter-resource-lite-multis-list">
+            {resourceTopMultis.map((row) => (
+              <li key={row.slug}>
+                <span className="hunter-resource-lite-multi-name" title={row.slug}>
+                  {row.name}
+                </span>
+                <span className="hunter-resource-lite-multi-val">{row.multi.toFixed(2)}×</span>
+              </li>
+            ))}
+          </ul>
         </div>
+        ) : null}
       </div>
     )
   }
@@ -3829,7 +3861,6 @@ export default function AutoChallengeHunter({
   return (
     <div className="hunter-dashboard" style={STYLES.container}>
       <div className="hunter-header">
-        <div className="hunter-title">Stake Challenges</div>
         <div className="hunter-controls">
            <div className="hunter-meta" style={{ marginRight: '0.5rem' }}>
              {lastRefresh ? `Updated: ${new Date(lastRefresh).toLocaleTimeString()}` : ''}
@@ -3902,11 +3933,6 @@ export default function AutoChallengeHunter({
               <span className="hunter-section-title" style={{ marginBottom: 0 }}>Settings</span>
               <span className="hunter-collapse-hint">Filters · runtime · local</span>
             </summary>
-            <div className="hunter-ops-shell-head" style={{ paddingTop: '0.35rem' }}>
-              <p className="hunter-ops-shell-copy">
-                Local settings are saved on this device.
-              </p>
-            </div>
             <div className="hunter-ops-accordion">
               <section className="hunter-ops-section">
                 <button
@@ -3919,9 +3945,6 @@ export default function AutoChallengeHunter({
                 </button>
                 {opsSectionsOpen.presets ? (
                   <div className="hunter-ops-section-body">
-                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.35rem', lineHeight: 1.35 }}>
-                      Filters and currency preferences are stored locally on this device.
-                    </p>
                     <div style={STYLES.inputGroup}>
                       <label style={STYLES.label}>Presets</label>
                       <select
@@ -3940,9 +3963,6 @@ export default function AutoChallengeHunter({
                           </option>
                         ))}
                       </select>
-                      <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.25rem', lineHeight: 1.3 }}>
-                        Presets are stored locally.
-                      </p>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center', marginBottom: '0.35rem' }}>
                       <input

@@ -444,7 +444,7 @@ export default function CasinoView() {
       <CasinoModeContent
         mode={mode}
         token={token}
-        slotsLoading={slotsLoading}
+        slotsLoading={slotsLoading && (webSlots as any[])?.length === 0}
         webSlots={webSlots as any}
         selectedSlugs={selectedSlugs}
         selectedSlotInstances={selectedSlotInstances}

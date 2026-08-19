@@ -258,8 +258,28 @@ html[data-theme='light'] .casino-root {
   padding: var(--space-5) var(--space-5) var(--space-4);
 }
 
+.casino-root .casino-shell-header--compact {
+  padding: 0.55rem 0.85rem;
+}
+
+.casino-root .casino-shell-header--compact .casino-shell-title-row {
+  margin-bottom: 0;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.casino-root .casino-shell-header--compact .casino-topnav {
+  flex: 1;
+  min-width: 0;
+}
+
+.casino-root .casino-shell-session-action.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .casino-root .casino-shell-main {
-  padding: var(--space-4) var(--space-5) var(--space-5);
+  padding: 0.75rem 0.85rem 1rem;
   background: color-mix(in srgb, var(--bg-deep) 22%, transparent);
 }
 
@@ -354,8 +374,21 @@ html[data-theme='light'] .casino-root {
 .casino-root .casino-topnav {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  padding-top: 0.15rem;
+  align-items: center;
+  gap: 0.35rem;
+  padding-top: 0;
+}
+
+.casino-root .casino-topnav-split {
+  width: 1px;
+  height: 1.15rem;
+  margin: 0 0.2rem;
+  background: color-mix(in srgb, var(--border-subtle) 90%, var(--text-muted));
+  flex-shrink: 0;
+}
+
+.casino-root .challenge-hub-root .hunter-title {
+  display: none;
 }
 
 .casino-root .casino-topnav-btn {
@@ -424,7 +457,7 @@ html[data-theme='light'] .casino-root {
   border-radius: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 75%, transparent);
   box-shadow: none;
-  background: color-mix(in srgb, var(--panel-bg-soft) 65%, transparent);
+  background: transparent;
 }
 
 .casino-root .challenge-hub-root {
@@ -437,12 +470,12 @@ html[data-theme='light'] .casino-root {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.65rem;
-  padding: 0.55rem 0.75rem;
-  border: 1px solid var(--surface-border);
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.08) 0%, rgba(var(--accent-rgb), 0.02) 48%, transparent 100%), var(--panel-bg-soft);
-  box-shadow: var(--shadow-soft), var(--surface-highlight);
+  gap: 0.45rem 0.75rem;
+  padding: 0.2rem 0 0.45rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .casino-root .challenge-hub-topbar-inbox {
@@ -698,8 +731,8 @@ html[data-theme='light'] .casino-root {
 
 /* AutoChallengeHunter: one continuous column, no boxed “islands” */
 .casino-root .challenge-hub-root .hunter-header {
-  margin: 0 0 0.65rem;
-  padding: 0.55rem 0 0.65rem;
+  margin: 0 0 0.5rem;
+  padding: 0.35rem 0 0.5rem;
   border: none;
   border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 85%, transparent);
   border-radius: 0;
@@ -710,9 +743,7 @@ html[data-theme='light'] .casino-root {
 }
 
 .casino-root .challenge-hub-root .hunter-title {
-  text-transform: none;
-  letter-spacing: 0.02em;
-  font-size: 0.98rem;
+  display: none;
 }
 
 .casino-root .challenge-hub-root .hunter-grid {
@@ -840,33 +871,39 @@ html[data-theme='light'] .casino-root {
 .casino-root .challenge-hub-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  align-items: flex-end;
+  gap: 0.1rem;
 }
 
 .casino-root .challenge-hub-tab {
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  padding: 0.36rem 0.82rem;
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  border: none;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  padding: 0.38rem 0.7rem 0.42rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   text-transform: none;
   color: var(--text-muted);
-  background: color-mix(in srgb, var(--bg-card) 92%, rgba(var(--accent-rgb), 0.04));
-  transition: all var(--transition-fast);
+  background: transparent;
+  box-shadow: none;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .casino-root .challenge-hub-tab:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+  transform: none;
+  border-color: transparent;
+  border-bottom-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle));
   color: var(--text);
+  background: transparent;
 }
 
 .casino-root .challenge-hub-tab.is-active {
   border-color: transparent;
-  color: var(--bg-deep);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 62%, var(--bg-deep)), var(--accent));
-  box-shadow: var(--shadow-glow);
+  border-bottom-color: var(--accent);
+  color: var(--text);
+  background: transparent;
+  box-shadow: none;
 }
 
 .casino-root .challenge-hub-action {
@@ -891,6 +928,512 @@ html[data-theme='light'] .casino-root {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
   background: color-mix(in srgb, var(--accent) 22%, var(--bg-deep));
   color: var(--accent);
+}
+
+.casino-root .promo-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.casino-root .promo-subtabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.1rem;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.casino-root .promo-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+}
+
+.casino-root .promo-toolbar-meta {
+  margin-left: auto;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.casino-root .promo-note,
+.casino-root .promo-empty {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.casino-root .promo-error {
+  font-size: 0.75rem;
+  color: var(--error);
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--error) 35%, var(--border));
+  background: color-mix(in srgb, var(--error) 10%, var(--bg-deep));
+}
+
+.casino-root .promo-sheet {
+  overflow: hidden;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-md);
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-soft);
+}
+
+.casino-root .promo-sheet.is-ended {
+  opacity: 0.62;
+}
+
+.casino-root .promo-sheet.is-checked {
+  border-color: color-mix(in srgb, var(--success) 42%, var(--border));
+}
+
+.casino-root .promo-banner {
+  position: relative;
+  min-height: 0;
+  padding: 0.7rem 0.8rem 0.65rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  isolation: isolate;
+}
+
+.casino-root .promo-banner--compact {
+  min-height: 0;
+  padding: 0.55rem 0.7rem;
+  gap: 0.5rem;
+}
+
+.casino-root .promo-check {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  width: 1.2rem;
+  height: 1.2rem;
+  margin-top: 0.12rem;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid var(--surface-border);
+  background: color-mix(in srgb, var(--bg-deep) 80%, transparent);
+  color: var(--success);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.casino-root .promo-check.is-on {
+  background: color-mix(in srgb, var(--success) 22%, var(--bg-deep));
+  border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+}
+
+.casino-root .promo-poster .promo-check {
+  position: absolute;
+  top: 0.32rem;
+  left: 0.32rem;
+  z-index: 3;
+}
+
+.casino-root .promo-banner-art {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(var(--accent-rgb), 0.22), transparent 55%),
+    var(--surface-2);
+  z-index: 0;
+}
+
+.casino-root .promo-banner-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.28;
+  filter: saturate(1.05);
+}
+
+.casino-root .promo-banner-art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--bg-deep) 88%, transparent) 0%, color-mix(in srgb, var(--bg-deep) 55%, transparent) 52%, color-mix(in srgb, var(--bg-deep) 18%, transparent) 100%);
+}
+
+.casino-root .promo-banner-copy,
+.casino-root .promo-banner-actions {
+  position: relative;
+  z-index: 1;
+}
+
+.casino-root .promo-banner-copy {
+  min-width: 0;
+}
+
+.casino-root .promo-banner-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+}
+
+.casino-root .promo-title {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.casino-root .promo-summary {
+  margin: 0.35rem 0 0;
+  max-width: 62ch;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.casino-root .promo-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
+
+.casino-root .promo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  border: 1px solid transparent;
+}
+
+.casino-root .promo-pill.is-live {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, var(--bg-deep));
+  border-color: color-mix(in srgb, var(--success) 32%, transparent);
+}
+
+.casino-root .promo-pill.is-prize {
+  color: #06281f;
+  background: var(--accent);
+}
+
+.casino-root .promo-pill.is-muted {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-deep) 70%, transparent);
+  border-color: var(--surface-border);
+}
+
+.casino-root .promo-pill.is-warn {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, var(--bg-deep));
+  border-color: color-mix(in srgb, var(--warning) 28%, transparent);
+}
+
+.casino-root .promo-banner-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.casino-root .promo-game-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 0.45rem;
+  padding: 0.55rem 0.7rem 0.7rem;
+}
+
+.casino-root .promo-poster {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-deep) 82%, var(--bg-elevated));
+  overflow: hidden;
+  text-align: left;
+  color: inherit;
+  transition: border-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.casino-root .promo-poster-hit {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.casino-root .promo-poster:hover:not(.is-off) {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glow);
+}
+
+.casino-root .promo-poster:disabled,
+.casino-root .promo-poster.is-off {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.casino-root .promo-poster.is-done {
+  border-color: color-mix(in srgb, var(--success) 45%, var(--border));
+}
+
+.casino-root .promo-poster-art {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  max-height: 96px;
+  background: color-mix(in srgb, var(--bg-deep) 88%, var(--accent) 8%);
+  overflow: hidden;
+}
+
+.casino-root .promo-poster-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.casino-root .promo-poster-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem;
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.casino-root .promo-poster-badge {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  padding: 0.16rem 0.42rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-violet) 82%, #000);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.casino-root .promo-poster-flag {
+  position: absolute;
+  top: 0.4rem;
+  left: 0.4rem;
+  padding: 0.14rem 0.38rem;
+  border-radius: 6px;
+  background: var(--success);
+  color: #06281f;
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.casino-root .promo-poster-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  padding: 0.42rem 0.48rem 0.5rem;
+}
+
+.casino-root .promo-poster-name {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.casino-root .promo-poster-sub {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.casino-root .promo-poster-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.35rem;
+  font-size: 0.6rem;
+  color: var(--text-muted);
+}
+
+.casino-root .promo-poster-row strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.casino-root .promo-forum-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.55rem;
+  align-items: start;
+}
+
+.casino-root .promo-forum-cover {
+  height: 92px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.casino-root .promo-forum-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.casino-root .promo-forum-body {
+  padding: 0.55rem 0.7rem 0.7rem;
+}
+
+.casino-root .promo-forum-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.casino-root .promo-forum-body .promo-game-grid {
+  padding: 0.5rem 0 0;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+}
+
+.casino-root .promo-toolbar .challenge-hub-action--ghost {
+  margin-left: 0.15rem;
+}
+
+.casino-root .promo-wrapped-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.6rem;
+  padding: 0.75rem 0.85rem 0.9rem;
+}
+
+.casino-root .promo-wrapped-card {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 0.65rem;
+  padding: 0.55rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-deep) 78%, var(--bg-elevated));
+}
+
+.casino-root .promo-wrapped-thumb {
+  width: 64px;
+  height: 86px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg-deep) 80%, var(--accent) 10%);
+}
+
+.casino-root .promo-wrapped-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.casino-root .promo-wrapped-name {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.casino-root .promo-lb {
+  margin-top: 0.35rem;
+  display: grid;
+  gap: 0.28rem;
+}
+
+.casino-root .promo-lb-label {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.casino-root .promo-lb-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.66rem;
+}
+
+.casino-root .promo-lb-pos {
+  width: 1.1rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.casino-root .promo-lb-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.casino-root .promo-lb-val {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+  flex-shrink: 0;
+}
+
+.casino-root .promo-skel {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg-elevated) 70%, var(--bg-deep));
+}
+
+.casino-root .promo-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  animation: promo-shimmer 1.2s infinite;
+}
+
+@keyframes promo-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
 }
 
 .casino-root .challenge-hub-resource-title {

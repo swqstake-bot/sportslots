@@ -72,7 +72,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     proxyRequest: (options: any) => ipcRenderer.invoke('proxy-request', options),
     nolimitEvoEntry: (configUrl: string) => ipcRenderer.invoke('nolimit-evo-entry', configUrl),
-    /** Stake Community forum: isolated session (cf_clearance, login) — same idea as Appeals Monitor. */
     forumOpenLogin: () => ipcRenderer.invoke('forum-open-login') as Promise<{ ok: boolean }>,
     forumSessionStatus: () =>
         ipcRenderer.invoke('forum-session-status') as Promise<{ hasCookies: boolean; hasCf: boolean; cookieCount: number }>,

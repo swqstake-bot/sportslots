@@ -168,12 +168,17 @@ async function withSessionPlayLock(session, fn) {
 
 const STAKE_ENGINE_PLAY_MODE_BY_SLOT_PREFIX = {
   'coreffectinteractive-cut-n-crash': '688_base',
+  'mintyfresh-': 'normal',
 }
 
-/** flowerpoker.har: play body has no `currency` (session already bound on authenticate). */
+function isMintyFreshSlug(slotSlug) {
+  return String(slotSlug || '').toLowerCase().startsWith('mintyfresh-')
+}
+
+/** flowerpoker.har / brew-and-broom.har: play body has no `currency` (session already bound). */
 function shouldOmitStakeEnginePlayCurrency(slotSlug) {
   const s = String(slotSlug || '').toLowerCase()
-  return s.startsWith('lk7-')
+  return s.startsWith('lk7-') || isMintyFreshSlug(s)
 }
 
 function getStakeEnginePlayModeForSlot(slotSlug) {
@@ -185,22 +190,130 @@ function getStakeEnginePlayModeForSlot(slotSlug) {
   return null
 }
 
+function stakeEngineModeName(entry) {
+  if (typeof entry === 'string') return entry.trim()
+  return String(entry?.mode ?? entry?.name ?? '').trim()
+}
+
+function isStakeEnginePrimaryPlayModeName(name) {
+  const n = String(name || '').toLowerCase()
+  return n === 'base' || n === 'normal'
+}
+
+function isStakeEngineNonPrimaryPlayModeName(name) {
+  const n = String(name || '').toLowerCase().replace(/[_-]/g, '')
+  return (
+    n === 'ante' ||
+    n === 'extra' ||
+    n === 'extrachance' ||
+    n === 'bonus' ||
+    n === 'freespin' ||
+    n === 'freespins' ||
+    n === 'super' ||
+    n === 'superspin' ||
+    n === 'buybonus' ||
+    n === 'bonusbuy'
+  )
+}
+
+function parseStakeEngineGameModes(configData) {
+  const raw = Array.isArray(configData?.gameModes) ? configData.gameModes : []
+  return raw
+    .map((m) => {
+      if (typeof m === 'string') return { mode: m.trim(), cost: NaN }
+      return {
+        mode: String(m?.mode ?? m?.name ?? '').trim(),
+        cost: Number(m?.cost ?? m?.costMultiplier ?? m?.cost_multiplier),
+      }
+    })
+    .filter((m) => m.mode)
+}
+
+function isStakeEngineAnteModeName(name) {
+  const n = String(name || '').toLowerCase()
+  return n === 'ante' || n === 'extra' || n === 'extra_chance' || n === 'extrachance' || n === 'extra-chance'
+}
+
+function findStakeEngineAnteGameMode(modes) {
+  if (!Array.isArray(modes)) return null
+  return modes.find((m) => isStakeEngineAnteModeName(m?.mode)) || null
+}
+
+function isMetaGamingSlug(slotSlug) {
+  const slug = String(slotSlug || '').toLowerCase()
+  return slug.startsWith('meta-gaming-') || slug.startsWith('metagaming-')
+}
+
+function isMetaGamingProvider(session, options) {
+  const pid = String(
+    options?.providerId || session?.providerId || session?.__catalogProviderId || session?.__resolvedProviderImplId || ''
+  ).toLowerCase()
+  return pid === 'meta-gaming' || pid === 'metagaming'
+}
+
 /**
- * Prefer exact mode string from RGS `config.gameModes` (Flower Poker: "base").
+ * Extra / extra-chance: RGS play uses the ante mode + base amount (Meta Gaming HAR:
+ * `{ mode: "ante", amount, currency }`). Paperclip uses ANTE the same way.
+ */
+function resolveStakeEngineAntePlay(session, extraBet, slotSlug) {
+  if (!extraBet) return null
+  const fromSessionMode = String(session?.extraBetMode || '').trim()
+  if (fromSessionMode) {
+    const cost = Number(session?.extraBetMultiplier)
+    return {
+      mode: fromSessionMode,
+      costMultiplier: Number.isFinite(cost) && cost > 0 ? cost : null,
+    }
+  }
+  const fromModes = findStakeEngineAnteGameMode(session?.gameModes)
+  if (fromModes?.mode) {
+    const cost = Number(fromModes.cost)
+    return {
+      mode: fromModes.mode,
+      costMultiplier: Number.isFinite(cost) && cost > 0 ? cost : null,
+    }
+  }
+  const slug = String(slotSlug || '').toLowerCase()
+  if (slug.startsWith('paperclip-')) return { mode: 'ANTE', costMultiplier: 3 }
+  if (isMetaGamingSlug(slug) || isMetaGamingProvider(session, null)) {
+    return { mode: 'ante', costMultiplier: 3 }
+  }
+  return null
+}
+
+/**
+ * Prefer exact mode string from RGS `config.gameModes`.
+ * Flower Poker: "base". MintyFresh Brew & Broom HAR: "normal" (BASE is rejected with ERR_VAL).
  * Do not uppercase — some studios reject "BASE" when only "base" is listed.
  */
 function pickStakeEnginePlayMode(configData, slotSlug) {
   const modes = Array.isArray(configData?.gameModes) ? configData.gameModes : []
-  const baseEntry = modes.find((m) => String(m?.mode || '').toLowerCase() === 'base')
-  if (baseEntry?.mode != null && String(baseEntry.mode).trim() !== '') {
-    return String(baseEntry.mode)
-  }
+  const names = modes.map(stakeEngineModeName).filter(Boolean)
+  const primary = names.find(isStakeEnginePrimaryPlayModeName)
+  if (primary) return primary
   const explicit = configData?.mode || configData?.baseMode || configData?.defaultMode
   if (explicit != null && String(explicit).trim() !== '') return String(explicit)
   const fromSlug = getStakeEnginePlayModeForSlot(slotSlug)
   if (fromSlug) return fromSlug
+  const firstPlay = names.find((n) => !isStakeEngineNonPrimaryPlayModeName(n))
+  if (firstPlay) return firstPlay
   // Legacy default (Waylanders / many studios): uppercase BASE
   return 'BASE'
+}
+
+/** Brew & Broom HAR: `{ payload: { requestType: "normal" }, mode: "normal" }`. */
+function stakeEnginePlayPayload(mode, slotSlug) {
+  const m = String(mode || '')
+  if (m.toLowerCase() === 'normal') return { requestType: m }
+  if (isMintyFreshSlug(slotSlug)) return { requestType: 'normal' }
+  return null
+}
+
+function buildStakeEnginePlayBody({ sessionID, amount, mode, currency, omitCurrency, payload }) {
+  const body = { sessionID, amount, mode }
+  if (!omitCurrency && currency) body.currency = currency
+  if (payload && typeof payload === 'object') body.payload = payload
+  return body
 }
 
 function parseConfigFromUrl(config) {
@@ -376,6 +489,10 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
 
   const configData = authData?.config || {}
   const playMode = pickStakeEnginePlayMode(configData, slotSlug)
+  const gameModes = parseStakeEngineGameModes(configData)
+  const anteMode = findStakeEngineAnteGameMode(gameModes)
+  const catalogPid = String(opts?.providerId || '').toLowerCase()
+  const metaGaming = isMetaGamingSlug(slotSlug) || catalogPid === 'meta-gaming' || catalogPid === 'metagaming'
   const omitPlayCurrency = shouldOmitStakeEnginePlayCurrency(slotSlug)
   const betLevelsRaw = configData?.betLevels?.map((v) => Number(v)).filter((b) => b > 0) ?? []
   // API play currency (may be XEC on .eu); math currency is wallet-facing (sweeps/gold).
@@ -424,7 +541,16 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     initialBalance,
     slotSlug: slotSlug || '',
     playMode,
+    gameModes,
+    extraBetMode: anteMode?.mode || (metaGaming ? 'ante' : null),
+    extraBetMultiplier: metaGaming
+      ? 3
+      : anteMode && Number.isFinite(anteMode.cost) && anteMode.cost > 0
+        ? anteMode.cost
+        : null,
+    supportsExtraBet: Boolean(anteMode?.mode) || metaGaming || String(slotSlug || '').toLowerCase().startsWith('paperclip-'),
     omitPlayCurrency,
+    playPayload: stakeEnginePlayPayload(playMode, slotSlug),
     /** Wenn die Session-Config-URL eine Stake-Spiel-UUID enthält — sonst über Slot `stakeGameId` aus Kurator. */
     stakeGameId: parsed.gameId || null,
   }
@@ -460,9 +586,11 @@ function lastWinMinorFromRoundEvents(round) {
 
 export async function placeBet(session, betAmount, extraBet, autoplay = false, options = {}) {
   const slotSlug = (session?.slotSlug || options?.slotSlug || '').toLowerCase()
-  const useAnte = extraBet && slotSlug.startsWith('paperclip-')
-  const effectiveBet = getEffectiveBetAmount(betAmount, extraBet, slotSlug || undefined)
-  const amountForApi = useAnte ? betAmount : effectiveBet
+  const antePlay = resolveStakeEngineAntePlay(session, extraBet, slotSlug)
+  const effectiveBet = antePlay?.costMultiplier > 0
+    ? betAmount * antePlay.costMultiplier
+    : getEffectiveBetAmount(betAmount, extraBet, slotSlug || undefined)
+  const amountForApi = antePlay ? betAmount : effectiveBet
   // Use wallet math currency (sweeps), not raw RGS code (XEC) — else EU SC bets collapse to min/10c.
   let amount = toStakeEngineAmount(amountForApi, sessionAmountMathCurrency(session))
 
@@ -497,16 +625,28 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
 
   const endUrl = buildRgsUrl(session.rgsUrl, '/wallet/end-round')
   const playUrl = buildRgsUrl(session.rgsUrl, '/wallet/play')
-  let mode = useAnte
-    ? 'ANTE'
-    : (options?.mode || session?.playMode || getStakeEnginePlayModeForSlot(slotSlug) || 'BASE')
+  let mode = antePlay
+    ? antePlay.mode
+    : (options?.mode ||
+        pickStakeEnginePlayMode({ gameModes: session?.gameModes }, slotSlug) ||
+        session?.playMode ||
+        'BASE')
   // Preserve exact RGS mode casing from authenticate.gameModes (Flower Poker HAR: "base").
   // Do NOT force "BASE" — LK7 rejects uppercase when only "base" is listed.
+  // MintyFresh Brew & Broom HAR: mode "normal" + payload.requestType, no currency.
   const omitCurrency =
     Boolean(session?.omitPlayCurrency) || shouldOmitStakeEnginePlayCurrency(slotSlug)
-  const playBody = omitCurrency
-    ? { sessionID: session.sessionID, amount, mode }
-    : { sessionID: session.sessionID, amount, mode, currency }
+  const playPayload = antePlay
+    ? null
+    : (session?.playPayload || stakeEnginePlayPayload(mode, slotSlug))
+  let playBody = buildStakeEnginePlayBody({
+    sessionID: session.sessionID,
+    amount,
+    mode,
+    currency,
+    omitCurrency,
+    payload: playPayload,
+  })
   const t0 = Date.now()
   let playRes = await rgsPost(playUrl, playBody)
 
@@ -561,22 +701,57 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
   }
 
   if (!playRes.ok) {
-    logApiCall({ type: 'stakeEngine/play', endpoint: playUrl, request: playBody, response: playData, error: playData?.error || playRes.status, durationMs: Date.now() - t0 })
     const err = playData?.error || playRes.status
     if (err === 'ERR_IS' || String(err).includes('ERR_IS')) {
+      logApiCall({ type: 'stakeEngine/play', endpoint: playUrl, request: playBody, response: playData, error: err, durationMs: Date.now() - t0 })
       const ex = stakeEngineError('Session abgelaufen. Bitte Session neu starten.')
       ex.sessionClosed = true
       throw ex
     }
     if (err === 'ERR_IPB' || String(err).includes('ERR_IPB')) {
+      logApiCall({ type: 'stakeEngine/play', endpoint: playUrl, request: playBody, response: playData, error: err, durationMs: Date.now() - t0 })
       const ex = stakeEngineError(`Stake Engine: ${err}`)
       ex.insufficientBalance = true
       throw ex
     }
-    if (err === 'ERR_VAL' || String(err).includes('ERR_VAL')) {
-      throw stakeEngineError('Ungültiger Einsatz (ERR_VAL). Bitte Einsatz prüfen.')
+    if ((err === 'ERR_VAL' || String(err).includes('ERR_VAL')) && !antePlay) {
+      const altBody = buildStakeEnginePlayBody({
+        sessionID: session.sessionID,
+        amount,
+        mode: 'normal',
+        omitCurrency: true,
+        payload: { requestType: 'normal' },
+      })
+      if (JSON.stringify(altBody) !== JSON.stringify(playBody)) {
+        const altRes = await rgsPost(playUrl, altBody)
+        let altData
+        try {
+          altData = await altRes.json()
+        } catch (e) {
+          const text = await altRes.text()
+          logApiCall({ type: 'stakeEngine/play', endpoint: playUrl, request: altBody, response: null, error: text || String(e), durationMs: Date.now() - t0 })
+          throw stakeEngineError(`Stake Engine Play fehlgeschlagen: ${text || altRes.status}`)
+        }
+        if (altRes.ok) {
+          playRes = altRes
+          playData = altData
+          playBody = altBody
+          session.playMode = 'normal'
+          session.omitPlayCurrency = true
+          session.playPayload = { requestType: 'normal' }
+        } else {
+          logApiCall({ type: 'stakeEngine/play', endpoint: playUrl, request: altBody, response: altData, error: altData?.error || altRes.status, durationMs: Date.now() - t0 })
+        }
+      }
     }
-    throw stakeEngineError(`Stake Engine: ${err}`)
+    if (!playRes.ok) {
+      logApiCall({ type: 'stakeEngine/play', endpoint: playUrl, request: playBody, response: playData, error: playData?.error || playRes.status, durationMs: Date.now() - t0 })
+      const finalErr = playData?.error || playRes.status
+      if (finalErr === 'ERR_VAL' || String(finalErr).includes('ERR_VAL')) {
+        throw stakeEngineError('Ungültiger Einsatz (ERR_VAL). Bitte Einsatz prüfen.')
+      }
+      throw stakeEngineError(`Stake Engine: ${finalErr}`)
+    }
   }
 
   const round = playData?.round || {}

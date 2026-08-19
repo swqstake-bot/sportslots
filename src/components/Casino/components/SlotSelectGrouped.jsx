@@ -538,17 +538,24 @@ export function SlotSelectMulti({
             </div>
           ) : (
             <>
-              {renderQuickRow('Last played', recentSlots, 'No recent slots yet — pick a provider or browse.')}
-              {renderQuickRow('Favorites', favoriteSlots, 'Star slots in Browse to pin them here.')}
+              {recentSlots.length > 0 && renderQuickRow('Last played', recentSlots)}
+              {favoriteSlots.length > 0 && renderQuickRow('Favorites', favoriteSlots)}
             </>
           )}
 
+          {(() => {
+            const LANDING_PROVIDER_CAP = 8
+            const favSet = new Set(favoriteProviders)
+            const sortedIds = [...providerIds].sort((a, b) => Number(favSet.has(b)) - Number(favSet.has(a)))
+            const shown = sortedIds.slice(0, LANDING_PROVIDER_CAP)
+            const hidden = sortedIds.length - shown.length
+            return (
           <div style={{ marginBottom: '0.55rem' }}>
             <div style={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>
               Providers
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-              {providerIds.map((pid) => {
+              {shown.map((pid) => {
                 const count = groups[pid]?.slots?.length || 0
                 const color = getProviderColor(pid)
                 return (
@@ -575,8 +582,28 @@ export function SlotSelectMulti({
                   </button>
                 )
               })}
+              {hidden > 0 && (
+                <button
+                  type="button"
+                  onClick={openBrowseAll}
+                  style={{
+                    padding: '0.4rem 0.7rem',
+                    borderRadius: 'var(--radius-md)',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    border: '1px solid var(--border-subtle)',
+                    background: 'var(--bg-elevated)',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  +{hidden} more
+                </button>
+              )}
             </div>
           </div>
+            )
+          })()}
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
             <div style={{ position: 'relative', flex: 1, minWidth: 160 }}>
