@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.288': [
+    '🐛 Login: disable-http2 entfernt — Cloudflare/Stake Login-Fenster hing durch erzwungenes HTTP/1.1',
+  ],
   '1.0.287': [
     '🐛 Auto-Update HTTP 429: Feed über latest.yml (kein GitHub-API), 15-Min-Backoff, kein Error-Toast bei Rate-Limit',
   ],

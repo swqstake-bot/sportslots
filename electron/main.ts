@@ -51,10 +51,10 @@ import { destroyEuTurnstileWindow, solveEuTopUpTurnstile } from './euTurnstile.j
 
 configureStakeBrowserUserAgent();
 
-// electron-updater uses Chromium `net` against GitHub Releases CDN.
-// HTTP/2 there can fail with net::ERR_HTTP2_SERVER_REFUSED_STREAM / PROTOCOL_ERROR.
-// Force HTTP/1.1 for the Chromium network stack (must be before app ready).
-app.commandLine.appendSwitch('disable-http2');
+// NOTE: do NOT use app.commandLine.appendSwitch('disable-http2') here —
+// it kills HTTP/2 app-wide including Cloudflare/Stake login windows.
+// The updater now uses a generic (latest.yml) feed which avoids the
+// GitHub API rate limit; HTTP/2 CDN errors are handled by retry logic.
 
 function extractStakeJsonErrorMessage(parsed: unknown): string {
     if (parsed == null) return 'Leere Antwort';
