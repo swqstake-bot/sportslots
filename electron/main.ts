@@ -138,6 +138,52 @@ function isCloudflareChallengeHtml(html: string): boolean {
   );
 }
 
+type StakeLoginWindowOptions = {
+  /** After 403/CF: keep the window open until GraphQL from this window succeeds — do not close on a leftover session cookie. */
+  requireLiveApi?: boolean;
+};
+
+/** True when the login window can reach Stake GraphQL (not a Cloudflare HTML 403). */
+async function stakeLoginWindowApiReady(win: BrowserWindow | null, origin: string): Promise<boolean> {
+  if (!win || win.isDestroyed()) return false;
+  const url = `${String(origin || '').replace(/\/$/, '')}/_api/graphql`;
+  const script = `
+    (async () => {
+      try {
+        const res = await fetch(${JSON.stringify(url)}, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'content-type': 'application/json',
+            accept: '*/*',
+            'x-operation-name': 'SessionProbe',
+            'x-operation-type': 'query',
+          },
+          body: JSON.stringify({ query: 'query SessionProbe { user { id } }', variables: {} }),
+        });
+        const text = await res.text();
+        return { status: res.status, body: text.slice(0, 400) };
+      } catch (e) {
+        return { status: 0, body: String(e && e.message ? e.message : e) };
+      }
+    })();
+  `;
+  try {
+    const result = (await win.webContents.executeJavaScript(script, true)) as {
+      status?: number;
+      body?: string;
+    };
+    const status = Number(result?.status || 0);
+    const body = String(result?.body || '');
+    if (status !== 200) return false;
+    if (isCloudflareChallengeHtml(body)) return false;
+    JSON.parse(body);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function ensureForumScrapeWindow(): BrowserWindow {
   if (forumScrapeWin && !forumScrapeWin.isDestroyed()) return forumScrapeWin;
   forumScrapeWin = new BrowserWindow({
@@ -539,12 +585,23 @@ function throwIfSessionInvalid(sessionStatus: StakeSessionStatus): void {
 
 function openLoginWindowForRejectedSession(reason: string): void {
   const now = Date.now();
+  if (loginWin && !loginWin.isDestroyed()) {
+    try {
+      loginWin.show();
+      loginWin.focus();
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
   if (now - lastLoginWindowOpenAt < LOGIN_WINDOW_DEBOUNCE_MS) {
     return;
   }
   lastLoginWindowOpenAt = now;
   console.warn('[StakeSession] Opening login window due to rejected session:', reason);
-  createLoginWindow();
+  void openStakeLoginWindow(undefined, { requireLiveApi: true }).catch((err) => {
+    console.error('[StakeSession] Login window failed:', err);
+  });
 }
 
 async function ensureStakeBridgeWindow(origin: string): Promise<BrowserWindow> {
@@ -910,13 +967,11 @@ function createWindow() {
   });
 }
 
-function createLoginWindow() {
-  void openStakeLoginWindow().catch((err) => {
-    console.error('[StakeSession] Login window failed:', err);
-  });
-}
-
-async function openStakeLoginWindow(explicitOrigin?: string): Promise<void> {
+async function openStakeLoginWindow(
+  explicitOrigin?: string,
+  options?: StakeLoginWindowOptions
+): Promise<void> {
+  const requireLiveApi = options?.requireLiveApi === true;
   const stakeUrl = String(explicitOrigin || '').trim() || (await resolveStakeLoginOrigin());
   const stakeOriginBase = stakeUrl.replace(/\/$/, '');
 
@@ -971,7 +1026,7 @@ async function openStakeLoginWindow(explicitOrigin?: string): Promise<void> {
     } catch {
       /* ignore */
     }
-    return openStakeLoginWindow(stakeUrl);
+    return openStakeLoginWindow(stakeUrl, options);
   }
 
   stakeLoginPromise = new Promise<void>((resolve) => {
@@ -983,7 +1038,13 @@ async function openStakeLoginWindow(explicitOrigin?: string): Promise<void> {
         width: 1000,
         height: 720,
         autoHideMenuBar: true,
-        title: isEu ? 'Stake.eu – sign in' : 'Stake – sign in',
+        title: requireLiveApi
+          ? isEu
+            ? 'Stake.eu – Cloudflare / sign in (window stays until API works)'
+            : 'Stake – Cloudflare / sign in (window stays until API works)'
+          : isEu
+            ? 'Stake.eu – sign in'
+            : 'Stake – sign in',
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
@@ -1047,13 +1108,19 @@ async function openStakeLoginWindow(explicitOrigin?: string): Promise<void> {
         return domain.includes('stake.com') || domain.includes('stake.bet');
       };
 
+      const tryFinishIfReady = async () => {
+        if (settled) return;
+        if (!(await isStakeLoggedIn())) return;
+        if (requireLiveApi) {
+          const apiOk = await stakeLoginWindowApiReady(loginWin, loginOrigin);
+          if (!apiOk) return;
+        }
+        await finish(true);
+      };
+
       const pollTimer = setInterval(() => {
-        void (async () => {
-          if (await isStakeLoggedIn()) {
-            await finish(true);
-          }
-        })();
-      }, 1000);
+        void tryFinishIfReady();
+      }, requireLiveApi ? 2000 : 1000);
 
       const onCookieChanged = (
         _event: Electron.Event,
@@ -1063,13 +1130,10 @@ async function openStakeLoginWindow(explicitOrigin?: string): Promise<void> {
       ) => {
         if (cookie.name === 'cf_clearance' && !removed && sessionCookieMatchesLoginSite(cookie)) {
           void captureSession();
+          if (requireLiveApi) void tryFinishIfReady();
         }
         if (cookie.name === 'session' && !removed && sessionCookieMatchesLoginSite(cookie)) {
-          void (async () => {
-            if (await isStakeLoggedIn()) {
-              await finish(true);
-            }
-          })();
+          void tryFinishIfReady();
         }
       };
       ses.cookies.on('changed', onCookieChanged);
@@ -1951,8 +2015,15 @@ async function stakeGraphqlInvoke(
             if (error instanceof StakeHttpError && (error.status === 401 || error.status === 403)) {
                 invalidateStakeSessionStatusCache();
                 if (attempt + 1 < STAKE_MAX_AUTH_RETRIES) continue;
-                openLoginWindowForRejectedSession(`${contextLabel} ${error.status}`);
-                throw new Error(`Session rejected (${error.status}). Login window opened.`);
+                const cf = isCloudflareChallengeHtml(error.body);
+                openLoginWindowForRejectedSession(
+                  `${contextLabel} ${error.status}${cf ? ' cloudflare' : ''}`
+                );
+                throw new Error(
+                  cf
+                    ? `Session rejected (${error.status}). Cloudflare window opened — complete the check, it stays until Stake API works.`
+                    : `Session rejected (${error.status}). Login window opened.`
+                );
             }
             if (String((error as Error)?.message || '').includes('Session rejected')) {
                 invalidateStakeSessionStatusCache();

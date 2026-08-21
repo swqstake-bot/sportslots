@@ -199,7 +199,11 @@ export async function runAutoWagerGc(
         emitStats()
         log(`Meta error: ${msg}`)
         phase('error', msg)
-        await sleep(5000, signal)
+        const sessionBlocked = /session rejected|403/i.test(msg)
+        if (sessionBlocked) {
+          log('EU Cloudflare/session blocked — finish the Stake.eu window (it stays open until GraphQL works), then this loop retries')
+        }
+        await sleep(sessionBlocked ? 15000 : 5000, signal)
         continue
       }
 
