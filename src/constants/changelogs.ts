@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.294': [
+    '🐛 Code Mode: 429-Pause stockt +15s pro Treffer (15/30/45…, max 120s) statt fest 15s',
+  ],
   '1.0.293': [
     '⚡ Code Mode: 90ms Start-zu-Start (~11/s, Originals-Turbo) statt 160ms Extra-Pause — 429-Backoff bleibt',
   ],

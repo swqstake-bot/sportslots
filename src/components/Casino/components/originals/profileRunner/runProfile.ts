@@ -54,9 +54,9 @@ const SEQ_RATE_LIMIT_DECAY_AFTER_CLEAN_BETS = 40
 const CODE_MODE_RATE_LIMIT_EXTRA_CAP_MS = 2000
 /** Code Mode: decay slower so we do not snap back into 429. */
 const CODE_MODE_RATE_LIMIT_DECAY_AFTER_CLEAN_BETS = 80
-const CODE_MODE_RATE_LIMIT_RETRY_MS = 8000
-const CODE_MODE_RATE_LIMIT_COOLDOWN_MS = 15_000
-const CODE_MODE_RATE_LIMIT_COOLDOWN_AFTER = 3
+/** First 429 waits 15s; each consecutive 429 adds another 15s (15, 30, 45…). */
+const CODE_MODE_RATE_LIMIT_COOLDOWN_STEP_MS = 15_000
+const CODE_MODE_RATE_LIMIT_COOLDOWN_CAP_MS = 120_000
 import {
   resolveOriginalsRoundUsd,
   isB2bWinMode,
@@ -657,9 +657,10 @@ export async function runProfile(
         }
         const retryDelay = isRateLimitError(e)
           ? isCodeModePacing
-            ? consecutiveRateLimits >= CODE_MODE_RATE_LIMIT_COOLDOWN_AFTER
-              ? CODE_MODE_RATE_LIMIT_COOLDOWN_MS
-              : CODE_MODE_RATE_LIMIT_RETRY_MS
+            ? Math.min(
+                CODE_MODE_RATE_LIMIT_COOLDOWN_CAP_MS,
+                CODE_MODE_RATE_LIMIT_COOLDOWN_STEP_MS * consecutiveRateLimits
+              )
             : Math.min(30000, ORIGINALS_SCRIPT_RETRY_DELAY_MS + TURBO_RATE_LIMIT_INTERVAL_BUMP_MS * 4)
           : ORIGINALS_SCRIPT_RETRY_DELAY_MS
         callbacks.onLog?.(`Fehler — retry in ${Math.round(retryDelay / 1000)}s: ${msg.slice(0, 120)}`)
