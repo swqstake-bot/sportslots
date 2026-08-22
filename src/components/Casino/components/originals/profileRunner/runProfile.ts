@@ -44,12 +44,19 @@ import { waitWhilePaused, type SessionSignal } from '../engine/sessionSignal'
 import { createVaultDeposit } from '../../../api/vaultApi'
 import { isRateLimitError, TURBO_RATE_LIMIT_INTERVAL_BUMP_MS } from '../engine/turboConfig'
 
-/** Cap for adaptive inter-bet delay added after 429s (sequential / Code Mode). */
+/** Cap for adaptive inter-bet delay added after 429s (sequential / workbench). */
 const SEQ_RATE_LIMIT_EXTRA_CAP_MS = 500
 /** Default ms added to pacing per 429 when settings omit the bump. */
 const SEQ_RATE_LIMIT_DEFAULT_BUMP_MS = 10
 /** After this many clean bets, ease one bump so pacing can recover. */
 const SEQ_RATE_LIMIT_DECAY_AFTER_CLEAN_BETS = 40
+/** Code Mode: higher cap so 429s do not stay near 0ms. */
+const CODE_MODE_RATE_LIMIT_EXTRA_CAP_MS = 2000
+/** Code Mode: decay slower so we do not snap back into 429. */
+const CODE_MODE_RATE_LIMIT_DECAY_AFTER_CLEAN_BETS = 80
+const CODE_MODE_RATE_LIMIT_RETRY_MS = 8000
+const CODE_MODE_RATE_LIMIT_COOLDOWN_MS = 15_000
+const CODE_MODE_RATE_LIMIT_COOLDOWN_AFTER = 3
 import {
   resolveOriginalsRoundUsd,
   isB2bWinMode,
@@ -401,6 +408,11 @@ export async function runProfile(
   let peakProfitUsd = 0
 
   const workbenchEnabled = options._workbench === true
+  const isCodeModePacing = options._codeModePacing === true
+  const extraCapMs = isCodeModePacing ? CODE_MODE_RATE_LIMIT_EXTRA_CAP_MS : SEQ_RATE_LIMIT_EXTRA_CAP_MS
+  const decayAfterCleanBets = isCodeModePacing
+    ? CODE_MODE_RATE_LIMIT_DECAY_AFTER_CLEAN_BETS
+    : SEQ_RATE_LIMIT_DECAY_AFTER_CLEAN_BETS
   let workbenchOptions: OriginalsWorkbenchOptions = {
     ...(options._workbenchOptions ?? {}) as OriginalsWorkbenchOptions,
   }
@@ -418,6 +430,7 @@ export async function runProfile(
   })()
   let adaptiveExtraDelayMs = 0
   let cleanBetsSinceRateLimit = 0
+  let consecutiveRateLimits = 0
   const capBetUsd = (usd: number): number => {
     const max = wbSessionSettings.maxFiatBetSize ?? 0
     if (max > 0 && usd > max) return max
@@ -434,7 +447,7 @@ export async function runProfile(
   const noteRateLimitHit = () => {
     if (rateLimitBumpMs <= 0) return
     const prev = adaptiveExtraDelayMs
-    adaptiveExtraDelayMs = Math.min(SEQ_RATE_LIMIT_EXTRA_CAP_MS, adaptiveExtraDelayMs + rateLimitBumpMs)
+    adaptiveExtraDelayMs = Math.min(extraCapMs, adaptiveExtraDelayMs + rateLimitBumpMs)
     cleanBetsSinceRateLimit = 0
     if (adaptiveExtraDelayMs !== prev) {
       callbacks.onLog?.(
@@ -443,9 +456,10 @@ export async function runProfile(
     }
   }
   const noteSuccessfulBetForPacing = () => {
+    consecutiveRateLimits = 0
     if (adaptiveExtraDelayMs <= 0 || rateLimitBumpMs <= 0) return
     cleanBetsSinceRateLimit += 1
-    if (cleanBetsSinceRateLimit < SEQ_RATE_LIMIT_DECAY_AFTER_CLEAN_BETS) return
+    if (cleanBetsSinceRateLimit < decayAfterCleanBets) return
     cleanBetsSinceRateLimit = 0
     adaptiveExtraDelayMs = Math.max(0, adaptiveExtraDelayMs - rateLimitBumpMs)
     callbacks.onLog?.(
@@ -626,9 +640,16 @@ export async function runProfile(
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       if (isRetryableOriginalsScriptError(e) && !signal.cancelled) {
-        if (isRateLimitError(e)) noteRateLimitHit()
+        if (isRateLimitError(e)) {
+          consecutiveRateLimits += 1
+          noteRateLimitHit()
+        }
         const retryDelay = isRateLimitError(e)
-          ? Math.min(30000, ORIGINALS_SCRIPT_RETRY_DELAY_MS + TURBO_RATE_LIMIT_INTERVAL_BUMP_MS * 4)
+          ? isCodeModePacing
+            ? consecutiveRateLimits >= CODE_MODE_RATE_LIMIT_COOLDOWN_AFTER
+              ? CODE_MODE_RATE_LIMIT_COOLDOWN_MS
+              : CODE_MODE_RATE_LIMIT_RETRY_MS
+            : Math.min(30000, ORIGINALS_SCRIPT_RETRY_DELAY_MS + TURBO_RATE_LIMIT_INTERVAL_BUMP_MS * 4)
           : ORIGINALS_SCRIPT_RETRY_DELAY_MS
         callbacks.onLog?.(`Fehler — retry in ${Math.round(retryDelay / 1000)}s: ${msg.slice(0, 120)}`)
         await sleep(retryDelay)
@@ -721,6 +742,13 @@ export async function runProfile(
       hiloRank,
       hiloSuit,
     }
+  }
+
+  if (isCodeModePacing) {
+    const paceMs = getRequestDelayMs()
+    callbacks.onLog?.(
+      `Code Mode pace ${paceMs}ms (~${(1000 / Math.max(1, paceMs)).toFixed(1)}/s) — 429 slows further`
+    )
   }
 
   if (preRolls > 0 && !kenoHeatmapCycleRuntime) {

@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.292': [
+    '🐛 Code Mode: Mindestabstand 160ms + stärkeres 429-Backoff — lange Sessions nicht mehr sofort rate-limited',
+  ],
   '1.0.290': [
     '✨ Promotions als eigener Casino-Tab (Casino / Forum / Telegram); Challenges nur Hunter / Balance / Archive',
     '✨ Casino-Promos aus CMS + Forum, Hunt-all, kompakte Poster, manuell abhaken',

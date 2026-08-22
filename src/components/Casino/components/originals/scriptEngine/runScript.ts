@@ -70,6 +70,7 @@ export function extractConfigFromScript(scriptText: string): Record<string, unkn
     [/increaseBetAfterSeedReset\s*=\s*([\d.]+)/, 'increaseBetAfterSeedReset'],
     [/mines\s*=\s*(\d+)/, 'mines'],
     [/diamonds\s*=\s*(\d+)/, 'diamonds'],
+    [/requestInterval\s*=\s*(\d+)/, 'requestInterval'],
   ]
   const boolPatterns: [RegExp, string][] = [
     [/b2bRotateSeedOnTakeProfit\s*=\s*true/i, 'b2bRotateSeedOnTakeProfit'],
@@ -130,35 +131,54 @@ export function normalizeProfileOptions(options: Record<string, unknown>): Recor
   return o
 }
 
+/** Code Mode has no in-flight cap; workbench default 0ms hits 429 on long sessions. */
+export const CODE_MODE_MIN_INTERVAL_MS = 160
+/** Stronger than workbench default 10ms so one 429 actually backs off. */
+export const CODE_MODE_DEFAULT_BUMP_MS = 40
+
+function resolveCodeModeIntervalMs(explicit: unknown, fromWorkbench: unknown): number {
+  const n = (v: unknown) => {
+    const x = Number(v)
+    return Number.isFinite(x) && x > 0 ? x : 0
+  }
+  const chosen = n(explicit) || n(fromWorkbench) || CODE_MODE_MIN_INTERVAL_MS
+  return Math.max(CODE_MODE_MIN_INTERVAL_MS, chosen)
+}
+
 /**
- * Code Mode has no workbench session wrapper — inject pacing settings so 429
- * auto-slowdown still works (same knobs as Automatic settings).
+ * Code Mode has no workbench session wrapper — inject a safer floor than
+ * Automatic's 0ms default, plus stronger 429 auto-slowdown.
  */
 function withCodeModePacing(options: Record<string, unknown>): Record<string, unknown> {
-  if (options._workbenchSettings && typeof options._workbenchSettings === 'object') {
+  if (options._workbench === true) return options
+  if (options._codeModePacing === true && options._workbenchSettings && typeof options._workbenchSettings === 'object') {
     return options
   }
   try {
     const wb = loadWorkbenchSettings()
     const rawBump = wb.requestIntervalRateLimitIncrement
-    const bump =
-      rawBump == null || !Number.isFinite(Number(rawBump))
-        ? 10
-        : Math.max(0, Number(rawBump))
+    const bump = Math.max(
+      CODE_MODE_DEFAULT_BUMP_MS,
+      rawBump == null || !Number.isFinite(Number(rawBump)) ? 0 : Math.max(0, Number(rawBump))
+    )
+    const interval = resolveCodeModeIntervalMs(options.requestInterval, wb.requestInterval)
     return {
       ...options,
-      requestInterval:
-        options.requestInterval != null ? options.requestInterval : (wb.requestInterval ?? 0),
+      requestInterval: interval,
+      _codeModePacing: true,
       _workbenchSettings: {
-        requestInterval: wb.requestInterval ?? 0,
+        requestInterval: interval,
         requestIntervalRateLimitIncrement: bump,
       },
     }
   } catch {
     return {
       ...options,
+      requestInterval: CODE_MODE_MIN_INTERVAL_MS,
+      _codeModePacing: true,
       _workbenchSettings: {
-        requestIntervalRateLimitIncrement: 10,
+        requestInterval: CODE_MODE_MIN_INTERVAL_MS,
+        requestIntervalRateLimitIncrement: CODE_MODE_DEFAULT_BUMP_MS,
       },
     }
   }
