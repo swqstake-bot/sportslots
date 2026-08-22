@@ -2,6 +2,7 @@
  * Script-Ausführung: Entweder Profil-JSON ausführen oder aus Script-Code Konfig extrahieren und als Profil laufen lassen.
  */
 
+import { MIN_TURBO_FIRE_INTERVAL_MS, STAKE_TURBO_DEFAULT_INTERVAL_MS } from '../engine/turboConfig'
 import { runProfile } from '../profileRunner/runProfile'
 import { loadWorkbenchSettings } from '../workbench/workbenchStorage'
 import type { ScriptSessionStats } from './scriptSessionStats'
@@ -131,8 +132,10 @@ export function normalizeProfileOptions(options: Record<string, unknown>): Recor
   return o
 }
 
-/** Code Mode has no in-flight cap; workbench default 0ms hits 429 on long sessions. */
-export const CODE_MODE_MIN_INTERVAL_MS = 160
+/** Same floor as Originals turbo (70ms / ~14/s). */
+export const CODE_MODE_MIN_INTERVAL_MS = MIN_TURBO_FIRE_INTERVAL_MS
+/** Dice/Originals probe default — 90ms start-to-start (~11/s), not extra sleep after RTT. */
+export const CODE_MODE_DEFAULT_INTERVAL_MS = STAKE_TURBO_DEFAULT_INTERVAL_MS
 /** Stronger than workbench default 10ms so one 429 actually backs off. */
 export const CODE_MODE_DEFAULT_BUMP_MS = 40
 
@@ -141,13 +144,12 @@ function resolveCodeModeIntervalMs(explicit: unknown, fromWorkbench: unknown): n
     const x = Number(v)
     return Number.isFinite(x) && x > 0 ? x : 0
   }
-  const chosen = n(explicit) || n(fromWorkbench) || CODE_MODE_MIN_INTERVAL_MS
+  const chosen = n(explicit) || n(fromWorkbench) || CODE_MODE_DEFAULT_INTERVAL_MS
   return Math.max(CODE_MODE_MIN_INTERVAL_MS, chosen)
 }
 
 /**
- * Code Mode has no workbench session wrapper — inject a safer floor than
- * Automatic's 0ms default, plus stronger 429 auto-slowdown.
+ * Code Mode: Originals turbo interval (90ms start-to-start) + stronger 429 backoff.
  */
 function withCodeModePacing(options: Record<string, unknown>): Record<string, unknown> {
   if (options._workbench === true) return options
@@ -174,10 +176,10 @@ function withCodeModePacing(options: Record<string, unknown>): Record<string, un
   } catch {
     return {
       ...options,
-      requestInterval: CODE_MODE_MIN_INTERVAL_MS,
+      requestInterval: CODE_MODE_DEFAULT_INTERVAL_MS,
       _codeModePacing: true,
       _workbenchSettings: {
-        requestInterval: CODE_MODE_MIN_INTERVAL_MS,
+        requestInterval: CODE_MODE_DEFAULT_INTERVAL_MS,
         requestIntervalRateLimitIncrement: CODE_MODE_DEFAULT_BUMP_MS,
       },
     }

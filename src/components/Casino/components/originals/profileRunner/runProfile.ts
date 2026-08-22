@@ -444,6 +444,17 @@ export async function runProfile(
     return workbenchOptions.requestInterval ?? wbSessionSettings.requestInterval ?? 0
   }
   const getRequestDelayMs = (): number => getBaseRequestDelayMs() + adaptiveExtraDelayMs
+  /** Code Mode: start-to-start (probe 90ms). Workbench: extra sleep after the bet. */
+  const waitAfterBetPace = async (startedAt: number): Promise<boolean> => {
+    const delayMs = getRequestDelayMs()
+    if (delayMs <= 0 || signal.cancelled) return false
+    const remain = isCodeModePacing ? delayMs - (Date.now() - startedAt) : delayMs
+    if (remain > 0) {
+      await sleep(remain)
+      if (await waitWhilePaused(signal)) return true
+    }
+    return false
+  }
   const noteRateLimitHit = () => {
     if (rateLimitBumpMs <= 0) return
     const prev = adaptiveExtraDelayMs
@@ -747,7 +758,7 @@ export async function runProfile(
   if (isCodeModePacing) {
     const paceMs = getRequestDelayMs()
     callbacks.onLog?.(
-      `Code Mode pace ${paceMs}ms (~${(1000 / Math.max(1, paceMs)).toFixed(1)}/s) — 429 slows further`
+      `Code Mode pace ${paceMs}ms start-to-start (~${(1000 / Math.max(1, paceMs)).toFixed(1)}/s) — 429 slows further`
     )
   }
 
@@ -755,12 +766,12 @@ export async function runProfile(
     callbacks.onLog?.(`Running ${preRolls} pre-roll warmup bet(s) at $${preRollsBetSizeUsd.toFixed(4)}`)
     for (let pr = 0; pr < preRolls && !signal.cancelled; pr++) {
       const preSize = capBetUsd(minBetSizeUsd > 0 ? Math.max(minBetSizeUsd, preRollsBetSizeUsd) : preRollsBetSizeUsd)
+      const preStartedAt = Date.now()
       const pre = await runSingleBetRound(preSize, currentOpts, currentGame, true)
       if (!pre || pre.cancelled) break
       totalWageredUsd += pre.wageredUsdThisRound
       profitUsd += pre.payoutUsd - pre.wageredUsdThisRound
-      const delayMs = getRequestDelayMs()
-      if (delayMs > 0) await sleep(delayMs)
+      await waitAfterBetPace(preStartedAt)
     }
   }
 
@@ -913,6 +924,7 @@ export async function runProfile(
       game: currentGame,
     })
 
+    const roundStartedAt = Date.now()
     const roundResult = await runSingleBetRound(betSizeUsdThisRound, roundOpts, currentGame)
     if (!roundResult) {
       rollNumber--
@@ -1424,11 +1436,7 @@ export async function runProfile(
       break
     }
 
-    const delayMs = getRequestDelayMs()
-    if (delayMs > 0 && !signal.cancelled) {
-      await sleep(delayMs)
-      if (await waitWhilePaused(signal)) break
-    }
+    if (await waitAfterBetPace(roundStartedAt)) break
   }
   } finally {
     houseBetBridge.dispose()
