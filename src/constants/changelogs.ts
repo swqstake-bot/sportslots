@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.295': [
+    '🐛 Sports: GraphQL-Feld `tvChannels` entfernt — Stake hat es von SportFixtureDataMatch genommen (HTTP 400 Starting Soon)',
+  ],
   '1.0.294': [
     '🐛 Code Mode: 429-Pause stockt +15s pro Treffer (15/30/45…, max 120s) statt fest 15s',
   ],

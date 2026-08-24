@@ -20,11 +20,6 @@ const SportFixtureDataMatch = `fragment SportFixtureDataMatch on SportFixtureDat
     name
     qualifier
   }
-  tvChannels {
-    language
-    name
-    streamUrl
-  }
   __typename
 }
 ${SportFixtureCompetitor}`;
