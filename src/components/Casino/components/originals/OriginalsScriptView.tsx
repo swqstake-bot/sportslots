@@ -452,7 +452,7 @@ export default function OriginalsScriptView() {
                 disabled={running}
                 onChange={(e) => setIntervalMs(e.target.value)}
                 className="w-20 bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--text)] tabular-nums"
-                title="Start-to-start delay. Default 90ms (~11/s). Floor 70ms."
+                title="Start-to-start delay. Default 110ms (~9/s). Floor 70ms."
               />
             </label>
           </div>

@@ -2,7 +2,7 @@
  * Script-Ausführung: Entweder Profil-JSON ausführen oder aus Script-Code Konfig extrahieren und als Profil laufen lassen.
  */
 
-import { MIN_TURBO_FIRE_INTERVAL_MS, STAKE_TURBO_DEFAULT_INTERVAL_MS } from '../engine/turboConfig'
+import { MIN_TURBO_FIRE_INTERVAL_MS } from '../engine/turboConfig'
 import { runProfile } from '../profileRunner/runProfile'
 import { loadWorkbenchSettings } from '../workbench/workbenchStorage'
 import type { ScriptSessionStats } from './scriptSessionStats'
@@ -134,8 +134,8 @@ export function normalizeProfileOptions(options: Record<string, unknown>): Recor
 
 /** Same floor as Originals turbo (70ms / ~14/s). */
 export const CODE_MODE_MIN_INTERVAL_MS = MIN_TURBO_FIRE_INTERVAL_MS
-/** Dice/Originals probe default — 90ms start-to-start (~11/s), not extra sleep after RTT. */
-export const CODE_MODE_DEFAULT_INTERVAL_MS = STAKE_TURBO_DEFAULT_INTERVAL_MS
+/** Code Mode default — 110ms start-to-start (~9/s). */
+export const CODE_MODE_DEFAULT_INTERVAL_MS = 110
 /** Stronger than workbench default 10ms so one 429 actually backs off. */
 export const CODE_MODE_DEFAULT_BUMP_MS = 40
 
@@ -146,7 +146,7 @@ function resolveCodeModeIntervalMs(explicit: unknown): number {
 }
 
 /**
- * Code Mode: 90ms start-to-start by default (Originals turbo), + stronger 429 backoff.
+ * Code Mode: 110ms start-to-start by default, + stronger 429 backoff.
  * Does not inherit Automatic's requestInterval (that default is 0).
  */
 function withCodeModePacing(options: Record<string, unknown>): Record<string, unknown> {

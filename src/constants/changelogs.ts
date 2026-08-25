@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.297': [
+    '⚡ Code Mode: Standard-Intervall 90ms → 110ms (~9/s)',
+  ],
   '1.0.296': [
     '⚡ Code Mode: Standard-Intervall 90ms (UI-Feld, unabhängig von Automatic 0ms)',
   ],

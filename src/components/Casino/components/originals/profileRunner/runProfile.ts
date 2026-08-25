@@ -444,7 +444,7 @@ export async function runProfile(
     return workbenchOptions.requestInterval ?? wbSessionSettings.requestInterval ?? 0
   }
   const getRequestDelayMs = (): number => getBaseRequestDelayMs() + adaptiveExtraDelayMs
-  /** Code Mode: start-to-start (probe 90ms). Workbench: extra sleep after the bet. */
+  /** Code Mode: start-to-start (default 110ms). Workbench: extra sleep after the bet. */
   const waitAfterBetPace = async (startedAt: number): Promise<boolean> => {
     const delayMs = getRequestDelayMs()
     if (delayMs <= 0 || signal.cancelled) return false
