@@ -8,7 +8,7 @@ import OriginalsProfitChart, { profitsToChartData } from '../OriginalsProfitChar
 import { Button } from '../ui/Button'
 import { fetchCurrencyRates } from '../../api/stakeChallenges'
 import OriginalsScriptBuilder from './scriptBuilder/OriginalsScriptBuilder'
-import { runProfileJson, runScriptAsProfile } from './scriptEngine/runScript'
+import { runProfileJson, runScriptAsProfile, CODE_MODE_DEFAULT_INTERVAL_MS, CODE_MODE_MIN_INTERVAL_MS } from './scriptEngine/runScript'
 import { formatScriptSessionDuration, type ScriptSessionStats } from './scriptEngine/scriptSessionStats'
 import { isScriptDisplayableBetShareId } from './scriptEngine/scriptHouseBetIdBridge'
 import { useCasinoBetListReset } from '../../utils/casinoBetSession'
@@ -168,6 +168,7 @@ export default function OriginalsScriptView() {
   const [scriptContent, setScriptContent] = useState('')
   const [profileContent, setProfileContent] = useState('')
   const [currency, setCurrency] = useState('usdc')
+  const [intervalMs, setIntervalMs] = useState(String(CODE_MODE_DEFAULT_INTERVAL_MS))
   const [running, setRunning] = useState(false)
   const [logLines, setLogLines] = useState<string[]>([])
   const [lastStats, setLastStats] = useState<ScriptSessionStats | null>(null)
@@ -268,6 +269,12 @@ export default function OriginalsScriptView() {
     if (!accessToken?.trim()) {
       addLog('No session token — Bet IDs come from houseBets only after login.')
     }
+    const parsedInterval = Number(intervalMs)
+    const requestInterval =
+      Number.isFinite(parsedInterval) && parsedInterval > 0
+        ? Math.max(CODE_MODE_MIN_INTERVAL_MS, Math.round(parsedInterval))
+        : CODE_MODE_DEFAULT_INTERVAL_MS
+    const paceDefaults = { requestInterval }
     const callbacks = {
       onLog: addLog,
       onBetPlaced: (r: {
@@ -324,7 +331,7 @@ export default function OriginalsScriptView() {
       },
     }
     if (profileJson) {
-      const stop = runProfileJson(profileJson, currency, callbacks, usdRates, accessToken)
+      const stop = runProfileJson(profileJson, currency, callbacks, usdRates, accessToken, paceDefaults)
       if (stop) {
         stopRef.current = stop
         setChartProfits([])
@@ -337,8 +344,8 @@ export default function OriginalsScriptView() {
     } else if (scriptCode) {
       const looksLikeJson = scriptCode.startsWith('{') && (scriptCode.includes('"game"') || scriptCode.includes('"options"'))
       const stop = looksLikeJson
-        ? runProfileJson(scriptCode, currency, callbacks, usdRates, accessToken)
-        : runScriptAsProfile(scriptCode, currency, callbacks, usdRates, accessToken)
+        ? runProfileJson(scriptCode, currency, callbacks, usdRates, accessToken, paceDefaults)
+        : runScriptAsProfile(scriptCode, currency, callbacks, usdRates, accessToken, paceDefaults)
       if (stop) {
         stopRef.current = stop
         setChartProfits([])
@@ -349,7 +356,7 @@ export default function OriginalsScriptView() {
         addLog(looksLikeJson ? 'Profile (JSON) started. Bet size = USD.' : 'Script config extracted, session started. Bet size = USD.')
       }
     }
-  }, [profileContent, scriptContent, currency, addLog, flushScriptUi])
+  }, [profileContent, scriptContent, currency, intervalMs, addLog, flushScriptUi])
 
   const handleStop = useCallback(() => {
     if (stopRef.current) {
@@ -430,9 +437,24 @@ export default function OriginalsScriptView() {
           <p className="text-sm text-[var(--text-muted)]">
             Paste a <strong>profile (.json)</strong> and press Start - or paste a <strong>script (.js)</strong>, then the config (game, stake, ...) is extracted and executed as a session. <strong>Stake is always in USD</strong> (e.g. 0.01 = $0.01); with another currency it is converted on start.
           </p>
-          <div className="flex gap-2 items-center">
-            <label className="text-xs text-[var(--text-muted)]">Currency</label>
-            <WorkbenchCurrencySelect value={currency} onChange={setCurrency} showBalances />
+          <div className="flex gap-3 items-center flex-wrap">
+            <div className="flex gap-2 items-center">
+              <label className="text-xs text-[var(--text-muted)]">Currency</label>
+              <WorkbenchCurrencySelect value={currency} onChange={setCurrency} showBalances />
+            </div>
+            <label className="flex gap-2 items-center text-xs text-[var(--text-muted)]">
+              Interval (ms)
+              <input
+                type="number"
+                min={CODE_MODE_MIN_INTERVAL_MS}
+                step={10}
+                value={intervalMs}
+                disabled={running}
+                onChange={(e) => setIntervalMs(e.target.value)}
+                className="w-20 bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-2 py-1.5 text-sm text-[var(--text)] tabular-nums"
+                title="Start-to-start delay. Default 90ms (~11/s). Floor 70ms."
+              />
+            </label>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

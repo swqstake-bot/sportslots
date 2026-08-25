@@ -139,17 +139,15 @@ export const CODE_MODE_DEFAULT_INTERVAL_MS = STAKE_TURBO_DEFAULT_INTERVAL_MS
 /** Stronger than workbench default 10ms so one 429 actually backs off. */
 export const CODE_MODE_DEFAULT_BUMP_MS = 40
 
-function resolveCodeModeIntervalMs(explicit: unknown, fromWorkbench: unknown): number {
-  const n = (v: unknown) => {
-    const x = Number(v)
-    return Number.isFinite(x) && x > 0 ? x : 0
-  }
-  const chosen = n(explicit) || n(fromWorkbench) || CODE_MODE_DEFAULT_INTERVAL_MS
+function resolveCodeModeIntervalMs(explicit: unknown): number {
+  const x = Number(explicit)
+  const chosen = Number.isFinite(x) && x > 0 ? x : CODE_MODE_DEFAULT_INTERVAL_MS
   return Math.max(CODE_MODE_MIN_INTERVAL_MS, chosen)
 }
 
 /**
- * Code Mode: Originals turbo interval (90ms start-to-start) + stronger 429 backoff.
+ * Code Mode: 90ms start-to-start by default (Originals turbo), + stronger 429 backoff.
+ * Does not inherit Automatic's requestInterval (that default is 0).
  */
 function withCodeModePacing(options: Record<string, unknown>): Record<string, unknown> {
   if (options._workbench === true) return options
@@ -163,7 +161,7 @@ function withCodeModePacing(options: Record<string, unknown>): Record<string, un
       CODE_MODE_DEFAULT_BUMP_MS,
       rawBump == null || !Number.isFinite(Number(rawBump)) ? 0 : Math.max(0, Number(rawBump))
     )
-    const interval = resolveCodeModeIntervalMs(options.requestInterval, wb.requestInterval)
+    const interval = resolveCodeModeIntervalMs(options.requestInterval)
     return {
       ...options,
       requestInterval: interval,
@@ -186,6 +184,23 @@ function withCodeModePacing(options: Record<string, unknown>): Record<string, un
   }
 }
 
+export type CodeModePaceDefaults = {
+  requestInterval?: number
+}
+
+function applyCodeModeDefaults(
+  options: Record<string, unknown>,
+  defaults?: CodeModePaceDefaults
+): Record<string, unknown> {
+  const n = Number(options.requestInterval)
+  if (Number.isFinite(n) && n > 0) return options
+  const fallback = Number(defaults?.requestInterval)
+  if (Number.isFinite(fallback) && fallback > 0) {
+    return { ...options, requestInterval: fallback }
+  }
+  return { ...options, requestInterval: CODE_MODE_DEFAULT_INTERVAL_MS }
+}
+
 /**
  * Führt ein Profil (options-Objekt) aus. Gibt eine Stop-Funktion zurück.
  * Einsatz in options (initialBetSize/betSize) = USD; usdRates wird zur Umrechnung in die gewählte Währung genutzt.
@@ -195,12 +210,18 @@ export function runProfileSession(
   currency: string,
   callbacks: ScriptRunCallbacks,
   usdRates?: Record<string, number>,
-  accessToken?: string
+  accessToken?: string,
+  defaults?: CodeModePaceDefaults
 ): () => void {
   const signal = { cancelled: false, paused: false }
-  runProfile(withCodeModePacing(normalizeProfileOptions(options)), currency, callbacks, signal, usdRates, accessToken).finally(() =>
-    callbacks.onStopped?.()
-  )
+  runProfile(
+    withCodeModePacing(applyCodeModeDefaults(normalizeProfileOptions(options), defaults)),
+    currency,
+    callbacks,
+    signal,
+    usdRates,
+    accessToken
+  ).finally(() => callbacks.onStopped?.())
   return () => {
     signal.cancelled = true
   }
@@ -214,13 +235,14 @@ export function runProfileJson(
   currency: string,
   callbacks: ScriptRunCallbacks,
   usdRates?: Record<string, number>,
-  accessToken?: string
+  accessToken?: string,
+  defaults?: CodeModePaceDefaults
 ): (() => void) | null {
   try {
     const data = JSON.parse(jsonText) as { options?: Record<string, unknown> }
     const options = data?.options ?? data
     if (!options || typeof options !== 'object') return null
-    return runProfileSession(options as Record<string, unknown>, currency, callbacks, usdRates, accessToken)
+    return runProfileSession(options as Record<string, unknown>, currency, callbacks, usdRates, accessToken, defaults)
   } catch {
     callbacks.onLog?.('Ungültiges Profil-JSON.')
     return null
@@ -235,7 +257,8 @@ export function runScriptAsProfile(
   currency: string,
   callbacks: ScriptRunCallbacks,
   usdRates?: Record<string, number>,
-  accessToken?: string
+  accessToken?: string,
+  defaults?: CodeModePaceDefaults
 ): (() => void) | null {
   const options = extractConfigFromScript(scriptText)
   if (!options.game) {
@@ -243,5 +266,5 @@ export function runScriptAsProfile(
     return null
   }
   if (!options.initialBetSize && !options.betSize) options.initialBetSize = 0.01
-  return runProfileSession(normalizeProfileOptions(options), currency, callbacks, usdRates, accessToken)
+  return runProfileSession(normalizeProfileOptions(options), currency, callbacks, usdRates, accessToken, defaults)
 }
