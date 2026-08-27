@@ -6,6 +6,7 @@ import type { ErrorInfo, ReactNode } from 'react';
 import { StakeApi } from './api/client';
 import { Queries } from './api/queries';
 import { AutoBetManager } from './components/AutoBet/AutoBetManager';
+import { CopyBetManager } from './components/AutoBet/CopyBetManager';
 import { AutoBetView } from './components/AutoBet/AutoBetView';
 import { useUserStore, type SportBet } from './store/userStore';
 import { useAutoBetStore } from './store/autoBetStore';
@@ -397,6 +398,7 @@ function App() {
       </div>
       {/* AutoBet Manager (Headless): always mounted to avoid remount restarts */}
       <AutoBetManager />
+      <CopyBetManager />
     </div>
   );
 }

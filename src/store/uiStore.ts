@@ -54,7 +54,7 @@ interface UiState {
   /** Suchbegriff für Fixture-Namen (Sports) */
   fixtureSearchQuery: string;
   rightSidebarTab: 'autobet' | 'activebets';
-  sportsCenterTab: 'settings' | 'logs' | 'bets';
+  sportsCenterTab: 'settings' | 'logs' | 'bets' | 'copy';
   isActiveBetsModalOpen: boolean;
   activeBetsPreviewBetId: string | null;
   /** User accent override (null = use CSS defaults per `data-app-mode`). */
@@ -73,7 +73,7 @@ interface UiState {
   setSelectedSportSlug: (sportSlug: string | null) => void;
   setSportFilterType: (type: 'live' | 'upcoming') => void;
   setRightSidebarTab: (tab: 'autobet' | 'activebets') => void;
-  setSportsCenterTab: (tab: 'settings' | 'logs' | 'bets') => void;
+  setSportsCenterTab: (tab: 'settings' | 'logs' | 'bets' | 'copy') => void;
   toggleActiveBetsModal: () => void;
   openActiveBetsModal: (previewBetId?: string | null) => void;
   closeActiveBetsModal: () => void;

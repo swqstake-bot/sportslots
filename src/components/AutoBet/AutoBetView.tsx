@@ -7,6 +7,8 @@ import { Queries } from '../../api/queries';
 import { AccordionSection } from '../ui/AccordionSection';
 import { TournamentEventPickFields } from './TournamentEventPickFields';
 import { ActiveBetsPanel } from '../ActiveBets/ActiveBetsPanel';
+import { CopyBetPanel } from './CopyBetPanel';
+import { useCopyBetStore } from '../../store/copyBetStore';
 import { hasTournamentScope } from '../../utils/tournamentScope';
 import {
   MMA_MARKET_TYPE_PRESETS,
@@ -37,7 +39,10 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
   const sportsCenterTab = useUiStore((s) => s.sportsCenterTab);
   const setSportsCenterTab = useUiStore((s) => s.setSportsCenterTab);
   const activeBetsPreviewBetId = useUiStore((s) => s.activeBetsPreviewBetId);
-  const [localTab, setLocalTab] = useState<'settings' | 'logs' | 'bets'>('settings');
+  const [localTab, setLocalTab] = useState<'settings' | 'logs' | 'bets' | 'copy'>('settings');
+  const copyRunning = useCopyBetStore((s) => s.isRunning);
+  const startCopyFeed = useCopyBetStore((s) => s.start);
+  const stopCopyFeed = useCopyBetStore((s) => s.stop);
   const [sports, setSports] = useState<{name: string, slug: string}[]>([]);
 
   const isWide = layout === 'wide';
@@ -356,6 +361,19 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
     </AccordionSection>
   );
 
+  const copyStartButton = (
+    <button
+      onClick={() => (copyRunning ? stopCopyFeed() : startCopyFeed())}
+      className={`autobet-start-btn transition-all shadow-lg transform active:scale-[0.98] flex justify-center items-center gap-2 ${isWide ? 'autobet-start-btn--wide' : ''}`}
+      style={copyRunning
+        ? { background: 'var(--app-error)', color: 'white', border: '2px solid rgba(255,51,102,0.5)' }
+        : { background: 'var(--app-accent)', color: 'var(--app-bg-deep)', border: '2px solid rgba(var(--app-accent-rgb), 0.5)' }
+      }
+    >
+      {copyRunning ? 'Stop copy feed' : 'Start copy feed'}
+    </button>
+  );
+
   const startButton = (
     <button
       onClick={handleStartStop}
@@ -384,14 +402,14 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
       {isWide && (
         <div className="autobet-wide-header">
           <div className="autobet-wide-header-main">
-            <h2 className="autobet-wide-title">AutoBet Bot</h2>
-            <span className={`autobet-status-pill ${isRunning ? 'is-running' : ''}`.trim()}>
+            <h2 className="autobet-wide-title">{activeTab === 'copy' ? 'Copy Feed' : 'AutoBet Bot'}</h2>
+            <span className={`autobet-status-pill ${(activeTab === 'copy' ? copyRunning : isRunning) ? 'is-running' : ''}`.trim()}>
               <span className="autobet-status-dot" />
-              {isRunning ? 'Running' : 'Stopped'}
+              {(activeTab === 'copy' ? copyRunning : isRunning) ? 'Running' : 'Stopped'}
             </span>
           </div>
           <div className="autobet-wide-header-actions">
-            {startButton}
+            {activeTab === 'copy' ? copyStartButton : startButton}
           </div>
         </div>
       )}
@@ -402,6 +420,12 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
           onClick={() => setActiveTab('settings')}
         >
           Settings
+        </button>
+        <button
+          className={`autobet-tab-btn ${activeTab === 'copy' ? 'is-active' : 'hover:opacity-90'}`}
+          onClick={() => setActiveTab('copy')}
+        >
+          Copy
         </button>
         <button
           className={`autobet-tab-btn ${activeTab === 'logs' ? 'is-active' : 'hover:opacity-90'}`}
@@ -420,7 +444,9 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
       </div>
 
       <div className={`autobet-content scrollbar-thin ${activeTab === 'bets' ? 'autobet-content--bets' : ''}`.trim()} style={{ scrollbarColor: 'var(--app-border) transparent' }}>
-          {activeTab === 'settings' ? (
+          {activeTab === 'copy' ? (
+            <CopyBetPanel />
+          ) : activeTab === 'settings' ? (
               isWide ? (
                 <div className="autobet-wide-grid">
                   <div className="autobet-wide-col">{strategyBlock}{walletBlock}</div>

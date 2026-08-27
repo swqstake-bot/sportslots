@@ -648,5 +648,85 @@ export const Queries = {
         offerOdds
       }
     }
-  }`
+  }`,
+
+  /** Live board: Alle Wetten (HAR BetsBoard_AllSportBets). */
+  AllSportBets: `query BetsBoard_AllSportBets($limit: Int! = 40) {
+    allSportBets(limit: $limit) {
+      id
+      iid
+      bet {
+        __typename
+        ... on SportBet {
+          id
+          customBet
+          createdAt
+          potentialMultiplier
+          amount
+          currency
+          user {
+            name
+            preferenceHideBets
+          }
+          outcomes {
+            id
+            odds
+            fixtureAbreviation
+            fixtureName
+            fixture {
+              id
+              tournament {
+                slug
+                category {
+                  sport {
+                    slug
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }`,
+
+  /** Live board: Highroller (HAR BetsBoard_HighrollerSportBetsBase). */
+  HighrollerSportBets: `query BetsBoard_HighrollerSportBetsBase($limit: Int!) {
+    highrollerSportBets(limit: $limit) {
+      id
+      iid
+      bet {
+        __typename
+        ... on SportBet {
+          id
+          customBet
+          createdAt
+          potentialMultiplier
+          amount
+          currency
+          user {
+            name
+            preferenceHideBets
+          }
+          outcomes {
+            id
+            odds
+            fixtureAbreviation
+            fixtureName
+            fixture {
+              id
+              tournament {
+                slug
+                category {
+                  sport {
+                    slug
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }`,
 };

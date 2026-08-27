@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.298': [
+    '✨ Sports Copy: Alle Wetten / Highroller scannen und nach Filtern (Quote, Einsatz USD, Event, Sport, Legs) automatisch nachtippen',
+    '✨ Copy-Feed: Scan-only, nur neue Wetten nach Start, User include/exclude, Hidden/SGM skip, Rate-Limit',
+  ],
   '1.0.297': [
     '⚡ Code Mode: Standard-Intervall 90ms → 110ms (~9/s)',
   ],
