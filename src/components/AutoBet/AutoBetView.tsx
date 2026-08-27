@@ -443,7 +443,7 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
         )}
       </div>
 
-      <div className={`autobet-content scrollbar-thin ${activeTab === 'bets' ? 'autobet-content--bets' : ''}`.trim()} style={{ scrollbarColor: 'var(--app-border) transparent' }}>
+      <div className={`autobet-content scrollbar-thin ${activeTab === 'bets' ? 'autobet-content--bets' : ''} ${activeTab === 'copy' ? 'autobet-content--copy' : ''}`.trim()} style={{ scrollbarColor: 'var(--app-border) transparent' }}>
           {activeTab === 'copy' ? (
             <CopyBetPanel />
           ) : activeTab === 'settings' ? (
