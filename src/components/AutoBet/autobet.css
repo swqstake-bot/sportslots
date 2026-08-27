@@ -780,7 +780,7 @@
 
 .copy-feed-kpi {
   display: grid;
-  grid-template-columns: auto auto 1fr;
+  grid-template-columns: auto auto auto 1fr;
   align-items: end;
   gap: 1.25rem;
   padding: 0.85rem 1.1rem;

@@ -11,7 +11,8 @@ const FEEDS: { id: CopyBetFeed; label: string }[] = [
 ]
 
 export function CopyBetPanel() {
-  const { settings, logs, lastFeed, copiedCount, scannedCount, updateSettings, clearLogs } = useCopyBetStore()
+  const { settings, logs, lastFeed, copiedCount, scannedCount, investedUsd, updateSettings, clearLogs } =
+    useCopyBetStore()
   const { availableCurrencies } = useUserStore()
   const [sports, setSports] = useState<{ name: string; slug: string }[]>([])
 
@@ -223,22 +224,14 @@ export function CopyBetPanel() {
               </select>
             </label>
             <label className="copy-feed-field">
-              <span>Max / min</span>
+              <span>Max invest $</span>
               <input
                 type="number"
-                min={1}
-                value={settings.maxCopiesPerMinute}
-                onChange={(e) => updateSettings({ maxCopiesPerMinute: Number(e.target.value) || 8 })}
-              />
-            </label>
-            <label className="copy-feed-field">
-              <span>Delay ms</span>
-              <input
-                type="number"
-                min={400}
-                step={100}
-                value={settings.copyDelayMs}
-                onChange={(e) => updateSettings({ copyDelayMs: Number(e.target.value) || 1200 })}
+                min={0}
+                step="1"
+                value={settings.maxInvestUsd}
+                onChange={(e) => updateSettings({ maxInvestUsd: Number(e.target.value) || 0 })}
+                placeholder="0 = off"
               />
             </label>
           </div>
@@ -254,6 +247,13 @@ export function CopyBetPanel() {
           <div>
             <span className="copy-feed-kpi-label">Copied</span>
             <strong>{copiedCount}</strong>
+          </div>
+          <div>
+            <span className="copy-feed-kpi-label">Invested</span>
+            <strong>
+              ${investedUsd.toFixed(0)}
+              {settings.maxInvestUsd > 0 ? ` / ${settings.maxInvestUsd}` : ''}
+            </strong>
           </div>
           <div className="copy-feed-kpi-hint">Last poll · {lastFeed.length} rows</div>
         </div>

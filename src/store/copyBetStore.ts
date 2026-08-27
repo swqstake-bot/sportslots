@@ -29,8 +29,8 @@ export interface CopyBetSettings {
   skipOwnBets: boolean
   ignoreExistingOnStart: boolean
   scanOnly: boolean
-  maxCopiesPerMinute: number
-  copyDelayMs: number
+  /** Session stop: total copied stake USD. 0 = off. */
+  maxInvestUsd: number
   stakeMode: CopyStakeMode
   copyStakeUsd: number
   copyPercent: number
@@ -63,13 +63,14 @@ interface CopyBetState {
   lastFeed: CopyFeedRow[]
   copiedCount: number
   scannedCount: number
+  investedUsd: number
   updateSettings: (partial: Partial<CopyBetSettings>) => void
   start: () => void
   stop: () => void
   addLog: (message: string, type?: CopyBetLog['type']) => void
   clearLogs: () => void
   setLastFeed: (rows: CopyFeedRow[]) => void
-  bumpCopied: () => void
+  bumpCopied: (investUsd?: number) => void
   bumpScanned: (n: number) => void
   resetCounters: () => void
 }
@@ -92,8 +93,7 @@ const DEFAULT_SETTINGS: CopyBetSettings = {
   skipOwnBets: true,
   ignoreExistingOnStart: true,
   scanOnly: false,
-  maxCopiesPerMinute: 8,
-  copyDelayMs: 1200,
+  maxInvestUsd: 0,
   stakeMode: 'fixed',
   copyStakeUsd: 1,
   copyPercent: 10,
@@ -111,6 +111,7 @@ export const useCopyBetStore = create<CopyBetState>()(
       lastFeed: [],
       copiedCount: 0,
       scannedCount: 0,
+      investedUsd: 0,
       updateSettings: (partial) =>
         set((s) => ({ settings: { ...s.settings, ...partial } })),
       start: () => set({ isRunning: true }),
@@ -129,9 +130,13 @@ export const useCopyBetStore = create<CopyBetState>()(
         })),
       clearLogs: () => set({ logs: [] }),
       setLastFeed: (rows) => set({ lastFeed: rows.slice(0, 40) }),
-      bumpCopied: () => set((s) => ({ copiedCount: s.copiedCount + 1 })),
+      bumpCopied: (investUsd = 0) =>
+        set((s) => ({
+          copiedCount: s.copiedCount + 1,
+          investedUsd: s.investedUsd + Math.max(0, investUsd),
+        })),
       bumpScanned: (n) => set((s) => ({ scannedCount: s.scannedCount + n })),
-      resetCounters: () => set({ copiedCount: 0, scannedCount: 0 }),
+      resetCounters: () => set({ copiedCount: 0, scannedCount: 0, investedUsd: 0 }),
     }),
     {
       name: 'copy-bet-storage',

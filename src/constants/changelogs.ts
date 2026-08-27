@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.300': [
+    '✨ Sports Copy: Max invest (USD) als Stop; Copies/min und Delay-Feld raus — Pace fest 125ms',
+  ],
   '1.0.299': [
     '✨ Sports Copy: flaches Modul-Layout statt gestapelter Glaskarten (Filter + Live-Board)',
   ],

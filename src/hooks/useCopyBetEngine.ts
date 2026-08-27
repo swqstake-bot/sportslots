@@ -15,6 +15,7 @@ import {
 } from '../utils/copyBetFilter'
 
 function sleep(ms: number, signal: { cancelled: boolean }) {
+  if (ms <= 0) return Promise.resolve()
   return new Promise<void>((resolve) => {
     const start = Date.now()
     const tick = () => {
@@ -22,11 +23,13 @@ function sleep(ms: number, signal: { cancelled: boolean }) {
         resolve()
         return
       }
-      setTimeout(tick, 150)
+      setTimeout(tick, Math.min(40, Math.max(10, ms - (Date.now() - start))))
     }
     tick()
   })
 }
+
+const COPY_PLACE_DELAY_MS = 125
 
 function slipKey(ids: string[]): string {
   return [...ids].sort().join('|')
@@ -59,7 +62,6 @@ export function useCopyBetEngine() {
       store.addLog('Copy feed started', 'info')
       const seen = new Set<string>()
       const placedSlips = new Set<string>()
-      const copyTimes: number[] = []
       let primed = false
       let rates: Record<string, number> = {}
       let lastRateAt = 0
@@ -139,14 +141,15 @@ export function useCopyBetEngine() {
                 preview[preview.length - 1] = { ...preview[preview.length - 1], copied: true }
                 continue
               }
-              const now = Date.now()
-              const maxPerMin = Math.max(1, Number(settings.maxCopiesPerMinute) || 8)
-              for (let i = copyTimes.length - 1; i >= 0; i -= 1) {
-                if (now - copyTimes[i] > 60_000) copyTimes.splice(i, 1)
-              }
-              if (copyTimes.length >= maxPerMin) {
-                useCopyBetStore.getState().addLog(`Rate limit ${maxPerMin}/min — skip ${parsed.event.slice(0, 48)}`, 'warning')
-                continue
+              const invested = useCopyBetStore.getState().investedUsd
+              const cap = Number(settings.maxInvestUsd) || 0
+              if (cap > 0 && invested + copyUsd > cap) {
+                useCopyBetStore.getState().addLog(
+                  `Max invest $${cap} reached ($${invested.toFixed(2)} + $${copyUsd.toFixed(2)}) — stopping`,
+                  'warning'
+                )
+                useCopyBetStore.getState().stop()
+                break
               }
               const balance = useUserStore.getState().balances[settings.currency] ?? 0
               if (balance < cryptoAmount) {
@@ -173,16 +176,22 @@ export function useCopyBetEngine() {
                 )
                 if (!placed.bet) throw new Error('No bet returned')
                 placedSlips.add(key)
-                copyTimes.push(Date.now())
-                useCopyBetStore.getState().bumpCopied()
+                useCopyBetStore.getState().bumpCopied(copyUsd)
                 useCopyBetStore.getState().addLog(`Placed ${parsed.odds.toFixed(2)}× ${parsed.event.slice(0, 64)}`, 'success')
                 preview[preview.length - 1] = { ...preview[preview.length - 1], copied: true }
-                await sleep(Math.max(400, Number(settings.copyDelayMs) || 1200), signal)
+                const after = useCopyBetStore.getState().investedUsd
+                if (cap > 0 && after >= cap) {
+                  useCopyBetStore.getState().addLog(`Max invest $${cap} reached — stopping`, 'warning')
+                  useCopyBetStore.getState().stop()
+                  break
+                }
+                await sleep(COPY_PLACE_DELAY_MS, signal)
               } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err)
                 useCopyBetStore.getState().addLog(`Place failed: ${msg.slice(0, 160)}`, 'error')
               }
             }
+            if (!useCopyBetStore.getState().isRunning) break
           }
           if (!primed && settings.ignoreExistingOnStart) {
             primed = true
@@ -198,7 +207,7 @@ export function useCopyBetEngine() {
           useCopyBetStore.getState().addLog(`Feed error: ${msg.slice(0, 160)}`, 'error')
         }
         const wait = Math.max(1200, Number(useCopyBetStore.getState().settings.pollMs) || 2500)
-        await sleep(wait, signal)
+        if (useCopyBetStore.getState().isRunning) await sleep(wait, signal)
       }
       useCopyBetStore.getState().addLog('Copy feed stopped', 'info')
     })()
