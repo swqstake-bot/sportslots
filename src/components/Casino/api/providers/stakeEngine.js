@@ -316,24 +316,90 @@ function buildStakeEnginePlayBody({ sessionID, amount, mode, currency, omitCurre
   return body
 }
 
-function parseConfigFromUrl(config) {
+function firstNonEmpty(...values) {
+  for (const v of values) {
+    if (v != null && String(v).trim()) return String(v).trim()
+  }
+  return null
+}
+
+function queryParam(search, ...names) {
+  if (!search) return null
+  for (const name of names) {
+    const v = search.get(name)
+    if (v) return v
+  }
+  return null
+}
+
+function extractSessionFields(obj) {
+  if (!obj || typeof obj !== 'object') return null
+  const sessionID = firstNonEmpty(obj.sessionID, obj.sessionId, obj.session_id)
+  const rgsUrl = firstNonEmpty(obj.rgsUrl, obj.rgs_url, obj.rgs, obj.server)
+  if (!sessionID || !rgsUrl) return null
+  const gameId = firstNonEmpty(obj.gameId, obj.game_id, obj.gameid)
+  return { sessionID, rgsUrl: rgsUrl.replace(/\/$/, ''), gameId }
+}
+
+function parseLaunchUrl(urlRaw) {
+  const raw = String(urlRaw || '').trim().replace(/&amp;/g, '&')
+  if (!raw) return null
+  let u
   try {
-    const url = typeof config === 'string' ? config : config?.url
-    // 1000 Lakes Studios nutzt oft die gleiche Engine/URL-Struktur
-    if (!url || (!url.includes('stake-engine') && !url.includes('1000lakes'))) return null
-    const u = new URL(url)
-    const sessionID = u.searchParams.get('sessionID')
-    const rgsUrl = u.searchParams.get('rgs_url')
-    if (!sessionID || !rgsUrl) return null
-    const gameId =
-      u.searchParams.get('gameId') ||
-      u.searchParams.get('game_id') ||
-      u.searchParams.get('gameid') ||
-      null
-    return { sessionID, rgsUrl: rgsUrl.replace(/\/$/, ''), gameId: gameId ? String(gameId) : null }
+    u = new URL(raw)
   } catch {
     return null
   }
+  const hash = String(u.hash || '').replace(/^#/, '')
+  const hashQs = new URLSearchParams(hash.startsWith('?') ? hash.slice(1) : hash)
+  const sessionID = queryParam(u.searchParams, 'sessionID', 'sessionId', 'session_id')
+    || queryParam(hashQs, 'sessionID', 'sessionId', 'session_id')
+  const rgsUrl = queryParam(u.searchParams, 'rgs_url', 'rgsUrl', 'rgs', 'server')
+    || queryParam(hashQs, 'rgs_url', 'rgsUrl', 'rgs', 'server')
+  if (!sessionID || !rgsUrl) return null
+  const gameId = queryParam(u.searchParams, 'gameId', 'game_id', 'gameid')
+    || queryParam(hashQs, 'gameId', 'game_id', 'gameid')
+  return { sessionID, rgsUrl: rgsUrl.replace(/\/$/, ''), gameId }
+}
+
+/** Launch-URL oder Session-Objekt → sessionID + rgsUrl (Studio-Host, nicht nur stake-engine.de). */
+function parseConfigFromUrl(config) {
+  try {
+    if (config && typeof config === 'object') {
+      const direct = extractSessionFields(config)
+      if (direct) return direct
+      const nested = parseConfigFromUrl(config.url || config.config || config.launchUrl || config.href)
+      if (nested) return nested
+    }
+    const raw = typeof config === 'string' ? config.trim() : ''
+    if (!raw) return null
+    if (raw.startsWith('{')) {
+      try {
+        return parseConfigFromUrl(JSON.parse(raw))
+      } catch {
+        // fall through — maybe a URL that starts with {
+      }
+    }
+    return parseLaunchUrl(raw)
+  } catch {
+    return null
+  }
+}
+
+function summarizeLaunchConfig(config) {
+  try {
+    const raw = typeof config === 'string' ? config : config?.url || config?.config || ''
+    if (typeof raw === 'string' && raw.startsWith('http')) {
+      const u = new URL(raw)
+      const keys = [...u.searchParams.keys()]
+      return `${u.hostname}${keys.length ? ` ?${keys.join(',')}` : ''}`
+    }
+    if (config && typeof config === 'object') return `object:${Object.keys(config).slice(0, 8).join(',')}`
+    if (raw) return `string(${Math.min(raw.length, 48)}c)`
+  } catch {
+    // ignore
+  }
+  return 'empty'
 }
 
 /** Betrag in Stake Engine Format: STAKE_ENGINE_API_MULTIPLIER = 1 Einheit */
@@ -464,10 +530,11 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const euGoldSession = isEuGoldCoinWallet(src, tgt)
 
   const session = await startThirdPartySession(accessToken, slotSlug, src, tgt, opts)
-  const config = typeof session?.config === 'string' ? session.config : session?.config?.url
-  const parsed = parseConfigFromUrl(config)
+  const parsed = parseConfigFromUrl(session?.config) || parseConfigFromUrl(session)
   if (!parsed?.sessionID || !parsed?.rgsUrl) {
-    throw stakeEngineError('Keine gültige Stake-Engine-Session. Ist das ein Stake-Engine-Slot?')
+    throw stakeEngineError(
+      `Keine gültige Stake-Engine-Session für ${slotSlug} (${summarizeLaunchConfig(session?.config)}).`
+    )
   }
 
   const authUrl = buildRgsUrl(parsed.rgsUrl, '/wallet/authenticate')

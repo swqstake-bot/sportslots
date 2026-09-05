@@ -440,7 +440,8 @@ function isPragmaticProxyTarget(hostname: string, pathname: string): boolean {
     hostnameMatches(hostname, 'stake.com') ||
     hostnameMatches(hostname, 'stake.bet') ||
     hostnameMatches(hostname, 'stake.eu') ||
-    hostnameMatches(hostname, 'stake-engine.com')
+    hostnameMatches(hostname, 'stake-engine.com') ||
+    hostnameMatches(hostname, 'engine.io')
   ) {
     return false;
   }
@@ -3179,7 +3180,7 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
     // 3. RGS / General Provider Logic
     else {
         const allowed = [
-            'stake-engine.com', 'stake.com', 'evolution.com', 'stake.bet', 'stake.eu', 'evo-games.com',
+            'stake-engine.com', 'engine.io', 'stake.com', 'evolution.com', 'stake.bet', 'stake.eu', 'evo-games.com',
             'nolimitcdn.com', 'nolimitcity.com', 'l0mpxqfj.xyz', 'thunderkick', 'relax',
             'blueprint', 'endorphina', 'netent', 'gameart', 'push', 'btg', 'oak', 'redtiger',
             'playngo', 'octoplay', 'peterandsons', 'shady', 'shuffle', 'titan', 'twist',

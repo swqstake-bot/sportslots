@@ -24,7 +24,7 @@ export function isStakeEngineSlot(opts = {}) {
   if (isStakeEngineProviderId(opts.providerId)) return true
   if (isStakeEngineProviderId(opts.session?.__resolvedProviderImplId)) return true
   if (opts.session?._stakeEngine) return true
-  if (/stake-engine|1000lakes/i.test(String(opts.session?.rgsUrl || ''))) return true
+  if (/stake-engine|engine\.io|1000lakes/i.test(String(opts.session?.rgsUrl || ''))) return true
   const slug = normalizeStakeGameSlug(opts.slug)
   if (!slug) return false
   for (const prefix of getStakeEngineGameSlugPrefixes()) {

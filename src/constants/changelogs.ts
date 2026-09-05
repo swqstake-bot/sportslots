@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.301': [
+    '🐛 Stake Engine: neue RGS-Host `rgs2.engine.io` im Proxy erlaubt — Challenge-Mode (Waylanders, Gas Money, …)',
+    '🐛 Stake Engine: Launch-URL/Session ohne stake-engine.com-Host trotzdem parsen',
+  ],
   '1.0.300': [
     '✨ Sports Copy: Max invest (USD) als Stop; Copies/min und Delay-Feld raus — Pace fest 125ms',
   ],

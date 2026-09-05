@@ -1959,6 +1959,10 @@ export default function AutoChallengeHunter({
       const provider = await getProvider(slot.providerId)
       if (!provider) throw new Error(`No provider found for ${slot.providerId}`)
 
+      const sessionOpts = { gameName: gName, providerId: slot.providerId || resolvedPid }
+      const startHunterSession = (source, target) =>
+        provider.startSession(accessToken, slot.slug, source, target, sessionOpts)
+
       const providerId = slot.providerId || 'stakeEngine'
       let preferredTarget = (targetCurrency || DEFAULT_HUNTER_FILTERS.targetCurrency).toLowerCase()
       if (!isEuGoldCoins && isEuGoldCoinCode(preferredTarget)) {
@@ -1992,7 +1996,7 @@ export default function AutoChallengeHunter({
         sCurr = coin
         rate = getRateForCurrency(rates, coin) || 1
         log(`Session (EU): ${coin.toUpperCase()}…`)
-        session = await provider.startSession(accessToken, slot.slug, coin, coin)
+        session = await startHunterSession(coin, coin)
         noteSessionFairnessId(session)
         const computed = computeBetFromMinBetAndSession(session, coin, rate, minBetUsd)
         betAmount = computed.betAmount
@@ -2005,7 +2009,7 @@ export default function AutoChallengeHunter({
         tCurr = forced
         rate = r
         log(`Session with manual target currency: ${sCurr.toUpperCase()} → ${forced.toUpperCase()}…`)
-        session = await provider.startSession(accessToken, slot.slug, sCurr, forced)
+        session = await startHunterSession(sCurr, forced)
         noteSessionFairnessId(session)
         const computed = computeBetFromMinBetAndSession(session, forced, r, minBetUsd)
         betAmount = computed.betAmount
@@ -2070,7 +2074,7 @@ export default function AutoChallengeHunter({
             if (!r) continue
             try {
               log(`Session-Probe: ${sCurr.toUpperCase()} -> ${cand.toUpperCase()}…`)
-              const sess = await provider.startSession(accessToken, slot.slug, sCurr, cand)
+              const sess = await startHunterSession(sCurr, cand)
               const { betAmount: ba, usdAt } = computeBetFromMinBetAndSession(sess, cand, r, minBetUsd)
               measuredProbes.push({ tCurr: cand, usdAt })
               if (!bestProbe || usdAt < bestProbe.usdAt - 1e-9) {
@@ -2111,7 +2115,7 @@ export default function AutoChallengeHunter({
             if (probeLimit > 1) {
               await new Promise((res) => setTimeout(res, SESSION_PROBE_DELAY_MS))
               log(`Restarting session for ${tCurr.toUpperCase()} after probes (valid for spins)…`)
-              session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
+              session = await startHunterSession(sCurr, tCurr)
               noteSessionFairnessId(session)
               const recomputed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
               betAmount = recomputed.betAmount
@@ -2137,7 +2141,7 @@ export default function AutoChallengeHunter({
               if (!rProbe) continue
               try {
                 log(`Session probe (copy): ${sCurr.toUpperCase()} -> ${candProbe.toUpperCase()}…`)
-                const sessProbe = await provider.startSession(accessToken, slot.slug, sCurr, candProbe)
+                const sessProbe = await startHunterSession(sCurr, candProbe)
                 const { usdAt } = computeBetFromMinBetAndSession(sessProbe, candProbe, rProbe, minBetUsd)
                 measuredProbes.push({ tCurr: candProbe, usdAt })
               } catch (probeErr) {
@@ -2177,7 +2181,7 @@ export default function AutoChallengeHunter({
                 )
               }
               await new Promise((res) => setTimeout(res, SESSION_PROBE_DELAY_MS))
-              const sess = await provider.startSession(accessToken, slot.slug, sCurr, cand)
+              const sess = await startHunterSession(sCurr, cand)
               const { betAmount: ba, usdAt } = computeBetFromMinBetAndSession(sess, cand, r, minBetUsd)
               session = sess
               noteSessionFairnessId(session)
@@ -2210,7 +2214,7 @@ export default function AutoChallengeHunter({
         }
         tCurr = targetForStart
         log(`Starting session: ${sCurr.toUpperCase()} -> ${tCurr.toUpperCase()}...`)
-        session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
+        session = await startHunterSession(sCurr, tCurr)
         noteSessionFairnessId(session)
         rate = getRateForCurrency(rates, tCurr)
         if (!rate) throw new Error(`No rate for ${tCurr.toUpperCase()}`)
@@ -2780,7 +2784,7 @@ export default function AutoChallengeHunter({
                     if (!freshRate) throw new Error(`No rate for ${String(tCurr).toUpperCase()}`)
                     rate = freshRate
                     await new Promise((r) => setTimeout(r, SESSION_PROBE_DELAY_MS))
-                    session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
+                    session = await startHunterSession(sCurr, tCurr)
                     noteSessionFairnessId(session)
                     const computed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
                     betAmount = computed.betAmount
@@ -2869,7 +2873,7 @@ export default function AutoChallengeHunter({
                 log(`No rate for ${String(tCurr).toUpperCase()} — session recovery aborted.`)
               } else {
                 rate = freshRate
-                session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
+                session = await startHunterSession(sCurr, tCurr)
                 noteSessionFairnessId(session)
                 const computed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
                 betAmount = computed.betAmount
@@ -2900,7 +2904,7 @@ export default function AutoChallengeHunter({
             pragmaticRecoveryAttempts += 1
             try {
               log(`Pragmatic recovery #${pragmaticRecoveryAttempts}: restarting session (${sCurr.toUpperCase()} → ${tCurr.toUpperCase()}).`)
-              session = await provider.startSession(accessToken, slot.slug, sCurr, tCurr)
+              session = await startHunterSession(sCurr, tCurr)
               noteSessionFairnessId(session)
               const computed = computeBetFromMinBetAndSession(session, tCurr, rate, minBetUsd)
               betAmount = computed.betAmount
