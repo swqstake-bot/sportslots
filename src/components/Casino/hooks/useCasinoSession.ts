@@ -17,7 +17,7 @@ export function useCasinoSession() {
       } else {
         setToken('')
         setStatus('missing')
-        setError('No active Stake session found. Please login or refresh the Stake session.')
+        setError('')
       }
     } catch (e) {
       console.error('Failed to get session token', e)
@@ -41,7 +41,7 @@ export function useCasinoSession() {
         } else {
           setToken('')
           setStatus('missing')
-          setError('No active Stake session found. Please login or refresh the Stake session.')
+          setError('')
         }
       } catch (e) {
         if (cancelled) return

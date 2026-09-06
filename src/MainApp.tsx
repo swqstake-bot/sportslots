@@ -10,6 +10,7 @@ import { CopyBetManager } from './components/AutoBet/CopyBetManager';
 import { AutoBetView } from './components/AutoBet/AutoBetView';
 import { useUserStore, type SportBet } from './store/userStore';
 import { useAutoBetStore } from './store/autoBetStore';
+import { useCopyBetStore } from './store/copyBetStore';
 import { useUiStore } from './store/uiStore';
 import { useAccentInlineStyle } from './hooks/useAccentInlineStyle';
 import CasinoView from './components/Casino/CasinoView';
@@ -69,6 +70,9 @@ function App() {
 
   const { user, setUser, setActiveBets } = useUserStore();
   const { isRunning } = useAutoBetStore();
+  const copyRunning = useCopyBetStore((s) => s.isRunning);
+  const setSportsCenterTab = useUiStore((s) => s.setSportsCenterTab);
+  const showToast = useUiStore((s) => s.showToast);
   const {
     currentView,
     setCurrentView,
@@ -78,7 +82,6 @@ function App() {
   const preferredSite = useStakeSiteStore((s) => s.preferredSite);
   const [isChallengeRunning, setIsChallengeRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // Changelog State
   const [showChangelog, setShowChangelog] = useState(false);
@@ -142,11 +145,11 @@ function App() {
         window.dispatchEvent(new CustomEvent('stake-session-revalidated'));
         fetchData();
       } else {
-        setError('Session not validated yet. Finish the login window first.');
+        showToast('Session not validated yet. Finish the login window first.', 'error');
       }
     } catch (err: any) {
       console.error(`Login error: ${err.message}`);
-      setError(err.message);
+      showToast(err.message, 'error');
     }
   };
 
@@ -160,8 +163,7 @@ function App() {
       const status = await window.electronAPI.revalidateStakeSession();
       if (status?.valid) {
         window.dispatchEvent(new CustomEvent('stake-session-revalidated'));
-        setError('Session valid');
-        setTimeout(() => setError(null), 2200);
+        showToast('Session valid', 'success');
       } else {
         const reason =
           status?.missingCookies?.length
@@ -169,10 +171,10 @@ function App() {
             : status?.expiredCookies?.length
               ? `expired: ${status.expiredCookies.join(', ')}`
               : (status?.reasons?.[0] || 'unknown');
-        setError(`Session rejected - ${reason}`);
+        showToast(`Session rejected - ${reason}`, 'error');
       }
     } catch (err: any) {
-      setError(`Session check failed: ${err?.message || 'unknown error'}`);
+      showToast(`Session check failed: ${err?.message || 'unknown error'}`, 'error');
     }
   };
 
@@ -203,10 +205,9 @@ function App() {
     return useUiStore.getState().currentView === 'sports';
   }, []);
 
-  const fetchData = useCallback(async (options?: { withActiveBets?: boolean }) => {
+  const fetchData = useCallback(async (options?: { withActiveBets?: boolean; silent?: boolean }) => {
     if (!isAuthenticated) return;
     setIsLoading(true);
-    setError(null);
     try {
       const userRes = await StakeApi.query(Queries.UserDetails);
       if (!userRes.data?.user) {
@@ -227,14 +228,13 @@ function App() {
 
     } catch (err: any) {
       console.error(`Error: ${err.message}`);
-      setError(err.message);
-      if (err.message.includes('401') || err.message.includes('login')) {
-        /* auth failure already surfaced via setError */
+      if (!options?.silent) {
+        showToast(err.message, 'error');
       }
     } finally {
       setIsLoading(false);
     }
-  }, [setUser, fetchActiveSportBets, shouldFetchActiveSportBets, isAuthenticated]);
+  }, [setUser, fetchActiveSportBets, shouldFetchActiveSportBets, isAuthenticated, showToast]);
 
   const needsActiveSportBets = currentView === 'sports';
 
@@ -244,7 +244,7 @@ function App() {
     const interval = setInterval(() => {
         const currentUser = useUserStore.getState().user;
         if (currentUser) {
-            fetchData({ withActiveBets: shouldFetchActiveSportBets() });
+            fetchData({ withActiveBets: shouldFetchActiveSportBets(), silent: true });
         }
     }, 10000);
     
@@ -292,6 +292,11 @@ function App() {
     userName: user?.name,
     isChallengeRunning,
     isRunning,
+    isCopyRunning: copyRunning,
+    onRunClick: () => {
+      setCurrentView('sports')
+      setSportsCenterTab(copyRunning && !isRunning ? 'copy' : 'settings')
+    },
     isLoading,
     onRefresh: fetchData,
     onLogin: handleLogin,
@@ -321,24 +326,6 @@ function App() {
       />
 
       <div className="flex flex-1 flex-col min-h-0 relative">
-        {/* Error Toast */}
-        {error && (
-          <div
-            className="absolute top-6 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded shadow-2xl flex items-center gap-4 border"
-            style={{
-              background: 'rgba(255, 51, 102, 0.16)',
-              color: 'var(--app-error)',
-              borderColor: 'rgba(255, 51, 102, 0.4)',
-            }}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-            <span className="font-bold text-sm">{error}</span>
-            <button onClick={() => setError(null)} className="hover:bg-white/20 rounded-full p-1 transition-colors">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-            </button>
-          </div>
-        )}
-
         {/* Casino: single rounded module = StakeSlots bar + Control center (CasinoView stays mounted when hidden) */}
         <div
           className={currentView === 'casino' ? 'flex flex-1 flex-col min-h-0' : 'hidden'}
@@ -366,21 +353,13 @@ function App() {
                   {user ? (
                     <AutoBetView layout="wide" />
                   ) : (
-                      <div className="flex flex-col items-center justify-center h-full text-center p-8" style={{ background: 'var(--app-bg-deep)' }}>
-                      <div className="mb-8">
-                        <AppBrandMark size={96} />
-                      </div>
-                      <h2 className="text-2xl font-black mb-3 tracking-wide" style={{ color: 'var(--app-text)', fontFamily: 'var(--font-heading)' }}>
-                        Welcome to {APP_NAME}
-                      </h2>
-                      <p className="mb-8 max-w-md text-sm leading-relaxed" style={{ color: 'var(--app-text-muted)' }}>
+                      <div className="app-login-empty" style={{ minHeight: '100%' }}>
+                      <AppBrandMark size={56} />
+                      <h2>Welcome to {APP_NAME}</h2>
+                      <p>
                         {APP_TAGLINE}. Login with Stake.com to configure AutoBet and manage your sport bets.
                       </p>
-                      <button 
-                        onClick={() => void handleLogin()}
-                        className="px-8 py-3.5 rounded-xl font-bold text-sm transition-all uppercase tracking-wider hover:-translate-y-0.5"
-                        style={{ background: 'var(--app-accent)', color: 'var(--app-bg-deep)', boxShadow: '0 0 24px var(--app-accent-glow)' }}
-                      >
+                      <button type="button" onClick={() => void handleLogin()}>
                         Login with Stake
                       </button>
                     </div>

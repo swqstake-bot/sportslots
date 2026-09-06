@@ -134,7 +134,12 @@ export const useUiStore = create<UiState>()(
           isActiveBetsModalOpen: false,
         }),
       closeActiveBetsModal: () => set({ activeBetsPreviewBetId: null, isActiveBetsModalOpen: false }),
-      showToast: (message, type = 'info') => set({ toast: { message, type } }),
+      showToast: (message, type = 'info') =>
+        set((state) =>
+          state.toast.message === message && state.toast.type === type
+            ? state
+            : { toast: { message, type } }
+        ),
       clearToast: () => set({ toast: { message: null, type: 'info' } }),
       setAccentCustomHex: (hex) => set({ accentCustomHex: hex }),
       setAccentStrength: (n) =>

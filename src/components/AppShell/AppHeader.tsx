@@ -23,6 +23,8 @@ interface AppHeaderProps {
   userName?: string
   isChallengeRunning: boolean
   isRunning: boolean
+  isCopyRunning?: boolean
+  onRunClick?: () => void
   isLoading: boolean
   onRefresh: () => void
   onLogin: (site?: StakeSite) => void
@@ -36,6 +38,8 @@ export function AppHeader({
   userName,
   isChallengeRunning,
   isRunning,
+  isCopyRunning = false,
+  onRunClick,
   isLoading,
   onRefresh,
   onLogin,
@@ -117,6 +121,14 @@ export function AppHeader({
   }
 
   const loginLabel = preferredSite === 'eu' ? 'Login Stake.eu' : 'Login with Stake'
+  const anySportsRun = isRunning || isCopyRunning
+  const runLabel = isRunning && isCopyRunning
+    ? 'AutoBet + Copy'
+    : isRunning
+      ? 'AutoBet'
+      : isCopyRunning
+        ? 'Copy'
+        : 'Stopped'
 
   return (
     <header className="app-header">
@@ -172,10 +184,15 @@ export function AppHeader({
         </div>
         {hasUser ? (
           <>
-            <div className={`app-run-state ${isRunning ? 'is-running' : ''}`.trim()}>
-              <span>{isRunning ? 'Running' : 'Stopped'}</span>
+            <button
+              type="button"
+              className={`app-run-state ${anySportsRun ? 'is-running' : ''}`.trim()}
+              onClick={() => onRunClick?.()}
+              title={anySportsRun ? 'Open Sports run' : 'Sports is stopped'}
+            >
+              <span>{runLabel}</span>
               <span className="app-run-state-dot" />
-            </div>
+            </button>
             <HeaderAccountMeta enabled={hasUser} />
             <WalletSelector />
             <ThemeAccentButton />

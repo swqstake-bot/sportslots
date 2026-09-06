@@ -82,7 +82,7 @@ export function ActiveBetsPanel({
     fetchFinishedBets,
   } = useBetHistory({
     userName,
-    refreshIntervalMs: 120_000,
+    refreshIntervalMs: 0,
     onActiveFetched: (bets) => {
       setTimeout(() => refreshCashoutOffersRef.current(bets), 400);
     },

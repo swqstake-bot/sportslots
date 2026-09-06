@@ -1,22 +1,22 @@
 import { useEffect } from 'react';
 import { useUiStore } from '../../store/uiStore';
 
-const TOAST_DURATION_MS = 2800;
+const TOAST_DURATION_MS = 3000;
 
 const typeStyles = {
   success: {
-    background: 'rgba(0, 255, 136, 0.14)',
-    borderColor: 'rgba(0, 255, 136, 0.45)',
+    background: 'var(--app-bg-elevated)',
+    borderColor: 'color-mix(in srgb, var(--app-success) 45%, var(--app-border))',
     color: 'var(--app-success)',
   },
   error: {
-    background: 'rgba(255, 51, 102, 0.14)',
-    borderColor: 'rgba(255, 51, 102, 0.45)',
+    background: 'var(--app-bg-elevated)',
+    borderColor: 'color-mix(in srgb, var(--app-error) 45%, var(--app-border))',
     color: 'var(--app-error)',
   },
   info: {
-    background: 'rgba(var(--app-accent-rgb), 0.14)',
-    borderColor: 'rgba(var(--app-accent-rgb), 0.45)',
+    background: 'var(--app-bg-elevated)',
+    borderColor: 'var(--app-border)',
     color: 'var(--app-text)',
   },
 } as const;
@@ -28,7 +28,7 @@ export function GlobalToast() {
     if (!toast.message) return;
     const t = setTimeout(clearToast, TOAST_DURATION_MS);
     return () => clearTimeout(t);
-  }, [toast.message, clearToast]);
+  }, [toast.message, toast.type, clearToast]);
 
   if (!toast.message) return null;
 
@@ -36,8 +36,18 @@ export function GlobalToast() {
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10000] px-5 py-2.5 rounded-lg border shadow-lg text-sm font-medium"
-      style={typeStyles[toast.type]}
+      className="fixed z-[10000] border shadow-none font-medium cursor-pointer"
+      style={{
+        right: '0.85rem',
+        bottom: '0.85rem',
+        left: 'auto',
+        maxWidth: '22rem',
+        padding: '0.42rem 0.7rem',
+        borderRadius: 'var(--radius-md)',
+        fontSize: 'var(--text-sm)',
+        ...typeStyles[toast.type],
+      }}
+      onClick={clearToast}
     >
       {toast.message}
     </div>

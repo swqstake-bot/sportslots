@@ -706,6 +706,7 @@ export default function AutoChallengeHunter({
   accessToken,
   webSlots = [],
   onDiscoveredSlots,
+  onSelectChallenge,
   onHubStatsChange,
   resourceMode = false,
 }) {
@@ -726,6 +727,7 @@ export default function AutoChallengeHunter({
   const [autoOptimalTargetCurrency, setAutoOptimalTargetCurrency] = useState(
     hunterFiltersInitial.autoOptimalTargetCurrency
   )
+  const [hunterSettingsOpen, setHunterSettingsOpen] = useState(false)
 
   const [userPresets, setUserPresets] = useState(() => loadUserPresets())
   const [presetNameDraft, setPresetNameDraft] = useState('')
@@ -3700,6 +3702,27 @@ export default function AutoChallengeHunter({
           >
             Queue
           </Button>
+          {onSelectChallenge ? (
+            <Button
+              size="small"
+              variant="outline"
+              onClick={() => {
+                const slug = String(c.gameSlug || c.game?.slug || '').trim()
+                if (!slug) return
+                const multi = Number(c.targetMultiplier)
+                onSelectChallenge({
+                  gameSlug: slug,
+                  gameName: c.gameName || c.game?.name || slug,
+                  currency: (manual || targetCurrency || '').trim() || undefined,
+                  targetMultiplier: Number.isFinite(multi) && multi > 0 ? multi : undefined,
+                  minBetUsd: Number.isFinite(Number(c.minBetUsd)) ? Number(c.minBetUsd) : undefined,
+                })
+              }}
+              title="Open this challenge in Slots with stop-on-multi"
+            >
+              Slots
+            </Button>
+          ) : null}
         </div>
       </div>
     )
@@ -3864,11 +3887,8 @@ export default function AutoChallengeHunter({
 
   return (
     <div className="hunter-dashboard" style={STYLES.container}>
-      <div className="hunter-header">
+      <div className="hunter-header hunter-runbar">
         <div className="hunter-controls">
-           <div className="hunter-meta" style={{ marginRight: '0.5rem' }}>
-             {lastRefresh ? `Updated: ${new Date(lastRefresh).toLocaleTimeString()}` : ''}
-           </div>
            <Button onClick={refreshChallenges} variant="primary" disabled={!accessToken} title="Reload challenge list now">
              Refresh
            </Button>
@@ -3879,15 +3899,59 @@ export default function AutoChallengeHunter({
            >
              {huntEnabled ? 'Scan' : 'Scan off'}
            </Button>
-           {huntEnabled && (
-             <Button
-               variant={autoStart ? 'secondary' : 'outline'}
-               onClick={() => setAutoStart(!autoStart)}
-               title={autoStart ? 'Pause queue auto-start' : 'Process queue automatically when a slot is free'}
-             >
-               {autoStart ? 'Queue auto' : 'Queue paused'}
-             </Button>
-           )}
+           <Button
+             variant={autoStart ? 'secondary' : 'outline'}
+             onClick={() => setAutoStart(!autoStart)}
+             title={autoStart ? 'Pause queue auto-start' : 'Process queue automatically when a slot is free'}
+           >
+             {autoStart ? 'Queue auto' : 'Queue paused'}
+           </Button>
+           <Button
+             onClick={startNextQueuedManually}
+             variant="primary"
+             disabled={queue.length === 0 || runningCount >= maxParallelClamped}
+             title="Start exactly one queued run"
+           >
+             Start Next
+           </Button>
+           <Button
+             onClick={startAllRunners}
+             variant="primary"
+             title="Enable scan + queue auto and reload challenges when needed"
+           >
+             Start auto
+           </Button>
+           <Button
+             onClick={stopAllRunners}
+             variant="danger"
+             disabled={!hasAnythingToStop}
+             title={hasAnythingToStop ? 'Stop spins, scan/auto, and clear queue' : 'Nothing is active'}
+           >
+             Stop All
+           </Button>
+           <span className="hunter-runbar-kpi" title="Queued challenges">
+             Queue {queue.length}
+           </span>
+           <label className="hunter-runbar-kpi hunter-runbar-parallel" title="Max parallel runs">
+             Parallel {runningCount}/
+             <input
+               type="number"
+               min={1}
+               max={CHALLENGE_PARALLEL_SLIDER_MAX}
+               value={maxParallelClamped}
+               onChange={(e) => {
+                 const n = parseInt(e.target.value, 10)
+                 setMaxParallel(Math.min(CHALLENGE_PARALLEL_SLIDER_MAX, Math.max(1, Number.isFinite(n) ? n : 1)))
+               }}
+             />
+           </label>
+           <Button
+             variant={hunterSettingsOpen ? 'secondary' : 'outline'}
+             onClick={() => setHunterSettingsOpen((v) => !v)}
+             title="Filters, probe, runtime limits"
+           >
+             Filters
+           </Button>
            <details className="hunter-header-tools">
              <summary title="Clear, reset, export">Tools</summary>
              <div className="hunter-header-tools-menu">
@@ -3908,7 +3972,8 @@ export default function AutoChallengeHunter({
                </Button>
              </div>
            </details>
-           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+           <div className="hunter-runbar-end">
+             {lastRefresh ? <span className="hunter-meta">{new Date(lastRefresh).toLocaleTimeString()}</span> : null}
              <TipMenu />
            </div>
         </div>
@@ -3932,10 +3997,14 @@ export default function AutoChallengeHunter({
               )}
             </div>
           </div>
-          <details className="hunter-card hunter-ops-panel hunter-collapse">
+          <details
+            className="hunter-card hunter-ops-panel hunter-collapse"
+            open={hunterSettingsOpen}
+            onToggle={(e) => setHunterSettingsOpen(e.currentTarget.open)}
+          >
             <summary className="hunter-collapse-summary">
-              <span className="hunter-section-title" style={{ marginBottom: 0 }}>Settings</span>
-              <span className="hunter-collapse-hint">Filters · runtime · local</span>
+              <span className="hunter-section-title" style={{ marginBottom: 0 }}>Filters</span>
+              <span className="hunter-collapse-hint">Presets · probe · runtime</span>
             </summary>
             <div className="hunter-ops-accordion">
               <section className="hunter-ops-section">
@@ -4282,45 +4351,6 @@ export default function AutoChallengeHunter({
         </div>
 
         <div className="hunter-main">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-            <div className="hunter-help-bar">
-              Queue on the left · Start Next for one run · Start auto for continuous Scan + Queue.
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div className="hunter-meta" style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                Parallel: {runningCount} / {maxParallelClamped}
-              </div>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <Button
-                  onClick={startNextQueuedManually}
-                  variant="primary"
-                  disabled={queue.length === 0 || runningCount >= maxParallelClamped}
-                  title="Start exactly one queued run (without scan or auto mode)"
-                >
-                  Start Next
-                </Button>
-                <Button
-                  onClick={startAllRunners}
-                  variant="primary"
-                  title="Enable scan + queue auto and reload challenges when needed"
-                >
-                  Start auto
-                </Button>
-                <Button
-                  onClick={stopAllRunners}
-                  variant="danger"
-                  disabled={!hasAnythingToStop}
-                  title={
-                    hasAnythingToStop
-                      ? 'Stop active spins, disable scan/auto, and clear queue'
-                      : 'Nothing is active'
-                  }
-                >
-                  Stop All
-                </Button>
-              </div>
-            </div>
-          </div>
           <div className="hunter-status-bar">
             <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem'}}>
               <span style={{color: 'var(--text-muted)'}}>Running</span>

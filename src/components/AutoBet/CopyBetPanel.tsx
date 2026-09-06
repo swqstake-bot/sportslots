@@ -1,8 +1,5 @@
-import { useEffect, useState } from 'react'
 import { useCopyBetStore, type CopyBetFeed, type CopyStakeMode } from '../../store/copyBetStore'
 import { useUserStore } from '../../store/userStore'
-import { StakeApi } from '../../api/client'
-import { Queries } from '../../api/queries'
 
 const FEEDS: { id: CopyBetFeed; label: string }[] = [
   { id: 'highroller', label: 'Highroller' },
@@ -10,28 +7,15 @@ const FEEDS: { id: CopyBetFeed; label: string }[] = [
   { id: 'both', label: 'Both' },
 ]
 
-export function CopyBetPanel() {
+type CopyBetPanelProps = {
+  sports: { name: string; slug: string }[]
+  onSportChange: (slug: string) => void
+}
+
+export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
   const { settings, logs, lastFeed, copiedCount, scannedCount, investedUsd, updateSettings, clearLogs } =
     useCopyBetStore()
   const { availableCurrencies } = useUserStore()
-  const [sports, setSports] = useState<{ name: string; slug: string }[]>([])
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const response = await StakeApi.query<any>(Queries.SportListMenu, {
-          type: 'upcoming',
-          limit: 100,
-          offset: 0,
-          liveRank: false,
-          sportType: 'sport',
-        })
-        if (Array.isArray(response.data?.sportList)) setSports(response.data.sportList)
-      } catch {
-        // Sport dropdown stays usable with slug fallback.
-      }
-    })()
-  }, [])
 
   return (
     <div className="copy-feed">
@@ -75,7 +59,7 @@ export function CopyBetPanel() {
             </label>
             <label className="copy-feed-field">
               <span>Sport</span>
-              <select value={settings.sportSlug} onChange={(e) => updateSettings({ sportSlug: e.target.value })}>
+              <select value={settings.sportSlug} onChange={(e) => onSportChange(e.target.value)}>
                 <option value="all">All sports</option>
                 {settings.sportSlug &&
                   settings.sportSlug !== 'all' &&

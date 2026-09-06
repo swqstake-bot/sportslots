@@ -52,6 +52,8 @@ interface CasinoModeContentProps {
   handlePlayLogUpdate: () => void
   handleDiscoveredSlots: (added: { slug: string; name: string; providerId: string; thumbnailUrl?: string }[]) => void
   handleSelectChallenge: (challenge: CasinoChallengeSelection) => void
+  challengeHandoff?: { instanceId: string; gameName: string; targetMultiplier?: number } | null
+  onDismissChallengeHandoff?: () => void
 }
 
 export function CasinoModeContent(props: CasinoModeContentProps) {
@@ -96,6 +98,8 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
     handlePlayLogUpdate,
     handleDiscoveredSlots,
     handleSelectChallenge,
+    challengeHandoff,
+    onDismissChallengeHandoff,
   } = props
 
   const isHubMode = HUB_MODES.has(mode)
@@ -147,6 +151,8 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
         handleApplyFirstSlotSettings={handleApplyFirstSlotSettings}
         getSlotControlRef={getSlotControlRef}
         handlePlayLogUpdate={handlePlayLogUpdate}
+        challengeHandoff={challengeHandoff}
+        onDismissChallengeHandoff={onDismissChallengeHandoff}
       />
     )
   } else if (mode === 'bonushunt') {
@@ -181,7 +187,7 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
   } else if (mode === 'logs') {
     primary = (
       <div className="space-y-6">
-        <SectionCard title="Recent bets">
+        <SectionCard title="API Debug">
           <BetList bets={recentBets} totalCount={recentBets?.length ?? 0} currencyCode="usd" emptyMessage="No bets found" />
         </SectionCard>
         <LogViewer refreshKey={playLogRefreshKey} />

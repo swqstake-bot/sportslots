@@ -28,7 +28,7 @@ export function AutoCashoutControls({
           type="button"
           onClick={onCashoutSelected}
           className="text-xs font-bold px-3 py-1.5 rounded hover:opacity-90 transition-opacity"
-          style={{ background: 'var(--app-accent)', color: 'var(--app-bg-deep)', boxShadow: '0 0 10px var(--app-accent-glow)' }}
+          style={{ background: 'var(--app-accent)', color: 'var(--app-bg-deep)' }}
         >
           Cashout Selected ({selectedCount})
         </button>

@@ -32,6 +32,7 @@ export function ChallengeHubView({
   accessToken,
   webSlots,
   onDiscoveredSlots,
+  onSelectChallenge,
   onHubStatsChange,
 }: ChallengeHubViewProps) {
   const [tab, setTab] = useState<HubTab>('casino')
@@ -109,7 +110,7 @@ export function ChallengeHubView({
     onHubStatsChange?.(payload)
   }, [onHubStatsChange])
 
-  const hideSide = sideCollapsed || resourceMode
+  const hideSide = sideCollapsed || resourceMode || tab === 'archive' || tab === 'autorun'
 
   return (
     <div className={`challenge-hub-root flex flex-col gap-2.5 min-h-0${resourceMode ? ' is-resource-mode' : ''}`}>
@@ -134,7 +135,7 @@ export function ChallengeHubView({
             >
               Full UI
             </button>
-          ) : (
+          ) : tab === 'casino' ? (
             <button
               type="button"
               className={`challenge-hub-action${sideCollapsed ? '' : ' is-active'}`}
@@ -143,7 +144,7 @@ export function ChallengeHubView({
             >
               Feed
             </button>
-          )}
+          ) : null}
           <ChallengeHubNotificationCenter />
         </div>
       </div>
@@ -157,6 +158,7 @@ export function ChallengeHubView({
                 accessToken={accessToken}
                 webSlots={webSlots}
                 onDiscoveredSlots={onDiscoveredSlots}
+                onSelectChallenge={onSelectChallenge}
                 onHubStatsChange={handleHubStatsChange}
                 resourceMode={resourceMode}
               />

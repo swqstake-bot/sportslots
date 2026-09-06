@@ -79,6 +79,10 @@ export interface AutoBetState {
   logs: AutoBetLog[];
   isRunning: boolean;
   isModalOpen: boolean;
+  placedCount: number;
+  skippedCount: number;
+  scannedCount: number;
+  investedUsd: number;
   
   updateSettings: (settings: Partial<AutoBetSettings>) => void;
   start: () => void;
@@ -86,6 +90,10 @@ export interface AutoBetState {
   addLog: (message: string, type?: AutoBetLog['type']) => void;
   addRuntimeLog: (message: string, source: string, correlationId?: string, type?: AutoBetLog['type']) => void;
   clearLogs: () => void;
+  resetSessionStats: () => void;
+  bumpPlaced: (investUsd?: number) => void;
+  bumpSkipped: (n?: number) => void;
+  bumpScanned: (n: number) => void;
   openModal: () => void;
   closeModal: () => void;
 }
@@ -131,6 +139,10 @@ export const useAutoBetStore = create<AutoBetState>()(
       logs: [],
       isRunning: false,
       isModalOpen: false,
+      placedCount: 0,
+      skippedCount: 0,
+      scannedCount: 0,
+      investedUsd: 0,
 
       updateSettings: (newSettings) => set((state) => ({
         settings: { ...state.settings, ...newSettings },
@@ -178,6 +190,17 @@ export const useAutoBetStore = create<AutoBetState>()(
         }),
 
       clearLogs: () => set({ logs: [] }),
+
+      resetSessionStats: () => set({ placedCount: 0, skippedCount: 0, scannedCount: 0, investedUsd: 0 }),
+      bumpPlaced: (investUsd = 0) =>
+        set((state) => ({
+          placedCount: state.placedCount + 1,
+          investedUsd: state.investedUsd + Math.max(0, investUsd),
+        })),
+      bumpSkipped: (n = 1) =>
+        set((state) => ({ skippedCount: state.skippedCount + Math.max(0, n) })),
+      bumpScanned: (n) =>
+        set((state) => ({ scannedCount: state.scannedCount + Math.max(0, n) })),
 
       openModal: () => set({ isModalOpen: true }),
       closeModal: () => set({ isModalOpen: false }),

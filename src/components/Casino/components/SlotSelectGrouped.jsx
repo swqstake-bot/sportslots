@@ -408,7 +408,7 @@ export function SlotSelectMulti({
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.25rem', marginBottom: '0.35rem' }}>
           <div style={{
-            width: 42, height: 42, borderRadius: 8,
+            width: 42, height: 42, borderRadius: 3,
             background: hasThumbnail
               ? 'color-mix(in srgb, var(--bg-elevated) 90%, rgba(var(--accent-rgb), 0.08))'
               : `${providerColor}33`,

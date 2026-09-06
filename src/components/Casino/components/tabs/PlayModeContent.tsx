@@ -50,6 +50,8 @@ interface PlayModeContentProps {
   handleApplyFirstSlotSettings: () => void
   getSlotControlRef: (instanceId: string) => any
   handlePlayLogUpdate: () => void
+  challengeHandoff?: { instanceId: string; gameName: string; targetMultiplier?: number } | null
+  onDismissChallengeHandoff?: () => void
 }
 
 export function PlayModeContent(props: PlayModeContentProps) {
@@ -87,6 +89,8 @@ export function PlayModeContent(props: PlayModeContentProps) {
     handleApplyFirstSlotSettings,
     getSlotControlRef,
     handlePlayLogUpdate,
+    challengeHandoff,
+    onDismissChallengeHandoff,
   } = props
   const preferredSite = useStakeSiteStore((s) => s.preferredSite)
   const isEuGoldCoins = preferredSite === 'eu'
@@ -171,6 +175,17 @@ export function PlayModeContent(props: PlayModeContentProps) {
       }),
     [selectedSlotInstances, webSlots, sessionsById]
   )
+
+  useEffect(() => {
+    const id = challengeHandoff?.instanceId
+    if (!id) return
+    setActiveInstanceId(id)
+    setStatsFilterId(id)
+    const t = window.setTimeout(() => {
+      document.getElementById(`slot-wb-instance-${id}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }, 80)
+    return () => window.clearTimeout(t)
+  }, [challengeHandoff?.instanceId])
 
   const hasSelection = selectedSlotInstances.length > 0
 
@@ -334,6 +349,23 @@ export function PlayModeContent(props: PlayModeContentProps) {
 
   return (
     <div className="space-y-3">
+      {challengeHandoff ? (
+        <div className="casino-handoff-banner" id="slot-wb-instance-handoff">
+          <div>
+            <strong>Challenge loaded</strong>
+            <span>
+              {challengeHandoff.gameName}
+              {challengeHandoff.targetMultiplier
+                ? ` · stop at ${challengeHandoff.targetMultiplier}×`
+                : ''}
+              . Start the session when you are ready.
+            </span>
+          </div>
+          <button type="button" onClick={() => onDismissChallengeHandoff?.()}>
+            Dismiss
+          </button>
+        </div>
+      ) : null}
       {hasSelection ? (
         <details className="rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/30 px-3 py-2">
           <summary className="cursor-pointer list-none text-xs font-semibold text-[var(--text-muted)] select-none">
@@ -351,7 +383,10 @@ export function PlayModeContent(props: PlayModeContentProps) {
         <SlotWorkbench
           instances={workbenchInstances}
           activeInstanceId={activeInstanceId || workbenchInstances[0]?.id || ''}
-          onActiveInstanceChange={setActiveInstanceId}
+          onActiveInstanceChange={(id) => {
+            setActiveInstanceId(id)
+            setStatsFilterId(id)
+          }}
           onRemoveInstance={handleRemoveInstance}
           fleet={fleetBar}
           stats={

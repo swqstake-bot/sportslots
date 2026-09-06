@@ -60,25 +60,25 @@ const MODE_SURFACES: Record<
   { bgDeep: string; bgCard: string; bgElevated: string; text: string; textMuted: string }
 > = {
   sports: {
-    bgDeep: '#0A0A0F',
-    bgCard: 'rgba(15, 15, 25, 0.85)',
-    bgElevated: 'rgba(25, 25, 40, 0.9)',
-    text: '#e8ecf4',
-    textMuted: '#8890a8',
+    bgDeep: '#0c0d10',
+    bgCard: '#13151a',
+    bgElevated: '#1a1d24',
+    text: '#eceef2',
+    textMuted: '#8b919c',
   },
   casino: {
-    bgDeep: '#09070a',
-    bgCard: 'rgba(14, 14, 18, 0.9)',
-    bgElevated: 'rgba(19, 18, 24, 0.92)',
-    text: '#e8ecf4',
-    textMuted: '#8890a8',
+    bgDeep: '#0c0d10',
+    bgCard: '#13151a',
+    bgElevated: '#1a1d24',
+    text: '#eceef2',
+    textMuted: '#8b919c',
   },
   logger: {
-    bgDeep: '#0A0A0F',
-    bgCard: 'rgba(15, 15, 25, 0.85)',
-    bgElevated: 'rgba(25, 25, 40, 0.9)',
-    text: '#e8ecf4',
-    textMuted: '#8890a8',
+    bgDeep: '#0c0d10',
+    bgCard: '#13151a',
+    bgElevated: '#1a1d24',
+    text: '#eceef2',
+    textMuted: '#8b919c',
   },
 }
 
@@ -153,13 +153,11 @@ export function accentCssVarsFromHex(
   const { r, g, b } = accentRgbWithBrightness(rgb.r, rgb.g, rgb.b, brightness)
   const s = Math.min(1.2, Math.max(0.4, strength))
   const accent: Record<string, string> = {
-    // Match solid fills / accent-color to the same RGB as --app-accent-rgb (hex alone stayed neon while fades used adjusted RGB).
     '--app-accent': `rgb(${r}, ${g}, ${b})`,
     '--app-accent-rgb': `${r}, ${g}, ${b}`,
-    '--app-accent-glow': `rgba(${r}, ${g}, ${b}, ${(0.25 * s).toFixed(3)})`,
-    '--app-border': `rgba(${r}, ${g}, ${b}, ${(0.24 * s).toFixed(3)})`,
-    '--app-border-subtle': `rgba(${r}, ${g}, ${b}, ${(0.11 * s).toFixed(3)})`,
+    '--app-accent-glow': 'transparent',
   }
+  void s
   return { ...accent, ...surfaceCssVarsForBrightness(mode, brightness) }
 }
 

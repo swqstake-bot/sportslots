@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from './components/ui/Button'
-import { Toast } from './components/Toast'
 import { useSlots } from './hooks/useSlots'
 import { loadSlotSets, saveSlotSet, deleteSlotSet, exportSlotSets, importSlotSets, loadFavorites, toggleFavorite } from './utils/slotSets'
 import { loadDiscoveredSlots, saveDiscoveredSlots } from './utils/discoveredSlots'
@@ -32,13 +31,12 @@ export default function CasinoView() {
   const [selectedSlotInstances, setSelectedSlotInstances] = useState<CasinoSlotInstance[]>([])
 
   const selectedSlugs = selectedSlotInstances.map((i) => i.slug)
-  const { casinoMode: mode, setCasinoMode: setMode } = useUiStore()
+  const { casinoMode: mode, setCasinoMode: setMode, showToast } = useUiStore()
   const [slotSets, setSlotSets] = useState<SlotSet[]>(() => loadSlotSets())
   const [loadedSetId, setLoadedSetId] = useState('')
   const [saveSlotSetOpen, setSaveSlotSetOpen] = useState(false)
   const [saveSlotSetName, setSaveSlotSetName] = useState('')
   const [saveSlotSetError, setSaveSlotSetError] = useState('')
-  const [toast, setToast] = useState('')
   const [theme] = useState(() => localStorage.getItem(THEME_KEY) || 'dark')
   const [, setImportError] = useState('')
   const [favorites, setFavorites] = useState(() => loadFavorites())
@@ -73,7 +71,13 @@ export default function CasinoView() {
     autospinCount: number
     targetMultiplier?: number
     attempts: number
+    startRun?: boolean
   }>>([])
+  const [challengeHandoff, setChallengeHandoff] = useState<{
+    instanceId: string
+    gameName: string
+    targetMultiplier?: number
+  } | null>(null)
   // const [lastBet, setLastBet] = useState<any>(null) // Unused
   const preferredSite = useStakeSiteStore((s) => s.preferredSite)
   const walletBalances = useUserStore((s) => s.balances)
@@ -150,11 +154,28 @@ export default function CasinoView() {
 
   const handleStartAll = useCallback(() => {
     pushRecentSlots(selectedSlotInstances.map((inst) => inst.slug))
-    selectedSlotInstances.forEach((inst) => {
-      const ref = slotControlRefsMap.current.get(inst.id)
-      if (ref) ref.startAutospin()
-    })
-  }, [selectedSlotInstances])
+    void (async () => {
+      const results = await Promise.all(
+        selectedSlotInstances.map(async (inst) => {
+          const ref = slotControlRefsMap.current.get(inst.id)
+          if (!ref?.startAutospin) return false
+          try {
+            if (typeof ref.startSession === 'function') {
+              await ref.startSession()
+            }
+            void ref.startAutospin()
+            return true
+          } catch {
+            return false
+          }
+        })
+      )
+      const failed = results.filter((ok) => !ok).length
+      if (failed > 0) {
+        showToast(`${failed} slot${failed === 1 ? '' : 's'} need a session`, 'info')
+      }
+    })()
+  }, [selectedSlotInstances, showToast])
 
   const handleStopAll = useCallback(() => {
     selectedSlotInstances.forEach((inst) => {
@@ -180,8 +201,29 @@ export default function CasinoView() {
     for (let i = 1; i < selectedSlotInstances.length; i++) {
       refs.get(selectedSlotInstances[i].id)?.applySettings?.(settings)
     }
-    setToast('Applied first slot settings to all slots')
-  }, [selectedSlotInstances, useSharedCurrency])
+    showToast('Applied first slot settings to all slots', 'success')
+  }, [selectedSlotInstances, useSharedCurrency, showToast])
+
+  const handleCasinoLogin = useCallback(async () => {
+    try {
+      await window.electronAPI.login({ site: preferredSite })
+      let resolved = false
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 2000))
+        const status = await window.electronAPI.getStakeSessionStatus()
+        if (status?.valid) {
+          resolved = true
+          break
+        }
+      }
+      if (resolved) {
+        window.dispatchEvent(new CustomEvent('stake-session-revalidated'))
+        await refreshSession()
+      }
+    } catch (err) {
+      console.error('[Casino] Login failed', err)
+    }
+  }, [preferredSite, refreshSession])
 
   const handleSaveSet = (e: any) => {
     e?.preventDefault()
@@ -250,8 +292,7 @@ export default function CasinoView() {
         if (res.ok) {
            setSlotSets(loadSlotSets())
            setImportError('')
-           setToast('Sets importiert!')
-           setTimeout(() => setToast(''), 3000)
+           showToast('Sets importiert!', 'success')
         } else {
            setImportError(res.error || 'Import error')
         }
@@ -280,8 +321,7 @@ export default function CasinoView() {
 
   const handleAddInstance = useCallback((slug: string, source?: string | null, target?: string | null, blocked?: boolean) => {
     if (blocked) {
-      setToast('Hacksaw supports only one session per game')
-      setTimeout(() => setToast(''), 3000)
+      showToast('Hacksaw supports only one session per game', 'info')
       return
     }
     setSelectedSlotInstances((prev) => [
@@ -293,7 +333,7 @@ export default function CasinoView() {
         targetCurrency: target || sharedTargetCurrency,
       },
     ])
-  }, [sharedSourceCurrency, sharedTargetCurrency])
+  }, [sharedSourceCurrency, sharedTargetCurrency, showToast])
 
   /** Stabil, damit Kinder (Challenges / Auto Hunter) nicht bei jedem Render neu laden (useEffect-Deps). */
   const handleDiscoveredSlots = useCallback(
@@ -368,7 +408,7 @@ export default function CasinoView() {
             ...(challenge.promoSource ? { promoSource: challenge.promoSource } : {}),
           }]
       })
-      if (challenge.autoStart && selectedInstanceId) {
+      if (selectedInstanceId) {
         setPendingPromoAutoStarts((prev) => [
           ...prev,
           {
@@ -376,11 +416,17 @@ export default function CasinoView() {
             autospinCount: Number.isFinite(Number(challenge.autospinCount)) ? Math.max(0, Number(challenge.autospinCount)) : 0,
             targetMultiplier: Number.isFinite(Number(challenge.targetMultiplier)) ? Number(challenge.targetMultiplier) : undefined,
             attempts: 0,
+            startRun: !!challenge.autoStart,
           },
         ])
+        setChallengeHandoff({
+          instanceId: selectedInstanceId,
+          gameName: String(challenge.gameName || challenge.gameSlug),
+          targetMultiplier: Number.isFinite(Number(challenge.targetMultiplier)) ? Number(challenge.targetMultiplier) : undefined,
+        })
       }
-      setToast(`Challenge selected: ${challenge.gameName || challenge.gameSlug}`)
-  }, [setMode, sharedSourceCurrency, sharedTargetCurrency])
+      showToast(`Challenge loaded: ${challenge.gameName || challenge.gameSlug}`, 'success')
+  }, [setMode, sharedSourceCurrency, sharedTargetCurrency, showToast])
 
   useEffect(() => {
     if (!pendingPromoAutoStarts.length) return
@@ -407,11 +453,13 @@ export default function CasinoView() {
       } catch {
         // ignore non-fatal setting apply failures
       }
-      Promise.resolve(ref.startSession())
-        .then(() => ref.startAutospin())
-        .catch(() => {
-          // ignore start failures, user can start manually
-        })
+      if (item.startRun !== false) {
+        Promise.resolve(ref.startSession())
+          .then(() => ref.startAutospin())
+          .catch(() => {
+            // ignore start failures, user can start manually
+          })
+      }
     }
     const t = setTimeout(() => {
       setPendingPromoAutoStarts(remaining)
@@ -440,6 +488,7 @@ export default function CasinoView() {
       mode={mode}
       onChangeMode={setMode}
       onRefreshSession={refreshSession}
+      onLogin={handleCasinoLogin}
     >
       <CasinoModeContent
         mode={mode}
@@ -482,6 +531,8 @@ export default function CasinoView() {
         handlePlayLogUpdate={handlePlayLogUpdate}
         handleDiscoveredSlots={handleDiscoveredSlots}
         handleSelectChallenge={handleSelectChallenge}
+        challengeHandoff={challengeHandoff}
+        onDismissChallengeHandoff={() => setChallengeHandoff(null)}
       />
       
 
@@ -523,8 +574,6 @@ export default function CasinoView() {
           </div>
         </div>
       )}
-
-      {toast && <Toast message={toast} visible={!!toast} onHide={() => setToast('')} />}
 
     </CasinoShell>
   )

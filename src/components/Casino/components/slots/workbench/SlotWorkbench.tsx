@@ -36,6 +36,7 @@ export function SlotWorkbench({
             return (
               <div
                 key={inst.id}
+                id={`slot-wb-instance-${inst.id}`}
                 role="tab"
                 aria-selected={active}
                 tabIndex={0}

@@ -48,17 +48,19 @@ export function hasNotificationPermission() {
  * @param {{ tag?: string }} [options]
  */
 export function notify(title, body, options = {}) {
-  try {
-    useInAppNotificationStore.getState().push({
-      source: 'challengeHub',
-      kind: String(options?.tag || 'notification'),
-      title: String(title || 'Notification'),
-      body: body != null ? String(body) : undefined,
-      severity: 'info',
-      meta: { tag: options?.tag || 'slotbot' },
-    })
-  } catch {
-    // ignore
+  if (!options.skipInbox) {
+    try {
+      useInAppNotificationStore.getState().push({
+        source: 'challengeHub',
+        kind: String(options?.tag || 'notification'),
+        title: String(title || 'Notification'),
+        body: body != null ? String(body) : undefined,
+        severity: 'info',
+        meta: { tag: options?.tag || 'slotbot' },
+      })
+    } catch {
+      // ignore
+    }
   }
   if (!('Notification' in window) || Notification.permission !== 'granted') return
   try {
@@ -98,7 +100,7 @@ export function notifyBonusHit(slotName, spinCount) {
   } catch {
     // ignore
   }
-  notify('Bonus getroffen', msg, { tag: 'slotbot-bonus' })
+  notify('Bonus getroffen', msg, { tag: 'slotbot-bonus', skipInbox: true })
 }
 
 /**
@@ -128,7 +130,7 @@ export function notifyChallengeStart(slotName, targetMulti) {
     notify(
       'Challenge gestartet',
       `Starte Originals-Challenge bei ${slotName} (offenes Ziel – Stop Loss / manuell)`,
-      { tag: 'slotbot-challenge-start' }
+      { tag: 'slotbot-challenge-start', skipInbox: true }
     )
     return
   }
@@ -148,5 +150,5 @@ export function notifyChallengeStart(slotName, targetMulti) {
   } catch {
     // ignore
   }
-  notify('Challenge gestartet', msg, { tag: 'slotbot-challenge-start' })
+  notify('Challenge gestartet', msg, { tag: 'slotbot-challenge-start', skipInbox: true })
 }

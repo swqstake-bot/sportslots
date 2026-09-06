@@ -77,23 +77,22 @@ export function KeyAuthLogin({ onSuccess }: KeyAuthLoginProps) {
     <div
       className="flex flex-1 items-center justify-center min-h-0 text-white"
       style={{
-        background: 'linear-gradient(135deg, var(--app-bg-deep, #0A0A0F) 0%, #0d1220 50%, #080a12 100%)',
-        fontFamily: "var(--font-body, 'Exo 2', sans-serif)",
+        background: 'var(--app-bg-deep, #0c0d10)',
+        fontFamily: "var(--font-body, 'Inter', ui-sans-serif, sans-serif)",
       }}
     >
       <div
-        className="w-full max-w-md p-10 rounded-2xl shadow-2xl"
+        className="w-full max-w-md p-10"
         style={{
-          background: 'var(--app-bg-card, rgba(15, 15, 25, 0.9))',
-          border: '1px solid var(--app-border, rgba(0, 240, 255, 0.2))',
-          boxShadow: '0 0 60px rgba(0, 240, 255, 0.08), 0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+          background: 'var(--app-bg-card, #13151a)',
+          border: '1px solid var(--app-border, #2a2e38)',
         }}
       >
         <div className="flex flex-col items-center mb-10 gap-4">
           <img src={APP_LOGO_URL} alt="" className="h-12 w-auto" draggable={false} />
           <h1
-            className="text-xl font-bold tracking-wide lowercase"
-            style={{ fontFamily: "var(--font-heading, 'Orbitron', monospace)", color: 'var(--app-text, #e2e8f0)' }}
+            className="text-xl font-semibold"
+            style={{ fontFamily: "var(--font-heading, 'Inter', ui-sans-serif, sans-serif)", color: 'var(--app-text, #eceef2)' }}
           >
             {APP_NAME}
           </h1>
@@ -101,17 +100,17 @@ export function KeyAuthLogin({ onSuccess }: KeyAuthLoginProps) {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
-            <label className="text-xs font-medium uppercase tracking-widest" style={{ color: 'var(--app-text-muted, #8890a8)' }}>
+            <label className="text-xs font-medium" style={{ color: 'var(--app-text-muted, #8b919c)' }}>
               Username
             </label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full rounded-lg p-3.5 text-white placeholder-opacity-40 focus:outline-none focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/20 transition-all duration-200"
+              className="w-full rounded-lg p-3.5 text-white placeholder-opacity-40 focus:outline-none transition-all duration-200"
               style={{
-                background: 'rgba(10, 10, 15, 0.8)',
-                border: '1px solid rgba(0, 240, 255, 0.15)',
+                background: 'var(--app-bg-deep, #0c0d10)',
+                border: '1px solid var(--app-border, #2a2e38)',
               }}
               placeholder="Username"
               disabled={loading}
@@ -120,17 +119,17 @@ export function KeyAuthLogin({ onSuccess }: KeyAuthLoginProps) {
           </div>
 
           <div className="flex flex-col gap-2">
-            <label className="text-xs font-medium uppercase tracking-widest" style={{ color: 'var(--app-text-muted, #8890a8)' }}>
+            <label className="text-xs font-medium" style={{ color: 'var(--app-text-muted, #8b919c)' }}>
               Password
             </label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg p-3.5 text-white placeholder-opacity-40 focus:outline-none focus:border-cyan-400/60 focus:ring-1 focus:ring-cyan-400/20 transition-all duration-200"
+              className="w-full rounded-lg p-3.5 text-white placeholder-opacity-40 focus:outline-none transition-all duration-200"
               style={{
-                background: 'rgba(10, 10, 15, 0.8)',
-                border: '1px solid rgba(0, 240, 255, 0.15)',
+                background: 'var(--app-bg-deep, #0c0d10)',
+                border: '1px solid var(--app-border, #2a2e38)',
               }}
               placeholder="Password"
               disabled={loading}
@@ -143,7 +142,7 @@ export function KeyAuthLogin({ onSuccess }: KeyAuthLoginProps) {
               type="checkbox"
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
-              className="w-4 h-4 rounded accent-cyan-400"
+              className="w-4 h-4 rounded"
               disabled={loading}
             />
             <span className="text-sm" style={{ color: 'var(--app-text-muted, #8890a8)' }}>
@@ -163,11 +162,10 @@ export function KeyAuthLogin({ onSuccess }: KeyAuthLoginProps) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-4 rounded-xl font-bold uppercase tracking-wider transition-all duration-200 transform active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed hover:shadow-[0_0_30px_rgba(0,240,255,0.4)] hover:brightness-110"
+            className="w-full py-3.5 rounded-lg font-semibold transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed hover:brightness-110"
             style={{
-              background: 'linear-gradient(135deg, var(--app-accent, #00F0FF) 0%, #00c4d4 100%)',
-              color: 'var(--app-bg-deep, #0A0A0F)',
-              boxShadow: '0 0 20px rgba(0, 240, 255, 0.3)',
+              background: 'var(--app-accent, #5eead4)',
+              color: 'var(--app-bg-deep, #0c0d10)',
             }}
           >
             {loading ? (

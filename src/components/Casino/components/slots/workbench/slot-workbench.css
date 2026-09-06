@@ -50,7 +50,7 @@
   border-color: var(--accent);
   color: var(--accent);
   background: rgba(var(--accent-rgb), 0.1);
-  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.12);
+  box-shadow: none;
 }
 
 .slot-wb-tab-label {
@@ -69,7 +69,7 @@
 
 .slot-wb-tab-dot.is-running {
   background: var(--accent);
-  box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.55);
+  box-shadow: none;
 }
 
 .slot-wb-tab-remove {

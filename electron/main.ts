@@ -824,7 +824,7 @@ const LOGGER_CURRENCY_CONFIG_QUERY = `query CurrencyConfiguration($isAcp: Boolea
 
 const APP_DISPLAY_NAME = 'swqbot';
 const FRAMELESS_CHROME = process.platform === 'win32' || process.platform === 'linux';
-const WINDOW_BACKGROUND = '#0f212e';
+const WINDOW_BACKGROUND = '#0c0d10';
 
 let tray: Tray | null = null;
 
@@ -847,13 +847,14 @@ function registerWindowChromeIpc(): void {
   ipcMain.handle('window-is-maximized', () => BrowserWindow.getFocusedWindow()?.isMaximized() ?? false);
 }
 
-function applyFramelessChromeOptions(): Pick<Electron.BrowserWindowConstructorOptions, 'frame' | 'backgroundColor'> {
+function applyFramelessChromeOptions(): Pick<Electron.BrowserWindowConstructorOptions, 'frame' | 'backgroundColor' | 'roundedCorners'> {
   if (!FRAMELESS_CHROME) {
     return {};
   }
   return {
     frame: false,
     backgroundColor: WINDOW_BACKGROUND,
+    roundedCorners: false,
   };
 }
 

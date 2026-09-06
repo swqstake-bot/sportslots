@@ -177,6 +177,7 @@ export function useAutoBetEngine() {
   useEffect(() => {
     if (isRunning) {
       placedBetsCount.current = 0;
+      useAutoBetStore.getState().resetSessionStats();
     }
   }, [isRunning]);
 
@@ -673,6 +674,16 @@ export function useAutoBetEngine() {
       applyCandidateOrder(settings.strategy, candidates, settings.gameType, forceUpcomingGlobal);
 
       // 5. Pick (order: upcoming = nächster Anstoß zuerst; live-only = zufällig)
+      const rejectedCount =
+        rejections.status +
+        rejections.odds +
+        rejections.marketStatus +
+        rejections.outcomeStatus +
+        rejections.noMarkets +
+        rejections.marketFilter;
+      useAutoBetStore.getState().bumpScanned(candidates.length + rejectedCount);
+      if (rejectedCount > 0) useAutoBetStore.getState().bumpSkipped(rejectedCount);
+
       if (candidates.length === 0) {
         const filterHint =
           rejections.marketFilter > 0 && (marketIncludeKw.length || marketExcludeKw.length || outcomeIncludeKw.length)
@@ -785,6 +796,7 @@ export function useAutoBetEngine() {
 
         if (selections.length < minLegsToUse) {
             addLog(`Could not form a valid bet slip with ${minLegsToUse} unique fixtures. Retrying selection...`, 'warning');
+            useAutoBetStore.getState().bumpSkipped(1);
             consecutiveFailures++;
             await new Promise(r => setTimeout(r, 1000));
             continue;
@@ -824,6 +836,7 @@ export function useAutoBetEngine() {
                 const hasLiveLegs = selections.some(s => s.isLive);
                 if (hasLiveLegs) {
                     addLog('Skipping bet: Stake Shield unavailable for Live games (Strict Mode).', 'warning');
+                    useAutoBetStore.getState().bumpSkipped(1);
                     consecutiveFailures++;
                     continue; // Skip this bet
                 }
@@ -835,6 +848,7 @@ export function useAutoBetEngine() {
                      const msg = `Stake Shield skipped: Requires 3+ legs (Current: ${selections.length}).`;
                      if (isStrict) {
                         addLog(`${msg} Skipping bet (Strict Mode).`, 'warning');
+                        useAutoBetStore.getState().bumpSkipped(1);
                         consecutiveFailures++;
                         continue;
                      } else {
@@ -948,6 +962,7 @@ export function useAutoBetEngine() {
                 placedBetsCount.current += 1;
                 localAvailableBalance -= loopCryptoAmount; // Deduct locally
                 consecutiveFailures = 0; // Reset failure count
+                useAutoBetStore.getState().bumpPlaced(Number(currentSettings.amount) || 0);
                 addLog(`Bet #${placedBetsCount.current}/${maxBets} placed successfully — ID: ${betId}`, 'success');
                 placedSlipSignatures.add(slipSignature(outcomeIds));
                 
@@ -1011,6 +1026,7 @@ export function useAutoBetEngine() {
                                 addActiveBet(coverBetToAdd);
                                 placedBetsCount.current += 1;
                                 localAvailableBalance -= loopCryptoAmount;
+                                useAutoBetStore.getState().bumpPlaced(Number(currentSettings.amount) || 0);
                                 addLog(
                                   `Bet #${placedBetsCount.current}/${maxBets} placed successfully (Cover Shield) — ID: ${coverId}`,
                                   'success'

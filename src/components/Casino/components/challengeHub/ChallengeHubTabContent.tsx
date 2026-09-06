@@ -5,12 +5,14 @@ import { AutorunTab } from './AutorunTab'
 import { BetArchiveTab } from './BetArchiveTab'
 import type { HubStatsPayload } from './hubTypes'
 import type { HubTab } from './ChallengeHubTabStrip'
+import type { CasinoChallengeSelection } from '../../types'
 
 export interface ChallengeHubTabContentProps {
   tab: HubTab
   accessToken: string
   webSlots: any[]
   onDiscoveredSlots: (added: { slug: string; name: string; providerId: string; thumbnailUrl?: string }[]) => void
+  onSelectChallenge?: (challenge: CasinoChallengeSelection) => void
   onHubStatsChange: (payload: HubStatsPayload) => void
   resourceMode?: boolean
 }
@@ -21,6 +23,7 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
   accessToken,
   webSlots,
   onDiscoveredSlots,
+  onSelectChallenge,
   onHubStatsChange,
   resourceMode = false,
 }: ChallengeHubTabContentProps) {
@@ -70,6 +73,7 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
             accessToken={accessToken}
             webSlots={webSlots as any}
             onDiscoveredSlots={onDiscoveredSlots}
+            onSelectChallenge={onSelectChallenge}
             onHubStatsChange={onHubStatsChange}
             resourceMode={resourceMode}
           />

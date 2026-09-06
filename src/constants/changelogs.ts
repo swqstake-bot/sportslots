@@ -1,4 +1,10 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.302': [
+    '✨ Desk-UI: flaches Chrome, 12/13/15 Type-Scale, dichteres Layout',
+    '✨ Eine Toast-Rail unten rechts (Casino, Session, Inbox); Login-Empty States vereinheitlicht',
+    '✨ Casino: Hunter-Runbar, Hub ein Pane, Challenge→Slots Handoff, Start-all Session+Autospin',
+    '✨ Sports: AutoBet wie Copy-Feed, gemeinsamer Sport-Slug; tote Fixture/Sidebar-UI entfernt',
+  ],
   '1.0.301': [
     '🐛 Stake Engine: neue RGS-Host `rgs2.engine.io` im Proxy erlaubt — Challenge-Mode (Waylanders, Gas Money, …)',
     '🐛 Stake Engine: Launch-URL/Session ohne stake-engine.com-Host trotzdem parsen',
