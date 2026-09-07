@@ -93,6 +93,18 @@ function betIdStr(id: string | null | undefined): string {
 
 }
 
+/** Antebot: multiple values separated by comma, e.g. 3,6,9 or 11,22,33. */
+function parseBetIdStopTokens(raw: string): string[] {
+  return String(raw)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function firstMatchingToken(haystack: string, tokens: string[], mode: 'endsWith' | 'includes'): string | undefined {
+  return tokens.find((t) => (mode === 'endsWith' ? haystack.endsWith(t) : haystack.includes(t)))
+}
+
 
 
 export function evaluateWorkbenchStops(
@@ -187,9 +199,11 @@ export function evaluateWorkbenchStops(
 
     if (options.isStopIfBetIdContains && options.stopIfBetIdContains) {
 
-      if (id.includes(String(options.stopIfBetIdContains))) {
+      const hit = firstMatchingToken(id, parseBetIdStopTokens(String(options.stopIfBetIdContains)), 'includes')
 
-        return { stop: true, reason: `Bet ID contains "${options.stopIfBetIdContains}"` }
+      if (hit) {
+
+        return { stop: true, reason: `Bet ID contains "${hit}"` }
 
       }
 
@@ -197,9 +211,11 @@ export function evaluateWorkbenchStops(
 
     if (options.isStopIfBetIdEndsOn && options.stopIfBetIdEndsOn) {
 
-      if (id.endsWith(String(options.stopIfBetIdEndsOn))) {
+      const hit = firstMatchingToken(id, parseBetIdStopTokens(String(options.stopIfBetIdEndsOn)), 'endsWith')
 
-        return { stop: true, reason: `Bet ID ends with "${options.stopIfBetIdEndsOn}"` }
+      if (hit) {
+
+        return { stop: true, reason: `Bet ID ends with "${hit}"` }
 
       }
 
@@ -231,9 +247,11 @@ export function evaluateWorkbenchStops(
 
       const last3 = digits.slice(-3)
 
-      if (last3.includes(String(options.stopIfLast3BetIdDigitsContain))) {
+      const hit = firstMatchingToken(last3, parseBetIdStopTokens(String(options.stopIfLast3BetIdDigitsContain)), 'includes')
 
-        return { stop: true, reason: `Last 3 digits contain "${options.stopIfLast3BetIdDigitsContain}"` }
+      if (hit) {
+
+        return { stop: true, reason: `Last 3 digits contain "${hit}"` }
 
       }
 

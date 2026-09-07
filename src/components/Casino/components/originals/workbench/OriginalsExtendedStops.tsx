@@ -180,7 +180,7 @@ export default function OriginalsExtendedStops({
             type="text"
             disabled={disabled}
             className={inputCls}
-            placeholder="substring"
+            placeholder="e.g. 11,22,33"
             value={o.stopIfBetIdContains ?? ''}
             onChange={(e) => patch({ stopIfBetIdContains: e.target.value })}
           />
@@ -200,6 +200,7 @@ export default function OriginalsExtendedStops({
             type="text"
             disabled={disabled}
             className={inputCls}
+            placeholder="e.g. 3,6,9"
             value={o.stopIfBetIdEndsOn ?? ''}
             onChange={(e) => patch({ stopIfBetIdEndsOn: e.target.value })}
           />
@@ -240,7 +241,7 @@ export default function OriginalsExtendedStops({
             type="text"
             disabled={disabled}
             className={inputCls}
-            placeholder="e.g. 7"
+            placeholder="e.g. 7,8,9"
             value={o.stopIfLast3BetIdDigitsContain ?? ''}
             onChange={(e) => patch({ stopIfLast3BetIdDigitsContain: e.target.value })}
           />

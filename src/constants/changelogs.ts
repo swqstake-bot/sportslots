@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.303': [
+    '🐛 Originals: Bet-ID-Stops akzeptieren Komma-Listen (z. B. 3,6,9) wie im Original',
+  ],
   '1.0.302': [
     '✨ Desk-UI: flaches Chrome, 12/13/15 Type-Scale, dichteres Layout',
     '✨ Eine Toast-Rail unten rechts (Casino, Session, Inbox); Login-Empty States vereinheitlicht',
