@@ -17,6 +17,7 @@ export function createEmptyCasinoAggregate() {
     lastBalance: null,
     lastCurrency: null,
     lastEntryKey: null,
+    bonusCount: 0,
   }
 }
 
@@ -108,6 +109,7 @@ export function applyCasinoSpinToAggregate(prev, entry, rates = {}) {
     : resolveUsdMajor(winMinor, currencyCode, rates, entry?.winUsdSnapshotMajor)
 
   next.spins += 1
+  next.bonusCount = (Number(next.bonusCount) || 0) + (entry?.isBonus || isStoppedBonus ? 1 : 0)
 
   const hasBetUsd = typeof betUsd === 'number' && Number.isFinite(betUsd)
   const hasWinUsd = typeof winUsd === 'number' && Number.isFinite(winUsd)
@@ -178,6 +180,7 @@ export function aggregateToStatsSnapshot(agg, balanceView = {}) {
     sessionStartBalance: sessionStartBalanceUsd != null ? Math.round(sessionStartBalanceUsd * 100) : null,
     currentBalanceRaw,
     currentBalanceCurrency: 'usd',
+    bonusCount: a.bonusCount || 0,
   }
 }
 

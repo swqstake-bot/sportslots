@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.304': [
+    '✨ Slots: rechte Statistik zeigt Bonus-Hits in der Session',
+  ],
   '1.0.303': [
     '🐛 Originals: Bet-ID-Stops akzeptieren Komma-Listen (z. B. 3,6,9) wie im Original',
   ],

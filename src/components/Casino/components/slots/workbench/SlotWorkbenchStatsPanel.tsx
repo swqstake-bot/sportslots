@@ -58,6 +58,14 @@ function buildCumUsdMajors(bets: any[]): number[] | null {
   return out
 }
 
+function countBonuses(bets: any[]): number {
+  let n = 0
+  for (const b of bets || []) {
+    if (b?.isBonus || b?.stoppedBonus) n += 1
+  }
+  return n
+}
+
 function enrichBiggestMulti(stats: any, bets: any[]) {
   let biggest = Number(stats?.biggestMultiplier) || 0
   for (const b of bets || []) {
@@ -68,19 +76,21 @@ function enrichBiggestMulti(stats: any, bets: any[]) {
       if (m > biggest) biggest = m
     }
   }
-  if (biggest > (stats?.biggestMultiplier || 0)) return { ...stats, biggestMultiplier: biggest }
-  return (
-    stats || {
-      spins: 0,
-      totalWagered: 0,
-      totalWon: 0,
-      winCount: 0,
-      lossCount: 0,
-      breakEvenCount: 0,
-      biggestWin: 0,
-      biggestMultiplier: 0,
-    }
-  )
+  const bonusCount = Math.max(Number(stats?.bonusCount) || 0, countBonuses(bets))
+  const next = {
+    spins: 0,
+    totalWagered: 0,
+    totalWon: 0,
+    winCount: 0,
+    lossCount: 0,
+    breakEvenCount: 0,
+    biggestWin: 0,
+    biggestMultiplier: 0,
+    ...(stats || {}),
+    bonusCount,
+  }
+  if (biggest > (next.biggestMultiplier || 0)) next.biggestMultiplier = biggest
+  return next
 }
 
 function shortenBetId(id: string, max = 16) {

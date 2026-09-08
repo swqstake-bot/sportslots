@@ -72,6 +72,7 @@ export default function StatsDisplay({ stats, currencyCode: _currencyCode, compa
       fxValuatedCount: stats.fxValuatedCount ?? 0,
       biggestWin: stats.biggestWin,
       biggestMultiplier: stats.biggestMultiplier,
+      bonusCount: stats.bonusCount ?? 0,
       multiOver100xCount: stats.multiOver100xCount,
       multiOver100xSum: stats.multiOver100xSum,
       currentBalance: stats.currentBalance,
@@ -105,6 +106,10 @@ export default function StatsDisplay({ stats, currencyCode: _currencyCode, compa
         <div style={STYLES.item}>
           <span style={STYLES.label}>Spins</span>
           <span style={valueStyle}>{displayStats.spins}</span>
+        </div>
+        <div style={STYLES.item}>
+          <span style={STYLES.label}>Bonuses</span>
+          <span style={valueStyle}>{displayStats.bonusCount}</span>
         </div>
         <div style={STYLES.item}>
           <span style={STYLES.label}>Total wagered</span>
