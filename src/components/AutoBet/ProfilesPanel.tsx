@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useProfilesStore } from '../../store/profilesStore';
 import { useAutoBetStore } from '../../store/autoBetStore';
 import { useCopyBetStore } from '../../store/copyBetStore';
@@ -16,19 +17,19 @@ export function ProfilesPanel({ mode, onApply }: ProfilesPanelProps) {
   const copyBetSettings = useCopyBetStore((s) => s.settings);
   const updateCopyBetSettings = useCopyBetStore((s) => s.updateSettings);
   
-  // Casino prefs
-  const casinoPrefs = useCasinoStore((s) => ({
+  // Casino prefs with useShallow to prevent unnecessary re-renders
+  const casinoPrefs = useCasinoStore(useShallow((s) => ({
     useSharedCurrency: s.useSharedCurrency,
     sharedSourceCurrency: s.sharedSourceCurrency,
     sharedTargetCurrency: s.sharedTargetCurrency,
     sharedCryptoOnly: s.sharedCryptoOnly,
-  }));
-  const updateCasinoPrefs = useCasinoStore((s) => ({
+  })));
+  const updateCasinoPrefs = useCasinoStore(useShallow((s) => ({
     setUseSharedCurrency: s.setUseSharedCurrency,
     setSharedSourceCurrency: s.setSharedSourceCurrency,
     setSharedTargetCurrency: s.setSharedTargetCurrency,
     setSharedCryptoOnly: s.setSharedCryptoOnly,
-  }));
+  })));
   
   const [saveName, setSaveName] = useState('');
   const [saveOpen, setSaveOpen] = useState(false);
