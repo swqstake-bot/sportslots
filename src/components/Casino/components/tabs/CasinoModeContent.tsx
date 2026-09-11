@@ -7,7 +7,8 @@ import { PlayModeContent } from './PlayModeContent'
 import { SectionCard } from '../ui/SectionCard'
 import { ChallengeHubView } from '../ChallengeHubView'
 import { PromotionsHubView } from '../challengeHub/PromotionsHubView'
-import type { CasinoSlotInstance, SlotSet, CasinoChallengeSelection } from '../../types'
+import { useCasinoStore } from '../../store/casinoStore'
+import type { CasinoChallengeSelection } from '../../types'
 
 const HUB_MODES = new Set(['challengeHub', 'challenges'])
 
@@ -17,25 +18,10 @@ interface CasinoModeContentProps {
   slotsLoading: boolean
   webSlots: any[]
   selectedSlugs: string[]
-  selectedSlotInstances: CasinoSlotInstance[]
-  loadedSetId: string
-  slotSets: SlotSet[]
-  favorites: string[]
-  globalControlsOpen: boolean
-  sharedSourceCurrency: string
-  sharedTargetCurrency: string
-  sharedCryptoOnly: boolean
-  useSharedCurrency: boolean
   displayedCurrencies: { value: string; label: string }[]
   playLogRefreshKey: number
   recentBets: any[]
-  setGlobalControlsOpen: (open: boolean | ((prev: boolean) => boolean)) => void
-  setSharedSourceCurrency: (v: string) => void
-  setSharedTargetCurrency: (v: string) => void
-  setSharedCryptoOnly: (v: boolean) => void
-  setUseSharedCurrency: (v: boolean) => void
   setSaveSlotSetOpen: (v: boolean) => void
-  setSelectedSlotInstances: (updater: any) => void
   clearSlotHistoryForInstances: () => void
   handleToggleSlot: (slug: string) => void
   handleAddInstance: (slug: string, source?: string | null, target?: string | null, blocked?: boolean) => void
@@ -52,7 +38,6 @@ interface CasinoModeContentProps {
   handlePlayLogUpdate: () => void
   handleDiscoveredSlots: (added: { slug: string; name: string; providerId: string; thumbnailUrl?: string }[]) => void
   handleSelectChallenge: (challenge: CasinoChallengeSelection) => void
-  challengeHandoff?: { instanceId: string; gameName: string; targetMultiplier?: number } | null
   onDismissChallengeHandoff?: () => void
 }
 
@@ -63,25 +48,10 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
     slotsLoading,
     webSlots,
     selectedSlugs,
-    selectedSlotInstances,
-    loadedSetId,
-    slotSets,
-    favorites,
-    globalControlsOpen,
-    sharedSourceCurrency,
-    sharedTargetCurrency,
-    sharedCryptoOnly,
-    useSharedCurrency,
     displayedCurrencies,
     playLogRefreshKey,
     recentBets,
-    setGlobalControlsOpen,
-    setSharedSourceCurrency,
-    setSharedTargetCurrency,
-    setSharedCryptoOnly,
-    setUseSharedCurrency,
     setSaveSlotSetOpen,
-    setSelectedSlotInstances,
     clearSlotHistoryForInstances,
     handleToggleSlot,
     handleAddInstance,
@@ -98,9 +68,28 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
     handlePlayLogUpdate,
     handleDiscoveredSlots,
     handleSelectChallenge,
-    challengeHandoff,
     onDismissChallengeHandoff,
   } = props
+
+  // Read state directly from casino store
+  const {
+    selectedSlotInstances,
+    setSelectedSlotInstances,
+    loadedSetId,
+    slotSets,
+    favorites,
+    globalControlsOpen,
+    setGlobalControlsOpen,
+    sharedSourceCurrency,
+    setSharedSourceCurrency,
+    sharedTargetCurrency,
+    setSharedTargetCurrency,
+    sharedCryptoOnly,
+    setSharedCryptoOnly,
+    useSharedCurrency,
+    setUseSharedCurrency,
+    challengeHandoff,
+  } = useCasinoStore()
 
   const isHubMode = HUB_MODES.has(mode)
   const isPromotionsMode = mode === 'promotions'

@@ -166,7 +166,7 @@ function clampTournamentFixtureLimit(scanLimit: number | undefined): number {
 }
 
 export function useAutoBetEngine() {
-  const { isRunning, addLog, addRuntimeLog, stop } = useAutoBetStore();
+  const { isRunning, addLog, addRuntimeLog, stop, updateHeartbeat } = useAutoBetStore();
   const { addActiveBet } = useUserStore();
   const [isProcessing, setIsProcessing] = useState(false);
   const processingRef = useRef(false);
@@ -188,6 +188,12 @@ export function useAutoBetEngine() {
     const currentBalances = useUserStore.getState().balances;
 
     if (processingRef.current || !currentIsRunning || !currentUser) return;
+    
+    // Clear any pending timeout to avoid double-firing after resume
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
     
     processingRef.current = true;
     setIsProcessing(true);
@@ -211,6 +217,7 @@ export function useAutoBetEngine() {
       startParts.push(`Fill-Up: bis ${ACTIVE_SPORT_BETS_MAX_TOTAL} aktive Wetten`);
     }
     addLog(`Starting AutoBet cycle… (${startParts.join(' · ')})`, 'info');
+    updateHeartbeat();
 
     if (placedBetsCount.current >= settings.numberOfBets && !settings.fillUp) {
       addLog(`Target number of bets reached (${settings.numberOfBets}). Stopping.`, 'success');
@@ -221,20 +228,39 @@ export function useAutoBetEngine() {
     }
 
     try {
-      // 0. Fetch Currency Rates (for USD conversion)
+      // 0. Fetch Currency Rates (for USD conversion) with retry
       let ratesMap: Record<string, number> = {};
-      try {
-        const rates = await fetchCurrencyRates('');
-        if (rates) ratesMap = rates;
-      } catch (err) {
-        console.warn("Failed to fetch currency rates", err);
-        if (settings.currency.toLowerCase() !== 'usd') {
-             addLog(`CRITICAL: Failed to fetch currency rates. Stopping for safety.`, 'error');
-             stop();
-             processingRef.current = false;
-             setIsProcessing(false);
-             return;
+      let fxFetchSuccess = false;
+      const maxFxRetries = 3;
+      const needsCurrency = settings.currency.toLowerCase() !== 'usd';
+      
+      for (let attempt = 1; attempt <= maxFxRetries; attempt++) {
+        try {
+          const rates = await fetchCurrencyRates('');
+          if (rates && typeof rates === 'object' && Object.keys(rates).length > 0) {
+            ratesMap = rates;
+            fxFetchSuccess = true;
+            break;
+          } else if (needsCurrency) {
+            // Treat falsy/empty rates like failure for non-USD
+            throw new Error('Received falsy or empty rates');
+          }
+        } catch (err) {
+          console.warn(`Failed to fetch currency rates (attempt ${attempt}/${maxFxRetries})`, err);
+          if (attempt < maxFxRetries && needsCurrency) {
+            const backoffMs = 2000 * Math.pow(2, attempt - 1);
+            addLog(`Currency rates fetch failed (attempt ${attempt}/${maxFxRetries}). Retrying in ${backoffMs}ms...`, 'warning');
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+          }
         }
+      }
+      
+      if (!fxFetchSuccess && needsCurrency) {
+        addLog(`CRITICAL: Failed to fetch currency rates after ${maxFxRetries} attempts. Stopping for safety.`, 'error');
+        stop();
+        processingRef.current = false;
+        setIsProcessing(false);
+        return;
       }
 
       // 0. Check Active Bets Limit (Stake account cap)
@@ -1102,7 +1128,7 @@ export function useAutoBetEngine() {
         timeoutRef.current = setTimeout(processAutoBet, 30000);
       }
     }
-  }, [addLog, stop, addActiveBet]);
+  }, [addLog, stop, addActiveBet, updateHeartbeat]);
 
   useEffect(() => {
     function onRuntimeEvent(ev: any) {
@@ -1138,5 +1164,5 @@ export function useAutoBetEngine() {
     };
   }, []);
 
-  return { isProcessing };
+  return { isProcessing, processAutoBet };
 }

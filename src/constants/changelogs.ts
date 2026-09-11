@@ -1,4 +1,9 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.305': [
+    '✨ AutoBet: Wake/Resume (Visibility API) + Heartbeat-Anzeige (Last Scan) + Soft-Retry FX-Kurse (3x Backoff)',
+    '✨ Config Profiles: Save/Load/Export/Import für AutoBet-, CopyBet- und Casino-Einstellungen',
+    '⚡ Casino Store: Zustand-Store reduziert Prop-Drilling (CasinoView → 46% weniger Props)',
+  ],
   '1.0.304': [
     '✨ Slots: rechte Statistik zeigt Bonus-Hits in der Session',
   ],

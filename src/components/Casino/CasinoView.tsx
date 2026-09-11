@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from './components/ui/Button'
 import { useSlots } from './hooks/useSlots'
-import { loadSlotSets, saveSlotSet, deleteSlotSet, exportSlotSets, importSlotSets, loadFavorites, toggleFavorite } from './utils/slotSets'
+import { loadSlotSets, saveSlotSet, deleteSlotSet, exportSlotSets, importSlotSets } from './utils/slotSets'
 import { loadDiscoveredSlots, saveDiscoveredSlots } from './utils/discoveredSlots'
 import { loadRecentBets, clearSlotHistory } from './utils/betHistoryDb'
 import { useCasinoBetSessionLifecycle } from './utils/casinoBetSession'
@@ -14,9 +14,10 @@ import { useUiStore } from '../../store/uiStore'
 import { useStakeSiteStore } from '../../store/stakeSiteStore'
 import { useUserStore } from '../../store/userStore'
 import { useCasinoSession } from './hooks/useCasinoSession'
+import { useCasinoStore } from './store/casinoStore'
 import { CasinoShell } from './components/shell/CasinoShell'
 import { CasinoModeContent } from './components/tabs/CasinoModeContent'
-import type { CasinoSlotInstance, SlotSet, CasinoChallengeSelection } from './types'
+import type { CasinoChallengeSelection } from './types'
 
 // Styles — `casino.css` after tokens so game chrome wins over generic token defaults
 import './styles/design-tokens.css'
@@ -28,18 +29,34 @@ export default function CasinoView() {
   const { token, status, error, refreshSession } = useCasinoSession()
   const [discoveredSlots, setDiscoveredSlots] = useState<{ slug: string; name: string; providerId: string; thumbnailUrl?: string }[]>(() => loadDiscoveredSlots())
   const { slots: webSlots, loading: slotsLoading, error: slotsError } = useSlots(token, discoveredSlots)
-  const [selectedSlotInstances, setSelectedSlotInstances] = useState<CasinoSlotInstance[]>([])
+  
+  // Use casino store for shared state
+  const {
+    selectedSlotInstances,
+    setSelectedSlotInstances,
+    slotSets,
+    setSlotSets,
+    loadedSetId,
+    setLoadedSetId,
+    toggleSlotFavorite,
+    useSharedCurrency,
+    sharedSourceCurrency,
+    sharedTargetCurrency,
+    sharedCryptoOnly,
+    setSharedSourceCurrency,
+    setSharedTargetCurrency,
+    setChallengeHandoff,
+    pendingPromoAutoStarts,
+    setPendingPromoAutoStarts,
+  } = useCasinoStore()
 
   const selectedSlugs = selectedSlotInstances.map((i) => i.slug)
   const { casinoMode: mode, setCasinoMode: setMode, showToast } = useUiStore()
-  const [slotSets, setSlotSets] = useState<SlotSet[]>(() => loadSlotSets())
-  const [loadedSetId, setLoadedSetId] = useState('')
   const [saveSlotSetOpen, setSaveSlotSetOpen] = useState(false)
   const [saveSlotSetName, setSaveSlotSetName] = useState('')
   const [saveSlotSetError, setSaveSlotSetError] = useState('')
   const [theme] = useState(() => localStorage.getItem(THEME_KEY) || 'dark')
   const [, setImportError] = useState('')
-  const [favorites, setFavorites] = useState(() => loadFavorites())
   const slotControlRefsMap = useRef(new Map())
   /** Pro inst.id stabiler ref-Callback – vermeidet null/ref-Reattach bei jedem Parent-Render. */
   const slotControlRefCallbacks = useRef(new Map<string, (el: any) => void>())
@@ -66,26 +83,8 @@ export default function CasinoView() {
     setRecentBets([])
   }, [])
   useCasinoBetSessionLifecycle(onCasinoBetSessionCleared)
-  const [pendingPromoAutoStarts, setPendingPromoAutoStarts] = useState<Array<{
-    instanceId: string
-    autospinCount: number
-    targetMultiplier?: number
-    attempts: number
-    startRun?: boolean
-  }>>([])
-  const [challengeHandoff, setChallengeHandoff] = useState<{
-    instanceId: string
-    gameName: string
-    targetMultiplier?: number
-  } | null>(null)
-  // const [lastBet, setLastBet] = useState<any>(null) // Unused
   const preferredSite = useStakeSiteStore((s) => s.preferredSite)
   const walletBalances = useUserStore((s) => s.balances)
-  const [useSharedCurrency, setUseSharedCurrency] = useState(false)
-  const [sharedSourceCurrency, setSharedSourceCurrency] = useState('usdc')
-  const [sharedTargetCurrency, setSharedTargetCurrency] = useState('eur')
-  const [sharedCryptoOnly, setSharedCryptoOnly] = useState(false)
-  const [globalControlsOpen, setGlobalControlsOpen] = useState(false)
   const [supportedCurrencies] = useState<{ value: string; label: string }[]>(ALL_CURRENCIES) // Removed unused setter
 
   const ownedCodes = Object.keys(walletBalances || {})
@@ -117,7 +116,7 @@ export default function CasinoView() {
         if (first) setSharedTargetCurrency(first.value)
       }
     }
-  }, [preferredSite, sharedCryptoOnly, sharedSourceCurrency, sharedTargetCurrency, displayedCurrencies])
+  }, [preferredSite, sharedCryptoOnly, sharedSourceCurrency, sharedTargetCurrency, displayedCurrencies, setSharedSourceCurrency, setSharedTargetCurrency])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -202,7 +201,7 @@ export default function CasinoView() {
       refs.get(selectedSlotInstances[i].id)?.applySettings?.(settings)
     }
     showToast('Applied first slot settings to all slots', 'success')
-  }, [selectedSlotInstances, useSharedCurrency, showToast])
+  }, [selectedSlotInstances, useSharedCurrency, showToast, setSharedSourceCurrency, setSharedTargetCurrency])
 
   const handleCasinoLogin = useCallback(async () => {
     try {
@@ -304,8 +303,7 @@ export default function CasinoView() {
   }
 
   const handleToggleFavorite = (slug: string) => {
-    const newFavs = toggleFavorite(slug)
-    setFavorites(newFavs)
+    toggleSlotFavorite(slug)
   }
 
   const handleToggleSlot = useCallback((slug: string) => {
@@ -317,7 +315,7 @@ export default function CasinoView() {
       }
       return [...prev, { id: `inst_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`, slug, sourceCurrency: sharedSourceCurrency, targetCurrency: sharedTargetCurrency }]
     })
-  }, [sharedSourceCurrency, sharedTargetCurrency])
+  }, [sharedSourceCurrency, sharedTargetCurrency, setSelectedSlotInstances])
 
   const handleAddInstance = useCallback((slug: string, source?: string | null, target?: string | null, blocked?: boolean) => {
     if (blocked) {
@@ -333,7 +331,7 @@ export default function CasinoView() {
         targetCurrency: target || sharedTargetCurrency,
       },
     ])
-  }, [sharedSourceCurrency, sharedTargetCurrency, showToast])
+  }, [sharedSourceCurrency, sharedTargetCurrency, showToast, setSelectedSlotInstances])
 
   /** Stabil, damit Kinder (Challenges / Auto Hunter) nicht bei jedem Render neu laden (useEffect-Deps). */
   const handleDiscoveredSlots = useCallback(
@@ -362,7 +360,7 @@ export default function CasinoView() {
       }
       return next
     })
-  }, [])
+  }, [setSelectedSlotInstances])
 
   const handleSelectChallenge = useCallback((challenge: CasinoChallengeSelection) => {
       if (!challenge?.gameSlug) return
@@ -496,25 +494,10 @@ export default function CasinoView() {
         slotsLoading={slotsLoading && (webSlots as any[])?.length === 0}
         webSlots={webSlots as any}
         selectedSlugs={selectedSlugs}
-        selectedSlotInstances={selectedSlotInstances}
-        loadedSetId={loadedSetId}
-        slotSets={slotSets}
-        favorites={favorites}
-        globalControlsOpen={globalControlsOpen}
-        sharedSourceCurrency={sharedSourceCurrency}
-        sharedTargetCurrency={sharedTargetCurrency}
-        sharedCryptoOnly={sharedCryptoOnly}
-        useSharedCurrency={useSharedCurrency}
         displayedCurrencies={displayedCurrencies}
         playLogRefreshKey={playLogRefreshKey}
         recentBets={recentBets}
-        setGlobalControlsOpen={setGlobalControlsOpen}
-        setSharedSourceCurrency={setSharedSourceCurrency}
-        setSharedTargetCurrency={setSharedTargetCurrency}
-        setSharedCryptoOnly={setSharedCryptoOnly}
-        setUseSharedCurrency={setUseSharedCurrency}
         setSaveSlotSetOpen={setSaveSlotSetOpen}
-        setSelectedSlotInstances={setSelectedSlotInstances}
         clearSlotHistoryForInstances={clearSlotHistoryForInstances}
         handleToggleSlot={handleToggleSlot}
         handleAddInstance={handleAddInstance}
@@ -531,7 +514,6 @@ export default function CasinoView() {
         handlePlayLogUpdate={handlePlayLogUpdate}
         handleDiscoveredSlots={handleDiscoveredSlots}
         handleSelectChallenge={handleSelectChallenge}
-        challengeHandoff={challengeHandoff}
         onDismissChallengeHandoff={() => setChallengeHandoff(null)}
       />
       
