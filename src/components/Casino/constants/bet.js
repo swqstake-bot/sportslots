@@ -15,27 +15,32 @@ const HACKSAW_5X_SLOTS = new Set([
 ])
 
 /** Slot-Overrides für andere Provider (z.B. 10×). Hacksaw nutzt HACKSAW_5X_SLOTS. */
-export const SLOT_EXTRA_BET_MULTIPLIERS = {}
+export const SLOT_EXTRA_BET_MULTIPLIERS = {
+  // Axis Frame / Luxury Chad Super Ante (HAR: mode ante2, 1c → 15c)
+  'axisframegaming-luxury-chad': 15,
+}
 
 export function getExtraBetMultiplier(slotSlug) {
   if (!slotSlug) return EXTRA_BET_MULTIPLIER
   const override = SLOT_EXTRA_BET_MULTIPLIERS[slotSlug]
   if (override != null && override >= 1) return override
-  if (String(slotSlug).startsWith('playnetic-')) {
+  const slug = String(slotSlug)
+  if (slug.endsWith('-luxury-chad')) return 15
+  if (slug.startsWith('playnetic-')) {
     return 1.5 // PowerBet: 10c Basis → 15c Gesamteinsatz
   }
-  if (String(slotSlug).startsWith('paperclip-')) {
+  if (slug.startsWith('paperclip-')) {
     return 3 // Paperclip: Ante = Extra Bet = 3×
   }
-  if (String(slotSlug).startsWith('meta-gaming-') || String(slotSlug).startsWith('metagaming-')) {
+  if (slug.startsWith('meta-gaming-') || slug.startsWith('metagaming-')) {
     // Meta Gaming extra chance: /wallet/play { mode: "ante", amount: base, currency } — 3× total
     return 3
   }
-  if (String(slotSlug).startsWith('bgaming-') || String(slotSlug).startsWith('b-gaming-')) {
+  if (slug.startsWith('bgaming-') || slug.startsWith('b-gaming-')) {
     // Softswiss Encore / buy_chance: +50% total bet (API still sends base bet + purchased_feature)
     return 1.5
   }
-  if (String(slotSlug).startsWith('hacksaw-')) {
+  if (slug.startsWith('hacksaw-')) {
     return HACKSAW_5X_SLOTS.has(slotSlug) ? 5 : HACKSAW_DEFAULT_MULTIPLIER
   }
   return EXTRA_BET_MULTIPLIER

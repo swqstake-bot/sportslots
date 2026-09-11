@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.307': [
+    '✨ Luxury Chad (Axis Frame): Super Ante Extra Bet (mode ante2, 15×)',
+  ],
   '1.0.306': [
     '🐛 HOTFIX: Sports/Casino infinite update loop crash (React error #185) — memoized displayedCurrencies, guarded currency setters',
   ],

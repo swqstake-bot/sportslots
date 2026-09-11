@@ -204,6 +204,9 @@ function isStakeEngineNonPrimaryPlayModeName(name) {
   const n = String(name || '').toLowerCase().replace(/[_-]/g, '')
   return (
     n === 'ante' ||
+    n === 'ante2' ||
+    n === 'ante3' ||
+    n === 'superante' ||
     n === 'extra' ||
     n === 'extrachance' ||
     n === 'bonus' ||
@@ -229,14 +232,58 @@ function parseStakeEngineGameModes(configData) {
     .filter((m) => m.mode)
 }
 
-function isStakeEngineAnteModeName(name) {
-  const n = String(name || '').toLowerCase()
-  return n === 'ante' || n === 'extra' || n === 'extra_chance' || n === 'extrachance' || n === 'extra-chance'
+/** Basic Ante / Extra Chance (not Super Ante). */
+function isStakeEngineBasicAnteModeName(name) {
+  const n = String(name || '').toLowerCase().replace(/[_-]/g, '')
+  return n === 'ante' || n === 'extra' || n === 'extrachance' || n === 'antebet'
 }
 
+/** Super Ante (Luxury Chad HAR: mode "ante2", 15×). */
+function isStakeEngineSuperAnteModeName(name) {
+  const n = String(name || '').toLowerCase().replace(/[_-]/g, '')
+  return (
+    n === 'ante2' ||
+    n === 'ante3' ||
+    n === 'superante' ||
+    n === 'super' ||
+    n === 'superbet' ||
+    n === 'antebet2'
+  )
+}
+
+function isStakeEngineAnteModeName(name) {
+  return isStakeEngineBasicAnteModeName(name) || isStakeEngineSuperAnteModeName(name)
+}
+
+function stakeEngineAnteModeRank(name) {
+  if (isStakeEngineSuperAnteModeName(name)) return 2
+  if (isStakeEngineBasicAnteModeName(name)) return 1
+  return 0
+}
+
+/** Prefer Super Ante (ante2) over basic ante when both exist. */
 function findStakeEngineAnteGameMode(modes) {
   if (!Array.isArray(modes)) return null
-  return modes.find((m) => isStakeEngineAnteModeName(m?.mode)) || null
+  let best = null
+  let bestRank = 0
+  let bestCost = -1
+  for (const m of modes) {
+    const rank = stakeEngineAnteModeRank(m?.mode)
+    if (rank <= 0) continue
+    const cost = Number(m?.cost)
+    const costScore = Number.isFinite(cost) && cost > 0 ? cost : 0
+    if (rank > bestRank || (rank === bestRank && costScore > bestCost)) {
+      best = m
+      bestRank = rank
+      bestCost = costScore
+    }
+  }
+  return best
+}
+
+function isLuxuryChadSlug(slotSlug) {
+  const slug = String(slotSlug || '').toLowerCase()
+  return slug === 'axisframegaming-luxury-chad' || slug.endsWith('-luxury-chad')
 }
 
 function isMetaGamingSlug(slotSlug) {
@@ -252,8 +299,8 @@ function isMetaGamingProvider(session, options) {
 }
 
 /**
- * Extra / extra-chance: RGS play uses the ante mode + base amount (Meta Gaming HAR:
- * `{ mode: "ante", amount, currency }`). Paperclip uses ANTE the same way.
+ * Extra / Super Ante: RGS play uses ante mode + base amount (Meta Gaming HAR:
+ * `{ mode: "ante", amount, currency }`). Luxury Chad Super Ante: `{ mode: "ante2", amount: base }`.
  */
 function resolveStakeEngineAntePlay(session, extraBet, slotSlug) {
   if (!extraBet) return null
@@ -274,6 +321,7 @@ function resolveStakeEngineAntePlay(session, extraBet, slotSlug) {
     }
   }
   const slug = String(slotSlug || '').toLowerCase()
+  if (isLuxuryChadSlug(slug)) return { mode: 'ante2', costMultiplier: 15 }
   if (slug.startsWith('paperclip-')) return { mode: 'ANTE', costMultiplier: 3 }
   if (isMetaGamingSlug(slug) || isMetaGamingProvider(session, null)) {
     return { mode: 'ante', costMultiplier: 3 }
@@ -560,6 +608,7 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
   const anteMode = findStakeEngineAnteGameMode(gameModes)
   const catalogPid = String(opts?.providerId || '').toLowerCase()
   const metaGaming = isMetaGamingSlug(slotSlug) || catalogPid === 'meta-gaming' || catalogPid === 'metagaming'
+  const luxuryChad = isLuxuryChadSlug(slotSlug)
   const omitPlayCurrency = shouldOmitStakeEnginePlayCurrency(slotSlug)
   const betLevelsRaw = configData?.betLevels?.map((v) => Number(v)).filter((b) => b > 0) ?? []
   // API play currency (may be XEC on .eu); math currency is wallet-facing (sweeps/gold).
@@ -609,13 +658,19 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
     slotSlug: slotSlug || '',
     playMode,
     gameModes,
-    extraBetMode: anteMode?.mode || (metaGaming ? 'ante' : null),
+    extraBetMode: anteMode?.mode || (metaGaming ? 'ante' : luxuryChad ? 'ante2' : null),
     extraBetMultiplier: metaGaming
       ? 3
       : anteMode && Number.isFinite(anteMode.cost) && anteMode.cost > 0
         ? anteMode.cost
-        : null,
-    supportsExtraBet: Boolean(anteMode?.mode) || metaGaming || String(slotSlug || '').toLowerCase().startsWith('paperclip-'),
+        : luxuryChad
+          ? 15
+          : null,
+    supportsExtraBet:
+      Boolean(anteMode?.mode) ||
+      metaGaming ||
+      luxuryChad ||
+      String(slotSlug || '').toLowerCase().startsWith('paperclip-'),
     omitPlayCurrency,
     playPayload: stakeEnginePlayPayload(playMode, slotSlug),
     /** Wenn die Session-Config-URL eine Stake-Spiel-UUID enthält — sonst über Slot `stakeGameId` aus Kurator. */
@@ -656,7 +711,7 @@ export async function placeBet(session, betAmount, extraBet, autoplay = false, o
   const antePlay = resolveStakeEngineAntePlay(session, extraBet, slotSlug)
   const effectiveBet = antePlay?.costMultiplier > 0
     ? betAmount * antePlay.costMultiplier
-    : getEffectiveBetAmount(betAmount, extraBet, slotSlug || undefined)
+    : getEffectiveBetAmount(betAmount, extraBet, slotSlug || undefined, session)
   const amountForApi = antePlay ? betAmount : effectiveBet
   // Use wallet math currency (sweeps), not raw RGS code (XEC) — else EU SC bets collapse to min/10c.
   let amount = toStakeEngineAmount(amountForApi, sessionAmountMathCurrency(session))
