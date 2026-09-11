@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useProfilesStore } from '../../store/profilesStore';
 import { useAutoBetStore } from '../../store/autoBetStore';
 import { useCopyBetStore } from '../../store/copyBetStore';
+import { useCasinoStore } from '../Casino/store/casinoStore';
 
 interface ProfilesPanelProps {
-  mode: 'autobet' | 'copybet' | 'combined';
+  mode: 'autobet' | 'copybet' | 'combined' | 'casino';
   onApply?: () => void;
 }
 
@@ -14,6 +15,20 @@ export function ProfilesPanel({ mode, onApply }: ProfilesPanelProps) {
   const updateAutoBetSettings = useAutoBetStore((s) => s.updateSettings);
   const copyBetSettings = useCopyBetStore((s) => s.settings);
   const updateCopyBetSettings = useCopyBetStore((s) => s.updateSettings);
+  
+  // Casino prefs
+  const casinoPrefs = useCasinoStore((s) => ({
+    useSharedCurrency: s.useSharedCurrency,
+    sharedSourceCurrency: s.sharedSourceCurrency,
+    sharedTargetCurrency: s.sharedTargetCurrency,
+    sharedCryptoOnly: s.sharedCryptoOnly,
+  }));
+  const updateCasinoPrefs = useCasinoStore((s) => ({
+    setUseSharedCurrency: s.setUseSharedCurrency,
+    setSharedSourceCurrency: s.setSharedSourceCurrency,
+    setSharedTargetCurrency: s.setSharedTargetCurrency,
+    setSharedCryptoOnly: s.setSharedCryptoOnly,
+  }));
   
   const [saveName, setSaveName] = useState('');
   const [saveOpen, setSaveOpen] = useState(false);
@@ -28,6 +43,9 @@ export function ProfilesPanel({ mode, onApply }: ProfilesPanelProps) {
     if (mode === 'copybet' || mode === 'combined') {
       data.copyBet = copyBetSettings;
     }
+    if (mode === 'casino' || mode === 'combined') {
+      data.casino = casinoPrefs;
+    }
     saveProfile(saveName.trim(), data);
     setSaveName('');
     setSaveOpen(false);
@@ -41,6 +59,12 @@ export function ProfilesPanel({ mode, onApply }: ProfilesPanelProps) {
     }
     if (profile.copyBet && (mode === 'copybet' || mode === 'combined')) {
       updateCopyBetSettings(profile.copyBet);
+    }
+    if (profile.casino && (mode === 'casino' || mode === 'combined')) {
+      if (profile.casino.useSharedCurrency !== undefined) updateCasinoPrefs.setUseSharedCurrency(profile.casino.useSharedCurrency);
+      if (profile.casino.sharedSourceCurrency) updateCasinoPrefs.setSharedSourceCurrency(profile.casino.sharedSourceCurrency);
+      if (profile.casino.sharedTargetCurrency) updateCasinoPrefs.setSharedTargetCurrency(profile.casino.sharedTargetCurrency);
+      if (profile.casino.sharedCryptoOnly !== undefined) updateCasinoPrefs.setSharedCryptoOnly(profile.casino.sharedCryptoOnly);
     }
     if (onApply) onApply();
   };
@@ -84,6 +108,7 @@ export function ProfilesPanel({ mode, onApply }: ProfilesPanelProps) {
   const relevantProfiles = profiles.filter((p) => {
     if (mode === 'autobet') return p.autoBet;
     if (mode === 'copybet') return p.copyBet;
+    if (mode === 'casino') return p.casino;
     return true;
   });
 

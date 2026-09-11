@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { CasinoSlotInstance, SlotSet, CasinoChallengeSelection } from '../types';
+import type { CasinoSlotInstance, SlotSet } from '../types';
 import { loadSlotSets, saveSlotSet, deleteSlotSet } from '../utils/slotSets';
 import { loadFavorites, toggleFavorite } from '../utils/slotSets';
 
@@ -102,9 +102,9 @@ export const useCasinoStore = create<CasinoState>()(
       setLoadedSetId: (id) => set({ loadedSetId: id }),
 
       saveCurrentSlotSet: (name) => {
-        const { selectedSlotInstances, slotSets } = get();
+        const { selectedSlotInstances } = get();
         const selectedSlugs = selectedSlotInstances.map((i) => i.slug);
-        saveSlotSet(name, selectedSlugs);
+        saveSlotSet({ name, slots: selectedSlugs });
         set({ slotSets: loadSlotSets() });
       },
 

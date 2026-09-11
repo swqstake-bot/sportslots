@@ -189,6 +189,12 @@ export function useAutoBetEngine() {
 
     if (processingRef.current || !currentIsRunning || !currentUser) return;
     
+    // Clear any pending timeout to avoid double-firing after resume
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    
     processingRef.current = true;
     setIsProcessing(true);
     let scheduledActiveLimitRetry = false;
@@ -226,18 +232,22 @@ export function useAutoBetEngine() {
       let ratesMap: Record<string, number> = {};
       let fxFetchSuccess = false;
       const maxFxRetries = 3;
+      const needsCurrency = settings.currency.toLowerCase() !== 'usd';
       
       for (let attempt = 1; attempt <= maxFxRetries; attempt++) {
         try {
           const rates = await fetchCurrencyRates('');
-          if (rates) {
+          if (rates && typeof rates === 'object' && Object.keys(rates).length > 0) {
             ratesMap = rates;
             fxFetchSuccess = true;
             break;
+          } else if (needsCurrency) {
+            // Treat falsy/empty rates like failure for non-USD
+            throw new Error('Received falsy or empty rates');
           }
         } catch (err) {
           console.warn(`Failed to fetch currency rates (attempt ${attempt}/${maxFxRetries})`, err);
-          if (attempt < maxFxRetries && settings.currency.toLowerCase() !== 'usd') {
+          if (attempt < maxFxRetries && needsCurrency) {
             const backoffMs = 2000 * Math.pow(2, attempt - 1);
             addLog(`Currency rates fetch failed (attempt ${attempt}/${maxFxRetries}). Retrying in ${backoffMs}ms...`, 'warning');
             await new Promise(resolve => setTimeout(resolve, backoffMs));
@@ -245,7 +255,7 @@ export function useAutoBetEngine() {
         }
       }
       
-      if (!fxFetchSuccess && settings.currency.toLowerCase() !== 'usd') {
+      if (!fxFetchSuccess && needsCurrency) {
         addLog(`CRITICAL: Failed to fetch currency rates after ${maxFxRetries} attempts. Stopping for safety.`, 'error');
         stop();
         processingRef.current = false;
@@ -1118,7 +1128,7 @@ export function useAutoBetEngine() {
         timeoutRef.current = setTimeout(processAutoBet, 30000);
       }
     }
-  }, [addLog, stop, addActiveBet]);
+  }, [addLog, stop, addActiveBet, updateHeartbeat]);
 
   useEffect(() => {
     function onRuntimeEvent(ev: any) {

@@ -6,16 +6,17 @@ import { useAutoBetStore } from '../../store/autoBetStore';
 export function AutoBetManager() {
   // This hook handles the background logic (fetching, filtering, betting)
   const { processAutoBet } = useAutoBetEngine();
-  const isRunning = useAutoBetStore((s) => s.isRunning);
-  const addLog = useAutoBetStore((s) => s.addLog);
 
   const handleResume = useCallback(() => {
+    // Check fresh state instead of stale closure
+    const { isRunning, addLog } = useAutoBetStore.getState();
     if (isRunning && processAutoBet) {
       addLog('App became visible after being hidden. Triggering fresh scan cycle...', 'info');
       processAutoBet();
     }
-  }, [isRunning, addLog, processAutoBet]);
+  }, [processAutoBet]);
 
+  const isRunning = useAutoBetStore((s) => s.isRunning);
   useVisibilityResume(handleResume, isRunning);
 
   return null;

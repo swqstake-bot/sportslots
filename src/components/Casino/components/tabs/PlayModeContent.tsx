@@ -110,30 +110,31 @@ export function PlayModeContent(props: PlayModeContentProps) {
     [selectedSlotInstances]
   )
 
+  // Derive valid activeInstanceId during render to avoid setState in effect
   useEffect(() => {
-    if (instanceIds.length === 0) {
-      if (activeInstanceId) setActiveInstanceId('')
-      return
-    }
-    if (!instanceIds.includes(activeInstanceId)) {
-      setActiveInstanceId(instanceIds[instanceIds.length - 1])
+    const validId = instanceIds.length === 0 ? '' : (instanceIds.includes(activeInstanceId) ? activeInstanceId : instanceIds[instanceIds.length - 1])
+    if (validId !== activeInstanceId) {
+      queueMicrotask(() => setActiveInstanceId(validId))
     }
   }, [instanceIds, activeInstanceId])
 
+  // Prune sessions and validate filter - queue updates to avoid synchronous setState in effect
   useEffect(() => {
-    setSessionsById((prev) => {
-      const next: Record<string, WorkbenchSessionPublish> = {}
-      let changed = false
-      for (const id of instanceIds) {
-        if (prev[id]) next[id] = prev[id]
-        else changed = true
+    queueMicrotask(() => {
+      setSessionsById((prev) => {
+        const next: Record<string, WorkbenchSessionPublish> = {}
+        let changed = false
+        for (const id of instanceIds) {
+          if (prev[id]) next[id] = prev[id]
+          else changed = true
+        }
+        if (Object.keys(prev).length !== Object.keys(next).length) changed = true
+        return changed ? next : prev
+      })
+      if (statsFilterId !== 'all' && !instanceIds.includes(statsFilterId)) {
+        setStatsFilterId('all')
       }
-      if (Object.keys(prev).length !== Object.keys(next).length) changed = true
-      return changed ? next : prev
     })
-    if (statsFilterId !== 'all' && !instanceIds.includes(statsFilterId)) {
-      setStatsFilterId('all')
-    }
   }, [instanceIds, statsFilterId])
 
   useEffect(() => {
@@ -179,8 +180,11 @@ export function PlayModeContent(props: PlayModeContentProps) {
   useEffect(() => {
     const id = challengeHandoff?.instanceId
     if (!id) return
-    setActiveInstanceId(id)
-    setStatsFilterId(id)
+    // Queue state updates to avoid synchronous setState in effect
+    queueMicrotask(() => {
+      setActiveInstanceId(id)
+      setStatsFilterId(id)
+    })
     const t = window.setTimeout(() => {
       document.getElementById(`slot-wb-instance-${id}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     }, 80)
