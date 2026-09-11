@@ -83,6 +83,7 @@ export interface AutoBetState {
   skippedCount: number;
   scannedCount: number;
   investedUsd: number;
+  lastScanAt: number | null;
   
   updateSettings: (settings: Partial<AutoBetSettings>) => void;
   start: () => void;
@@ -94,6 +95,7 @@ export interface AutoBetState {
   bumpPlaced: (investUsd?: number) => void;
   bumpSkipped: (n?: number) => void;
   bumpScanned: (n: number) => void;
+  updateHeartbeat: () => void;
   openModal: () => void;
   closeModal: () => void;
 }
@@ -143,13 +145,14 @@ export const useAutoBetStore = create<AutoBetState>()(
       skippedCount: 0,
       scannedCount: 0,
       investedUsd: 0,
+      lastScanAt: null,
 
       updateSettings: (newSettings) => set((state) => ({
         settings: { ...state.settings, ...newSettings },
       })),
 
       start: () => set({ isRunning: true }),
-      stop: () => set({ isRunning: false }),
+      stop: () => set({ isRunning: false, lastScanAt: null }),
 
       addLog: (message, type = 'info') =>
         set((state) => {
@@ -201,6 +204,7 @@ export const useAutoBetStore = create<AutoBetState>()(
         set((state) => ({ skippedCount: state.skippedCount + Math.max(0, n) })),
       bumpScanned: (n) =>
         set((state) => ({ scannedCount: state.scannedCount + Math.max(0, n) })),
+      updateHeartbeat: () => set({ lastScanAt: Date.now() }),
 
       openModal: () => set({ isModalOpen: true }),
       closeModal: () => set({ isModalOpen: false }),

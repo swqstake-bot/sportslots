@@ -7,6 +7,7 @@ import { Queries } from '../../api/queries';
 import { TournamentEventPickFields } from './TournamentEventPickFields';
 import { ActiveBetsPanel } from '../ActiveBets/ActiveBetsPanel';
 import { CopyBetPanel } from './CopyBetPanel';
+import { ProfilesPanel } from './ProfilesPanel';
 import { useCopyBetStore } from '../../store/copyBetStore';
 import { hasTournamentScope } from '../../utils/tournamentScope';
 import {
@@ -43,6 +44,7 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
     skippedCount,
     scannedCount,
     investedUsd,
+    lastScanAt,
     updateSettings,
     start,
     stop,
@@ -199,6 +201,9 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
             <span className="copy-feed-kpi-label">Session</span>
             <strong>${investedUsd.toFixed(2)}</strong>
           </div>
+          {isRunning && lastScanAt && (
+            <LastScanIndicator lastScanAt={lastScanAt} />
+          )}
         </div>
 
         <section className="copy-feed-block">
@@ -269,6 +274,8 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
             </Chip>
           </div>
         </section>
+
+        <ProfilesPanel mode="autobet" />
 
         <details
           className="copy-feed-block copy-feed-advanced"
@@ -576,5 +583,25 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
     <button type="button" className={`copy-feed-chip ${on ? 'is-on' : ''}`} onClick={onClick} aria-pressed={on}>
       {children}
     </button>
+  );
+}
+
+function LastScanIndicator({ lastScanAt }: { lastScanAt: number }) {
+  const [secondsAgo, setSecondsAgo] = useState(0);
+  
+  useEffect(() => {
+    const updateSeconds = () => setSecondsAgo(Math.floor((Date.now() - lastScanAt) / 1000));
+    updateSeconds();
+    const interval = setInterval(updateSeconds, 1000);
+    return () => clearInterval(interval);
+  }, [lastScanAt]);
+
+  return (
+    <div>
+      <span className="copy-feed-kpi-label">Last Scan</span>
+      <strong title={new Date(lastScanAt).toLocaleString()}>
+        {secondsAgo}s ago
+      </strong>
+    </div>
   );
 }
