@@ -38,19 +38,13 @@ export default function CasinoView() {
     setSlotSets,
     loadedSetId,
     setLoadedSetId,
-    favorites,
     toggleSlotFavorite,
     useSharedCurrency,
     sharedSourceCurrency,
     sharedTargetCurrency,
     sharedCryptoOnly,
-    setUseSharedCurrency,
     setSharedSourceCurrency,
     setSharedTargetCurrency,
-    setSharedCryptoOnly,
-    globalControlsOpen,
-    setGlobalControlsOpen,
-    challengeHandoff,
     setChallengeHandoff,
     pendingPromoAutoStarts,
     setPendingPromoAutoStarts,
@@ -500,25 +494,10 @@ export default function CasinoView() {
         slotsLoading={slotsLoading && (webSlots as any[])?.length === 0}
         webSlots={webSlots as any}
         selectedSlugs={selectedSlugs}
-        selectedSlotInstances={selectedSlotInstances}
-        loadedSetId={loadedSetId}
-        slotSets={slotSets}
-        favorites={favorites}
-        globalControlsOpen={globalControlsOpen}
-        sharedSourceCurrency={sharedSourceCurrency}
-        sharedTargetCurrency={sharedTargetCurrency}
-        sharedCryptoOnly={sharedCryptoOnly}
-        useSharedCurrency={useSharedCurrency}
         displayedCurrencies={displayedCurrencies}
         playLogRefreshKey={playLogRefreshKey}
         recentBets={recentBets}
-        setGlobalControlsOpen={setGlobalControlsOpen}
-        setSharedSourceCurrency={setSharedSourceCurrency}
-        setSharedTargetCurrency={setSharedTargetCurrency}
-        setSharedCryptoOnly={setSharedCryptoOnly}
-        setUseSharedCurrency={setUseSharedCurrency}
         setSaveSlotSetOpen={setSaveSlotSetOpen}
-        setSelectedSlotInstances={setSelectedSlotInstances}
         clearSlotHistoryForInstances={clearSlotHistoryForInstances}
         handleToggleSlot={handleToggleSlot}
         handleAddInstance={handleAddInstance}
@@ -535,7 +514,6 @@ export default function CasinoView() {
         handlePlayLogUpdate={handlePlayLogUpdate}
         handleDiscoveredSlots={handleDiscoveredSlots}
         handleSelectChallenge={handleSelectChallenge}
-        challengeHandoff={challengeHandoff}
         onDismissChallengeHandoff={() => setChallengeHandoff(null)}
       />
       

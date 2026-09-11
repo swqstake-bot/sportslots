@@ -57,7 +57,7 @@ interface CasinoState {
   setGlobalControlsOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
   
   setChallengeHandoff: (handoff: { instanceId: string; gameName: string; targetMultiplier?: number } | null) => void;
-  setPendingPromoAutoStarts: (starts: Array<{ instanceId: string; autospinCount: number; targetMultiplier?: number; attempts: number; startRun?: boolean }>) => void;
+  setPendingPromoAutoStarts: (starts: Array<{ instanceId: string; autospinCount: number; targetMultiplier?: number; attempts: number; startRun?: boolean }> | ((prev: Array<{ instanceId: string; autospinCount: number; targetMultiplier?: number; attempts: number; startRun?: boolean }>) => Array<{ instanceId: string; autospinCount: number; targetMultiplier?: number; attempts: number; startRun?: boolean }>)) => void;
   addPendingPromoAutoStart: (start: { instanceId: string; autospinCount: number; targetMultiplier?: number; attempts: number; startRun?: boolean }) => void;
   removePendingPromoAutoStart: (instanceId: string) => void;
 }
@@ -133,7 +133,11 @@ export const useCasinoStore = create<CasinoState>()(
 
       setChallengeHandoff: (handoff) => set({ challengeHandoff: handoff }),
 
-      setPendingPromoAutoStarts: (starts) => set({ pendingPromoAutoStarts: starts }),
+      setPendingPromoAutoStarts: (starts) => {
+        set((state) => ({
+          pendingPromoAutoStarts: typeof starts === 'function' ? starts(state.pendingPromoAutoStarts) : starts,
+        }));
+      },
 
       addPendingPromoAutoStart: (start) => {
         set((state) => ({
