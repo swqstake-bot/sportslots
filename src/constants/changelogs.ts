@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.306': [
+    '🐛 HOTFIX: Sports/Casino infinite update loop crash (React error #185) — memoized displayedCurrencies, guarded currency setters',
+  ],
   '1.0.305': [
     '✨ AutoBet: Wake/Resume (Visibility API) + Heartbeat-Anzeige (Last Scan) + Soft-Retry FX-Kurse (3x Backoff)',
     '✨ Config Profiles: Save/Load/Export/Import für AutoBet-, CopyBet- und Casino-Einstellungen',

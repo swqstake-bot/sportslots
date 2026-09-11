@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Button } from './components/ui/Button'
 import { useSlots } from './hooks/useSlots'
 import { loadSlotSets, saveSlotSet, deleteSlotSet, exportSlotSets, importSlotSets } from './utils/slotSets'
@@ -87,33 +87,38 @@ export default function CasinoView() {
   const walletBalances = useUserStore((s) => s.balances)
   const [supportedCurrencies] = useState<{ value: string; label: string }[]>(ALL_CURRENCIES) // Removed unused setter
 
-  const ownedCodes = Object.keys(walletBalances || {})
-
-  const displayedCurrencies =
-    preferredSite === 'eu'
+  // Memoize to prevent infinite loop from unstable array reference
+  const displayedCurrencies = useMemo(() => {
+    const ownedCodes = Object.keys(walletBalances || {})
+    return preferredSite === 'eu'
       ? buildSelectableCurrencyOptions({ site: 'eu', ownedCodes })
       : sharedCryptoOnly
         ? supportedCurrencies.filter((c) => !isFiat(c.value) || isStable(c.value))
         : supportedCurrencies
+  }, [preferredSite, walletBalances, sharedCryptoOnly, supportedCurrencies])
 
   // Auto-switch currency if filtered out / EU: source === target
+  // Guard setters to prevent infinite loop (only set when value changes)
   useEffect(() => {
     if (preferredSite === 'eu') {
       const next = pickDefaultCurrency(displayedCurrencies, sharedSourceCurrency, 'eu')
       if (next && (next !== sharedSourceCurrency || next !== sharedTargetCurrency)) {
-        setSharedSourceCurrency(next)
-        setSharedTargetCurrency(next)
+        // Only set if actually different
+        if (next !== sharedSourceCurrency) setSharedSourceCurrency(next)
+        if (next !== sharedTargetCurrency) setSharedTargetCurrency(next)
       }
       return
     }
     if (sharedCryptoOnly) {
       if (isFiat(sharedSourceCurrency) && !isStable(sharedSourceCurrency)) {
         const first = displayedCurrencies.find((c) => !isFiat(c.value) || isStable(c.value))
-        if (first) setSharedSourceCurrency(first.value)
+        // Only set if found and different
+        if (first && first.value !== sharedSourceCurrency) setSharedSourceCurrency(first.value)
       }
       if (isFiat(sharedTargetCurrency) && !isStable(sharedTargetCurrency)) {
         const first = displayedCurrencies.find((c) => !isFiat(c.value) || isStable(c.value))
-        if (first) setSharedTargetCurrency(first.value)
+        // Only set if found and different
+        if (first && first.value !== sharedTargetCurrency) setSharedTargetCurrency(first.value)
       }
     }
   }, [preferredSite, sharedCryptoOnly, sharedSourceCurrency, sharedTargetCurrency, displayedCurrencies, setSharedSourceCurrency, setSharedTargetCurrency])
