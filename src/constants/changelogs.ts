@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.309': [
+    '🐛 Release-Hotfix: Baccarat TS-Typ (state.result) — 1.0.308 Build wieder grün',
+  ],
   '1.0.308': [
     '🐛 Keno: Board korrekt 1–40 (statt 39) — Patterns mit 10 Zahlen bleiben 10; Antebot 0-basiert + manuelle Picks vor randomNumbers',
   ],

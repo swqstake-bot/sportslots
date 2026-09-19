@@ -432,7 +432,11 @@ export async function placeOriginalsBet(
     }
     const res = await placeBaccaratBet({ currency: cur, player, banker, tie })
     const wagered = Number(res?.amount)
-    return resultFromApi(res, Number.isFinite(wagered) && wagered > 0 ? wagered : player + banker + tie, g)
+    return resultFromApi(
+      res as OriginalsBetApiRow | null,
+      Number.isFinite(wagered) && wagered > 0 ? wagered : player + banker + tie,
+      g
+    )
   }
 
   if (g === 'packs') {
