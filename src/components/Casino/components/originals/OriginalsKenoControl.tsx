@@ -13,7 +13,7 @@ import type { OriginalsSettingsState } from './OriginalsSettings'
 import WorkbenchCurrencySelect from './workbench/WorkbenchCurrencySelect'
 import { useCasinoBetListReset } from '../../utils/casinoBetSession'
 const RISK_OPTIONS = ['low', 'medium', 'high', 'extreme'] as const
-const KENO_NUMBERS = Array.from({ length: 39 }, (_, i) => i + 1)
+const KENO_NUMBERS = Array.from({ length: 40 }, (_, i) => i + 1)
 const MAX_BET_HISTORY = 500
 
 function delay(ms: number) {
@@ -138,7 +138,7 @@ export default function OriginalsKenoControl({ settings: propSettings, onSetting
 
       <div className="rounded-xl border border-[var(--border-subtle)] p-4 bg-[var(--bg-deep)]">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-xs text-[var(--text-muted)]">Numbers 1-39, max. 10 picks</span>
+          <span className="text-xs text-[var(--text-muted)]">Numbers 1-40, max. 10 picks</span>
           <span className="text-sm font-medium text-[var(--text)]">{picks.size} selected</span>
         </div>
         <div className="grid grid-cols-8 sm:grid-cols-10 gap-1.5">

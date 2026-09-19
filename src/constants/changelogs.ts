@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.308': [
+    '🐛 Keno: Board korrekt 1–40 (statt 39) — Patterns mit 10 Zahlen bleiben 10; Antebot 0-basiert + manuelle Picks vor randomNumbers',
+  ],
   '1.0.307': [
     '✨ Luxury Chad (Axis Frame): Super Ante Extra Bet (mode ante2, 15×)',
   ],

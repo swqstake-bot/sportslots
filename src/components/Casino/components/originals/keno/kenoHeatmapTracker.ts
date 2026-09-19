@@ -1,6 +1,8 @@
-/** Zählt gezogene Keno-Zahlen über Preroll-Runden (1–39). */
+/** Zählt gezogene Keno-Zahlen über Preroll-Runden (1–40). */
 
-const KENO_MAX = 39
+import { KENO_BOARD_MAX, kenoBoardPool, normalizeKenoPicks } from './kenoNumbers'
+
+const KENO_MAX = KENO_BOARD_MAX
 
 export interface KenoHeatmapTracker {
   recordDrawn: (drawn: number[]) => void
@@ -15,9 +17,8 @@ export function createKenoHeatmapTracker(maxNumber = KENO_MAX): KenoHeatmapTrack
 
   const recordDrawn = (drawn: number[]) => {
     if (!Array.isArray(drawn)) return
-    for (const raw of drawn) {
-      const n = Math.floor(Number(raw))
-      if (!Number.isFinite(n) || n < 1 || n > cap) continue
+    for (const n of normalizeKenoPicks(drawn)) {
+      if (n < 1 || n > cap) continue
       counts.set(n, (counts.get(n) ?? 0) + 1)
     }
   }
@@ -57,7 +58,7 @@ export function createKenoHeatmapTracker(maxNumber = KENO_MAX): KenoHeatmapTrack
 export function pickRandomKenoNumbers(count: number, maxNumber = KENO_MAX): number[] {
   const cap = Math.max(1, Math.min(KENO_MAX, Math.floor(maxNumber)))
   const want = Math.max(1, Math.min(10, Math.floor(count)))
-  const pool = Array.from({ length: cap }, (_, i) => i + 1)
+  const pool = kenoBoardPool(cap)
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
     ;[pool[i], pool[j]] = [pool[j], pool[i]]

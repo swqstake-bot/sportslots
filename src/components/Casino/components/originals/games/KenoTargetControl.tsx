@@ -54,7 +54,7 @@ export default function KenoTargetControl({ options, onPatch, readOnly }: KenoTa
             label="Range 1–N"
             value={options.heatmapRange ?? 30}
             min={1}
-            max={39}
+            max={40}
             step={1}
             readOnly={readOnly}
             prominent={false}
@@ -65,10 +65,17 @@ export default function KenoTargetControl({ options, onPatch, readOnly }: KenoTa
         <KenoNumberPicker
           selected={options.numbers ?? []}
           readOnly={readOnly}
-          onChange={(numbers) => onPatch({ numbers })}
+          onChange={(numbers) =>
+            onPatch({
+              numbers,
+              // Clear Antebot random-count so manual 1–10 picks are not ignored.
+              randomNumbersFrom: 0,
+              randomNumbersTo: 0,
+            })
+          }
         />
       )}
-      <p className="originals-target-slider-hint">Picks: {count} · API sends numbers[] + risk</p>
+      <p className="originals-target-slider-hint">Picks: {count} · Board 1–40 · API sends numbers[] + risk</p>
     </>
   )
 }

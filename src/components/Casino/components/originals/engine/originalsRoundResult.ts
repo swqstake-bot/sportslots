@@ -254,10 +254,10 @@ export function resolveOriginalsRoundUsd(
 
   const state = betApi?.state
   const kenoPicks = Array.isArray(state?.selectedNumbers)
-    ? state!.selectedNumbers!.filter((n) => Number.isFinite(n))
+    ? state!.selectedNumbers!.filter((n) => Number.isFinite(n) && n >= 1 && n <= 40)
     : undefined
   const kenoDrawn = Array.isArray(state?.drawnNumbers)
-    ? state!.drawnNumbers!.filter((n) => Number.isFinite(n))
+    ? state!.drawnNumbers!.filter((n) => Number.isFinite(n) && n >= 1 && n <= 40)
     : undefined
   let kenoHits: number | undefined
   if (g === 'keno' && kenoPicks?.length && kenoDrawn?.length) {

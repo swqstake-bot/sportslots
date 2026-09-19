@@ -322,11 +322,18 @@ function toKenoRiskEnum(risk) {
  * Keno-Wette platzieren.
  * @param {number} amount - Einsatz
  * @param {string} currency - Währung
- * @param {number[]} picks - Gewählte Zahlen (1–39, Stake max 39)
+ * @param {number[]} picks - Gewählte Zahlen (1–40, Stake board)
  * @param {string} risk - 'low' | 'medium' | 'high' | 'extreme'
  */
 export async function placeKenoBet({ amount, currency, picks, risk }) {
-  const numbers = Array.isArray(picks) ? picks.map(Number).filter((n) => n >= 1 && n <= 39).slice(0, 10) : []
+  let numbers = Array.isArray(picks)
+    ? picks.map((n) => Math.floor(Number(n))).filter((n) => Number.isFinite(n))
+    : []
+  // Antebot UI stored 0–39 while showing 1–40 — remap so pick "1" is not dropped.
+  if (numbers.includes(0) && !numbers.includes(40)) {
+    numbers = numbers.map((n) => n + 1)
+  }
+  numbers = [...new Set(numbers.filter((n) => n >= 1 && n <= 40))].sort((a, b) => a - b).slice(0, 10)
   const variables = {
     amount: Number(amount),
     currency: (currency || 'usdc').toLowerCase(),
@@ -475,6 +482,19 @@ export async function placeWheelBet({ amount, currency, segments = 10, risk = 'l
     identifier: identifier || randomRestIdentifier(),
   })
   const bet = res?.wheelSpin ?? res?.wheelBet ?? res?.data?.wheelSpin
+  return normalizeCasinoBetRow(bet)
+}
+
+/** Baccarat — REST `/_api/casino/baccarat/bet` (HAR: player/banker/tie amounts + identifier). */
+export async function placeBaccaratBet({ currency, player = 0, banker = 0, tie = 0, identifier }) {
+  const res = await stakeCasinoRestPost('/_api/casino/baccarat/bet', {
+    currency: String(currency || 'usdc').toLowerCase(),
+    identifier: identifier || randomRestIdentifier(),
+    player: Number(player) || 0,
+    banker: Number(banker) || 0,
+    tie: Number(tie) || 0,
+  })
+  const bet = res?.baccaratBet ?? res?.data?.baccaratBet
   return normalizeCasinoBetRow(bet)
 }
 

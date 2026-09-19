@@ -13,6 +13,7 @@ import {
   placeSnakesBet,
   placeFlipBet,
   placeWheelBet,
+  placeBaccaratBet,
   placePumpBet,
   placeDiamondsBet,
   placeTomeOfLifeBet,
@@ -32,6 +33,7 @@ import {
 import { playBlackjackScriptRound } from '../blackjack/blackjackScriptRound'
 import { eggLevelsToApi, normalizeEggLevels } from '../games/DragonTowerEggGrid'
 import { clampLimboMultiplier } from '../games/targetMath'
+import { kenoBoardPool, normalizeKenoPicks, KENO_PICK_MAX } from '../keno/kenoNumbers'
 import type { OriginalsBetApiRow } from './originalsRoundResult'
 
 const GRID_SIZE = 25
@@ -158,28 +160,30 @@ export async function placeOriginalsBet(
 
   if (g === 'keno') {
     const useHeatmap = optBoolFrom(opts, 'useHeatmapHotNumbers', false) && optFrom(opts, 'heatmapHotNumbers', 0) > 0
-    const fixedNumbers = (opts.numbers as number[]) || []
+    const fixedNumbers = normalizeKenoPicks(opts.numbers)
     const fromRaw = Math.floor(optFrom(opts, 'randomNumbersFrom', 0))
     const toRaw = Math.floor(optFrom(opts, 'randomNumbersTo', 0))
     const useRandomCount = fromRaw > 0 || toRaw > 0
     let numbers: number[]
     if (useHeatmap) {
-      const hotCount = Math.max(1, Math.min(10, optFrom(opts, 'heatmapHotNumbers', 5)))
-      const range = Math.max(1, Math.min(39, optFrom(opts, 'heatmapRange', 30)))
-      numbers = shuffle(Array.from({ length: range }, (_, i) => i + 1)).slice(0, hotCount)
+      const hotCount = Math.max(1, Math.min(KENO_PICK_MAX, optFrom(opts, 'heatmapHotNumbers', 5)))
+      const range = Math.max(1, Math.min(40, optFrom(opts, 'heatmapRange', 30)))
+      numbers = shuffle(kenoBoardPool(range)).slice(0, hotCount)
+    } else if (fixedNumbers.length > 0) {
+      // Manual / pattern picks always win over leftover randomNumbersFrom/To from profiles.
+      numbers = fixedNumbers
     } else if (useRandomCount) {
       // randomNumbersFrom/To = pick count range (Antebot); 10–10 → always 10 picks
-      const a = Math.max(1, Math.min(10, fromRaw > 0 ? fromRaw : toRaw))
-      const b = Math.max(1, Math.min(10, toRaw > 0 ? toRaw : fromRaw))
+      const a = Math.max(1, Math.min(KENO_PICK_MAX, fromRaw > 0 ? fromRaw : toRaw))
+      const b = Math.max(1, Math.min(KENO_PICK_MAX, toRaw > 0 ? toRaw : fromRaw))
       const lo = Math.min(a, b)
       const hi = Math.max(a, b)
       const count = lo + Math.floor(Math.random() * (hi - lo + 1))
-      numbers = shuffle(Array.from({ length: 39 }, (_, i) => i + 1)).slice(0, count)
-    } else if (Array.isArray(fixedNumbers) && fixedNumbers.length > 0) {
-      numbers = fixedNumbers.filter((n) => n >= 1 && n <= 39).slice(0, 10)
+      numbers = shuffle(kenoBoardPool(40)).slice(0, count)
     } else {
-      numbers = shuffle(Array.from({ length: 39 }, (_, i) => i + 1)).slice(0, 8)
+      numbers = shuffle(kenoBoardPool(40)).slice(0, 8)
     }
+    numbers = normalizeKenoPicks(numbers)
     if (numbers.length === 0) numbers = [1]
     const riskRaw = String(opts.risk || 'medium').toLowerCase()
     const risk = riskRaw === 'classic' ? 'medium' : riskRaw
@@ -199,7 +203,7 @@ export async function placeOriginalsBet(
           ...state,
           selectedNumbers:
             Array.isArray(state.selectedNumbers) && state.selectedNumbers.length > 0
-              ? state.selectedNumbers
+              ? normalizeKenoPicks(state.selectedNumbers)
               : numbers,
         },
       }
@@ -408,6 +412,29 @@ export async function placeOriginalsBet(
     return resultFromApi(res, amountMajor, g)
   }
 
+  if (g === 'baccarat') {
+    const mode = String(opts.baccaratMode || opts.side || 'hedge').toLowerCase()
+    const a = Math.max(0, Number(amountMajor) || 0)
+    let player = 0
+    let banker = 0
+    let tie = 0
+    if (mode === 'player') player = a
+    else if (mode === 'banker') banker = a
+    else if (mode === 'tie') tie = a
+    else if (mode === 'both' || mode === 'playerbanker' || mode === 'player+banker') {
+      // Same stake on both sides (betSize = amount per side; wagered ≈ 2×).
+      player = a
+      banker = a
+    } else {
+      // hedge: split total stake 50/50
+      player = a / 2
+      banker = a / 2
+    }
+    const res = await placeBaccaratBet({ currency: cur, player, banker, tie })
+    const wagered = Number(res?.amount)
+    return resultFromApi(res, Number.isFinite(wagered) && wagered > 0 ? wagered : player + banker + tie, g)
+  }
+
   if (g === 'packs') {
     const identifier = optStrFrom(opts, 'casesIdentifier', '').trim()
     const res = await placePacksRestBet({
@@ -418,7 +445,7 @@ export async function placeOriginalsBet(
     return resultFromApi(res, amountMajor, g)
   }
 
-  if (['roulette', 'baccarat', 'video-poker', 'drill', 'moles', 'blitz'].includes(g)) {
+  if (['roulette', 'video-poker', 'drill', 'moles', 'blitz'].includes(g)) {
     await placeUnsupportedOriginalsBet(g)
   }
 

@@ -40,7 +40,7 @@ export const GAME_API_PROFILES: Record<string, GameApiProfile> = {
   }),
   plinko: profile('plinko', 'plinkoBet(rows, risk)', ['rows 8–16', 'risk'], { usesDiscreteMultipliers: true }),
   mines: profile('mines', 'minesBet → minesNext → minesCashout', ['minesCount', 'fields[]', 'cashout']),
-  keno: profile('keno', 'kenoBet(numbers, risk)', ['numbers[1–39]', 'risk']),
+  keno: profile('keno', 'kenoBet(numbers, risk)', ['numbers[1–40]', 'risk']),
   wheel: profile('wheel', 'REST wheel/spin', ['segments', 'risk']),
   pump: profile('pump', 'pumpBet(round, difficulty)', ['round', 'difficulty'], { usesDiscreteMultipliers: true }),
   chicken: profile('chicken', 'REST chicken/bet', ['round', 'difficulty'], { usesDiscreteMultipliers: true }),
@@ -60,7 +60,10 @@ export const GAME_API_PROFILES: Record<string, GameApiProfile> = {
   'slots-samurai': profile('slots-samurai', 'REST slots-samurai/bet (+ next)', ['amount']),
   blackjack: profile('blackjack', 'REST blackjack/bet (+ next)', ['amount']),
   roulette: profile('roulette', 'API pending', [], { notes: 'Not wired' }),
-  baccarat: profile('baccarat', 'API pending', [], { notes: 'Not wired' }),
+  baccarat: profile('baccarat', 'REST baccarat/bet', ['player', 'banker', 'tie'], {
+    notes:
+      'baccaratMode: both = same stake on player+banker (betSize per side). hedge = split total 50/50. player|banker|tie = one side.',
+  }),
   'video-poker': profile('video-poker', 'API pending', [], { notes: 'Not wired' }),
   drill: profile('drill', 'API pending', [], { notes: 'Not wired' }),
   moles: profile('moles', 'API pending', [], { notes: 'Not wired' }),

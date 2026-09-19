@@ -1,5 +1,4 @@
-const KENO_MAX = 40
-const KENO_PICK_MAX = 10
+import { KENO_BOARD_MAX, KENO_PICK_MAX, kenoBoardPool, normalizeKenoPicks } from '../keno/kenoNumbers'
 
 interface KenoNumberPickerProps {
   selected: number[]
@@ -17,28 +16,29 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 export default function KenoNumberPicker({ selected, onChange, readOnly }: KenoNumberPickerProps) {
-  const set = new Set(selected)
+  const cleaned = normalizeKenoPicks(selected)
+  const set = new Set(cleaned)
 
   const toggle = (n: number) => {
     if (readOnly) return
     if (set.has(n)) {
-      onChange(selected.filter((x) => x !== n))
+      onChange(cleaned.filter((x) => x !== n))
       return
     }
-    if (selected.length >= KENO_PICK_MAX) return
-    onChange([...selected, n].sort((a, b) => a - b))
+    if (cleaned.length >= KENO_PICK_MAX) return
+    onChange(normalizeKenoPicks([...cleaned, n]))
   }
 
   const pickRandom = (count: number) => {
     if (readOnly) return
-    onChange(shuffle(Array.from({ length: KENO_MAX }, (_, i) => i + 1)).slice(0, count).sort((a, b) => a - b))
+    onChange(normalizeKenoPicks(shuffle(kenoBoardPool(KENO_BOARD_MAX)).slice(0, count)))
   }
 
   return (
     <div className="originals-keno-picker">
       <div className="originals-keno-picker-toolbar">
         <span className="originals-keno-picker-count">
-          {selected.length} / {KENO_PICK_MAX} numbers
+          {cleaned.length} / {KENO_PICK_MAX} numbers
         </span>
         <div className="originals-keno-picker-actions">
           <button type="button" className="originals-mini-btn" disabled={readOnly} onClick={() => onChange([])}>
@@ -53,11 +53,11 @@ export default function KenoNumberPicker({ selected, onChange, readOnly }: KenoN
         </div>
       </div>
       <div className="originals-keno-grid">
-        {Array.from({ length: KENO_MAX }, (_, i) => i + 1).map((n) => (
+        {kenoBoardPool(KENO_BOARD_MAX).map((n) => (
           <button
             key={n}
             type="button"
-            disabled={readOnly || (!set.has(n) && selected.length >= KENO_PICK_MAX)}
+            disabled={readOnly || (!set.has(n) && cleaned.length >= KENO_PICK_MAX)}
             className={`originals-keno-cell${set.has(n) ? ' is-selected' : ''}`}
             onClick={() => toggle(n)}
           >
@@ -65,8 +65,8 @@ export default function KenoNumberPicker({ selected, onChange, readOnly }: KenoN
           </button>
         ))}
       </div>
-      {selected.length === 0 && (
-        <p className="originals-empty-hint">No numbers selected — session uses random 8 picks.</p>
+      {cleaned.length === 0 && (
+        <p className="originals-empty-hint">No numbers selected — session uses random 8 picks (1–40).</p>
       )}
     </div>
   )
