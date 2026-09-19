@@ -1,4 +1,5 @@
 import { isGoldCoinCurrency } from '../../../utils/currencyMeta'
+import { kenoPicksFromApi } from '../keno/kenoNumbers'
 
 function currencyAmountToUsd(amount: number, currency: string, usdRates?: Record<string, number>): number {
   if (amount <= 0) return amount
@@ -254,10 +255,10 @@ export function resolveOriginalsRoundUsd(
 
   const state = betApi?.state
   const kenoPicks = Array.isArray(state?.selectedNumbers)
-    ? state!.selectedNumbers!.filter((n) => Number.isFinite(n) && n >= 1 && n <= 40)
+    ? kenoPicksFromApi(state!.selectedNumbers)
     : undefined
   const kenoDrawn = Array.isArray(state?.drawnNumbers)
-    ? state!.drawnNumbers!.filter((n) => Number.isFinite(n) && n >= 1 && n <= 40)
+    ? kenoPicksFromApi(state!.drawnNumbers)
     : undefined
   let kenoHits: number | undefined
   if (g === 'keno' && kenoPicks?.length && kenoDrawn?.length) {

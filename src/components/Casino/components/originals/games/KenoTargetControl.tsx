@@ -75,7 +75,7 @@ export default function KenoTargetControl({ options, onPatch, readOnly }: KenoTa
           }
         />
       )}
-      <p className="originals-target-slider-hint">Picks: {count} · Board 1–40 · API sends numbers[] + risk</p>
+      <p className="originals-target-slider-hint">Picks: {count} · Board 1–40 (API 0–39) · numbers[] + risk</p>
     </>
   )
 }

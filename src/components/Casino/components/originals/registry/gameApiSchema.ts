@@ -40,7 +40,7 @@ export const GAME_API_PROFILES: Record<string, GameApiProfile> = {
   }),
   plinko: profile('plinko', 'plinkoBet(rows, risk)', ['rows 8–16', 'risk'], { usesDiscreteMultipliers: true }),
   mines: profile('mines', 'minesBet → minesNext → minesCashout', ['minesCount', 'fields[]', 'cashout']),
-  keno: profile('keno', 'kenoBet(numbers, risk)', ['numbers[1–40]', 'risk']),
+  keno: profile('keno', 'kenoBet(numbers, risk)', ['numbers UI 1–40 → API 0–39', 'risk']),
   wheel: profile('wheel', 'REST wheel/spin', ['segments', 'risk']),
   pump: profile('pump', 'pumpBet(round, difficulty)', ['round', 'difficulty'], { usesDiscreteMultipliers: true }),
   chicken: profile('chicken', 'REST chicken/bet', ['round', 'difficulty'], { usesDiscreteMultipliers: true }),

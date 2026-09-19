@@ -33,7 +33,7 @@ import {
 import { playBlackjackScriptRound } from '../blackjack/blackjackScriptRound'
 import { eggLevelsToApi, normalizeEggLevels } from '../games/DragonTowerEggGrid'
 import { clampLimboMultiplier } from '../games/targetMath'
-import { kenoBoardPool, normalizeKenoPicks, KENO_PICK_MAX } from '../keno/kenoNumbers'
+import { kenoBoardPool, normalizeKenoPicks, kenoPicksFromApi, KENO_PICK_MAX } from '../keno/kenoNumbers'
 import type { OriginalsBetApiRow } from './originalsRoundResult'
 
 const GRID_SIZE = 25
@@ -203,7 +203,7 @@ export async function placeOriginalsBet(
           ...state,
           selectedNumbers:
             Array.isArray(state.selectedNumbers) && state.selectedNumbers.length > 0
-              ? normalizeKenoPicks(state.selectedNumbers)
+              ? kenoPicksFromApi(state.selectedNumbers)
               : numbers,
         },
       }

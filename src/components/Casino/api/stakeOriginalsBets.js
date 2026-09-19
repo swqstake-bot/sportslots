@@ -322,18 +322,20 @@ function toKenoRiskEnum(risk) {
  * Keno-Wette platzieren.
  * @param {number} amount - Einsatz
  * @param {string} currency - Währung
- * @param {number[]} picks - Gewählte Zahlen (1–40, Stake board)
+ * @param {number[]} picks - UI-Zahlen 1–40 (werden als 0–39 an die API gesendet)
  * @param {string} risk - 'low' | 'medium' | 'high' | 'extreme'
  */
 export async function placeKenoBet({ amount, currency, picks, risk }) {
-  let numbers = Array.isArray(picks)
+  let display = Array.isArray(picks)
     ? picks.map((n) => Math.floor(Number(n))).filter((n) => Number.isFinite(n))
     : []
-  // Antebot UI stored 0–39 while showing 1–40 — remap so pick "1" is not dropped.
-  if (numbers.includes(0) && !numbers.includes(40)) {
-    numbers = numbers.map((n) => n + 1)
+  // Already API 0–39 (e.g. Antebot import) → lift to display first
+  if (display.some((n) => n === 0)) {
+    display = display.map((n) => n + 1)
   }
-  numbers = [...new Set(numbers.filter((n) => n >= 1 && n <= 40))].sort((a, b) => a - b).slice(0, 10)
+  display = [...new Set(display.filter((n) => n >= 1 && n <= 40))].sort((a, b) => a - b).slice(0, 10)
+  // Stake GraphQL: 0–39 only (`NUMBERS i can't be above 39`)
+  const numbers = display.map((n) => n - 1)
   const variables = {
     amount: Number(amount),
     currency: (currency || 'usdc').toLowerCase(),
