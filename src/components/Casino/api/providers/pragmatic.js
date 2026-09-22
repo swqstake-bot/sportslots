@@ -593,9 +593,11 @@ export async function startSession(accessToken, slotSlug, sourceCurrency, target
 
   const betLevels = parseBetLevels(doInitText, targetCurrency, symbol)
   const parsed = parsePragmaticResponse(doInitText)
-  // SSP-nah: doInit liefert die Cursor-Basis; erster doSpin = index+1 / counter+2
+  // doInit-Response ist die Cursor-Basis; nächster Request = index+1 / counter+1
+  // (HAR vsrar15thunwl: doInit → index=1,counter=2 ⇒ erster doSpin index=2,counter=3.
+  //  Früher counter+2 erzeugte counter=4 → msg_code=7 SystemError / frozen.)
   const firstIndex = nextPragmaticCursorValue(parsed.index, 1, '2')
-  const firstCounter = nextPragmaticCursorValue(parsed.counter, 2, '3')
+  const firstCounter = nextPragmaticCursorValue(parsed.counter, 1, '2')
   const lines = resolvePragmaticLines(symbol, doInitText)
   const isZeroDec = isZeroDecimalCurrency((targetCurrency || 'eur').toLowerCase())
   const bal = Number(parsed.balance) || 0
@@ -696,8 +698,8 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     const text = await postGameService(currentSession, body)
     lastData = text
     lastParsed = parsePragmaticResponse(text)
-    const nextIdx = String(parseInt(lastParsed.index, 10) + 1)
-    const nextCnt = String(parseInt(lastParsed.counter, 10) + 2)
+    const nextIdx = nextPragmaticCursorValue(lastParsed.index, 1, nextPragmaticCursorValue(currentSession.index, 1, '2'))
+    const nextCnt = nextPragmaticCursorValue(lastParsed.counter, 1, nextPragmaticCursorValue(currentSession.counter, 1, '2'))
     currentSession = { ...currentSession, index: nextIdx, counter: nextCnt, na: lastParsed.na }
   }
 
@@ -715,7 +717,7 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     lastData = text
     lastParsed = parsePragmaticResponse(text)
     const nextIdx = nextPragmaticCursorValue(lastParsed.index, 1, nextPragmaticCursorValue(currentSession.index, 1, '2'))
-    const nextCnt = nextPragmaticCursorValue(lastParsed.counter, 2, nextPragmaticCursorValue(currentSession.counter, 2, '3'))
+    const nextCnt = nextPragmaticCursorValue(lastParsed.counter, 1, nextPragmaticCursorValue(currentSession.counter, 1, '2'))
     currentSession = { ...currentSession, index: nextIdx, counter: nextCnt, na: lastParsed.na }
     return text
   }
@@ -745,6 +747,8 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
     }
     if (isSexyRabbitPragmaticSymbol(currentSession.symbol)) {
       spinBody.sInfo = 'n'
+      // HAR vsrar15thunwl: Browser sendet ind=0 (ch_v Auswahl)
+      if (spinBody.ind == null) spinBody.ind = '0'
     }
     const spinText = await postGameService(currentSession, spinBody)
     return { spinBody, spinText, parsed: parsePragmaticResponse(spinText) }
@@ -765,21 +769,21 @@ export async function placeBet(session, betAmount, extraBet = false, autoplay = 
   }
   firstSpinBalance = lastParsed.balance
   let nextIndex = nextPragmaticCursorValue(lastParsed.index, 1, nextPragmaticCursorValue(currentSession.index, 1, '2'))
-  let nextCounter = nextPragmaticCursorValue(lastParsed.counter, 2, nextPragmaticCursorValue(currentSession.counter, 2, '3'))
+  let nextCounter = nextPragmaticCursorValue(lastParsed.counter, 1, nextPragmaticCursorValue(currentSession.counter, 1, '2'))
   currentSession = { ...currentSession, index: nextIndex, counter: nextCounter, na: lastParsed.na }
 
   if (lastParsed.na === 'b' || lastParsed.fs || lastParsed.fs_opt || lastParsed.mo || lastParsed.rs_c || lastParsed.bgid) {
     bonusFlowDetected = true
   }
 
-  // SSP-Flow: Wenn na=s und w>0, weitere doSpin-Schritte mit ++index/+=2 counter
+  // Wenn na=s und w>0: weitere doSpin-Schritte mit index+1 / counter+1 aus Response
   while (lastParsed.na === 's' && Number(lastParsed.w || 0) > 0) {
     const chained = await doSpin()
     lastSpinBody = chained?.spinBody || lastSpinBody
     lastData = chained.spinText
     lastParsed = chained.parsed
     nextIndex = nextPragmaticCursorValue(lastParsed.index, 1, nextPragmaticCursorValue(currentSession.index, 1, '2'))
-    nextCounter = nextPragmaticCursorValue(lastParsed.counter, 2, nextPragmaticCursorValue(currentSession.counter, 2, '3'))
+    nextCounter = nextPragmaticCursorValue(lastParsed.counter, 1, nextPragmaticCursorValue(currentSession.counter, 1, '2'))
     currentSession = { ...currentSession, index: nextIndex, counter: nextCounter, na: lastParsed.na }
     if (lastParsed.na === 'b' || lastParsed.fs || lastParsed.fs_opt || lastParsed.mo || lastParsed.rs_c || lastParsed.bgid) {
       bonusFlowDetected = true

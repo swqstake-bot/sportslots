@@ -1,4 +1,10 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.311': [
+    '🐛 Pragmatic: Cursor nach doInit counter+1 (nicht +2) — behebt SystemError/frozen (z. B. vsrar15thunwl); vsrar* sendet ind=0',
+  ],
+  '1.0.310': [
+    '🐛 Keno: UI 1–40 → API 0–39 (fix NUMBERS can’t be above 39; Pick „1“ wird wieder mitgesendet)',
+  ],
   '1.0.309': [
     '🐛 Release-Hotfix: Baccarat TS-Typ (state.result) — 1.0.308 Build wieder grün',
   ],
