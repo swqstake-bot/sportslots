@@ -4,6 +4,8 @@ import {
   getCashoutValue,
   getEffectiveOdds,
   getOpenLegsCount,
+  isCashoutBetStatus,
+  isSuccessfulFinishedBet,
   resolveCashoutMultiplierForBet,
 } from '../../services/cashoutService';
 
@@ -17,23 +19,9 @@ interface BetListCardProps {
   isSelected?: boolean;
 }
 
-function isSuccessfulFinishedBet(bet: SportBet): boolean {
-  const statusLower = String(bet.status ?? '').toLowerCase();
-  if (statusLower === 'won' || statusLower === 'cashout' || statusLower === 'cashoutpending') return true;
-  if (!bet.active && bet.payout != null && bet.amount != null && bet.payout > bet.amount) return true;
-  const outcomes = bet.outcomes ?? [];
-  if (outcomes.length > 0 && !bet.active) {
-    return outcomes.every((o) => {
-      const st = String(o?.status ?? '').toLowerCase();
-      return st === 'won' || st === 'win';
-    });
-  }
-  return false;
-}
-
 function resolveDisplayStatus(bet: SportBet): { label: string; tone: 'active' | 'won' | 'lost' | 'cashout' | 'neutral' } {
   const statusLower = String(bet.status ?? '').toLowerCase();
-  const isCashout = statusLower === 'cashout' || statusLower === 'cashoutpending';
+  const isCashout = isCashoutBetStatus(bet);
   const isLostLike =
     statusLower === 'lost' ||
     statusLower === 'cancelled' ||

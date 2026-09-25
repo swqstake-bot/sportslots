@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.312': [
+    '🐛 Finished Bets: Vollgewinne mit Status settled landen unter Won (nicht Lost) — Sektion nutzt payout/Cashout-Status wie die Anzeige',
+  ],
   '1.0.311': [
     '🐛 Pragmatic: Cursor nach doInit counter+1 (nicht +2) — behebt SystemError/frozen (z. B. vsrar15thunwl); vsrar* sendet ind=0',
   ],

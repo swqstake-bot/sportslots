@@ -1,5 +1,12 @@
 import type { SportBet, SportBetOutcome } from '../../store/userStore';
-import { getCashoutValue, getEffectiveOdds, getOpenLegsCount, resolveCashoutMultiplierForBet } from '../../services/cashoutService';
+import {
+  getCashoutValue,
+  getEffectiveOdds,
+  getOpenLegsCount,
+  isCashoutBetStatus,
+  isSuccessfulFinishedBet,
+  resolveCashoutMultiplierForBet,
+} from '../../services/cashoutService';
 import { formatAmount } from '../Casino/utils/formatAmount';
 import { toUsd } from '../Logger/loggerUtils';
 import { MatchTracker } from './MatchTracker';
@@ -20,25 +27,10 @@ function formatCurrency(amount: number, currency: string): string {
   return `${formatAmount(val, currency)} ${(currency || 'UNK').toUpperCase()}`;
 }
 
-function isSuccessfulFinishedBet(bet: SportBet): boolean {
-  const statusLower = String(bet.status ?? '').toLowerCase();
-  if (statusLower === 'won' || statusLower === 'cashout' || statusLower === 'cashoutpending') return true;
-  if (!bet.active && bet.payout != null && bet.amount != null && bet.payout > bet.amount) return true;
-  const outcomes = bet.outcomes ?? [];
-  if (outcomes.length > 0 && !bet.active) {
-    return outcomes.every((o) => {
-      const st = String(o?.status ?? '').toLowerCase();
-      return st === 'won' || st === 'win';
-    });
-  }
-  return false;
-}
-
 function resolvePreviewStatus(bet: SportBet): { label: string; tone: 'active' | 'won' | 'lost' | 'neutral' } {
   const statusLower = String(bet.status ?? '').toLowerCase();
   if (isSuccessfulFinishedBet(bet)) {
-    const isCashout = statusLower === 'cashout' || statusLower === 'cashoutpending';
-    return { label: isCashout ? 'Cashout' : 'Won', tone: 'won' };
+    return { label: isCashoutBetStatus(bet) ? 'Cashout' : 'Won', tone: 'won' };
   }
   if (statusLower === 'lost' || statusLower === 'settled' || statusLower === 'cancelled') return { label: 'Lost', tone: 'lost' };
   if (bet.active || statusLower === 'active' || statusLower === 'confirmed') return { label: 'Active', tone: 'active' };

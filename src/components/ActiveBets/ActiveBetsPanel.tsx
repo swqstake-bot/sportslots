@@ -8,6 +8,7 @@ import { Queries } from '../../api/queries';
 import { formatStakeAmount } from '../../utils/formatStakeAmount';
 import {
   computeCashoutFromPreview,
+  finishedBetBucket,
   getCashoutValue,
   getEffectiveOdds,
   getOpenLegsCount,
@@ -361,9 +362,9 @@ export function ActiveBetsPanel({
         if (hasLiveLeg(b)) live.push(b);
         else upcoming.push(b);
       } else if (activeTab === 'finished') {
-        const s = String(b.status ?? '').toLowerCase();
-        if (s === 'won') won.push(b);
-        else if (s === 'cashout' || s === 'cashoutpending') cashout.push(b);
+        const bucket = finishedBetBucket(b);
+        if (bucket === 'won') won.push(b);
+        else if (bucket === 'cashout') cashout.push(b);
         else lost.push(b);
       }
     }

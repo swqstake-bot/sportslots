@@ -140,6 +140,37 @@ export function getOpenLegsCount(bet: SportBet): number {
   return bet.outcomes.filter((o: any) => !isLegClosed(o)).length;
 }
 
+/** Stake: cashout / cashoutPending */
+export function isCashoutBetStatus(bet: SportBet): boolean {
+  const s = String(bet.status ?? '').toLowerCase();
+  return s === 'cashout' || s === 'cashoutpending';
+}
+
+/**
+ * Abgeschlossene Wette mit Gewinn (Won oder Cashout).
+ * Stake setzt bei Vollgewinn oft `settled` statt `won` — dann payout > amount.
+ */
+export function isSuccessfulFinishedBet(bet: SportBet): boolean {
+  const statusLower = String(bet.status ?? '').toLowerCase();
+  if (statusLower === 'won' || isCashoutBetStatus(bet)) return true;
+  if (!bet.active && bet.payout != null && bet.amount != null && bet.payout > bet.amount) return true;
+  const outcomes = bet.outcomes ?? [];
+  if (outcomes.length > 0 && !bet.active) {
+    return outcomes.every((o) => {
+      const st = String(o?.status ?? '').toLowerCase();
+      return st === 'won' || st === 'win';
+    });
+  }
+  return false;
+}
+
+/** Finished-Tab: Won / Lost / Cashout */
+export function finishedBetBucket(bet: SportBet): 'won' | 'lost' | 'cashout' {
+  if (isCashoutBetStatus(bet)) return 'cashout';
+  if (isSuccessfulFinishedBet(bet)) return 'won';
+  return 'lost';
+}
+
 /**
  * Anzahl Legs, die bereits erledigt sind (gewonnen/verloren). Für Sortierung: mehr erledigt = besser (11/12 vor 11/11).
  */
