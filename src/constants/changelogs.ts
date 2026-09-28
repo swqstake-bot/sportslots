@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.316': [
+    '✨ Sports Active Bets: Mehrfachauswahl (Checkbox) + Copy IDs für markierte Wetten (`sport:…`)',
+  ],
   '1.0.315': [
     '🐛 Sportwetten Copy: immer `sport:…` (nie Link, nie `sports:sport:…`)',
   ],

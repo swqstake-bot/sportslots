@@ -5,6 +5,7 @@ interface AutoCashoutControlsProps {
   onTargetChange: (v: number) => void;
   selectedCount: number;
   onCashoutSelected: () => void;
+  onCopySelectedIds?: () => void;
 }
 
 export function AutoCashoutControls({
@@ -14,6 +15,7 @@ export function AutoCashoutControls({
   onTargetChange,
   selectedCount,
   onCashoutSelected,
+  onCopySelectedIds,
 }: AutoCashoutControlsProps) {
   return (
     <div
@@ -24,14 +26,27 @@ export function AutoCashoutControls({
       }}
     >
       {selectedCount > 0 && (
-        <button
-          type="button"
-          onClick={onCashoutSelected}
-          className="text-xs font-bold px-3 py-1.5 rounded hover:opacity-90 transition-opacity"
-          style={{ background: 'var(--app-accent)', color: 'var(--app-bg-deep)' }}
-        >
-          Cashout Selected ({selectedCount})
-        </button>
+        <>
+          {onCopySelectedIds && (
+            <button
+              type="button"
+              onClick={onCopySelectedIds}
+              className="text-xs font-bold px-3 py-1.5 rounded hover:opacity-90 transition-opacity"
+              style={{ background: 'var(--app-bg-card)', color: 'var(--app-text)', border: '1px solid var(--app-border)' }}
+              title="Copy selected sport: IDs"
+            >
+              Copy IDs ({selectedCount})
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onCashoutSelected}
+            className="text-xs font-bold px-3 py-1.5 rounded hover:opacity-90 transition-opacity"
+            style={{ background: 'var(--app-accent)', color: 'var(--app-bg-deep)' }}
+          >
+            Cashout Selected ({selectedCount})
+          </button>
+        </>
       )}
       <div className="h-6 w-px mx-1" style={{ background: 'var(--app-border)' }} />
       <div className="flex items-center gap-2">

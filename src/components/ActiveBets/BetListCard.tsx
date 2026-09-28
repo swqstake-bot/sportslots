@@ -17,6 +17,8 @@ interface BetListCardProps {
   onCopyLink?: (betId: string, iid?: string) => void;
   copiedId?: string | null;
   isSelected?: boolean;
+  isChecked?: boolean;
+  onToggleSelect?: (betId: string) => void;
 }
 
 function resolveDisplayStatus(bet: SportBet): { label: string; tone: 'active' | 'won' | 'lost' | 'cashout' | 'neutral' } {
@@ -44,6 +46,8 @@ export function BetListCard({
   onCopyLink,
   copiedId,
   isSelected = false,
+  isChecked = false,
+  onToggleSelect,
 }: BetListCardProps) {
   const [isCashingOut, setIsCashingOut] = useState(false);
   const outcomes = bet.outcomes ?? [];
@@ -92,9 +96,25 @@ export function BetListCard({
           onPreview(bet);
         }
       }}
-      className={`bet-list-row ${isSelected ? 'is-selected' : ''}`.trim()}
+      className={`bet-list-row ${isSelected ? 'is-selected' : ''} ${isChecked ? 'is-checked' : ''}`.trim()}
     >
       <div className="bet-list-row-main">
+        {onToggleSelect ? (
+          <label
+            className="bet-list-check"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            <input
+              type="checkbox"
+              checked={isChecked}
+              onChange={() => onToggleSelect(bet.id)}
+              aria-label="Select bet"
+            />
+          </label>
+        ) : (
+          <span className="bet-list-check bet-list-check--spacer" aria-hidden />
+        )}
         <span
           className={`bet-list-dot bet-list-dot--${statusTone}`}
           title={showStatus ? statusLabel : undefined}

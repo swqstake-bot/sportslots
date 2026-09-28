@@ -207,6 +207,37 @@ export function ActiveBetsPanel({
     setSelectedBetIds(new Set());
   };
 
+  const toggleSelectBet = useCallback((betId: string) => {
+    setSelectedBetIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(betId)) next.delete(betId);
+      else next.add(betId);
+      return next;
+    });
+  }, []);
+
+  const copySelectedIds = useCallback(() => {
+    const byId = new Map<string, SportBet>();
+    for (const b of [...activeBets, ...finishedBets]) byId.set(b.id, b);
+    const selected = Array.from(selectedBetIds)
+      .map((id) => byId.get(id))
+      .filter((b): b is SportBet => !!b);
+    const ids = collectSportBetShareIds(selected);
+    const text = joinSportBetShareIds(ids);
+    if (!text) {
+      showToast('No sport bet IDs in selection', 'info');
+      return;
+    }
+    navigator.clipboard
+      .writeText(text)
+      .then(() => showToast(`Copied ${ids.length} bet ID(s)`, 'success'))
+      .catch(() => showToast('Copy failed', 'error'));
+  }, [activeBets, finishedBets, selectedBetIds, showToast]);
+
+  useEffect(() => {
+    setSelectedBetIds(new Set());
+  }, [activeTab]);
+
   useEffect(() => {
     refreshCashoutOffersRef.current = refreshCashoutOffers;
   }, [refreshCashoutOffers]);
@@ -374,6 +405,23 @@ export function ActiveBetsPanel({
     return { liveBets: live, upcomingBets: upcoming, wonBets: won, lostBets: lost, cashoutBets: cashout };
   }, [sortedBets, activeTab]);
 
+  const allVisibleSelected =
+    sortedBets.length > 0 && sortedBets.every((b) => selectedBetIds.has(b.id));
+  const someVisibleSelected =
+    sortedBets.some((b) => selectedBetIds.has(b.id)) && !allVisibleSelected;
+
+  const toggleSelectAllVisible = useCallback(() => {
+    setSelectedBetIds((prev) => {
+      const next = new Set(prev);
+      if (sortedBets.length > 0 && sortedBets.every((b) => next.has(b.id))) {
+        for (const b of sortedBets) next.delete(b.id);
+      } else {
+        for (const b of sortedBets) next.add(b.id);
+      }
+      return next;
+    });
+  }, [sortedBets]);
+
   const renderBet = (bet: SportBet) => (
     <BetListCard
       key={bet.id}
@@ -384,6 +432,8 @@ export function ActiveBetsPanel({
       onCopyLink={copyLink}
       copiedId={copiedId}
       isSelected={previewBet?.id === bet.id}
+      isChecked={selectedBetIds.has(bet.id)}
+      onToggleSelect={toggleSelectBet}
     />
   );
 
@@ -604,6 +654,7 @@ export function ActiveBetsPanel({
           onTargetChange={setAutoCashoutTargetUsd}
           selectedCount={selectedBetIds.size}
           onCashoutSelected={handleCashoutSelected}
+          onCopySelectedIds={copySelectedIds}
         />
 
         <button
@@ -661,6 +712,17 @@ export function ActiveBetsPanel({
             <div className="active-bets-list-pane scrollbar-thin">
               {activeTab !== 'top15' && totalCount > 0 && (
                 <div className="bet-list-table-head">
+                  <label className="bet-list-check" title="Select all visible">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someVisibleSelected;
+                      }}
+                      onChange={toggleSelectAllVisible}
+                      aria-label="Select all visible bets"
+                    />
+                  </label>
                   <span />
                   <button
                     type="button"

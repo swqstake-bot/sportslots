@@ -308,7 +308,7 @@
 /* ─── Compact bet list ─── */
 .bet-list-table-head {
   display: grid;
-  grid-template-columns: 1.4rem minmax(7rem, 1.4fr) minmax(4.2rem, 0.7fr) minmax(3.4rem, 0.55fr) minmax(3.2rem, 0.5fr) minmax(4.6rem, 0.75fr) 3.6rem;
+  grid-template-columns: 1.1rem 1.4rem minmax(7rem, 1.4fr) minmax(4.2rem, 0.7fr) minmax(3.4rem, 0.55fr) minmax(3.2rem, 0.5fr) minmax(4.6rem, 0.75fr) 3.6rem;
   gap: 0.35rem 0.5rem;
   align-items: center;
   padding: 0.4rem 0.75rem;
@@ -351,11 +351,31 @@
 
 .bet-list-row-main {
   display: grid;
-  grid-template-columns: 1.4rem minmax(7rem, 1.4fr) minmax(4.2rem, 0.7fr) minmax(3.4rem, 0.55fr) minmax(3.2rem, 0.5fr) minmax(4.6rem, 0.75fr) 3.6rem;
+  grid-template-columns: 1.1rem 1.4rem minmax(7rem, 1.4fr) minmax(4.2rem, 0.7fr) minmax(3.4rem, 0.55fr) minmax(3.2rem, 0.5fr) minmax(4.6rem, 0.75fr) 3.6rem;
   gap: 0.35rem 0.5rem;
   align-items: center;
   padding: 0.55rem 0.75rem;
   min-height: 2.65rem;
+}
+
+.bet-list-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  cursor: pointer;
+}
+
+.bet-list-check input {
+  width: 0.85rem;
+  height: 0.85rem;
+  accent-color: var(--app-accent);
+  cursor: pointer;
+}
+
+.bet-list-check--spacer {
+  width: 0.85rem;
+  height: 0.85rem;
 }
 
 .bet-group {
@@ -464,6 +484,14 @@
 .bet-list-row.is-selected {
   background: rgba(var(--app-accent-rgb), 0.1);
   box-shadow: inset 3px 0 0 var(--app-accent);
+}
+
+.bet-list-row.is-checked {
+  background: rgba(var(--app-accent-rgb), 0.12);
+}
+
+.bet-list-row.is-selected.is-checked {
+  background: rgba(var(--app-accent-rgb), 0.16);
 }
 
 .bet-list-dot {
@@ -652,14 +680,14 @@
   }
 
   .bet-list-row-main {
-    grid-template-columns: 1.4rem minmax(0, 1fr) auto auto;
+    grid-template-columns: 1.1rem 1.4rem minmax(0, 1fr) auto auto;
     grid-template-rows: auto auto;
     gap: 0.3rem 0.45rem;
     padding: 0.65rem 0.75rem;
   }
 
   .bet-list-event {
-    grid-column: 2 / -1;
+    grid-column: 3 / -1;
   }
 
   .bet-list-stat {
@@ -677,28 +705,28 @@
   }
 
   .bet-list-stat--stake {
-    grid-column: 2;
-    grid-row: 2;
-  }
-
-  .bet-list-stat--odds {
     grid-column: 3;
     grid-row: 2;
   }
 
-  .bet-list-stat--legs {
+  .bet-list-stat--odds {
     grid-column: 4;
     grid-row: 2;
   }
 
+  .bet-list-stat--legs {
+    grid-column: 5;
+    grid-row: 2;
+  }
+
   .bet-list-stat--cashout {
-    grid-column: 2 / 4;
+    grid-column: 3 / 5;
     grid-row: 3;
     justify-self: start;
   }
 
   .bet-list-actions {
-    grid-column: 4;
+    grid-column: 5;
     grid-row: 3;
   }
 }
