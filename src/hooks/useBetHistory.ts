@@ -4,6 +4,7 @@ import { StakeApi } from '../api/client';
 import { Queries } from '../api/queries';
 import { useUserStore, type SportBet } from '../store/userStore';
 import { setShieldOdds } from '../store/shieldOddsCache';
+import { getPermanentWonCount, mergeFinishedWithWonCache } from '../store/wonBetsCache';
 import { useSportsFxRates, loadSportsFxRates } from './useSportsFxRates';
 import {
   ACTIVE_SPORT_BETS_MAX_TOTAL,
@@ -53,6 +54,7 @@ export function useBetHistory({
   const setStoreActiveBets = useUserStore((s) => s.setActiveBets);
   const [activeBets, setActiveBetsState] = useState<SportBet[]>(() => useUserStore.getState().activeBets);
   const [finishedBets, setFinishedBets] = useState<SportBet[]>([]);
+  const [permanentWonCount, setPermanentWonCount] = useState(0);
   const [isLoadingActive, setIsLoadingActive] = useState(false);
   const [isLoadingFinished, setIsLoadingFinished] = useState(false);
   const { usdRates, refreshRates: fetchUsdRates } = useSportsFxRates();
@@ -135,13 +137,23 @@ export function useBetHistory({
         await new Promise((r) => setTimeout(r, 1000));
       }
       const unique = Array.from(new Map(all.map((b) => [b.id, b])).values());
-      setFinishedBets(unique);
+      const merged = mergeFinishedWithWonCache(userName, unique);
+      setFinishedBets(merged.bets);
+      setPermanentWonCount(merged.permanentWonCount);
     } catch (err) {
       console.error('Error fetching finished bets:', err);
     } finally {
       setIsLoadingFinished(false);
       loadingFinishedRef.current = false;
     }
+  }, [userName]);
+
+  useEffect(() => {
+    if (!userName) {
+      setPermanentWonCount(0);
+      return;
+    }
+    setPermanentWonCount(getPermanentWonCount(userName));
   }, [userName]);
 
   useEffect(() => {
@@ -174,6 +186,7 @@ export function useBetHistory({
     setActiveBets,
     finishedBets,
     setFinishedBets,
+    permanentWonCount,
     isLoadingActive,
     isLoadingFinished,
     usdRates,

@@ -76,6 +76,7 @@ export function ActiveBetsPanel({
     activeBets,
     setActiveBets,
     finishedBets,
+    permanentWonCount,
     isLoadingActive,
     isLoadingFinished,
     usdRates,
@@ -480,7 +481,12 @@ export function ActiveBetsPanel({
 
     return (
       <>
-        <CollapsibleSection title="Won" count={wonBets.length} defaultOpen accent="won">
+        <CollapsibleSection
+          title="Won"
+          count={Math.max(wonBets.length, permanentWonCount)}
+          defaultOpen
+          accent="won"
+        >
           {wonBets.length === 0 ? (
             <p className="bet-group-empty">No won bets.</p>
           ) : (
@@ -526,7 +532,9 @@ export function ActiveBetsPanel({
       ? `Top ${top15Bets.length} of ${activeBets.length} active`
       : activeTab === 'active'
         ? `Total Active: ${activeBets.length}`
-        : `Total Finished: ${finishedBets.length}`;
+        : `Total Finished: ${finishedBets.length}${
+            permanentWonCount > 0 ? ` · Won (cached): ${permanentWonCount}` : ''
+          }`;
   const emptyLabel =
     activeTab === 'top15'
       ? 'No Top 15 bets'

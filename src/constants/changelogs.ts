@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.314': [
+    '✨ Finished Bets: gewonnene Wetten lokal cachen (über ~300 API-Fenster hinaus) — Won-Zähler + Liste bleiben dauerhaft',
+  ],
   '1.0.313': [
     '✨ Autobet: Kickoff-Fenster — Only today oder Until date (lokal), filtert Fixtures ohne passende Anstoßzeit',
   ],
