@@ -272,6 +272,33 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
             <Chip on={!!settings.ignoreLiveGames} onClick={() => updateSettings({ ignoreLiveGames: !settings.ignoreLiveGames })}>
               Ignore live
             </Chip>
+            <Chip
+              on={!!settings.onlyToday}
+              onClick={() =>
+                updateSettings({
+                  onlyToday: !settings.onlyToday,
+                  ...(settings.onlyToday ? {} : { maxKickoffDate: '' }),
+                })
+              }
+            >
+              Only today
+            </Chip>
+          </div>
+          <div className="copy-feed-fields copy-feed-fields--4" style={{ marginTop: '0.75rem' }}>
+            <label className="copy-feed-field">
+              <span>Until date (local)</span>
+              <input
+                type="date"
+                value={settings.maxKickoffDate || ''}
+                disabled={!!settings.onlyToday}
+                onChange={(e) =>
+                  updateSettings({
+                    maxKickoffDate: e.target.value,
+                    ...(e.target.value ? { onlyToday: false } : {}),
+                  })
+                }
+              />
+            </label>
           </div>
         </section>
 

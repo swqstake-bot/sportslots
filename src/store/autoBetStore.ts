@@ -38,6 +38,10 @@ export interface AutoBetSettings {
   preferLiveGames: boolean; // Deprecated, kept for compatibility
   preferUpcomingGames: boolean; // Deprecated, kept for compatibility
   ignoreLiveGames: boolean;
+  /** Only fixtures whose kickoff is today (local calendar day). */
+  onlyToday: boolean;
+  /** Inclusive local YYYY-MM-DD upper bound for kickoff; ignored when onlyToday is on. Empty = no cap. */
+  maxKickoffDate: string;
   onlyEsport: boolean;
   amount: number; // Base stake amount
   currency: string; // Currency to use
@@ -111,6 +115,8 @@ const DEFAULT_SETTINGS: AutoBetSettings = {
   preferLiveGames: false,
   preferUpcomingGames: true,
   ignoreLiveGames: false,
+  onlyToday: false,
+  maxKickoffDate: '',
   onlyEsport: false,
   amount: 0.00001, // Safe default
   currency: 'usd',

@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.313': [
+    '✨ Autobet: Kickoff-Fenster — Only today oder Until date (lokal), filtert Fixtures ohne passende Anstoßzeit',
+  ],
   '1.0.312': [
     '🐛 Finished Bets: Vollgewinne mit Status settled landen unter Won (nicht Lost) — Sektion nutzt payout/Cashout-Status wie die Anzeige',
   ],

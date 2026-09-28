@@ -19,6 +19,11 @@ import {
   parseMarketKeywords,
   passesMarketKeywordFilter,
 } from '../utils/marketKeywordFilter';
+import {
+  fixturePassesKickoffWindow,
+  formatKickoffWindowLog,
+  getKickoffWindowBounds,
+} from '../utils/fixtureKickoff';
 
 // Helper to generate UUID for bets
 const generateUUID = () => {
@@ -216,8 +221,11 @@ export function useAutoBetEngine() {
     if (settings.fillUp) {
       startParts.push(`Fill-Up: bis ${ACTIVE_SPORT_BETS_MAX_TOTAL} aktive Wetten`);
     }
+    const kickoffLog = formatKickoffWindowLog(settings);
+    if (kickoffLog) startParts.push(kickoffLog);
     addLog(`Starting AutoBet cycle… (${startParts.join(' · ')})`, 'info');
     updateHeartbeat();
+    const kickoffBounds = getKickoffWindowBounds(settings);
 
     if (placedBetsCount.current >= settings.numberOfBets && !settings.fillUp) {
       addLog(`Target number of bets reached (${settings.numberOfBets}). Stopping.`, 'success');
@@ -397,7 +405,7 @@ export function useAutoBetEngine() {
       const marketIncludeKw = parseMarketKeywords(settings.marketIncludeKeywords);
       const marketExcludeKw = parseMarketKeywords(settings.marketExcludeKeywords);
       const outcomeIncludeKw = parseMarketKeywords(settings.outcomeIncludeKeywords);
-      const rejections = { status: 0, odds: 0, marketStatus: 0, outcomeStatus: 0, noMarkets: 0, marketFilter: 0 };
+      const rejections = { status: 0, kickoff: 0, odds: 0, marketStatus: 0, outcomeStatus: 0, noMarkets: 0, marketFilter: 0 };
       let consecutiveMarketInactive = 0;
 
       if (marketIncludeKw.length || marketExcludeKw.length || outcomeIncludeKw.length) {
@@ -535,6 +543,11 @@ export function useAutoBetEngine() {
                         rejections.status++;
                         continue;
                     }
+                }
+
+                if (!fixturePassesKickoffWindow(getFixtureStartTimeMs(fixture), kickoffBounds)) {
+                    rejections.kickoff++;
+                    continue;
                 }
                 
                 // Event Filter (Keywords) — skipped when a tournament URL scopes fixtures already
@@ -702,6 +715,7 @@ export function useAutoBetEngine() {
       // 5. Pick (order: upcoming = nächster Anstoß zuerst; live-only = zufällig)
       const rejectedCount =
         rejections.status +
+        rejections.kickoff +
         rejections.odds +
         rejections.marketStatus +
         rejections.outcomeStatus +
@@ -715,7 +729,7 @@ export function useAutoBetEngine() {
           rejections.marketFilter > 0 && (marketIncludeKw.length || marketExcludeKw.length || outcomeIncludeKw.length)
             ? ' Hint: Filter rejections high — try clearing Include/Exclude/Outcome fields or MMA prop chips.'
             : '';
-        addLog(`No suitable bets found in this scan. Rejections: Status=${rejections.status}, Market=${rejections.marketStatus}, Outcome=${rejections.outcomeStatus}, Filter=${rejections.marketFilter}, Odds=${rejections.odds}.${filterHint} Retrying in 30s...`, 'info');
+        addLog(`No suitable bets found in this scan. Rejections: Status=${rejections.status}, Kickoff=${rejections.kickoff}, Market=${rejections.marketStatus}, Outcome=${rejections.outcomeStatus}, Filter=${rejections.marketFilter}, Odds=${rejections.odds}.${filterHint} Retrying in 30s...`, 'info');
         
         // If we broke due to consecutive inactive markets, we should probably retry sooner?
         // But 30s is fine.
