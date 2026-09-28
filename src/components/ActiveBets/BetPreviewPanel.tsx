@@ -9,6 +9,7 @@ import {
 } from '../../services/cashoutService';
 import { formatAmount } from '../Casino/utils/formatAmount';
 import { toUsd } from '../Logger/loggerUtils';
+import { formatSportBetShareIdForCopy } from '../../utils/stakeSportsUrl';
 import { MatchTracker } from './MatchTracker';
 
 function getLegStatus(outcome: SportBetOutcome): 'won' | 'lost' | 'open' {
@@ -65,11 +66,13 @@ export function BetPreviewPanel({
   const openLegs = getOpenLegsCount(bet);
   const { label: statusLabel, tone: statusTone } = resolvePreviewStatus(bet);
 
-  const rawSportsReference = String(bet.bet?.iid || bet.iid || bet.id || '');
-  const sportsReference = rawSportsReference.toLowerCase().startsWith('sports:')
-    ? rawSportsReference.slice(7)
-    : rawSportsReference;
-  const shortRef = sportsReference.length > 14 ? `${sportsReference.slice(0, 6)}…${sportsReference.slice(-4)}` : sportsReference;
+  const rawSportsReference = String(bet.bet?.iid || bet.iid || '');
+  const sportsReference = formatSportBetShareIdForCopy(rawSportsReference) || '';
+  const shortRef = sportsReference
+    ? sportsReference.length > 14
+      ? `${sportsReference.slice(0, 6)}…${sportsReference.slice(-4)}`
+      : sportsReference
+    : '—';
 
   const formatUsd = (amount: number, currency: string) => {
     const usd = toUsd(amount, currency, usdRates);
@@ -91,7 +94,8 @@ export function BetPreviewPanel({
   };
 
   const copyRef = () => {
-    void navigator.clipboard.writeText(`sports:${sportsReference}`).catch(() => {});
+    if (!sportsReference) return;
+    void navigator.clipboard.writeText(sportsReference).catch(() => {});
   };
 
   return (
@@ -108,7 +112,7 @@ export function BetPreviewPanel({
             {legsTotal > 0 && (
               <span className="bet-preview-head-chip">{openLegs}/{legsTotal} legs open</span>
             )}
-            <button type="button" className="bet-preview-head-id" onClick={copyRef} title={`Copy sports:${sportsReference}`}>
+            <button type="button" className="bet-preview-head-id" onClick={copyRef} disabled={!sportsReference} title={sportsReference ? `Copy ${sportsReference}` : 'No sport bet ID'}>
               {shortRef}
             </button>
           </div>

@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.315': [
+    '🐛 Sportwetten Copy: immer `sport:…` (nie Link, nie `sports:sport:…`)',
+  ],
   '1.0.314': [
     '✨ Finished Bets: gewonnene Wetten lokal cachen (über ~300 API-Fenster hinaus) — Won-Zähler + Liste bleiben dauerhaft',
   ],

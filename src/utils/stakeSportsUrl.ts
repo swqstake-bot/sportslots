@@ -4,8 +4,9 @@
  * → { sport: "mma", category: "ufc", tournament: "ufc-fight-night-evloev-vs-murphy" }
  */
 /**
- * Normalisiert Sport-Bet-Share-ID für die Zwischenablage (z. B. `sport:587418751`).
- * Akzeptiert rohes `sport:…`, URL-encoded Werte oder volle Stake-Links mit `iid=`.
+ * Normalisiert Sport-Bet-Share-ID für die Zwischenablage (immer `sport:123…`).
+ * Akzeptiert rohes `sport:…`, fälschliches `sports:sport:…`, URL-encoded Werte oder Links mit `iid=`.
+ * Niemals volle my-bets-URLs — dafür gibt diese Funktion `null` zurück.
  */
 export function formatSportBetShareIdForCopy(iid?: string | null): string | null {
   let raw = String(iid ?? '').trim()
@@ -23,10 +24,18 @@ export function formatSportBetShareIdForCopy(iid?: string | null): string | null
       raw = fromQuery
     }
   }
+  // "sports:sport:123" / "sports:123" → ohne sports:-Prefix weiterparsen
+  raw = raw.replace(/^sports:/i, '').trim()
   const idMatch = raw.match(/sport:([0-9]+)/i)
   if (idMatch) return `sport:${idMatch[1]}`
-  if (/^sport:/i.test(raw)) return raw.split(/[?#&]/)[0] || raw
-  return raw || null
+  const bareDigits = raw.match(/^([0-9]+)$/)
+  if (bareDigits) return `sport:${bareDigits[1]}`
+  if (/^sport:/i.test(raw)) {
+    const cleaned = raw.split(/[?#&\s]/)[0] || raw
+    const again = cleaned.match(/sport:([0-9]+)/i)
+    return again ? `sport:${again[1]}` : null
+  }
+  return null
 }
 
 type SportBetIidSource = { iid?: string | null; bet?: { iid?: string | null } | null }

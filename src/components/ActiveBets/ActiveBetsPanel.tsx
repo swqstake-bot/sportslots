@@ -280,13 +280,15 @@ export function ActiveBetsPanel({
 
   const copyLink = (betId: string, iid?: string) => {
     const shareId = formatSportBetShareIdForCopy(iid);
-    const text =
-      shareId ?? `https://stake.com/sports/my-bets/${betId}?modal=bet`;
+    if (!shareId) {
+      showToast('No sport bet ID to copy', 'info');
+      return;
+    }
 
-    navigator.clipboard.writeText(text).then(() => {
+    navigator.clipboard.writeText(shareId).then(() => {
       setCopiedId(betId);
       setTimeout(() => setCopiedId(null), 2000);
-      showToast(shareId ? 'Bet ID copied' : 'Link copied', 'success');
+      showToast('Bet ID copied', 'success');
     }).catch((err) => {
       console.error('Failed to copy bet reference', err);
       showToast('Copy failed', 'error');
