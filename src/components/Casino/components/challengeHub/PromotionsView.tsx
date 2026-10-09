@@ -199,20 +199,22 @@ function GamePoster({
           ) : (
             <div className="promo-poster-fallback">{gameLabel(game)}</div>
           )}
-          {kind !== 'leaderboard-race' && target != null && (
-            <span className="promo-poster-badge">{Number(target).toFixed(Number(target) >= 100 ? 0 : 2)}x</span>
+          {target != null && (
+            <span className="promo-poster-badge" title={kind === 'leaderboard-race' ? 'Aktuelles höchstes Multi — muss geschlagen werden' : 'Target'}>
+              {Number(target).toFixed(Number(target) >= 100 ? 0 : 2)}x
+            </span>
           )}
         </div>
         <div className="promo-poster-body">
           <div className="promo-poster-name">{gameLabel(game)}</div>
           {kind === 'leaderboard-race' ? (
             <>
-              <div className="promo-poster-row">
-                <span>LW</span>
+              <div className="promo-poster-row" title={game.luckyWin?.user ? `Leader: ${game.luckyWin.user}` : 'Kein Multi auf dem Board'}>
+                <span>Höchstes</span>
                 <strong>{game.luckyWin ? formatMulti(Number(game.luckyWin.multiplier)) : '—'}</strong>
               </div>
-              <div className="promo-poster-row">
-                <span>BW</span>
+              <div className="promo-poster-row" title={game.bigWin?.user ? `Leader: ${game.bigWin.user}` : 'Kein Gewinn auf dem Board'}>
+                <span>Größter</span>
                 <strong>{game.bigWin ? formatProfit(Number(game.bigWin.valueUsd)) : '—'}</strong>
               </div>
             </>
@@ -418,6 +420,7 @@ export const PromotionsView = memo(function PromotionsView({ accessToken, webSlo
               gameName: String(game.name || promo.title || game.slug),
               providerId: String(game.provider || 'stakeEngine'),
               targetMultiplier: huntTargetForGame(promo, game),
+              beatLeader: 'kind' in promo && promo.kind === 'leaderboard-race',
             })),
           },
         })
@@ -623,7 +626,9 @@ export const PromotionsView = memo(function PromotionsView({ accessToken, webSlo
           {sortedCms.map((promo) => {
             const live = isPromotionLive(promo, now)
             const remaining = promotionTimeLeft(promo, now)
-            const liveTargets = promo.games.filter((game) => game.leaderboardSource === 'live').length
+            const scannedTargets = promo.games.filter(
+              (game) => game.leaderboardSource === 'live' || game.leaderboardSource === 'board'
+            ).length
             const allKey = promoAllKey(promo)
             const sheetDone = Boolean(completionByKey[allKey])
             return (
@@ -653,11 +658,18 @@ export const PromotionsView = memo(function PromotionsView({ accessToken, webSlo
                         <span className="promo-pill is-muted">{promo.requiredGames} games</span>
                       ) : null}
                       {promo.kind === 'leaderboard-race' ? (
-                        <span className="promo-pill is-warn">{liveTargets > 0 ? 'Live boards' : 'Page targets'}</span>
+                        <span className="promo-pill is-warn">
+                          {scannedTargets > 0 ? `Höchstes ${scannedTargets}/${promo.games.length}` : 'Board nicht gescannt'}
+                        </span>
                       ) : null}
                     </div>
                     <h2 className="promo-title">{promo.title}</h2>
                     {promo.summary ? <p className="promo-summary">{promo.summary}</p> : null}
+                    {promo.kind === 'leaderboard-race' ? (
+                      <p className="promo-summary">
+                        Ziel ist das aktuelle höchste Multi auf dem Slot-Board. Der Scan liest das Multiplier-Leaderboard jedes Spiels.
+                      </p>
+                    ) : null}
                   </div>
                   <div className="promo-banner-actions">
                     {promo.games.filter((g) => g.available && g.slug).length > 1 ? (

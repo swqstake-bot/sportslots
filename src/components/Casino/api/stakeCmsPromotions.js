@@ -4,7 +4,7 @@ import { mapProviderSlugToProviderId } from './stakeSlotsApi'
 import { CASINO_STORAGE_KEYS, readStorageJson, writeStorageJson } from '../utils/storageRegistry'
 
 const SANITY_PROJECT = 'tdrhge4k'
-const CACHE_VERSION = 3
+const CACHE_VERSION = 4
 const STALE_AFTER_MS = 30 * 60 * 1000
 const MAX_GROUP_EXPANSION = 12
 const CATALOGUE_CONCURRENCY = 4
@@ -29,20 +29,40 @@ const PROMO_KURATOR_GROUP_QUERY = `query PromoKuratorGroup($slug: String!, $limi
   }
 }`
 
-const LEADERBOARD_BET_FRAGMENT = `bet {
-  iid
-  bet {
-    ... on ThirdPartyBet { amount currency payout payoutMultiplier updatedAt user { id name } }
-    ... on CasinoBet { amount currency payout payoutMultiplier updatedAt user { id name } }
-    ... on SoftswissBet { amount currency payout payoutMultiplier updatedAt user { id name } }
-  }
-}`
-
+/** Same shape as Weekly Wrapped — payoutMultiplier / profitValue sit on the board row, not the bet. */
 const PROMO_GAME_LEADERBOARDS_QUERY = `query PromoGameLeaderboards($slug: String!) {
   slugKuratorGame(slug: $slug) {
     id
-    multiplierLeaderboard { position payoutMultiplier ${LEADERBOARD_BET_FRAGMENT} }
-    profitLeaderboard { position profitValue ${LEADERBOARD_BET_FRAGMENT} }
+    multiplierLeaderboard {
+      id
+      position
+      payoutMultiplier
+      updatedAt
+      bet {
+        id
+        bet {
+          ... on CasinoBet { user { name preferenceHideBets } }
+          ... on SoftswissBet { user { name preferenceHideBets } }
+          ... on ThirdPartyBet { user { name } }
+          ... on EvolutionBet { user { name preferenceHideBets } }
+        }
+      }
+    }
+    profitLeaderboard {
+      id
+      position
+      profitValue
+      updatedAt
+      bet {
+        id
+        bet {
+          ... on CasinoBet { user { name preferenceHideBets } }
+          ... on SoftswissBet { user { name preferenceHideBets } }
+          ... on ThirdPartyBet { user { name } }
+          ... on EvolutionBet { user { name preferenceHideBets } }
+        }
+      }
+    }
   }
 }`
 
@@ -540,83 +560,80 @@ async function normalizePromotion(def, doc, slotIndex, site) {
   }
 }
 
-function toUsd(amount, currency, rates) {
-  const rate = rates.get(String(currency || '').toLowerCase())
-  return typeof rate === 'number' ? amount * rate : null
+function leaderboardUser(entry) {
+  const user = entry?.bet?.bet?.user
+  if (!user || user.preferenceHideBets) return 'hidden'
+  const name = String(user.name || '').trim()
+  return name || 'hidden'
 }
 
-async function fetchGameLeaderboard(slug, rates) {
+function inPromoWindow(at, start, end) {
+  if (!Number.isFinite(at)) return true
+  return at >= start && at <= end
+}
+
+function bestBy(rows, scoreKey) {
+  let best = null
+  for (const row of rows) {
+    if (!(row[scoreKey] > 0)) continue
+    if (!best || row[scoreKey] > best[scoreKey]) best = row
+  }
+  return best
+}
+
+async function fetchGameLeaderboard(slug) {
   const res = await StakeApi.query(PROMO_GAME_LEADERBOARDS_QUERY, { slug })
   const game = res?.data?.slugKuratorGame
-  if (!game) return []
-  const rows = []
-  const seen = new Set()
-  for (const entry of [...(game.multiplierLeaderboard || []), ...(game.profitLeaderboard || [])]) {
-    const iid = entry?.bet?.iid
-    const bet = entry?.bet?.bet
-    if (!bet || (iid && seen.has(iid))) continue
-    if (iid) seen.add(iid)
-    const amount = Number(bet.amount)
-    const payout = Number(bet.payout)
-    const multiplier = Number(bet.payoutMultiplier)
-    const at = Date.parse(String(bet.updatedAt || ''))
-    const currency = String(bet.currency || '')
-    if (!Number.isFinite(amount) || !Number.isFinite(payout) || !Number.isFinite(at)) continue
-    const amountUsd = toUsd(amount, currency, rates)
-    const payoutUsd = toUsd(payout, currency, rates)
-    if (amountUsd === null || payoutUsd === null) continue
-    const user = bet.user?.name
-    rows.push({
-      user: typeof user === 'string' && user ? user : null,
-      amountUsd,
-      payoutUsd,
-      multiplier: Number.isFinite(multiplier) ? multiplier : 0,
-      at,
+  if (!game) return { multipliers: [], profits: [] }
+  const multipliers = []
+  for (const entry of game.multiplierLeaderboard || []) {
+    const multiplier = Number(entry?.payoutMultiplier)
+    if (!(multiplier > 0)) continue
+    const at = Date.parse(String(entry?.updatedAt || ''))
+    multipliers.push({
+      user: leaderboardUser(entry),
+      multiplier,
+      at: Number.isFinite(at) ? at : null,
+      position: Number(entry?.position),
     })
   }
-  return rows
+  const profits = []
+  for (const entry of game.profitLeaderboard || []) {
+    const valueUsd = Number(entry?.profitValue)
+    if (!(valueUsd > 0)) continue
+    const at = Date.parse(String(entry?.updatedAt || ''))
+    profits.push({
+      user: leaderboardUser(entry),
+      valueUsd,
+      at: Number.isFinite(at) ? at : null,
+      position: Number(entry?.position),
+    })
+  }
+  return { multipliers, profits }
 }
 
 async function applyLiveLeaderboards(promo) {
   if (promo.kind !== 'leaderboard-race' || promo.games.length === 0) return
-  let rates
-  try {
-    const map = await window.electronAPI.fetchLoggerCurrencyRates()
-    rates = new Map(Object.entries(map || {}))
-    if (rates.size === 0) throw new Error('no conversion rates')
-  } catch (error) {
-    logApiCall({
-      type: 'promotions/leaderboard',
-      endpoint: promo.slug,
-      request: { reason: 'rates' },
-      response: null,
-      error: error?.message || String(error),
-      durationMs: 0,
-    })
-    return
-  }
   const start = promo.startAt ? Date.parse(promo.startAt) : Number.NEGATIVE_INFINITY
   const end = promo.endAt ? Date.parse(promo.endAt) : Number.POSITIVE_INFINITY
-  const minBet = (promo.minBetUsd ?? 0.1) * 0.95
   await mapWithLimit(promo.games, LEADERBOARD_CONCURRENCY, async (game) => {
     try {
-      const rows = (await fetchGameLeaderboard(game.slug, rates)).filter(
-        (row) => row.at >= start && row.at <= end && row.amountUsd >= minBet
-      )
-      if (rows.length === 0) return
-      const bestMulti = rows.reduce((best, row) => (row.multiplier > best.multiplier ? row : best))
-      const payoutRows = rows.filter((row) => row.payoutUsd >= row.amountUsd)
-      const bestPayout = payoutRows.length
-        ? payoutRows.reduce((best, row) => (row.payoutUsd > best.payoutUsd ? row : best))
-        : null
-      if (bestMulti.multiplier > 0) {
+      const board = await fetchGameLeaderboard(game.slug)
+      const multiRows = board.multipliers.filter((row) => inPromoWindow(row.at, start, end))
+      const profitRows = board.profits.filter((row) => inPromoWindow(row.at, start, end))
+      const bestMulti = bestBy(multiRows.length ? multiRows : board.multipliers, 'multiplier')
+      const bestPayout = bestBy(profitRows.length ? profitRows : board.profits, 'valueUsd')
+      if (bestMulti) {
         game.luckyWin = { user: bestMulti.user || 'hidden', multiplier: bestMulti.multiplier }
         game.targetMultiplier = bestMulti.multiplier
+        game.leaderboardSource = multiRows.length ? 'live' : 'board'
       }
       if (bestPayout) {
-        game.bigWin = { user: bestPayout.user || 'hidden', valueUsd: bestPayout.payoutUsd }
+        game.bigWin = { user: bestPayout.user || 'hidden', valueUsd: bestPayout.valueUsd }
+        if (!game.leaderboardSource || game.leaderboardSource === 'promo-page') {
+          game.leaderboardSource = profitRows.length ? 'live' : 'board'
+        }
       }
-      game.leaderboardSource = 'live'
     } catch (error) {
       logApiCall({
         type: 'promotions/leaderboard',

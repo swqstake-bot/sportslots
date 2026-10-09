@@ -3,6 +3,7 @@
  */
 
 import { placeDiceBet, rotateSeedPair } from '../../../api/stakeOriginalsBets'
+import { createVaultDeposit } from '../../../api/vaultApi'
 import { isFiatCurrency, isGoldCoinCurrency, isZeroDecimalCurrency } from '../../../utils/currencyMeta'
 
 export interface DiceRunnerConfig {
@@ -22,6 +23,12 @@ export interface DiceRunnerConfig {
   endHuntMultiplier: number
   /** Nach Moonshot wieder mit Hunt-Phase starten. */
   repeatAfterMoonshot: boolean
+  /** Gewinn (Auszahlung − Einsatz) nach einem Treffer in den Vault legen. */
+  vaultWins: boolean
+  /** true = ganze Auszahlung vaulten, sonst nur den Nettogewinn. */
+  vaultFullPayout: boolean
+  /** 0 = jeden Gewinn vaulten. Sonst nur wenn der Gewinn in USD mindestens so hoch ist. */
+  vaultMinProfitUsd: number
 }
 
 export interface DiceRunnerCallbacks {
@@ -45,6 +52,7 @@ export interface DiceRunnerCallbacks {
     wageredUsd: number
     betsPerSec: number
     lastMulti: number
+    vaultedUsd: number
   }) => void
 }
 
@@ -111,6 +119,16 @@ function normalizeCurrencyAmount(amount: number, currency: string): number {
   return Math.round(n * 1e8) / 1e8
 }
 
+/** Floor so a vault deposit never asks for more than the win that just landed. */
+function floorCurrencyAmount(amount: number, currency: string): number {
+  const cur = currency.toLowerCase()
+  const n = Number(amount)
+  if (!Number.isFinite(n) || n <= 0) return 0
+  if (isZeroDecimalCurrency(cur)) return Math.floor(n)
+  if (isFiatCurrency(cur)) return Math.floor(n * 100) / 100
+  return Math.floor(n * 1e8) / 1e8
+}
+
 async function placeDiceSpin(
   amount: number,
   currency: string,
@@ -147,12 +165,16 @@ export async function runDiceRunner(
   const seedOnHit = config.seedChangeOnTargetHit === true
   const stopOnHit = config.stopOnTargetHit !== false
   const repeatMoonshot = config.repeatAfterMoonshot === true
+  const vaultWins = config.vaultWins === true
+  const vaultFullPayout = config.vaultFullPayout === true
+  const vaultMinProfitUsd = Math.max(0, Number(config.vaultMinProfitUsd) || 0)
 
   let spins = 0
   let wins = 0
   let losses = 0
   let profitUsd = 0
   let wageredUsd = 0
+  let vaultedUsd = 0
   let spinsSinceSeed = 0
   let lastMulti = 0
   const startedAt = Date.now()
@@ -167,7 +189,33 @@ export async function runDiceRunner(
       wageredUsd,
       betsPerSec: spins / elapsedSec,
       lastMulti,
+      vaultedUsd,
     })
+  }
+
+  const tryVaultWin = async (payoutAmount: number, stakeAmount: number): Promise<void> => {
+    if (!vaultWins) return
+    const net = floorCurrencyAmount(payoutAmount - stakeAmount, cur)
+    const amount = vaultFullPayout ? floorCurrencyAmount(payoutAmount, cur) : net
+    if (!(amount > 0)) return
+    const profitForThreshold = currencyAmountToUsd(Math.max(0, payoutAmount - stakeAmount), cur, usdRates)
+    if (vaultMinProfitUsd > 0 && profitForThreshold + 1e-9 < vaultMinProfitUsd) {
+      callbacks.onLog?.(
+        `Vault übersprungen: Gewinn $${profitForThreshold.toFixed(4)} < $${vaultMinProfitUsd.toFixed(4)}`
+      )
+      return
+    }
+    const amountUsd = currencyAmountToUsd(amount, cur, usdRates)
+    try {
+      await createVaultDeposit(cur, amount)
+      vaultedUsd += amountUsd
+      emitStats()
+      callbacks.onLog?.(
+        `Vault: ${amount} ${cur.toUpperCase()} ($${amountUsd.toFixed(4)}${vaultFullPayout ? ', ganze Auszahlung' : ', Nettogewinn'})`
+      )
+    } catch (e) {
+      callbacks.onLog?.(`Vault fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`)
+    }
   }
 
   const recordBet = (row: {
@@ -209,6 +257,13 @@ export async function runDiceRunner(
       ? `Dice Runner (Hunt→Moonshot): hunt $${betUsd.toFixed(4)} @ ${huntMult.toFixed(2)}× → 1× @ ${endMult.toFixed(0)}× mit Gewinn · ${rollOver ? 'Roll Over' : 'Roll Under'} · ~${config.spinsPerSec || 'max'} spins/s`
       : `Dice Runner: $${betUsd.toFixed(4)} · target ${targetMult.toFixed(2)}× · ${rollOver ? 'Roll Over' : 'Roll Under'} · ~${config.spinsPerSec || 'max'} spins/s`
   )
+  if (vaultWins) {
+    callbacks.onLog?.(
+      vaultFullPayout
+        ? `Vault an: ganze Auszahlung${vaultMinProfitUsd > 0 ? ` ab $${vaultMinProfitUsd}` : ''}. Hunt-Treffer im Moonshot-Modus wird erst nach dem Moonshot gevaultet.`
+        : `Vault an: Nettogewinn (Auszahlung − Einsatz)${vaultMinProfitUsd > 0 ? ` ab $${vaultMinProfitUsd}` : ''}. Hunt-Treffer im Moonshot-Modus wird erst nach dem Moonshot gevaultet.`
+    )
+  }
 
   const runMoonshot = async (
     payoutAmount: number
@@ -274,6 +329,7 @@ export async function runDiceRunner(
       callbacks.onLog?.(`Moonshot verfehlt @ ${endMult.toFixed(2)}× — Hunt geht weiter.`)
     }
     if (seedOnHit && moonshotWon) await tryRotateSeed(callbacks, 'moonshot win')
+    if (moonshotWon) await tryVaultWin(payout, moonAmount)
     return moonshotWon ? 'moonshot_win' : 'moonshot_loss'
   }
 
@@ -347,6 +403,7 @@ export async function runDiceRunner(
         continue
       }
 
+      await tryVaultWin(payout, amount)
       if (stopOnHit) {
         callbacks.onLog?.('Stopped.')
         return 'hit'

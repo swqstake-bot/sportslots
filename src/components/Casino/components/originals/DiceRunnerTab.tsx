@@ -46,12 +46,23 @@ export default function DiceRunnerTab() {
   const [huntMultiplier, setHuntMultiplier] = useState(String(saved.huntMultiplier))
   const [endHuntMultiplier, setEndHuntMultiplier] = useState(String(saved.endHuntMultiplier))
   const [repeatAfterMoonshot, setRepeatAfterMoonshot] = useState(saved.repeatAfterMoonshot)
+  const [vaultWins, setVaultWins] = useState(saved.vaultWins)
+  const [vaultFullPayout, setVaultFullPayout] = useState(saved.vaultFullPayout)
+  const [vaultMinProfitUsd, setVaultMinProfitUsd] = useState(
+    saved.vaultMinProfitUsd > 0 ? String(saved.vaultMinProfitUsd) : ''
+  )
   const [running, setRunning] = useState(false)
   const [waitingForBalance, setWaitingForBalance] = useState(false)
   const [error, setError] = useState('')
   const [logLines, setLogLines] = useState<string[]>([])
   const [betList, setBetList] = useState<BetRow[]>([])
-  const [stats, setStats] = useState<{ spins: number; profitUsd: number; betsPerSec: number; lastMulti: number } | null>(null)
+  const [stats, setStats] = useState<{
+    spins: number
+    profitUsd: number
+    betsPerSec: number
+    lastMulti: number
+    vaultedUsd: number
+  } | null>(null)
   const [chartData, setChartData] = useState<{ index: number; profit: number }[]>([])
   const signalRef = useRef({ cancelled: false })
   const manualStopRef = useRef(false)
@@ -73,6 +84,9 @@ export default function DiceRunnerTab() {
         huntMultiplier: Number(huntMultiplier) || 30,
         endHuntMultiplier: Number(endHuntMultiplier) || 9900,
         repeatAfterMoonshot,
+        vaultWins,
+        vaultFullPayout,
+        vaultMinProfitUsd: Math.max(0, Number(vaultMinProfitUsd) || 0),
       })
     }, 400)
     return () => clearTimeout(t)
@@ -90,6 +104,9 @@ export default function DiceRunnerTab() {
     huntMultiplier,
     endHuntMultiplier,
     repeatAfterMoonshot,
+    vaultWins,
+    vaultFullPayout,
+    vaultMinProfitUsd,
   ])
 
   const addLog = useCallback((msg: string) => {
@@ -123,6 +140,9 @@ export default function DiceRunnerTab() {
       huntMultiplier: Number(huntMultiplier) || 30,
       endHuntMultiplier: Number(endHuntMultiplier) || 9900,
       repeatAfterMoonshot,
+      vaultWins,
+      vaultFullPayout,
+      vaultMinProfitUsd: Math.max(0, Number(vaultMinProfitUsd) || 0),
     }
     if (!(cfg.betUsd > 0)) {
       setError('Bet ($) must be greater than 0.')
@@ -156,6 +176,9 @@ export default function DiceRunnerTab() {
     huntMultiplier,
     endHuntMultiplier,
     repeatAfterMoonshot,
+    vaultWins,
+    vaultFullPayout,
+    vaultMinProfitUsd,
   ])
 
   const handleStart = useCallback(async () => {
@@ -218,7 +241,13 @@ export default function DiceRunnerTab() {
             setChartData((prev) => [...prev.slice(-299), { index: r.spin, profit: r.profitUsd }])
           },
           onStats: (s) => {
-            setStats({ spins: s.spins, profitUsd: s.profitUsd, betsPerSec: s.betsPerSec, lastMulti: s.lastMulti })
+            setStats({
+              spins: s.spins,
+              profitUsd: s.profitUsd,
+              betsPerSec: s.betsPerSec,
+              lastMulti: s.lastMulti,
+              vaultedUsd: s.vaultedUsd,
+            })
           },
         },
         signalRef.current,
@@ -411,12 +440,59 @@ export default function DiceRunnerTab() {
                 <span className="text-sm text-[var(--text)]">Repeat hunt after moonshot win</span>
               </label>
             )}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={vaultWins}
+                onChange={(e) => setVaultWins(e.target.checked)}
+                className="w-4 h-4 rounded accent-[var(--accent)]"
+                disabled={controlsLocked}
+              />
+              <span className="text-sm text-[var(--text)]">Gewinne vaulten</span>
+            </label>
+            {vaultWins && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={vaultFullPayout}
+                  onChange={(e) => setVaultFullPayout(e.target.checked)}
+                  className="w-4 h-4 rounded accent-[var(--accent)]"
+                  disabled={controlsLocked}
+                />
+                <span className="text-sm text-[var(--text)]">Ganze Auszahlung (inkl. Einsatz)</span>
+              </label>
+            )}
           </div>
+          {vaultWins && (
+            <div>
+              <label className="block text-xs text-[var(--text-muted)] mb-1">Vault ab Gewinn ($)</label>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={vaultMinProfitUsd}
+                onChange={(e) => setVaultMinProfitUsd(e.target.value)}
+                className={inputCls}
+                disabled={controlsLocked}
+                placeholder="0 = jeder Gewinn"
+                title="0 oder leer vaultet jeden Gewinn. Sonst nur ab diesem USD-Betrag."
+              />
+            </div>
+          )}
         </div>
 
         {twoPhaseHunt && (
           <p className="text-xs text-[var(--text-muted)]">
             Hunt mit Bet ($) bis Hunt-Multi — bei Treffer 1× Moonshot mit vollem Gewinn auf End-Hunt-Multi. Verfehlt → Hunt läuft weiter. Nur echter End-Hunt-Treffer stoppt.
+          </p>
+        )}
+
+        {vaultWins && (
+          <p className="text-xs text-[var(--text-muted)]">
+            {vaultFullPayout
+              ? 'Nach einem Treffer geht die ganze Auszahlung in den Vault.'
+              : 'Nach einem Treffer geht der Nettogewinn (Auszahlung minus Einsatz) in den Vault. Der Einsatz bleibt auf dem Konto.'}
+            {twoPhaseHunt ? ' Im Hunt→Moonshot wird erst der Moonshot-Gewinn gevaultet, damit die Moonshot-Wette den Hunt-Gewinn noch setzen kann.' : ''}
           </p>
         )}
 
@@ -456,6 +532,12 @@ export default function DiceRunnerTab() {
             <span className="text-[var(--text-muted)] block text-xs">Last multiplier</span>
             <span className="font-medium">{stats.lastMulti > 0 ? `${stats.lastMulti.toFixed(2)}×` : '—'}</span>
           </div>
+          {vaultWins && (
+            <div className="p-2 rounded-lg bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
+              <span className="text-[var(--text-muted)] block text-xs">Vaulted ($)</span>
+              <span className="font-medium text-emerald-400">{stats.vaultedUsd.toFixed(4)}</span>
+            </div>
+          )}
         </div>
       )}
 

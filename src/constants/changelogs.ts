@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.317': [
+    '✨ Dice Runner: Gewinne vaulten (Nettogewinn oder ganze Auszahlung, optional ab einem Gewinn in $)',
+    '✨ Conquer the Casino: höchstes Multi live vom Slot-Leaderboard; Hunt stoppt erst darüber',
+  ],
   '1.0.316': [
     '✨ Sports Active Bets: Mehrfachauswahl (Checkbox) + Copy IDs für markierte Wetten (`sport:…`)',
   ],

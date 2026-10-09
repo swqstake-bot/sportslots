@@ -1315,7 +1315,13 @@ export default function AutoChallengeHunter({
         const gameName = String(item?.gameName || item?.name || slotSlug)
         const providerId = String(item?.providerId || item?.provider || detail?.providerId || 'stakeEngine')
         const targetMultiplierRaw = Number(item?.targetMultiplier ?? detail?.targetMultiplier ?? 0)
-        const targetMultiplier = Number.isFinite(targetMultiplierRaw) && targetMultiplierRaw > 1 ? targetMultiplierRaw : 2
+        const beatLeader = item?.beatLeader === true || detail?.beatLeader === true
+        const targetMultiplier =
+          Number.isFinite(targetMultiplierRaw) && targetMultiplierRaw > 1
+            ? targetMultiplierRaw
+            : beatLeader
+              ? 1.01
+              : 2
         const challengeId =
           String(item?.challengeId || detail?.challengeId || '').trim() ||
           `promo:${promoSource}:${slotSlug}:${targetMultiplier.toFixed(2)}`
@@ -1325,6 +1331,7 @@ export default function AutoChallengeHunter({
           providerId,
           promoSource,
           targetMultiplier,
+          beatLeader,
           minBetUsd,
           challengeId,
           manual,
@@ -1347,6 +1354,7 @@ export default function AutoChallengeHunter({
             gameName: row.gameName,
             game: { slug: row.slotSlug, name: row.gameName, providerId: row.providerId },
             targetMultiplier: row.targetMultiplier,
+            beatLeader: row.beatLeader === true,
             minBetUsd: row.minBetUsd,
             award: Math.max(1, row.minBetUsd * 10),
             currency: 'usd',
@@ -1376,7 +1384,11 @@ export default function AutoChallengeHunter({
               row.slotSlug
             ),
           ]
-          names.push(`${row.gameName} (${row.targetMultiplier.toFixed(2)}x)`)
+          names.push(
+            row.beatLeader
+              ? `${row.gameName} (>${row.targetMultiplier.toFixed(2)}x)`
+              : `${row.gameName} (${row.targetMultiplier.toFixed(2)}x)`
+          )
         }
         addedNames.length = 0
         addedNames.push(...names)
@@ -1887,8 +1899,10 @@ export default function AutoChallengeHunter({
     }
 
     const targetMRaw = Number(challenge.targetMultiplier)
+    const beatLeader = challenge.beatLeader === true
     const targetOk = Number.isFinite(targetMRaw) && targetMRaw > 1
     const targetM = targetOk ? targetMRaw : 0
+    const reachedTarget = (multi) => (beatLeader ? multi > targetM : multi >= targetM)
 
     const gSlug = challenge.gameSlug || challenge.game?.slug
     const gName = challenge.gameName || challenge.game?.name || gSlug
@@ -1954,7 +1968,9 @@ export default function AutoChallengeHunter({
 
     const copyLabel = currencySlotIndex > 0 ? ` (Copy #${currencySlotIndex + 1})` : ''
     const manualCurrLabel = forced ? ` · ${forced.toUpperCase()} (manual)` : ''
-    log(`Starting challenge: ${gName}${copyLabel}${manualCurrLabel} (target: ${challenge.targetMultiplier}x)`)
+    log(
+      `Starting challenge: ${gName}${copyLabel}${manualCurrLabel} (target: ${beatLeader ? '>' : ''}${challenge.targetMultiplier}x)`
+    )
     notifyChallengeStart(gName || gSlug, challenge.targetMultiplier)
 
     try {
@@ -2284,7 +2300,7 @@ export default function AutoChallengeHunter({
           const syncB = Number(runBestMultiSyncRef.current[runId]) || 0
           const stB = Number(ar?.bestMultiRun) || 0
           const best = Math.max(syncB, stB)
-          if (best >= targetM) {
+          if (reachedTarget(best)) {
             if (!targetHit) {
               targetHit = true
               finalizeSpinsRemaining = 1
@@ -2666,7 +2682,7 @@ export default function AutoChallengeHunter({
           }
 
           const multi = multiForStop
-          if (targetOk && multi >= targetM) {
+          if (targetOk && reachedTarget(multi)) {
             if (!targetHit) {
               targetHit = true
               finalizeSpinsRemaining = 1

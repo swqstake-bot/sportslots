@@ -17,6 +17,9 @@ export type DiceRunnerPersisted = Pick<
   | 'huntMultiplier'
   | 'endHuntMultiplier'
   | 'repeatAfterMoonshot'
+  | 'vaultWins'
+  | 'vaultFullPayout'
+  | 'vaultMinProfitUsd'
 >
 
 const DEFAULTS: DiceRunnerPersisted = {
@@ -33,6 +36,9 @@ const DEFAULTS: DiceRunnerPersisted = {
   huntMultiplier: 30,
   endHuntMultiplier: 9900,
   repeatAfterMoonshot: false,
+  vaultWins: false,
+  vaultFullPayout: false,
+  vaultMinProfitUsd: 0,
 }
 
 export function loadDiceRunnerConfig(): DiceRunnerPersisted {
@@ -58,6 +64,9 @@ export function loadDiceRunnerConfig(): DiceRunnerPersisted {
           ? Number(parsed.endHuntMultiplier)
           : DEFAULTS.endHuntMultiplier,
       repeatAfterMoonshot: parsed.repeatAfterMoonshot === true,
+      vaultWins: parsed.vaultWins === true,
+      vaultFullPayout: parsed.vaultFullPayout === true,
+      vaultMinProfitUsd: Number(parsed.vaultMinProfitUsd) > 0 ? Number(parsed.vaultMinProfitUsd) : 0,
     }
   } catch {
     return { ...DEFAULTS }
