@@ -29,6 +29,8 @@ export interface DiceRunnerConfig {
   vaultFullPayout: boolean
   /** 0 = jeden Gewinn vaulten. Sonst nur wenn der Gewinn in USD mindestens so hoch ist. */
   vaultMinProfitUsd: number
+  /** Anteil des Gewinns, der in den Vault geht (1–100). */
+  vaultPercent: number
 }
 
 export interface DiceRunnerCallbacks {
@@ -168,6 +170,7 @@ export async function runDiceRunner(
   const vaultWins = config.vaultWins === true
   const vaultFullPayout = config.vaultFullPayout === true
   const vaultMinProfitUsd = Math.max(0, Number(config.vaultMinProfitUsd) || 0)
+  const vaultPercent = Math.min(100, Math.max(1, Math.round(Number(config.vaultPercent) || 80)))
 
   let spins = 0
   let wins = 0
@@ -205,13 +208,18 @@ export async function runDiceRunner(
       )
       return
     }
-    const amountUsd = currencyAmountToUsd(amount, cur, usdRates)
+    const share = vaultPercent >= 100 ? amount : floorCurrencyAmount(amount * (vaultPercent / 100), cur)
+    if (!(share > 0)) {
+      callbacks.onLog?.(`Vault übersprungen: ${vaultPercent}% von ${amount} ${cur.toUpperCase()} ist 0.`)
+      return
+    }
+    const amountUsd = currencyAmountToUsd(share, cur, usdRates)
     try {
-      await createVaultDeposit(cur, amount)
+      await createVaultDeposit(cur, share)
       vaultedUsd += amountUsd
       emitStats()
       callbacks.onLog?.(
-        `Vault: ${amount} ${cur.toUpperCase()} ($${amountUsd.toFixed(4)}${vaultFullPayout ? ', ganze Auszahlung' : ', Nettogewinn'})`
+        `Vault: ${share} ${cur.toUpperCase()} ($${amountUsd.toFixed(4)}, ${vaultPercent}% ${vaultFullPayout ? 'der Auszahlung' : 'vom Nettogewinn'})`
       )
     } catch (e) {
       callbacks.onLog?.(`Vault fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`)
@@ -259,9 +267,7 @@ export async function runDiceRunner(
   )
   if (vaultWins) {
     callbacks.onLog?.(
-      vaultFullPayout
-        ? `Vault an: ganze Auszahlung${vaultMinProfitUsd > 0 ? ` ab $${vaultMinProfitUsd}` : ''}. Hunt-Treffer im Moonshot-Modus wird erst nach dem Moonshot gevaultet.`
-        : `Vault an: Nettogewinn (Auszahlung − Einsatz)${vaultMinProfitUsd > 0 ? ` ab $${vaultMinProfitUsd}` : ''}. Hunt-Treffer im Moonshot-Modus wird erst nach dem Moonshot gevaultet.`
+      `Vault an: ${vaultPercent}% ${vaultFullPayout ? 'der Auszahlung' : 'vom Nettogewinn'}${vaultMinProfitUsd > 0 ? ` ab $${vaultMinProfitUsd}` : ''}. Hunt-Treffer im Moonshot-Modus wird erst nach dem Moonshot gevaultet.`
     )
   }
 

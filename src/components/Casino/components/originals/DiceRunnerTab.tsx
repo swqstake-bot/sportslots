@@ -51,6 +51,7 @@ export default function DiceRunnerTab() {
   const [vaultMinProfitUsd, setVaultMinProfitUsd] = useState(
     saved.vaultMinProfitUsd > 0 ? String(saved.vaultMinProfitUsd) : ''
   )
+  const [vaultPercent, setVaultPercent] = useState(saved.vaultPercent)
   const [running, setRunning] = useState(false)
   const [waitingForBalance, setWaitingForBalance] = useState(false)
   const [error, setError] = useState('')
@@ -87,6 +88,7 @@ export default function DiceRunnerTab() {
         vaultWins,
         vaultFullPayout,
         vaultMinProfitUsd: Math.max(0, Number(vaultMinProfitUsd) || 0),
+        vaultPercent,
       })
     }, 400)
     return () => clearTimeout(t)
@@ -107,6 +109,7 @@ export default function DiceRunnerTab() {
     vaultWins,
     vaultFullPayout,
     vaultMinProfitUsd,
+    vaultPercent,
   ])
 
   const addLog = useCallback((msg: string) => {
@@ -143,6 +146,7 @@ export default function DiceRunnerTab() {
       vaultWins,
       vaultFullPayout,
       vaultMinProfitUsd: Math.max(0, Number(vaultMinProfitUsd) || 0),
+      vaultPercent,
     }
     if (!(cfg.betUsd > 0)) {
       setError('Bet ($) must be greater than 0.')
@@ -179,6 +183,7 @@ export default function DiceRunnerTab() {
     vaultWins,
     vaultFullPayout,
     vaultMinProfitUsd,
+    vaultPercent,
   ])
 
   const handleStart = useCallback(async () => {
@@ -464,19 +469,40 @@ export default function DiceRunnerTab() {
             )}
           </div>
           {vaultWins && (
-            <div>
-              <label className="block text-xs text-[var(--text-muted)] mb-1">Vault ab Gewinn ($)</label>
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={vaultMinProfitUsd}
-                onChange={(e) => setVaultMinProfitUsd(e.target.value)}
-                className={inputCls}
-                disabled={controlsLocked}
-                placeholder="0 = jeder Gewinn"
-                title="0 oder leer vaultet jeden Gewinn. Sonst nur ab diesem USD-Betrag."
-              />
+            <div className="sm:col-span-2 space-y-3">
+              <div>
+                <label className="block text-xs text-[var(--text-muted)] mb-1">Vault ab Gewinn ($)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={vaultMinProfitUsd}
+                  onChange={(e) => setVaultMinProfitUsd(e.target.value)}
+                  className={inputCls}
+                  disabled={controlsLocked}
+                  placeholder="0 = jeder Gewinn"
+                  title="0 oder leer vaultet jeden Gewinn. Sonst nur ab diesem USD-Betrag."
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between text-xs text-[var(--text-muted)] mb-1">
+                  <span>Anteil in den Tresor</span>
+                  <span className="font-medium text-[var(--text)]">{vaultPercent}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={100}
+                  step={1}
+                  value={vaultPercent}
+                  onChange={(e) => setVaultPercent(Number(e.target.value))}
+                  className="w-full accent-[var(--accent)]"
+                  disabled={controlsLocked}
+                />
+                <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                  Beispiel: $100 Gewinn → ${Math.round(vaultPercent)} in den Tresor, ${100 - vaultPercent} bleiben liegen.
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -490,8 +516,8 @@ export default function DiceRunnerTab() {
         {vaultWins && (
           <p className="text-xs text-[var(--text-muted)]">
             {vaultFullPayout
-              ? 'Nach einem Treffer geht die ganze Auszahlung in den Vault.'
-              : 'Nach einem Treffer geht der Nettogewinn (Auszahlung minus Einsatz) in den Vault. Der Einsatz bleibt auf dem Konto.'}
+              ? `Nach einem Treffer gehen ${vaultPercent}% der Auszahlung in den Vault.`
+              : `Nach einem Treffer gehen ${vaultPercent}% des Nettogewinns (Auszahlung minus Einsatz) in den Vault. Der Rest bleibt auf dem Konto.`}
             {twoPhaseHunt ? ' Im Hunt→Moonshot wird erst der Moonshot-Gewinn gevaultet, damit die Moonshot-Wette den Hunt-Gewinn noch setzen kann.' : ''}
           </p>
         )}

@@ -20,6 +20,7 @@ export type DiceRunnerPersisted = Pick<
   | 'vaultWins'
   | 'vaultFullPayout'
   | 'vaultMinProfitUsd'
+  | 'vaultPercent'
 >
 
 const DEFAULTS: DiceRunnerPersisted = {
@@ -39,6 +40,13 @@ const DEFAULTS: DiceRunnerPersisted = {
   vaultWins: false,
   vaultFullPayout: false,
   vaultMinProfitUsd: 0,
+  vaultPercent: 80,
+}
+
+function clampVaultPercent(value: unknown): number {
+  const n = Math.round(Number(value))
+  if (!Number.isFinite(n)) return 80
+  return Math.min(100, Math.max(1, n))
 }
 
 export function loadDiceRunnerConfig(): DiceRunnerPersisted {
@@ -67,6 +75,7 @@ export function loadDiceRunnerConfig(): DiceRunnerPersisted {
       vaultWins: parsed.vaultWins === true,
       vaultFullPayout: parsed.vaultFullPayout === true,
       vaultMinProfitUsd: Number(parsed.vaultMinProfitUsd) > 0 ? Number(parsed.vaultMinProfitUsd) : 0,
+      vaultPercent: clampVaultPercent(parsed.vaultPercent),
     }
   } catch {
     return { ...DEFAULTS }

@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.318': [
+    '✨ Dice Runner: Vault-Anteil per Regler — z. B. ab $100 Gewinn 80% in den Tresor',
+  ],
   '1.0.317': [
     '✨ Dice Runner: Gewinne vaulten (Nettogewinn oder ganze Auszahlung, optional ab einem Gewinn in $)',
     '✨ Conquer the Casino: höchstes Multi live vom Slot-Leaderboard; Hunt stoppt erst darüber',
