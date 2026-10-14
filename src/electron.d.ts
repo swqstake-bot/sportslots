@@ -138,6 +138,14 @@ export interface ElectronAPI {
   }) => Promise<{ saved: boolean; path?: string; csvPath?: string; slotCsvPath?: string }>;
   getSlotFirstWinsDir: () => Promise<string>;
   extractClawbusterSecret: (configUrl: string) => Promise<string | null>;
+  resolveAvataruxLaunch: (configUrl: string) => Promise<{
+    key?: string;
+    game?: string;
+    wallet?: string;
+    operator?: string;
+    apiBase?: string;
+    origin?: string;
+  } | null>;
   resolvePlayneticLaunch: (configUrl: string) => Promise<{
     apiBase: string;
     gamePath: string;

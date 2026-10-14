@@ -2654,6 +2654,82 @@ ipcMain.handle('playnetic-resolve-launch', async (_event, configUrl: string) => 
   });
 });
 
+function absorbAvataruxLaunchUrl(
+  raw: string,
+  bag: { key?: string; game?: string; wallet?: string; operator?: string; apiBase?: string; origin?: string }
+) {
+  if (!raw) return;
+  try {
+    const u = new URL(raw);
+    for (const key of ['key', 'game', 'wallet', 'operator'] as const) {
+      const value = u.searchParams.get(key);
+      if (value) bag[key] = value;
+    }
+    const server = u.searchParams.get('server');
+    if (server && /^https?:\/\//i.test(server)) bag.apiBase = server.replace(/\/$/, '');
+    else if (/\/(authenticate|game)(\/|$)/.test(u.pathname)) bag.apiBase = u.origin;
+    if (u.hostname.startsWith('cdn')) bag.origin = u.origin;
+  } catch {
+    /* ignore */
+  }
+}
+
+// AvatarUX: encrypted launcher (bigplays8) → hidden window → key/game/wallet from the real game URL
+ipcMain.handle('avatarux-resolve-launch', async (_event, configUrl: string) => {
+  if (!configUrl || typeof configUrl !== 'string') return null;
+  return new Promise<{
+    key?: string;
+    game?: string;
+    wallet?: string;
+    operator?: string;
+    apiBase?: string;
+    origin?: string;
+  } | null>((resolve) => {
+    const partition = `avatarux-launch-${Date.now()}`;
+    const ses = session.fromPartition(partition, { cache: false });
+    const w = new BrowserWindow({
+      width: 1,
+      height: 1,
+      show: false,
+      webPreferences: {
+        session: ses,
+        contextIsolation: true,
+        sandbox: false,
+        webSecurity: false,
+      },
+    });
+    const bag: { key?: string; game?: string; wallet?: string; operator?: string; apiBase?: string; origin?: string } = {};
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      try { ses.webRequest.onBeforeRequest(null); } catch { /* ignore */ }
+      if (!w.isDestroyed()) w.destroy();
+      resolve(bag.key && bag.game ? bag : null);
+    };
+    const timeout = setTimeout(() => {
+      console.warn('[avatarux] resolveLaunch: Timeout nach 20s');
+      finish();
+    }, 20000);
+    const consider = (url: string) => {
+      absorbAvataruxLaunchUrl(url, bag);
+      if (bag.key && bag.game && bag.wallet) finish();
+    };
+    ses.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
+      consider(details.url);
+      callback({});
+    });
+    const onNavigate = (_e: Electron.Event, url: string) => consider(url);
+    w.webContents.on('did-navigate', onNavigate);
+    w.webContents.on('did-navigate-in-page', onNavigate);
+    w.loadURL(configUrl).catch((err) => {
+      console.warn('[avatarux] resolveLaunch: loadURL failed', err?.message);
+      finish();
+    });
+  });
+});
+
 // Claw Buster: Launcher-URL laden → Redirect zu clawbuster-cdn → secret aus URL extrahieren
 ipcMain.handle('clawbuster-extract-secret', async (_event, configUrl: string) => {
   if (!configUrl || typeof configUrl !== 'string') return null;
@@ -3182,7 +3258,7 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
     else {
         const allowed = [
             'stake-engine.com', 'engine.io', 'stake.com', 'evolution.com', 'stake.bet', 'stake.eu', 'evo-games.com',
-            'nolimitcdn.com', 'nolimitcity.com', 'l0mpxqfj.xyz', 'thunderkick', 'relax',
+            'nolimitcdn.com', 'nolimitcity.com', 'l0mpxqfj.xyz', 'bigplays8.xyz', 'thunderkick', 'relax',
             'blueprint', 'endorphina', 'netent', 'gameart', 'push', 'btg', 'oak', 'redtiger',
             'playngo', 'octoplay', 'peterandsons', 'shady', 'shuffle', 'titan', 'twist',
             'popiplay', 'helio', 'samurai', '1000lakes', 'hacksawgaming.com', 'rgs-social.hacksawgaming.com',
