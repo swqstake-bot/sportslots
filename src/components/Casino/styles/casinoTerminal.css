@@ -88,6 +88,8 @@
 .casino-root .terminal-scroll--bet {
   max-height: 360px;
   font-size: 0.7rem;
+  /* New rows are inserted at the top. Default scroll anchoring would pin the view on older spins. */
+  overflow-anchor: none;
 }
 
 .casino-root .terminal-scroll--bet.terminal-scroll--compact {

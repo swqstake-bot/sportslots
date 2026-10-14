@@ -43,10 +43,13 @@ export default function BetList({
   const scrollRef = useRef(null)
   const showIdCol = !!(showBetId || showCopyHouse)
 
-  // Newest first via reverse of chronological input — do NOT re-sort by addedAt.
+  // Newest on top. Slot history is oldest-first; the hub feed is already newest-first.
+  // Detect from the ends so a win patch does not reshuffle rows by addedAt.
   const displayBets = useMemo(() => {
     const nonZero = (bets || []).filter((b) => (b.betAmount ?? 0) !== 0 || (b.winAmount ?? 0) !== 0)
-    const newestFirst = nonZero.slice().reverse()
+    const firstAt = Number(nonZero[0]?.addedAt) || 0
+    const lastAt = Number(nonZero[nonZero.length - 1]?.addedAt) || 0
+    const newestFirst = lastAt > firstAt ? nonZero.slice().reverse() : nonZero.slice()
     return Number.isFinite(Number(maxRows)) && Number(maxRows) > 0
       ? newestFirst.slice(0, Number(maxRows))
       : newestFirst

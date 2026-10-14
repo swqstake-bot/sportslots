@@ -1,6 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
   '1.0.319': [
     '✨ AvatarUX: Spins über den Stake-Launcher (Authenticate, Freispiele, Collect)',
+    '🐛 BetList: neueste Spins oben',
   ],
   '1.0.318': [
     '✨ Dice Runner: Vault-Anteil per Regler — z. B. ab $100 Gewinn 80% in den Tresor',
