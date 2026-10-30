@@ -14,7 +14,9 @@ export const APP_FAVICON_URL = publicAssetUrl('favicon.svg')
 export const APP_LOGO_URL = publicAssetUrl('logo.svg')
 
 export const APP_VIEW_TITLES = {
+  overview: 'overview',
   casino: 'slots',
   sports: 'sports',
-  logger: 'logs',
+  logger: 'analysis',
+  settings: 'settings',
 } as const

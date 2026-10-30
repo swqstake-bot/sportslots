@@ -2485,11 +2485,16 @@ html[data-theme='light'] .casino-root {
   line-height: 1.45;
   color: #b8c5d4;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 .casino-root .hunter-log-line {
   padding: 0.12rem 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .casino-root .hunter-log-line:last-child {

@@ -124,14 +124,26 @@ export interface ProfileRunnerCallbacks {
   onTurboChange?: (enabled: boolean) => void
 }
 
-/** Limbo: festes targetMultiplier oder Zufallsbereich targetMultiplierFrom/To (je Bet). */
+/**
+ * Limbo: festes targetMultiplier oder Zufallsbereich targetMultiplierFrom/To (je Bet).
+ * Default: log-uniform (häufig 1.1–3×, seltener 10–15×) — besser für B2B-Hunt als linear.
+ * Linear: targetMultiplierSample = 'linear'
+ */
 function pickLimboTargetMultiplier(opts: Record<string, unknown>): number {
   const from = optFrom(opts, 'targetMultiplierFrom', 0)
   const to = optFrom(opts, 'targetMultiplierTo', 0)
   if (from > 0 && to > 0) {
     const lo = Math.min(from, to)
     const hi = Math.max(from, to)
-    const raw = lo + Math.random() * (hi - lo)
+    const sample = String(opts.targetMultiplierSample || 'log').toLowerCase()
+    let raw: number
+    if (sample === 'linear' || lo <= 0) {
+      raw = lo + Math.random() * (hi - lo)
+    } else {
+      const logLo = Math.log(lo)
+      const logHi = Math.log(hi)
+      raw = Math.exp(logLo + Math.random() * (logHi - logLo))
+    }
     return Math.round(clampLimboMultiplier(raw) * 100) / 100
   }
   return clampLimboMultiplier(optFrom(opts, 'targetMultiplier', 2))
@@ -143,6 +155,12 @@ function pickWorkbenchTargetMultiplier(
 ): number {
   const clamp = (n: number) =>
     maxMultiplier >= LIMBO_MAX_MULTIPLIER ? clampLimboMultiplier(n) : clampMultiplier(n, maxMultiplier)
+  // Limbo: From/To allein reicht (Scripts setzen oft kein targetSelectionMode).
+  if (maxMultiplier >= LIMBO_MAX_MULTIPLIER) {
+    const from = optFrom(opts, 'targetMultiplierFrom', 0)
+    const to = optFrom(opts, 'targetMultiplierTo', 0)
+    if (from > 0 && to > 0) return pickLimboTargetMultiplier(opts)
+  }
   if (optBoolFrom(opts, 'isRandomMultiplier', false)) {
     const m1 = optFrom(opts, 'randomMultiplier1', 2)
     const m2 = optFrom(opts, 'randomMultiplier2', 10)
@@ -357,9 +375,9 @@ export async function runProfile(
   // Recovery-Konfig (optional): Wechsel zu 2. Spiel bei Verlust, zurück wenn profit >= 0
   const recoveryOptions = options.recoveryOptions as Record<string, unknown> | undefined
   const recoveryGame = recoveryOptions ? ((recoveryOptions.game as string) || 'limbo') : ''
-  const recoveryTrigger = (options.recoveryTrigger as string) || 'lossStreak' // 'lossStreak' | 'profitBelow'
+  const recoveryTrigger = (options.recoveryTrigger as string) || 'lossStreak' // 'lossStreak' | 'profitBelow' | 'profitAbove'
   const recoveryTriggerValue = optFrom(options, 'recoveryTriggerValue', 4)
-  const recoveryEndTrigger = (options.recoveryEndTrigger as string) || 'profitNonNegative' // 'profitNonNegative' | 'winStreak'
+  const recoveryEndTrigger = (options.recoveryEndTrigger as string) || 'profitNonNegative' // 'profitNonNegative' | 'winStreak' | 'never'
   const recoveryEndValue = optFrom(options, 'recoveryEndValue', 1)
   const hasRecovery = !!recoveryGame && !!recoveryOptions
 
@@ -1266,7 +1284,12 @@ export async function runProfile(
 
     // Recovery: Wechsel zu 2. Spiel bei Verlust/Streak, zurück wenn profit >= 0
     if (hasRecovery && mode === 'wager') {
-      const triggerHit = recoveryTrigger === 'lossStreak' ? (-currentStreak >= recoveryTriggerValue) : (recoveryTrigger === 'profitBelow' && profitUsd <= recoveryTriggerValue)
+      const triggerHit =
+        recoveryTrigger === 'lossStreak'
+          ? -currentStreak >= recoveryTriggerValue
+          : recoveryTrigger === 'profitBelow'
+            ? profitUsd <= recoveryTriggerValue
+            : recoveryTrigger === 'profitAbove' && profitUsd >= recoveryTriggerValue
       if (triggerHit) {
         mode = 'recovery'
         currentOpts = recoveryOptions!
@@ -1274,11 +1297,22 @@ export async function runProfile(
         betSizeUsd = initialBetSizeRec
         lastWin = false
         currentStreak = 0
-        callbacks.onLog?.(`→ Recovery (${currentGame}) – nach ${recoveryTrigger === 'lossStreak' ? -currentStreak + ' Loss-Streak' : 'Profit ≤ ' + recoveryTriggerValue}`)
+        const why =
+          recoveryTrigger === 'lossStreak'
+            ? `${-currentStreak} Loss-Streak`
+            : recoveryTrigger === 'profitAbove'
+              ? `Profit ≥ ${recoveryTriggerValue}`
+              : `Profit ≤ ${recoveryTriggerValue}`
+        callbacks.onLog?.(`→ Recovery (${currentGame}) – nach ${why}`)
       }
     }
     if (hasRecovery && mode === 'recovery') {
-      const endHit = recoveryEndTrigger === 'profitNonNegative' ? (profitUsd >= 0) : (recoveryEndTrigger === 'winStreak' && currentStreak >= recoveryEndValue)
+      const endHit =
+        recoveryEndTrigger === 'never'
+          ? false
+          : recoveryEndTrigger === 'profitNonNegative'
+            ? profitUsd >= 0
+            : recoveryEndTrigger === 'winStreak' && currentStreak >= recoveryEndValue
       if (endHit) {
         mode = 'wager'
         currentOpts = options

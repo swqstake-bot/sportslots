@@ -2,6 +2,7 @@
  * EU-only Auto Wager GC panel — claim top-up (1000 GC) + Dice gold loop.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useWorkspaceSessionStatus } from '../../../../../hooks/useWorkspaceSessionStatus'
 import { Button } from '../../ui/Button'
 import { useStakeSiteStore } from '../../../../../store/stakeSiteStore'
 import { useUserStore } from '../../../../../store/userStore'
@@ -46,6 +47,11 @@ export default function AutoWagerGcPanel() {
   const [phase, setPhase] = useState<AutoWagerGcPhase>('idle')
   const [phaseDetail, setPhaseDetail] = useState('')
   const [error, setError] = useState('')
+  useWorkspaceSessionStatus('originals-gc-wager', {
+    source: 'originals', label: 'Dice · Auto Wager GC',
+    state: running ? (phase === 'cooldown' ? 'waiting' : 'running') : error ? 'error' : null,
+    currency: 'gold', destination: { view: 'casino', casinoMode: 'originals' },
+  })
   const [logLines, setLogLines] = useState<string[]>([])
   const [stats, setStats] = useState<AutoWagerGcStats | null>(null)
   const signalRef = useRef({ cancelled: false })

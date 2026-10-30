@@ -25,8 +25,18 @@ export function ThemeAccentButton() {
     const onDoc = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
     }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setOpen(false)
+      wrapRef.current?.querySelector('button')?.focus()
+    }
     document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [open])
 
   const displayHex = accentCustomHex ?? ACCENT_PRESETS[0].hex
@@ -39,7 +49,7 @@ export function ThemeAccentButton() {
           const a = accentRgbWithBrightness(rgb.r, rgb.g, rgb.b, accentBrightness)
           return `rgb(${a.r}, ${a.g}, ${a.b})`
         })()
-      : colorInputValue
+      : 'var(--app-accent)'
 
   const onPickColor = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -55,7 +65,7 @@ export function ThemeAccentButton() {
         type="button"
         className="theme-accent-trigger"
         onClick={() => setOpen((o) => !o)}
-        aria-label="Akzentfarbe anpassen"
+        aria-label="Customize accent color"
         aria-expanded={open}
         aria-haspopup="dialog"
       >
@@ -85,7 +95,7 @@ export function ThemeAccentButton() {
 
           <div className="theme-accent-row theme-accent-row-slider">
             <label className="theme-accent-label-inline" htmlFor="accent-brightness">
-              Helligkeit
+              Brightness
             </label>
             <input
               id="accent-brightness"
@@ -100,7 +110,7 @@ export function ThemeAccentButton() {
 
           <div className="theme-accent-row theme-accent-row-slider">
             <label className="theme-accent-label-inline" htmlFor="accent-strength">
-              Border / glow
+              Border strength
             </label>
             <input
               id="accent-strength"

@@ -3,6 +3,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useWorkspaceSessionStatus } from '../../../../hooks/useWorkspaceSessionStatus'
 import { fetchCurrencyRates } from '../../api/stakeChallenges'
 import { Button } from '../ui/Button'
 import OriginalsProfitChart, { profitsToChartData } from '../OriginalsProfitChart'
@@ -55,6 +56,11 @@ export default function DiceRunnerTab() {
   const [running, setRunning] = useState(false)
   const [waitingForBalance, setWaitingForBalance] = useState(false)
   const [error, setError] = useState('')
+  useWorkspaceSessionStatus('originals-dice-runner', {
+    source: 'originals', label: 'Dice · Legacy Runner',
+    state: waitingForBalance ? 'waiting' : running ? 'running' : error ? 'error' : null,
+    currency, destination: { view: 'casino', casinoMode: 'originals' },
+  })
   const [logLines, setLogLines] = useState<string[]>([])
   const [betList, setBetList] = useState<BetRow[]>([])
   const [stats, setStats] = useState<{

@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import AutoChallengeHunter from '../AutoChallengeHunter'
 import { SectionCard } from '../ui/SectionCard'
 import { AutorunTab } from './AutorunTab'
@@ -17,7 +17,7 @@ export interface ChallengeHubTabContentProps {
   resourceMode?: boolean
 }
 
-/** Casino hunter stays mounted (hidden off-tab) so active hunts keep running. Other tabs mount on demand. */
+/** Keep visited automation panels mounted; reviewing history must not stop a run. */
 export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
   tab,
   accessToken,
@@ -28,6 +28,8 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
   resourceMode = false,
 }: ChallengeHubTabContentProps) {
   const casinoVisible = resourceMode || tab === 'casino'
+  const [autorunVisited, setAutorunVisited] = useState(tab === 'autorun')
+  if (tab === 'autorun' && !autorunVisited) setAutorunVisited(true)
 
   const otherTabPanel = (() => {
     if (resourceMode) return null
@@ -35,17 +37,7 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
       case 'casino':
         return null
       case 'autorun':
-        return (
-          <div id="hub-panel-autorun" role="tabpanel" aria-labelledby="hub-tab-autorun" className="min-w-0 min-h-0">
-            <SectionCard>
-              <AutorunTab
-                accessToken={accessToken}
-                webSlots={webSlots as { slug: string; name?: string; providerId: string }[]}
-                onHubStatsChange={onHubStatsChange}
-              />
-            </SectionCard>
-          </div>
-        )
+        return null
       case 'archive':
         return (
           <div id="hub-panel-archive" role="tabpanel" aria-labelledby="hub-tab-archive" className="min-w-0 min-h-0">
@@ -79,6 +71,7 @@ export const ChallengeHubTabContent = memo(function ChallengeHubTabContent({
           />
         </SectionCard>
       </div>
+      {autorunVisited && <div id="hub-panel-autorun" role="tabpanel" aria-labelledby="hub-tab-autorun" className="min-w-0 min-h-0" hidden={resourceMode || tab !== 'autorun'}><SectionCard><AutorunTab accessToken={accessToken} webSlots={webSlots as { slug: string; name?: string; providerId: string }[]} onHubStatsChange={onHubStatsChange} /></SectionCard></div>}
       {otherTabPanel}
     </>
   )

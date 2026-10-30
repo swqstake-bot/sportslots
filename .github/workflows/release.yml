@@ -72,7 +72,9 @@ jobs:
       - name: Quality Gate (Lint + QA Harness)
         run: |
           npm run lint
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run qa:gate
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # electron-builder downloads NSIS/winCodeSign from GitHub Releases; 502s are transient.
       # RELEASES_GITHUB_TOKEN: PAT (repo) f├╝r sportslots-releases + sportslots (Dual-Publish).

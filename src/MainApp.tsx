@@ -1,6 +1,7 @@
 import './index.css';
 import './components/Sports/sports.css';
 import './components/AppShell/app-shell.css';
+import './components/AppShell/workspace.css';
 import { useState, useEffect, useCallback, Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { StakeApi } from './api/client';
@@ -9,8 +10,6 @@ import { AutoBetManager } from './components/AutoBet/AutoBetManager';
 import { CopyBetManager } from './components/AutoBet/CopyBetManager';
 import { AutoBetView } from './components/AutoBet/AutoBetView';
 import { useUserStore, type SportBet } from './store/userStore';
-import { useAutoBetStore } from './store/autoBetStore';
-import { useCopyBetStore } from './store/copyBetStore';
 import { useUiStore } from './store/uiStore';
 import { useAccentInlineStyle } from './hooks/useAccentInlineStyle';
 import CasinoView from './components/Casino/CasinoView';
@@ -22,6 +21,10 @@ import { ChangelogModal } from './components/ui/ChangelogModal';
 import { GlobalToast } from './components/ui/GlobalToast';
 import { getChangelogForVersion } from './constants/changelogs';
 import { AppHeader } from './components/AppShell/AppHeader';
+import { WorkspaceSidebar } from './components/AppShell/WorkspaceSidebar';
+import { WorkspaceOverview } from './components/AppShell/WorkspaceOverview';
+import { WorkspaceSettings } from './components/AppShell/WorkspaceSettings';
+import type { WorkspaceDestination } from './components/AppShell/workspaceNavigation';
 import { AppBrandMark } from './components/AppShell/AppBrandMark';
 import { WindowTitleBar } from './components/AppShell/WindowTitleBar';
 import { APP_NAME, APP_TAGLINE } from './constants/branding';
@@ -69,19 +72,38 @@ function App() {
   });
 
   const { user, setUser, setActiveBets } = useUserStore();
-  const { isRunning } = useAutoBetStore();
-  const copyRunning = useCopyBetStore((s) => s.isRunning);
-  const setSportsCenterTab = useUiStore((s) => s.setSportsCenterTab);
   const showToast = useUiStore((s) => s.showToast);
   const {
     currentView,
     setCurrentView,
+    casinoMode,
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    workspaceDensity,
   } = useUiStore();
 
   const accentInlineStyle = useAccentInlineStyle();
   const preferredSite = useStakeSiteStore((s) => s.preferredSite);
-  const [isChallengeRunning, setIsChallengeRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // Keep visited workspaces in place: switching pages must not clear imported
+  // files, local configuration, or a mounted Casino runtime.
+  const [visitedViews, setVisitedViews] = useState(() => new Set([currentView]));
+  if (!visitedViews.has(currentView)) setVisitedViews(new Set([...visitedViews, currentView]));
+
+  const navigate = useCallback((target: WorkspaceDestination) => {
+    if (target.view === 'sports' && preferredSite === 'eu') {
+      useUiStore.setState({ currentView: 'casino', casinoMode: 'play' });
+      return;
+    }
+    useUiStore.setState(state => ({
+      currentView: target.view,
+      ...(target.casinoMode ? { casinoMode: target.casinoMode } : {}),
+      ...(target.sportsTab ? { sportsCenterTab: target.sportsTab } : {}),
+      ...(target.hubTab ? { challengeHubTab: target.hubTab } : {}),
+      ...(target.promotionsTab ? { promotionsHubTab: target.promotionsTab } : {}),
+      ...(target.slotInstanceId ? { slotWorkbenchFocus: { instanceId: target.slotInstanceId, revision: (state.slotWorkbenchFocus?.revision || 0) + 1 } } : {}),
+    }));
+  }, [preferredSite]);
 
   // Changelog State
   const [showChangelog, setShowChangelog] = useState(false);
@@ -259,17 +281,6 @@ function App() {
     void fetchActiveSportBets(currentUser.name);
   }, [fetchActiveSportBets, isAuthenticated, needsActiveSportBets]);
 
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const e = event as CustomEvent<{ running?: boolean }>;
-      setIsChallengeRunning(Boolean(e?.detail?.running));
-    };
-    window.addEventListener('challenge-running-status', handler as EventListener);
-    return () => {
-      window.removeEventListener('challenge-running-status', handler as EventListener);
-    };
-  }, []);
-
   if (!isAuthenticated) {
     return (
       <div
@@ -288,17 +299,11 @@ function App() {
 
   const appHeaderProps = {
     currentView,
-    onChangeView: setCurrentView,
+    casinoMode,
+    onNavigate: navigate,
     userName: user?.name,
-    isChallengeRunning,
-    isRunning,
-    isCopyRunning: copyRunning,
-    onRunClick: () => {
-      setCurrentView('sports')
-      setSportsCenterTab(copyRunning && !isRunning ? 'copy' : 'settings')
-    },
     isLoading,
-    onRefresh: fetchData,
+    onRefresh: () => { void fetchData() },
     onLogin: handleLogin,
     onSessionRevalidate: handleSessionRevalidate,
     onSiteChanged: handleSiteChanged,
@@ -306,7 +311,7 @@ function App() {
 
   return (
     <div 
-      className="flex flex-col h-screen overflow-hidden select-none"
+      className="workspace-app flex flex-col h-screen overflow-hidden"
       style={{
         background: 'var(--app-bg-deep)',
         color: 'var(--app-text)',
@@ -314,6 +319,7 @@ function App() {
         ...(accentInlineStyle || {}),
       }}
       data-app-mode={currentView}
+      data-density={workspaceDensity}
     >
       <WindowTitleBar />
       <GlobalToast />
@@ -325,30 +331,15 @@ function App() {
         changes={changelogContent} 
       />
 
-      <div className="flex flex-1 flex-col min-h-0 relative">
-        {/* Casino: single rounded module = StakeSlots bar + Control center (CasinoView stays mounted when hidden) */}
-        <div
-          className={currentView === 'casino' ? 'flex flex-1 flex-col min-h-0' : 'hidden'}
-          aria-hidden={currentView !== 'casino'}
-        >
-          <div className="app-casino-unified flex flex-1 flex-col min-h-0">
-            <div className="app-casino-unified__header">
-              <AppHeader {...appHeaderProps} />
-            </div>
-            <div className="app-view-casino app-casino-unified__scroll flex-1 min-h-0 overflow-auto">
-              <CasinoView />
-            </div>
-          </div>
-        </div>
-
-        {/* Sports + Logger */}
-        <div
-          className={currentView === 'casino' ? 'hidden' : 'flex flex-1 flex-col min-h-0 overflow-hidden'}
-          aria-hidden={currentView === 'casino'}
-        >
+      <div className="workspace-layout">
+        <WorkspaceSidebar currentView={currentView} casinoMode={casinoMode} collapsed={sidebarCollapsed} hideSports={preferredSite === 'eu'} onToggleCollapsed={() => setSidebarCollapsed(!sidebarCollapsed)} onNavigate={navigate} />
+        <div className="workspace-content">
           <AppHeader {...appHeaderProps} />
-          <div className="app-main-layout flex-1">
-            {currentView === 'sports' && (
+          <main className="workspace-pages" id="workspace-main">
+            <section className="workspace-page workspace-page-casino" hidden={currentView !== 'casino'} aria-label="Casino workspace">
+              <CasinoView />
+            </section>
+            {visitedViews.has('sports') && <section className="workspace-page workspace-page-sports" hidden={currentView !== 'sports'} aria-label="Sports workspace">
               <div className="sports-bot-main sports-view sports-bot-main--full">
                   {user ? (
                     <AutoBetView layout="wide" />
@@ -365,14 +356,16 @@ function App() {
                     </div>
                   )}
               </div>
-            )}
+            </section>}
 
-            {currentView === 'logger' && (
-              <div className="app-view-logger">
+            {visitedViews.has('logger') && (
+              <section className="workspace-page app-view-logger" hidden={currentView !== 'logger'} aria-label="Import analysis">
                 <LoggerView />
-              </div>
+              </section>
             )}
-          </div>
+            {currentView === 'overview' && <section className="workspace-page"><WorkspaceOverview userName={user?.name} onNavigate={navigate} /></section>}
+            {currentView === 'settings' && <section className="workspace-page"><WorkspaceSettings onNavigate={navigate} onLogin={handleLogin} onSessionRevalidate={handleSessionRevalidate} onRefresh={() => { void fetchData() }} /></section>}
+          </main>
         </div>
       </div>
       {/* AutoBet Manager (Headless): always mounted to avoid remount restarts */}

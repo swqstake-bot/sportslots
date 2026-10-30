@@ -15,7 +15,7 @@ export function useAccentInlineStyle(): CSSProperties | undefined {
 
   const vars = useMemo(() => {
     if (!hex) return null
-    return accentCssVarsFromHex(hex, strength, brightness, mode)
+    return accentCssVarsFromHex(hex, strength, brightness, mode === 'overview' || mode === 'settings' ? 'sports' : mode)
   }, [hex, strength, brightness, mode])
 
   useLayoutEffect(() => {

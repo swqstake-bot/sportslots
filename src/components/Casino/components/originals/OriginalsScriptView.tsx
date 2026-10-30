@@ -4,6 +4,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { useWorkspaceSessionStatus } from '../../../../hooks/useWorkspaceSessionStatus'
 import OriginalsProfitChart, { profitsToChartData } from '../OriginalsProfitChart'
 import { Button } from '../ui/Button'
 import { fetchCurrencyRates } from '../../api/stakeChallenges'
@@ -24,13 +25,20 @@ import {
 import {
   LIMBO_B2B_RANDOM_MULTI_200_PROFILE_JSON,
   LIMBO_B2B_RANDOM_MULTI_200_SCRIPT,
+  LIMBO_B2B_SMART_HUNT_500_PROFILE_JSON,
+  LIMBO_B2B_SMART_HUNT_500_SCRIPT,
 } from './limbo/limboWageringProfile'
+import {
+  BACCARAT_HEDGE_WAGER_65K_PROFILE_JSON,
+  BACCARAT_HEDGE_WAGER_65K_SCRIPT,
+} from './baccarat/baccaratWageringProfile'
 import {
   DICE_B2B_WAGER_PROFILE_JSON,
   DICE_B2B_WAGER_SCRIPT,
   DICE_RECOVERY_LIMBO_PROFILE_JSON,
   DICE_ROTATION_HYBRID_PROFILE_JSON,
   DICE_SELF_RECOVERY_PROFILE_JSON,
+  DICE_HUNT_THEN_GRIND_PROFILE_JSON,
 } from './dice/diceWageringProfile'
 import WorkbenchCurrencySelect from './workbench/WorkbenchCurrencySelect'
 
@@ -170,6 +178,11 @@ export default function OriginalsScriptView() {
   const [currency, setCurrency] = useState('usdc')
   const [intervalMs, setIntervalMs] = useState(String(CODE_MODE_DEFAULT_INTERVAL_MS))
   const [running, setRunning] = useState(false)
+  const [runCurrency, setRunCurrency] = useState<string | null>(null)
+  useWorkspaceSessionStatus('originals-code', {
+    source: 'originals', label: 'Originals · Code', state: running ? 'running' : null,
+    currency: runCurrency ?? currency, destination: { view: 'casino', casinoMode: 'originals' },
+  })
   const [logLines, setLogLines] = useState<string[]>([])
   const [lastStats, setLastStats] = useState<ScriptSessionStats | null>(null)
   const [chartProfits, setChartProfits] = useState<number[]>([])
@@ -333,6 +346,7 @@ export default function OriginalsScriptView() {
     if (profileJson) {
       const stop = runProfileJson(profileJson, currency, callbacks, usdRates, accessToken, paceDefaults)
       if (stop) {
+        setRunCurrency(currency)
         stopRef.current = stop
         setChartProfits([])
         setChartSessionKey((k) => k + 1)
@@ -347,6 +361,7 @@ export default function OriginalsScriptView() {
         ? runProfileJson(scriptCode, currency, callbacks, usdRates, accessToken, paceDefaults)
         : runScriptAsProfile(scriptCode, currency, callbacks, usdRates, accessToken, paceDefaults)
       if (stop) {
+        setRunCurrency(currency)
         stopRef.current = stop
         setChartProfits([])
         setChartSessionKey((k) => k + 1)
@@ -615,6 +630,58 @@ export default function OriginalsScriptView() {
               variant="secondary"
               disabled={running}
               onClick={() => {
+                setScriptContent(LIMBO_B2B_SMART_HUNT_500_SCRIPT)
+                setProfileContent('')
+                setScriptPath('limbo-b2b-smart-hunt-500.js')
+                addLog('Preset: Limbo Smart Hunt Script · log 1.1–15× · Smart peel · $500')
+              }}
+            >
+              Preset: Limbo $500 Hunt
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={running}
+              onClick={() => {
+                setProfileContent(LIMBO_B2B_SMART_HUNT_500_PROFILE_JSON)
+                setScriptContent('')
+                setProfilePath('limbo-b2b-smart-hunt-500.json')
+                addLog('Preset: Limbo Smart Hunt Profile · $500')
+              }}
+            >
+              Preset: Limbo $500 JSON
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={running}
+              onClick={() => {
+                setScriptContent(BACCARAT_HEDGE_WAGER_65K_SCRIPT)
+                setProfileContent('')
+                setScriptPath('baccarat-hedge-65k.js')
+                addLog('Preset: Baccarat Hedge · $50 Player + $50 Banker · stop $65k wagered')
+              }}
+            >
+              Preset: Baccarat 65k
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={running}
+              onClick={() => {
+                setProfileContent(BACCARAT_HEDGE_WAGER_65K_PROFILE_JSON)
+                setScriptContent('')
+                setProfilePath('baccarat-hedge-65k.json')
+                addLog('Preset: Baccarat Hedge Profile · $65k')
+              }}
+            >
+              Preset: Baccarat 65k JSON
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={running}
+              onClick={() => {
                 setScriptContent(DICE_B2B_WAGER_SCRIPT)
                 setProfileContent('')
                 setScriptPath('dice-b2b-wager.js')
@@ -674,6 +741,19 @@ export default function OriginalsScriptView() {
               }}
             >
               Preset: Dice Self-Rec
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={running}
+              onClick={() => {
+                setProfileContent(DICE_HUNT_THEN_GRIND_PROFILE_JSON)
+                setScriptContent('')
+                setProfilePath('dice-hunt-then-grind.json')
+                addLog('Preset: $50 B2B hunt + take-profit → +$950 then 98% grind. Lottery first.')
+              }}
+            >
+              Preset: 50→1k grind
             </Button>
             <Button onClick={handleStart} disabled={running}>
               Start

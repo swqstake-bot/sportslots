@@ -22,6 +22,7 @@ import type { CasinoChallengeSelection } from './types'
 // Styles — `casino.css` after tokens so game chrome wins over generic token defaults
 import './styles/design-tokens.css'
 import './casino.css'
+import './styles/casino-ux.css'
 
 const THEME_KEY = CASINO_STORAGE_KEYS.theme
 
@@ -187,6 +188,10 @@ export default function CasinoView() {
       if (ref) ref.stopAll()
     })
   }, [selectedSlotInstances])
+
+  const handleStopInstance = useCallback((instanceId: string) => {
+    slotControlRefsMap.current.get(instanceId)?.stopAll?.()
+  }, [])
 
   const handleApplyFirstSlotSettings = useCallback(() => {
     const refs = slotControlRefsMap.current
@@ -514,6 +519,7 @@ export default function CasinoView() {
         handleExportSets={handleExportSets}
         handleStartAll={handleStartAll}
         handleStopAll={handleStopAll}
+        onStopInstance={handleStopInstance}
         handleApplyFirstSlotSettings={handleApplyFirstSlotSettings}
         getSlotControlRef={getSlotControlRef}
         handlePlayLogUpdate={handlePlayLogUpdate}

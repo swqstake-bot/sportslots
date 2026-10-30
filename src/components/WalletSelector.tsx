@@ -44,6 +44,19 @@ export function WalletSelector() {
   const [stakeOrigin, setStakeOrigin] = useState('https://stake.com');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setIsOpen(false);
+        dropdownRef.current?.querySelector('button')?.focus();
+      }
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [isOpen]);
+
   const toggleDropdown = () => setIsOpen(!isOpen);
 
   const handleSelect = (currency: string) => {
@@ -107,11 +120,15 @@ export function WalletSelector() {
     : 'Balance';
 
   return (
-    <div className="relative z-50" ref={dropdownRef}>
+    <div className="wallet-selector relative z-50" ref={dropdownRef}>
       <button 
+        type="button"
         onClick={toggleDropdown}
-        className="flex items-center justify-between rounded-lg py-1.5 px-3 min-w-[200px] transition-all group min-h-10 gap-3 hover:bg-white/5"
-        style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0, 240, 255, 0.25)' }}
+        className="wallet-selector-trigger flex items-center justify-between rounded-lg py-1.5 px-3 min-w-[180px] transition-all group min-h-10 gap-3"
+        style={{ background: 'var(--app-bg-card)', border: '1px solid var(--app-border-subtle)' }}
+        aria-label={`Wallet: ${formatWalletBalanceAmount(currentBalance, selectedCurrency)} ${getCurrencyLabel(selectedCurrency)}`}
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
       >
         <div className="flex flex-col items-start leading-tight gap-0.5">
           <span className="text-[10px] font-bold uppercase tracking-wider transition-colors" style={{ color: 'var(--app-text-muted)' }}>
@@ -143,7 +160,7 @@ export function WalletSelector() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 rounded-lg overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 z-50" style={{ background: 'rgba(15, 15, 25, 0.95)', backdropFilter: 'blur(12px)', border: '1px solid rgba(0, 240, 255, 0.2)', boxShadow: '0 8px 32px rgba(0,0,0,0.5), 0 0 24px rgba(0, 240, 255, 0.08)' }}>
+        <div role="dialog" aria-label="Wallet selection" className="wallet-selector-menu absolute right-0 mt-2 w-64 rounded-lg overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 z-50" style={{ background: 'var(--app-bg-card)', border: '1px solid var(--app-border)', boxShadow: 'none' }}>
           <div className="p-3 border-b flex justify-between items-center" style={{ background: 'var(--app-bg-deep)', borderColor: 'var(--app-border)' }}>
              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Wallet</h3>
              <button

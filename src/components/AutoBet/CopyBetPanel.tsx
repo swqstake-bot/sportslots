@@ -1,10 +1,11 @@
 import { useCopyBetStore, type CopyBetFeed, type CopyStakeMode } from '../../store/copyBetStore'
 import { useUserStore } from '../../store/userStore'
+import { ProfilesPanel } from './ProfilesPanel'
 
 const FEEDS: { id: CopyBetFeed; label: string }[] = [
   { id: 'highroller', label: 'Highroller' },
-  { id: 'all', label: 'All Bets' },
-  { id: 'both', label: 'Both' },
+  { id: 'all', label: 'All bets' },
+  { id: 'both', label: 'Both feeds' },
 ]
 
 type CopyBetPanelProps = {
@@ -13,15 +14,15 @@ type CopyBetPanelProps = {
 }
 
 export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
-  const { settings, logs, lastFeed, copiedCount, scannedCount, investedUsd, updateSettings, clearLogs } =
+  const { settings, logs, lastFeed, copiedCount, scannedCount, investedUsd, isRunning, updateSettings, clearLogs } =
     useCopyBetStore()
   const { availableCurrencies } = useUserStore()
 
   return (
-    <div className="copy-feed">
+    <div className="copy-feed copy-feed--workbench">
       <div className="copy-feed-pane copy-feed-pane--setup">
         <section className="copy-feed-block">
-          <h3 className="copy-feed-kicker">Source</h3>
+          <div className="sports-section-heading"><span className="sports-step">01</span><div><h3 className="copy-feed-kicker">Feed source</h3><p className="sports-section-hint">Choose where to look for incoming bets.</p></div></div>
           <div className="copy-feed-seg" role="tablist" aria-label="Feed source">
             {FEEDS.map((f) => (
               <button
@@ -38,9 +39,9 @@ export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
           </div>
           <div className="copy-feed-fields copy-feed-fields--3">
             <label className="copy-feed-field">
-              <span>Currency</span>
-              <select value={settings.currency} onChange={(e) => updateSettings({ currency: e.target.value })}>
-                {(availableCurrencies.length ? availableCurrencies : [settings.currency]).map((c) => (
+              <span>Wallet currency</span>
+              <select aria-label="Wallet currency" value={settings.currency} onChange={(e) => updateSettings({ currency: e.target.value })}>
+                {Array.from(new Set([settings.currency, ...availableCurrencies])).map((c) => (
                   <option key={c} value={c}>
                     {c.toUpperCase()}
                   </option>
@@ -48,7 +49,7 @@ export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
               </select>
             </label>
             <label className="copy-feed-field">
-              <span>Poll ms</span>
+              <span>Poll interval · ms</span>
               <input
                 type="number"
                 min={1200}
@@ -59,7 +60,7 @@ export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
             </label>
             <label className="copy-feed-field">
               <span>Sport</span>
-              <select value={settings.sportSlug} onChange={(e) => onSportChange(e.target.value)}>
+              <select aria-label="Sport" value={settings.sportSlug} onChange={(e) => onSportChange(e.target.value)}>
                 <option value="all">All sports</option>
                 {settings.sportSlug &&
                   settings.sportSlug !== 'all' &&
@@ -77,7 +78,7 @@ export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
         </section>
 
         <section className="copy-feed-block">
-          <h3 className="copy-feed-kicker">Filters</h3>
+          <div className="sports-section-heading"><span className="sports-step">02</span><div><h3 className="copy-feed-kicker">Bet filters</h3><p className="sports-section-hint">Set which source bets qualify for your feed.</p></div></div>
           <div className="copy-feed-fields copy-feed-fields--4">
             <label className="copy-feed-field">
               <span>Min odds</span>
@@ -88,19 +89,19 @@ export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
               <input type="number" step="0.01" value={settings.maxOdds} onChange={(e) => updateSettings({ maxOdds: Number(e.target.value) })} />
             </label>
             <label className="copy-feed-field">
-              <span>Min stake $</span>
+              <span>Source stake min · USD</span>
               <input type="number" step="1" value={settings.minStakeUsd} onChange={(e) => updateSettings({ minStakeUsd: Number(e.target.value) })} />
             </label>
             <label className="copy-feed-field">
-              <span>Max stake $</span>
+              <span>Source stake max · USD</span>
               <input type="number" step="1" value={settings.maxStakeUsd} onChange={(e) => updateSettings({ maxStakeUsd: Number(e.target.value) })} />
             </label>
             <label className="copy-feed-field">
-              <span>Min legs</span>
+              <span>Minimum legs</span>
               <input type="number" min={1} value={settings.minLegs} onChange={(e) => updateSettings({ minLegs: Number(e.target.value) })} />
             </label>
             <label className="copy-feed-field">
-              <span>Max legs</span>
+              <span>Maximum legs</span>
               <input type="number" min={1} value={settings.maxLegs} onChange={(e) => updateSettings({ maxLegs: Number(e.target.value) })} />
             </label>
             <label className="copy-feed-field copy-feed-field--span2">
@@ -113,7 +114,7 @@ export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
               />
             </label>
             <label className="copy-feed-field">
-              <span>Users include</span>
+              <span>Include users</span>
               <input
                 type="text"
                 value={settings.userInclude}
@@ -122,7 +123,7 @@ export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
               />
             </label>
             <label className="copy-feed-field">
-              <span>Users exclude</span>
+              <span>Exclude users</span>
               <input
                 type="text"
                 value={settings.userExclude}
@@ -133,16 +134,16 @@ export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
           </div>
           <div className="copy-feed-chips">
             <Chip on={settings.skipHiddenUsers} onClick={() => updateSettings({ skipHiddenUsers: !settings.skipHiddenUsers })}>
-              Skip hidden
+              Skip hidden users
             </Chip>
             <Chip on={settings.skipCustomBet} onClick={() => updateSettings({ skipCustomBet: !settings.skipCustomBet })}>
-              Skip SGM
+              Skip same-game multis
             </Chip>
             <Chip on={settings.skipOwnBets} onClick={() => updateSettings({ skipOwnBets: !settings.skipOwnBets })}>
-              Skip own
+              Skip own bets
             </Chip>
             <Chip on={settings.ignoreExistingOnStart} onClick={() => updateSettings({ ignoreExistingOnStart: !settings.ignoreExistingOnStart })}>
-              New only
+              New bets only
             </Chip>
             <Chip on={settings.scanOnly} onClick={() => updateSettings({ scanOnly: !settings.scanOnly })}>
               Scan only
@@ -151,11 +152,12 @@ export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
         </section>
 
         <section className="copy-feed-block">
-          <h3 className="copy-feed-kicker">Stake</h3>
+          <div className="sports-section-heading"><span className="sports-step">03</span><div><h3 className="copy-feed-kicker">Copy stake & session limit</h3><p className="sports-section-hint">Stake amounts are in USD and converted to your wallet currency.</p></div></div>
           <div className="copy-feed-fields copy-feed-fields--3">
             <label className="copy-feed-field">
               <span>Mode</span>
               <select
+                aria-label="Mode"
                 value={settings.stakeMode}
                 onChange={(e) => updateSettings({ stakeMode: e.target.value as CopyStakeMode })}
               >
@@ -166,7 +168,7 @@ export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
             </label>
             {settings.stakeMode === 'fixed' && (
               <label className="copy-feed-field">
-                <span>Copy USD</span>
+              <span>Stake per copy · USD</span>
                 <input
                   type="number"
                   step="0.1"
@@ -177,7 +179,7 @@ export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
             )}
             {settings.stakeMode === 'percent' && (
               <label className="copy-feed-field">
-                <span>Percent</span>
+                <span>Original stake · %</span>
                 <input
                   type="number"
                   step="1"
@@ -188,7 +190,7 @@ export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
             )}
             {settings.stakeMode !== 'fixed' && (
               <label className="copy-feed-field">
-                <span>Max USD</span>
+                <span>Maximum per copy · USD</span>
                 <input
                   type="number"
                   step="0.1"
@@ -198,8 +200,9 @@ export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
               </label>
             )}
             <label className="copy-feed-field">
-              <span>Odds change</span>
+              <span>Odds changes</span>
               <select
+                aria-label="Odds changes"
                 value={settings.oddsChange}
                 onChange={(e) => updateSettings({ oddsChange: e.target.value as 'any' | 'none' })}
               >
@@ -208,18 +211,27 @@ export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
               </select>
             </label>
             <label className="copy-feed-field">
-              <span>Max invest $</span>
+              <span>Session limit · USD</span>
               <input
                 type="number"
                 min={0}
                 step="1"
                 value={settings.maxInvestUsd}
+                aria-label="Session limit · USD"
                 onChange={(e) => updateSettings({ maxInvestUsd: Number(e.target.value) || 0 })}
                 placeholder="0 = off"
               />
+              <small className="sports-field-help">0 = no session investment limit</small>
             </label>
           </div>
         </section>
+        <section className="copy-feed-block sports-copy-summary" aria-label="Current Copy configuration">
+          <h3 className="copy-feed-kicker">Current configuration</h3>
+          <p>{settings.scanOnly ? 'Scan only · qualifying bets will not be copied.' : settings.stakeMode === 'fixed' ? `Fixed stake: ${settings.copyStakeUsd} USD per copy.` : settings.stakeMode === 'percent' ? `${settings.copyPercent}% of the source stake, capped at ${settings.copyMaxUsd} USD.` : `Copy the source stake, capped at ${settings.copyMaxUsd} USD.`}</p>
+          <p>Wallet: {settings.currency.toUpperCase()} · {settings.maxInvestUsd > 0 ? `Session limit: ${settings.maxInvestUsd} USD` : 'No session investment limit'}</p>
+          {isRunning && <p className="sports-section-hint">Changes to this configuration can affect the running Copy feed.</p>}
+        </section>
+        <ProfilesPanel mode="copybet" />
       </div>
 
       <div className="copy-feed-pane copy-feed-pane--live">
@@ -239,7 +251,7 @@ export function CopyBetPanel({ sports, onSportChange }: CopyBetPanelProps) {
               {settings.maxInvestUsd > 0 ? ` / ${settings.maxInvestUsd}` : ''}
             </strong>
           </div>
-          <div className="copy-feed-kpi-hint">Last poll · {lastFeed.length} rows</div>
+          <div className="copy-feed-kpi-hint">Latest feed · {lastFeed.length} rows</div>
         </div>
 
         <div className="copy-feed-table-wrap">

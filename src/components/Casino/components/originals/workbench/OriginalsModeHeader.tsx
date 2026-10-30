@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import OriginalsWalletBalance from './OriginalsWalletBalance'
 import type { OriginalsBettingMode } from '../schema/workbenchOptions'
 import type { OriginalsGameEntry } from '../registry/originalsRegistry'
@@ -75,6 +75,7 @@ export default function OriginalsModeHeader({
   const activeAdvanced = advancedModes.find((m) => m.id === mode)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const advancedRef = useRef<HTMLDivElement>(null)
+  const advancedId = useId()
   const showTurbo = onToggleTurbo && (mode === 'automatic' || mode === 'conditions')
 
   useEffect(() => {
@@ -84,8 +85,17 @@ export default function OriginalsModeHeader({
         setAdvancedOpen(false)
       }
     }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setAdvancedOpen(false)
+      advancedRef.current?.querySelector('button')?.focus()
+    }
     document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKeyDown)
+    }
   }, [advancedOpen])
 
   return (
@@ -117,6 +127,7 @@ export default function OriginalsModeHeader({
             type="button"
             disabled={running && m.id !== mode}
             title={m.title}
+            aria-pressed={mode === m.id}
             className={`originals-mode-tab${mode === m.id ? ' is-active' : ''}`}
             onClick={() => onModeChange(m.id)}
           >
@@ -131,17 +142,17 @@ export default function OriginalsModeHeader({
               disabled={running && !activeAdvanced}
               className={`originals-mode-tab originals-mode-tab--advanced${activeAdvanced ? ' is-active' : ''}${advancedOpen ? ' is-open' : ''}`}
               aria-expanded={advancedOpen}
-              aria-haspopup="menu"
+              aria-controls={advancedId}
               title="Advanced modes"
               onClick={() => setAdvancedOpen((o) => !o)}
             >
-              {activeAdvanced ? activeAdvanced.label : 'More'}
+              {activeAdvanced ? activeAdvanced.label : 'Advanced modes'}
               <span className="originals-mode-advanced-caret" aria-hidden>
                 ▾
               </span>
             </button>
             {advancedOpen && (
-              <div className="originals-mode-advanced-menu" role="menu">
+              <div id={advancedId} className="originals-mode-advanced-menu" role="group" aria-label="Advanced modes">
                 {activeAdvanced && (
                   <p className="originals-mode-advanced-hint">
                     {activeAdvanced.id === 'dice-runner'
@@ -153,7 +164,7 @@ export default function OriginalsModeHeader({
                   <button
                     key={m.id}
                     type="button"
-                    role="menuitem"
+                    aria-pressed={mode === m.id}
                     disabled={running && m.id !== mode}
                     title={m.title}
                     className={`originals-mode-advanced-item${mode === m.id ? ' is-active' : ''}`}
@@ -169,7 +180,6 @@ export default function OriginalsModeHeader({
                 {activeAdvanced && (
                   <button
                     type="button"
-                    role="menuitem"
                     disabled={running}
                     className="originals-mode-advanced-item originals-mode-advanced-item--back"
                     onClick={() => {
@@ -192,9 +202,10 @@ export default function OriginalsModeHeader({
             type="button"
             className={`originals-stats-toggle${sidebarCollapsed ? '' : ' is-open'}`}
             onClick={onToggleSidebar}
+            aria-pressed={!sidebarCollapsed}
             title={sidebarCollapsed ? 'Show strategy panel' : 'Hide strategy panel'}
           >
-            {sidebarCollapsed ? 'Panel' : 'Panel ◂'}
+            Strategy
           </button>
         )}
         {showTurbo && (
@@ -202,6 +213,7 @@ export default function OriginalsModeHeader({
             type="button"
             className={`originals-turbo-toggle${turboMode ? ' is-active' : ''}`}
             disabled={running || !turboCompatible}
+            aria-pressed={turboMode}
             title={
               !turboCompatible
                 ? 'Turbo not available for this game'
@@ -211,7 +223,7 @@ export default function OriginalsModeHeader({
             }
             onClick={onToggleTurbo}
           >
-            ⚡ Turbo
+            Turbo
           </button>
         )}
         {currency && onCurrencyChange && (
@@ -223,8 +235,8 @@ export default function OriginalsModeHeader({
           />
         )}
         {onOpenSettings && (
-          <button type="button" className="originals-stats-toggle" onClick={onOpenSettings} title="Settings">
-            ⚙
+          <button type="button" className="originals-stats-toggle" onClick={onOpenSettings} title="Workbench settings">
+            Settings
           </button>
         )}
         {onToggleLog && (
@@ -232,18 +244,20 @@ export default function OriginalsModeHeader({
             type="button"
             className={`originals-stats-toggle${logOpen ? ' is-open' : ''}`}
             onClick={onToggleLog}
+            aria-pressed={!!logOpen}
             title="Session log"
           >
-            Log
+            Session log
           </button>
         )}
         <button
           type="button"
           className={`originals-stats-toggle${statsOpen ? ' is-open' : ''}`}
           onClick={onToggleStats}
+          aria-pressed={statsOpen}
           title="Statistics"
         >
-          Stats
+          Statistics
         </button>
       </div>
     </div>

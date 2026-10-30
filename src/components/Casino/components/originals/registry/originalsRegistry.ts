@@ -156,7 +156,7 @@ export const ORIGINALS_REGISTRY: OriginalsGameEntry[] = [
 
   { slug: 'roulette', name: 'Roulette', thumbnailUrl: `${IMG}/30688668d7d2d48d472edd0f1e2bca0758e7ec51cbab8c04d8b7f157848640e0`, apiReady: false, uiReady: false, supportsCombo: false, supportsAsync: true, supportsManual: true, rolloutPhase: 'C', blockedReason: NO_API },
 
-  { slug: 'baccarat', name: 'Baccarat', thumbnailUrl: `${IMG}/30688668d7d2d48d472edd0f1e2bca0758e7ec51cbab8c04d8b7f157848640e0`, apiReady: false, uiReady: false, supportsCombo: false, supportsAsync: true, supportsManual: true, rolloutPhase: 'C', blockedReason: NO_API },
+  { slug: 'baccarat', name: 'Baccarat', thumbnailUrl: `${IMG}/30688668d7d2d48d472edd0f1e2bca0758e7ec51cbab8c04d8b7f157848640e0`, apiReady: true, uiReady: false, supportsCombo: false, supportsAsync: false, supportsManual: true, rolloutPhase: 'C' },
 
   { slug: 'video-poker', name: 'Video Poker', thumbnailUrl: `${IMG}/30688668d7d2d48d472edd0f1e2bca0758e7ec51cbab8c04d8b7f157848640e0`, apiReady: false, uiReady: false, supportsCombo: false, supportsAsync: false, supportsManual: true, rolloutPhase: 'C', blockedReason: NO_API },
 

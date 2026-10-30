@@ -118,10 +118,10 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
 
   const activeBetCount = activeBets.length;
   const currencyOptions = availableCurrencies.length
-    ? availableCurrencies
+    ? Array.from(new Set([settings.currency, ...availableCurrencies]))
     : Object.keys(balances).length
-      ? Object.keys(balances)
-      : ['usd'];
+      ? Array.from(new Set([settings.currency, ...Object.keys(balances)]))
+      : [settings.currency || 'usd'];
 
   const selectClass = 'autobet-control w-full px-3 py-2.5 text-sm font-medium appearance-none cursor-pointer';
   const inputClass = 'autobet-control w-full px-3 py-2.5 text-sm font-mono';
@@ -137,6 +137,19 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
   }, [logs, copyLogs, logSource]);
 
   const logCount = logs.length + copyLogs.length;
+  const selectedSport = settings.sportSlug === 'all'
+    ? 'All sports'
+    : settings.sportSlug === 'starting_soon'
+      ? 'Starting soon'
+      : sports.find((sport) => sport.slug === settings.sportSlug)?.name || settings.sportSlug;
+  const hasMarketFilters = Boolean(settings.marketIncludeKeywords || settings.marketExcludeKeywords || settings.outcomeIncludeKeywords);
+  const taskDescription = activeTab === 'copy'
+    ? 'Choose a source, define your filters and follow the incoming feed.'
+    : activeTab === 'bets'
+      ? 'Review active bets and open their details.'
+      : activeTab === 'logs'
+        ? 'Follow AutoBet and Copy events in one place.'
+        : 'Choose events, set your stake and review the current configuration.';
 
   const copyStartButton = (
     <button
@@ -148,33 +161,36 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
         if (!confirmStartAlongside('AutoBet', isRunning)) return;
         startCopyFeed();
       }}
-      className={`autobet-start-btn transition-all shadow-lg transform active:scale-[0.98] flex justify-center items-center gap-2 ${isWide ? 'autobet-start-btn--wide' : ''}`}
+      type="button"
+      className={`autobet-start-btn flex justify-center items-center gap-2 ${isWide ? 'autobet-start-btn--wide' : ''}`}
       style={copyRunning
-        ? { background: 'var(--app-error)', color: 'white', border: '2px solid rgba(255,51,102,0.5)' }
-        : { background: 'var(--app-accent)', color: 'var(--app-bg-deep)', border: '2px solid rgba(var(--app-accent-rgb), 0.5)' }
+        ? { background: 'var(--app-error)', color: 'var(--app-bg-deep)' }
+        : { background: 'var(--app-accent)', color: 'var(--app-bg-deep)' }
       }
     >
-      {copyRunning ? 'Stop copy feed' : 'Start copy feed'}
+      <span className={`sports-action-mark ${copyRunning ? 'is-stop' : 'is-start'}`} aria-hidden="true" />
+      {copyRunning ? 'Stop Copy' : 'Start Copy'}
     </button>
   );
 
   const startButton = (
     <button
       onClick={handleStartStop}
-      className={`autobet-start-btn transition-all shadow-lg transform active:scale-[0.98] flex justify-center items-center gap-2 ${isWide ? 'autobet-start-btn--wide' : ''}`}
+      type="button"
+      className={`autobet-start-btn flex justify-center items-center gap-2 ${isWide ? 'autobet-start-btn--wide' : ''}`}
       style={isRunning
-        ? { background: 'var(--app-error)', color: 'white', border: '2px solid rgba(255,51,102,0.5)' }
-        : { background: 'var(--app-accent)', color: 'var(--app-bg-deep)', border: '2px solid rgba(var(--app-accent-rgb), 0.5)' }
+        ? { background: 'var(--app-error)', color: 'var(--app-bg-deep)' }
+        : { background: 'var(--app-accent)', color: 'var(--app-bg-deep)' }
       }
     >
       {isRunning ? (
         <>
-          <span className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></span>
+          <span className="sports-action-mark is-stop" aria-hidden="true" />
           Stop AutoBet
         </>
       ) : (
         <>
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          <span className="sports-action-mark is-start" aria-hidden="true" />
           Start AutoBet
         </>
       )}
@@ -182,7 +198,7 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
   );
 
   const settingsPane = (
-    <div className={`copy-feed copy-feed--solo ${isWide ? '' : 'copy-feed--sidebar'}`.trim()}>
+    <div className={`copy-feed copy-feed--solo sports-workbench ${isWide ? '' : 'copy-feed--sidebar'}`.trim()}>
       <div className="copy-feed-pane copy-feed-pane--setup">
         <div className="copy-feed-kpi">
           <div>
@@ -198,7 +214,7 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
             <strong>{skippedCount}</strong>
           </div>
           <div>
-            <span className="copy-feed-kpi-label">Session</span>
+            <span className="copy-feed-kpi-label">Invested · USD</span>
             <strong>${investedUsd.toFixed(2)}</strong>
           </div>
           {isRunning && lastScanAt && (
@@ -207,17 +223,21 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
         </div>
 
         <section className="copy-feed-block">
-          <h3 className="copy-feed-kicker">Essentials</h3>
+          <div className="sports-section-heading">
+            <span className="sports-step">01</span>
+            <div><h3 className="copy-feed-kicker">Event selection</h3><p className="sports-section-hint">Define which events AutoBet should consider.</p></div>
+          </div>
           <div className="copy-feed-fields copy-feed-fields--4">
             <label className="copy-feed-field">
               <span>Strategy</span>
-              <select value={settings.strategy} onChange={(e) => updateSettings({ strategy: e.target.value as AutoBetStrategy })}>
+              <select aria-label="Strategy" value={settings.strategy} onChange={(e) => updateSettings({ strategy: e.target.value as AutoBetStrategy })}>
+                {!STRATEGIES.includes(settings.strategy) && <option value={settings.strategy}>{settings.strategy} (saved)</option>}
                 {STRATEGIES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </label>
             <label className="copy-feed-field">
               <span>Game type</span>
-              <select value={settings.gameType} onChange={(e) => updateSettings({ gameType: e.target.value as 'live' | 'upcoming' | 'all' })}>
+              <select aria-label="Game type" value={settings.gameType} onChange={(e) => updateSettings({ gameType: e.target.value as 'live' | 'upcoming' | 'all' })}>
                 <option value="upcoming">Upcoming</option>
                 <option value="live">Live</option>
                 <option value="all">All</option>
@@ -225,20 +245,29 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
             </label>
             <label className="copy-feed-field">
               <span>Sport</span>
-              <select value={settings.sportSlug} onChange={(e) => setSharedSport(e.target.value)}>
+              <select aria-label="Sport" value={settings.sportSlug} onChange={(e) => setSharedSport(e.target.value)}>
                 <option value="all">All sports</option>
                 <option value="starting_soon">Starting Soon</option>
                 {sports.map((s) => <option key={s.slug} value={s.slug}>{s.name}</option>)}
               </select>
             </label>
             <label className="copy-feed-field">
-              <span>Currency</span>
-              <select value={settings.currency} onChange={(e) => updateSettings({ currency: e.target.value })} className="uppercase">
+              <span>Wallet currency</span>
+              <select aria-label="Wallet currency" value={settings.currency} onChange={(e) => updateSettings({ currency: e.target.value })} className="uppercase">
                 {currencyOptions.map((c) => <option key={c} value={c}>{c.toUpperCase()}</option>)}
               </select>
             </label>
+          </div>
+        </section>
+
+        <section className="copy-feed-block">
+          <div className="sports-section-heading">
+            <span className="sports-step">02</span>
+            <div><h3 className="copy-feed-kicker">Stake & bet selection</h3><p className="sports-section-hint">The stake is in USD and is converted to your wallet currency.</p></div>
+          </div>
+          <div className="copy-feed-fields copy-feed-fields--3">
             <label className="copy-feed-field">
-              <span>Amount</span>
+              <span>Stake per bet · USD</span>
               <input type="number" step="0.00000001" value={settings.amount} onChange={(e) => updateSettings({ amount: parseFloat(e.target.value) })} />
             </label>
             <label className="copy-feed-field">
@@ -250,11 +279,11 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
               <input type="number" step="0.01" value={settings.maxOdds} onChange={(e) => updateSettings({ maxOdds: parseFloat(e.target.value) })} />
             </label>
             <label className="copy-feed-field">
-              <span>Min legs</span>
+              <span>Minimum legs</span>
               <input type="number" value={settings.minLegs} onChange={(e) => updateSettings({ minLegs: parseInt(e.target.value) })} />
             </label>
             <label className="copy-feed-field">
-              <span>Max legs</span>
+              <span>Maximum legs</span>
               <input type="number" value={settings.maxLegs} onChange={(e) => updateSettings({ maxLegs: parseInt(e.target.value) })} />
             </label>
             <label className="copy-feed-field copy-feed-field--span2">
@@ -268,6 +297,20 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
               />
             </label>
           </div>
+        </section>
+
+        <section className="copy-feed-block">
+          <div className="sports-section-heading">
+            <span className="sports-step">03</span>
+            <div><h3 className="copy-feed-kicker">Session limits & filters</h3><p className="sports-section-hint">Choose the bet target and the event date window.</p></div>
+          </div>
+          <div className="copy-feed-fields copy-feed-fields--3">
+            <label className="copy-feed-field">
+              <span>Bet target</span>
+              <input type="number" value={settings.numberOfBets} onChange={(e) => updateSettings({ numberOfBets: parseInt(e.target.value) })} />
+            </label>
+          </div>
+          {settings.fillUp && <p className="sports-inline-note">Fill-up is enabled: the bet target does not stop this mode. AutoBet fills to the active-bet limit and checks again later.</p>}
           <div className="copy-feed-chips">
             <Chip on={!!settings.ignoreLiveGames} onClick={() => updateSettings({ ignoreLiveGames: !settings.ignoreLiveGames })}>
               Ignore live
@@ -310,13 +353,9 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
           onToggle={(e) => setAdvancedOpen((e.target as HTMLDetailsElement).open)}
         >
           <summary className="copy-feed-kicker copy-feed-advanced-summary">
-            Advanced · tournament, props, shield, scan
+            Advanced options <span>Tournaments, player props, fill-up, shields & scanning</span>
           </summary>
           <div className="copy-feed-fields copy-feed-fields--4" style={{ marginTop: '0.75rem' }}>
-            <label className="copy-feed-field">
-              <span>Max bets</span>
-              <input type="number" value={settings.numberOfBets} onChange={(e) => updateSettings({ numberOfBets: parseInt(e.target.value) })} />
-            </label>
             <label className="copy-feed-field">
               <span>Scan limit</span>
               <input
@@ -330,7 +369,7 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
             </label>
           </div>
 
-          <div className="mt-4">
+          <div className="sports-advanced-group">
             <h3 className="copy-feed-kicker">Tournament</h3>
             <TournamentEventPickFields
               settings={settings}
@@ -355,7 +394,7 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
             </div>
           </div>
 
-          <div className="mt-4">
+          <div className="sports-advanced-group">
             <h3 className="copy-feed-kicker">Player props</h3>
             <div className="copy-feed-fields copy-feed-fields--3">
               <label className="copy-feed-field">
@@ -410,7 +449,7 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
             </div>
           </div>
 
-          <div className="mt-4">
+          <div className="sports-advanced-group">
             <h3 className="copy-feed-kicker">Fill-up & shield</h3>
             <div className="copy-feed-chips">
               <Chip on={!!settings.fillUp} onClick={() => updateSettings({ fillUp: !settings.fillUp })}>
@@ -466,6 +505,33 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
 
         {!isWide && <div className="pt-3">{startButton}</div>}
       </div>
+      <aside className="sports-config-summary" aria-label="Current AutoBet configuration">
+        <div className="sports-summary-heading"><h3>Current configuration</h3><span className={`sports-summary-state ${isRunning ? 'is-running' : ''}`}><span aria-hidden="true" />{isRunning ? 'AutoBet running' : 'Ready to configure'}</span></div>
+        <dl className="sports-summary-values">
+          <div><dt>Strategy</dt><dd>{settings.strategy}</dd></div>
+          <div><dt>Stake per bet</dt><dd>{formatConfigNumber(settings.amount)} USD</dd></div>
+          <div><dt>Wallet currency</dt><dd>{settings.currency.toUpperCase()}</dd></div>
+          <div><dt>Events</dt><dd>{settings.gameType === 'all' ? 'Live & upcoming' : settings.gameType === 'live' ? 'Live' : 'Upcoming'}</dd></div>
+          <div><dt>Sport</dt><dd>{selectedSport}</dd></div>
+          <div><dt>Odds per leg</dt><dd>{formatConfigNumber(settings.minOdds)} – {formatConfigNumber(settings.maxOdds)}</dd></div>
+          <div><dt>Legs per bet</dt><dd>{settings.minLegs} – {settings.maxLegs}</dd></div>
+          <div><dt>Run mode</dt><dd>{settings.fillUp ? `Fill up to ${ACTIVE_SPORT_BETS_MAX_TOTAL} active bets` : `${settings.numberOfBets} bets`}</dd></div>
+        </dl>
+        {(hasTournamentScope(settings) || settings.onlyToday || settings.maxKickoffDate || settings.eventFilter || hasMarketFilters || settings.stakeShield?.enabled || settings.coverWithShield || settings.ignoreLiveGames) && (
+          <div className="sports-summary-filters">
+            <h4>Additional rules</h4>
+            {hasTournamentScope(settings) && <span>Fixed tournament{settings.fillUpEventMaxLegs ? ' · fill legs per event' : ''}</span>}
+            {settings.onlyToday ? <span>Today only · local time</span> : settings.maxKickoffDate ? <span>Through {settings.maxKickoffDate} · local time</span> : null}
+            {settings.ignoreLiveGames && <span>Live events excluded</span>}
+            {settings.eventFilter && !hasTournamentScope(settings) && <span>Event keyword filter</span>}
+            {hasMarketFilters && <span>Player prop filters</span>}
+            {settings.stakeShield?.enabled && <span>Stake Shield{settings.stakeShield.strictMode ? ' · strict' : ''} · {settings.stakeShield.legsThatCanLose || 1} protected leg(s)</span>}
+            {settings.coverWithShield && <span>Additional shield bet</span>}
+          </div>
+        )}
+        <p className="sports-summary-note">{isRunning ? 'Changes to this configuration can affect the running AutoBet. Some event filters apply on the next scan.' : 'Review these values before starting. Advanced options remain available below the main configuration.'}</p>
+        <button type="button" className="sports-secondary-btn" onClick={() => setActiveTab('logs')}>View activity <span aria-hidden="true">→</span></button>
+      </aside>
     </div>
   );
 
@@ -483,21 +549,21 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
       {isWide && (
         <div className="autobet-wide-header">
           <div className="autobet-wide-header-main">
-            <h2 className="autobet-wide-title">{activeTab === 'copy' ? 'Copy Feed' : 'AutoBet Bot'}</h2>
+            <div className="sports-heading-copy"><h2 className="autobet-wide-title">{activeTab === 'copy' ? 'Copy' : activeTab === 'bets' ? 'Active bets' : activeTab === 'logs' ? 'Activity' : 'AutoBet'}</h2><p>{taskDescription}</p></div>
             <span className={`autobet-status-pill ${(activeTab === 'copy' ? copyRunning : isRunning) ? 'is-running' : ''}`.trim()}>
               <span className="autobet-status-dot" />
-              {(activeTab === 'copy' ? copyRunning : isRunning) ? 'Running' : 'Stopped'}
+              {activeTab === 'copy' ? 'Copy' : 'AutoBet'} · {(activeTab === 'copy' ? copyRunning : isRunning) ? 'Running' : 'Stopped'}
             </span>
             {activeTab !== 'copy' && copyRunning && (
               <span className="autobet-status-pill is-running">
                 <span className="autobet-status-dot" />
-                Copy
+                Copy · Running
               </span>
             )}
             {activeTab === 'copy' && isRunning && (
               <span className="autobet-status-pill is-running">
                 <span className="autobet-status-dot" />
-                AutoBet
+                AutoBet · Running
               </span>
             )}
           </div>
@@ -507,36 +573,44 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
         </div>
       )}
 
-      <div className="autobet-tabs">
+      <nav className="autobet-tabs" aria-label="Sports workspace">
         <button
           className={`autobet-tab-btn ${activeTab === 'settings' ? 'is-active' : 'hover:opacity-90'}`}
           onClick={() => setActiveTab('settings')}
+          type="button"
+          aria-current={activeTab === 'settings' ? 'page' : undefined}
         >
-          Settings
+          AutoBet
         </button>
         <button
           className={`autobet-tab-btn ${activeTab === 'copy' ? 'is-active' : 'hover:opacity-90'}`}
           onClick={() => setActiveTab('copy')}
+          type="button"
+          aria-current={activeTab === 'copy' ? 'page' : undefined}
         >
           Copy
-        </button>
-        <button
-          className={`autobet-tab-btn ${activeTab === 'logs' ? 'is-active' : 'hover:opacity-90'}`}
-          onClick={() => setActiveTab('logs')}
-        >
-          Logs <span className="autobet-tab-count">{logCount}</span>
         </button>
         {isWide && (
           <button
             className={`autobet-tab-btn ${activeTab === 'bets' ? 'is-active' : 'hover:opacity-90'}`}
             onClick={() => setActiveTab('bets')}
+            type="button"
+            aria-current={activeTab === 'bets' ? 'page' : undefined}
           >
-            Bets <span className="autobet-tab-count">{activeBetCount}</span>
+            Active bets <span className="autobet-tab-count">{activeBetCount}</span>
           </button>
         )}
-      </div>
+        <button
+          className={`autobet-tab-btn ${activeTab === 'logs' ? 'is-active' : 'hover:opacity-90'}`}
+          onClick={() => setActiveTab('logs')}
+          type="button"
+          aria-current={activeTab === 'logs' ? 'page' : undefined}
+        >
+          Activity <span className="autobet-tab-count">{logCount}</span>
+        </button>
+      </nav>
 
-      <div className={`autobet-content scrollbar-thin ${activeTab === 'bets' ? 'autobet-content--bets' : ''} ${activeTab === 'copy' || activeTab === 'settings' ? 'autobet-content--copy' : ''}`.trim()} style={{ scrollbarColor: 'var(--app-border) transparent' }}>
+      <div className={`autobet-content scrollbar-thin ${activeTab === 'bets' ? 'autobet-content--bets' : ''} ${activeTab === 'logs' ? 'autobet-content--logs' : ''} ${activeTab === 'copy' || activeTab === 'settings' ? 'autobet-content--copy' : ''}`.trim()} style={{ scrollbarColor: 'var(--app-border) transparent' }}>
           {activeTab === 'copy' ? (
             <CopyBetPanel sports={sports} onSportChange={setSharedSport} />
           ) : activeTab === 'settings' ? (
@@ -563,13 +637,13 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
                       ))}
                     </div>
                     <button type="button" onClick={handleClearLogs} className="autobet-log-clear">
-                        Clear
+                        Clear activity
                     </button>
                  </div>
-                 <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin" style={{ scrollbarColor: 'var(--app-border) transparent' }}>
+                 <div className="sports-activity-list scrollbar-thin" style={{ scrollbarColor: 'var(--app-border) transparent' }}>
                     {unifiedLogs.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full opacity-60 py-16" style={{ color: 'var(--app-text-muted)' }}>
-                            <span className="text-sm">No activity yet — start AutoBet or Copy to see logs.</span>
+                        <div className="sports-activity-empty">
+                            <span>No activity yet — AutoBet and Copy events will appear here.</span>
                         </div>
                     ) : (
                         unifiedLogs.map((log) => (
@@ -578,15 +652,13 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
                               className={`autobet-log-entry autobet-log-entry--${log.type}`}
                             >
                                 <div className="flex flex-col items-center min-w-[52px] border-r pr-2 opacity-80" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-                                    <span className="font-mono text-[10px]">{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                                    <span className="autobet-log-channel">{log.channel === 'copy' ? 'Copy' : 'Auto'}</span>
+                                    <span className="sports-log-time">{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                                    <span className="autobet-log-channel">{log.channel === 'copy' ? 'Copy' : 'AutoBet'}</span>
                                 </div>
                                 <div className="flex-1 break-words font-medium min-w-0">
                                   <div>{log.message}</div>
                                   {'source' in log && (log.source || log.correlationId) && (
-                                    <div className="mt-1 text-[10px] opacity-75 truncate" title={`${log.source ? `src=${log.source}` : ''}${log.source && log.correlationId ? ' · ' : ''}${log.correlationId ? `corr=${log.correlationId}` : ''}`}>
-                                      {log.source ? `src=${log.source}` : ''}{log.source && log.correlationId ? ' · ' : ''}{log.correlationId ? `corr=${log.correlationId}` : ''}
-                                    </div>
+                                    <details className="sports-log-details"><summary>Technical details</summary><div>{log.source ? `Source: ${log.source}` : ''}{log.source && log.correlationId ? ' · ' : ''}{log.correlationId ? `Reference: ${log.correlationId}` : ''}</div></details>
                                   )}
                                 </div>
                             </div>
@@ -603,6 +675,10 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
       </div>
     </div>
   );
+}
+
+function formatConfigNumber(value: number) {
+  return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 8 }) : '—';
 }
 
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: string }) {

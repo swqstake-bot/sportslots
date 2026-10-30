@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback, startTransition } from 'react'
+import '../styles/challenge-workspace.css'
 import {
   fetchClaimedChallengesFirstPage,
   fetchChallengeListMerged,
@@ -727,7 +728,7 @@ export default function AutoChallengeHunter({
   const [autoOptimalTargetCurrency, setAutoOptimalTargetCurrency] = useState(
     hunterFiltersInitial.autoOptimalTargetCurrency
   )
-  const [hunterSettingsOpen, setHunterSettingsOpen] = useState(false)
+  const [hunterSettingsOpen, setHunterSettingsOpen] = useState(true)
 
   const [userPresets, setUserPresets] = useState(() => loadUserPresets())
   const [presetNameDraft, setPresetNameDraft] = useState('')
@@ -856,6 +857,7 @@ export default function AutoChallengeHunter({
   useEffect(() => {
     if (typeof onHubStatsChange !== 'function') return
     const running = Object.values(activeRuns).filter((run) => run?.status === 'running').length
+    const failed = Object.values(activeRuns).filter((run) => run?.status === 'failed' || run?.status === 'error').length
     const completed = Object.values(activeRuns).filter((run) => run?.status === 'target_hit' || run?.status === 'completed').length
     const bestMulti = Object.values(bestMultiBySlot).reduce((max, value) => {
       const n = Number(value)
@@ -865,6 +867,7 @@ export default function AutoChallengeHunter({
       source: 'casino',
       queued: queue.length,
       running,
+      failed,
       completed,
       bestMulti,
       profitUsd: Number(totalSessionStats.profit) || 0,
@@ -1187,6 +1190,18 @@ export default function AutoChallengeHunter({
 
   const flushLogsNow = useCallback(() => {
     if (logBufferRef.current.length === 0) return
+    const sel = window.getSelection?.()
+    const anchor = sel?.anchorNode
+    const anchorEl = anchor?.nodeType === 1 ? anchor : anchor?.parentElement
+    if (sel && !sel.isCollapsed && anchorEl?.closest?.('.hunter-log')) {
+      if (!logFlushTimerRef.current) {
+        logFlushTimerRef.current = setTimeout(() => {
+          logFlushTimerRef.current = null
+          flushLogsNow()
+        }, 300)
+      }
+      return
+    }
     const buffered = logBufferRef.current.splice(0, logBufferRef.current.length)
     setLogs((prev) => [...buffered.reverse(), ...prev].slice(0, 100))
   }, [])
@@ -3841,7 +3856,7 @@ export default function AutoChallengeHunter({
   if (resourceMode) {
     const pl = Number(totalSessionStats.profit) || 0
     return (
-      <div className="hunter-resource-lite">
+      <div className="hunter-resource-lite hunter-workspace-compact">
         <div className="hunter-resource-lite-kpis">
           <div className="hunter-resource-lite-kpi">
             <div className="hunter-resource-lite-label">P/L (USD)</div>
@@ -3871,7 +3886,7 @@ export default function AutoChallengeHunter({
             variant="primary"
             title="Enable scan + queue auto and reload challenges when needed"
           >
-            Start All
+            Start auto
           </Button>
           <Button
             onClick={stopAllRunners}
@@ -3902,104 +3917,587 @@ export default function AutoChallengeHunter({
   }
 
   return (
-    <div className="hunter-dashboard" style={STYLES.container}>
-      <div className="hunter-header hunter-runbar">
-        <div className="hunter-controls">
-           <Button onClick={refreshChallenges} variant="primary" disabled={!accessToken} title="Reload challenge list now">
-             Refresh
-           </Button>
-           <Button
-             variant={huntEnabled ? 'secondary' : 'outline'}
-             onClick={() => setHuntEnabled(!huntEnabled)}
-             title={huntEnabled ? 'Stop automatic challenge scanning' : 'Enable automatic challenge scanning'}
-           >
-             {huntEnabled ? 'Scan' : 'Scan off'}
-           </Button>
-           <Button
-             variant={autoStart ? 'secondary' : 'outline'}
-             onClick={() => setAutoStart(!autoStart)}
-             title={autoStart ? 'Pause queue auto-start' : 'Process queue automatically when a slot is free'}
-           >
-             {autoStart ? 'Queue auto' : 'Queue paused'}
-           </Button>
-           <Button
-             onClick={startNextQueuedManually}
-             variant="primary"
-             disabled={queue.length === 0 || runningCount >= maxParallelClamped}
-             title="Start exactly one queued run"
-           >
-             Start Next
-           </Button>
-           <Button
-             onClick={startAllRunners}
-             variant="primary"
-             title="Enable scan + queue auto and reload challenges when needed"
-           >
-             Start auto
-           </Button>
-           <Button
-             onClick={stopAllRunners}
-             variant="danger"
-             disabled={!hasAnythingToStop}
-             title={hasAnythingToStop ? 'Stop spins, scan/auto, and clear queue' : 'Nothing is active'}
-           >
-             Stop All
-           </Button>
-           <span className="hunter-runbar-kpi" title="Queued challenges">
-             Queue {queue.length}
-           </span>
-           <label className="hunter-runbar-kpi hunter-runbar-parallel" title="Max parallel runs">
-             Parallel {runningCount}/
-             <input
-               type="number"
-               min={1}
-               max={CHALLENGE_PARALLEL_SLIDER_MAX}
-               value={maxParallelClamped}
-               onChange={(e) => {
-                 const n = parseInt(e.target.value, 10)
-                 setMaxParallel(Math.min(CHALLENGE_PARALLEL_SLIDER_MAX, Math.max(1, Number.isFinite(n) ? n : 1)))
-               }}
-             />
-           </label>
-           <Button
-             variant={hunterSettingsOpen ? 'secondary' : 'outline'}
-             onClick={() => setHunterSettingsOpen((v) => !v)}
-             title="Filters, probe, runtime limits"
-           >
-             Filters
-           </Button>
-           <details className="hunter-header-tools">
-             <summary title="Clear, reset, export">Tools</summary>
-             <div className="hunter-header-tools-menu">
-               <Button onClick={clearLogs} variant="outline">Clear log</Button>
-               <Button
-                 onClick={resetSession}
-                 variant="outline"
-                 title="Reset queue, session stats, and scan state"
-               >
-                 Reset
-               </Button>
-               <Button
-                 onClick={exportHubSession}
-                 variant="outline"
-                 title="Export hub feed as JSONL — import in Logger tab to review or CSV export"
-               >
-                 Export session
-               </Button>
-             </div>
-           </details>
-           <div className="hunter-runbar-end">
-             {lastRefresh ? <span className="hunter-meta">{new Date(lastRefresh).toLocaleTimeString()}</span> : null}
-             <TipMenu />
-           </div>
+    <div className="hunter-dashboard hunter-workspace" style={STYLES.container}>
+      <header className="hunter-workspace-header">
+        <div className="hunter-workspace-title">
+          <div><h2>Challenge Hunter</h2><p>Discover challenges, build your queue and monitor each run.</p></div>
+          <div className="hunter-workspace-main-actions" role="group" aria-label="Hunter run controls">
+            <Button
+              onClick={startAllRunners}
+              variant="primary"
+              title="Enable scan + queue auto and reload challenges when needed"
+            >
+              Start auto
+            </Button>
+            <Button
+              onClick={stopAllRunners}
+              variant="danger"
+              disabled={!hasAnythingToStop}
+              title={hasAnythingToStop ? 'Stop spins, scan/auto, and clear queue' : 'Nothing is active'}
+            >
+              Stop All
+            </Button>
+          </div>
         </div>
-      </div>
+        <div className="hunter-workspace-toolbar" aria-label="Hunter setup and discovery">
+          <section className="hunter-workspace-toolgroup" aria-labelledby="hunter-discovery-label">
+            <h3 id="hunter-discovery-label">Discovery{lastRefresh ? <span className="hunter-workspace-updated" title="Last challenge refresh">{new Date(lastRefresh).toLocaleTimeString()}</span> : null}</h3>
+            <div className="hunter-workspace-buttons">
+              <Button onClick={refreshChallenges} variant="ghost" disabled={!accessToken} title="Reload challenge list now">
+                Refresh
+              </Button>
+              <Button
+                variant={huntEnabled ? 'secondary' : 'ghost'}
+                onClick={() => setHuntEnabled(!huntEnabled)}
+                aria-pressed={huntEnabled}
+                title={huntEnabled ? 'Stop automatic challenge scanning' : 'Enable automatic challenge scanning'}
+              >
+                {huntEnabled ? 'Scan' : 'Scan off'}
+              </Button>
+            </div>
+            <span className="hunter-workspace-caption">Refresh also queues eligible challenges.</span>
+          </section>
+          <section className="hunter-workspace-toolgroup" aria-labelledby="hunter-queue-label">
+            <h3 id="hunter-queue-label">Queue processing</h3>
+            <div className="hunter-workspace-buttons">
+              <Button
+                variant={autoStart ? 'secondary' : 'ghost'}
+                onClick={() => setAutoStart(!autoStart)}
+                aria-pressed={autoStart}
+                title={autoStart ? 'Pause queue auto-start' : 'Process queue automatically when a slot is free'}
+              >
+                {autoStart ? 'Queue auto' : 'Queue paused'}
+              </Button>
+              <Button
+                onClick={startNextQueuedManually}
+                variant="secondary"
+                disabled={queue.length === 0 || runningCount >= maxParallelClamped}
+                title="Start exactly one queued run"
+              >
+                Start Next
+              </Button>
+            </div>
+            <span className="hunter-workspace-caption">{autoStart ? 'Queued challenges start when a parallel slot is free.' : 'Manual mode: choose when to start the next queued run.'}</span>
+          </section>
+          <section className="hunter-workspace-toolgroup hunter-workspace-setup" aria-labelledby="hunter-setup-label">
+            <h3 id="hunter-setup-label">Setup & tools</h3>
+            <div className="hunter-workspace-buttons">
+              <Button
+                variant={hunterSettingsOpen ? 'secondary' : 'ghost'}
+                onClick={() => {
+                  setHunterSettingsOpen(true)
+                  document.getElementById('hunter-workspace-filters')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
+                aria-expanded={hunterSettingsOpen}
+                aria-controls="hunter-workspace-filters"
+                title="Filters, probe, runtime limits"
+              >
+                Filters & presets
+              </Button>
+              <label className="hunter-runbar-kpi hunter-runbar-parallel" title="Max parallel runs">
+                Max parallel
+                <input
+                  type="number"
+                  aria-label="Maximum parallel challenge runs"
+                  min={1}
+                  max={CHALLENGE_PARALLEL_SLIDER_MAX}
+                  value={maxParallelClamped}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value, 10)
+                    setMaxParallel(Math.min(CHALLENGE_PARALLEL_SLIDER_MAX, Math.max(1, Number.isFinite(n) ? n : 1)))
+                  }}
+                />
+              </label>
+              <div className="hunter-runbar-end hunter-workspace-tools">
+              <details className="hunter-header-tools">
+                <summary title="Clear, reset, export">Tools</summary>
+                <div className="hunter-header-tools-menu">
+                  <Button onClick={clearLogs} variant="ghost">Clear log</Button>
+                  <Button
+                    onClick={resetSession}
+                    variant="ghost"
+                    title="Reset queue, session stats, and scan state"
+                  >
+                    Reset
+                  </Button>
+                  <Button
+                    onClick={exportHubSession}
+                    variant="ghost"
+                    title="Export hub feed as JSONL — open Import analysis to review or export CSV"
+                  >
+                    Export session
+                  </Button>
+                  <TipMenu />
+                </div>
+              </details>
+              </div>
+            </div>
+            <span className="hunter-workspace-caption">Presets, currencies and runtime limits.</span>
+          </section>
+        </div>
+      </header>
+      <details
+        className="hunter-card hunter-ops-panel hunter-collapse hunter-settings-panel"
+        id="hunter-workspace-filters"
+        open={hunterSettingsOpen}
+        onToggle={(e) => setHunterSettingsOpen(e.currentTarget.open)}
+      >
+        <summary className="hunter-collapse-summary hunter-settings-summary">
+          <span className="hunter-settings-heading">
+            <span className="hunter-settings-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M4 7h6m4 0h6M4 17h10m4 0h2"/><circle cx="12" cy="7" r="2"/><circle cx="16" cy="17" r="2"/></svg>
+            </span>
+            <span><strong>Filters & presets</strong><small>Configure presets, probe, currencies and runtime limits before a run.</small></span>
+          </span>
+          <span className="hunter-settings-toggle">{hunterSettingsOpen ? 'Collapse' : 'Configure'}</span>
+        </summary>
+        <div className="hunter-ops-accordion">
+          <section className="hunter-ops-section">
+            <button
+              type="button"
+              className="hunter-ops-section-head"
+              aria-expanded={opsSectionsOpen.presets}
+              onClick={() => setOpsSectionsOpen((prev) => ({ ...prev, presets: !prev.presets }))}
+            >
+              <span>Presets & Filters<small>Saved setups, stake range and minimum prize</small></span>
+              <span>{opsSectionsOpen.presets ? '−' : '+'}</span>
+            </button>
+            {opsSectionsOpen.presets ? (
+              <div className="hunter-ops-section-body">
+                <div style={STYLES.inputGroup}>
+                  <label style={STYLES.label}>Presets</label>
+                  <select
+                    aria-label="Hunter preset"
+                    value={presetSelectValue}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setPresetSelectValue(v)
+                      if (v) loadPresetById(v)
+                    }}
+                    style={{ ...STYLES.input, width: '100%' }}
+                  >
+                    <option value="">— Select preset —</option>
+                    {userPresets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center', marginBottom: '0.35rem' }}>
+                  <input
+                    type="text"
+                    placeholder="Preset name"
+                    aria-label="Preset name"
+                    value={presetNameDraft}
+                    onChange={(e) => setPresetNameDraft(e.target.value)}
+                    style={{ ...STYLES.input, flex: '1 1 120px', minWidth: 0, fontSize: '0.8rem' }}
+                  />
+                  <button type="button" onClick={saveCurrentPreset} className="hunter-ops-mini-btn">
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={deleteSelectedUserPreset}
+                    disabled={!userPresets.some((p) => p.id === presetSelectValue)}
+                    title="Delete selected preset"
+                    className="hunter-ops-mini-btn"
+                    style={{ opacity: userPresets.some((p) => p.id === presetSelectValue) ? 1 : 0.5 }}
+                  >
+                    Delete
+                  </button>
+                </div>
+                <button type="button" onClick={restoreDefaultFilters} className="hunter-ops-mini-btn">
+                  Restore defaults
+                </button>
+                <div className="hunter-ops-group" style={STYLES.inputGroup}>
+                  <label style={STYLES.label}>Min Bet Range ($)</label>
+                  <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem'}}>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="Min"
+                      aria-label="Minimum challenge stake (USD)"
+                      value={minMinBet}
+                      onChange={e => {
+                        const v = parseFloat(e.target.value)
+                        setMinMinBet(Number.isNaN(v) ? 0 : v)
+                      }}
+                      style={{...STYLES.input, width: '100%'}}
+                    />
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="Max"
+                      aria-label="Maximum challenge stake (USD)"
+                      value={maxMinBet}
+                      onChange={e => {
+                        const v = parseFloat(e.target.value)
+                        setMaxMinBet(Number.isNaN(v) ? 0 : v)
+                      }}
+                      style={{...STYLES.input, width: '100%'}}
+                    />
+                  </div>
+                </div>
+                <div className="hunter-ops-group" style={STYLES.inputGroup}>
+                  <label style={STYLES.label}>Min Prize ($)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    aria-label="Minimum challenge prize (USD)"
+                    value={minPrizeUsd}
+                    onChange={e => {
+                      const v = parseFloat(e.target.value)
+                      setMinPrizeUsd(Number.isNaN(v) ? 0 : v)
+                    }}
+                    style={STYLES.input}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="hunter-ops-section">
+            <button
+              type="button"
+              className="hunter-ops-section-head"
+              aria-expanded={opsSectionsOpen.local}
+              onClick={() => setOpsSectionsOpen((prev) => ({ ...prev, local: !prev.local }))}
+            >
+              <span>Local Challenge<small>Create a challenge with your own target</small></span>
+              <span>{opsSectionsOpen.local ? '−' : '+'}</span>
+            </button>
+            {opsSectionsOpen.local ? (
+              <div className="hunter-ops-section-body">
+                <div className="hunter-ops-group" style={STYLES.inputGroup}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                    <label style={STYLES.label}>Create Local Challenge</label>
+                    <button
+                      type="button"
+                      aria-expanded={localChallengeExpanded}
+                      onClick={() => setLocalChallengeExpanded((prev) => !prev)}
+                      className="hunter-ops-mini-btn"
+                    >
+                      {localChallengeExpanded ? 'Collapse' : 'Expand'}
+                    </button>
+                  </div>
+                  {localChallengeExpanded ? (
+                    <div style={{ display: 'grid', gap: '0.4rem' }}>
+                      <input
+                        type="text"
+                        aria-label="Local challenge slot search"
+                        value={localChallengeSlotSearch}
+                        onChange={(e) => setLocalChallengeSlotSearch(e.target.value)}
+                        placeholder="Search slot (name/slug)"
+                        style={{ ...STYLES.input, width: '100%' }}
+                      />
+                      <select
+                        aria-label="Local challenge slot"
+                        value={localChallengeSlotSlug}
+                        onChange={(e) => setLocalChallengeSlotSlug(e.target.value)}
+                        style={{ ...STYLES.input, width: '100%' }}
+                      >
+                        <option value="">— Select slot —</option>
+                        {localChallengeSlotOptions.map((s) => (
+                          <option key={s.slug} value={s.slug}>
+                            {s.name || s.slug}
+                          </option>
+                        ))}
+                      </select>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                        <div>
+                          <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Target Multiplier (x)</label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="1.1"
+                            aria-label="Local challenge target multiplier"
+                            value={localChallengeTargetMulti}
+                            onChange={(e) => setLocalChallengeTargetMulti(e.target.value)}
+                            style={{ ...STYLES.input, width: '100%' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Min Bet ($)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            aria-label="Local challenge minimum stake (USD)"
+                            value={localChallengeMinBetUsd}
+                            onChange={(e) => setLocalChallengeMinBetUsd(e.target.value)}
+                            style={{ ...STYLES.input, width: '100%' }}
+                          />
+                        </div>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.4rem', alignItems: 'center' }}>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                          Win amount is not required for local challenges.
+                        </div>
+                        <Button
+                          size="small"
+                          onClick={createLocalChallenge}
+                          title="Create a local challenge card and add it directly to queue"
+                        >
+                          Create
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="hunter-ops-section">
+            <button
+              type="button"
+              className="hunter-ops-section-head"
+              aria-expanded={opsSectionsOpen.runtime}
+              onClick={() => setOpsSectionsOpen((prev) => ({ ...prev, runtime: !prev.runtime }))}
+            >
+              <span>Runtime & Limits<small>Wallet, target currency, probe and stop rules</small></span>
+              <span>{opsSectionsOpen.runtime ? '−' : '+'}</span>
+            </button>
+            {opsSectionsOpen.runtime ? (
+              <div className="hunter-ops-section-body">
+                <div className="hunter-ops-group" style={STYLES.inputGroup}>
+                  <label style={STYLES.label}>Allowed Currencies</label>
+                  <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
+                    {isEuGoldCoins ? (
+                      <div>
+                        <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Currency (GC / SC)</label>
+                        <select
+                          aria-label="Hunter wallet currency (GC / SC)"
+                          value={isEuGoldCoinCode(sourceCurrency) ? sourceCurrency : 'sweeps'}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setSourceCurrency(v)
+                            setTargetCurrency(v)
+                          }}
+                          style={STYLES.input}
+                          title="Stake.eu: one wallet currency"
+                        >
+                          {euCurrencyOptions.map((c) => (
+                            <option key={c.value} value={c.value}>{c.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Source (Crypto)</label>
+                          <select
+                            aria-label="Hunter source currency"
+                            value={
+                              cryptoOptions.some((c) => c.value === sourceCurrency)
+                                ? sourceCurrency
+                                : (cryptoOptions[0]?.value || DEFAULT_HUNTER_FILTERS.sourceCurrency)
+                            }
+                            onChange={e => setSourceCurrency(e.target.value)}
+                            style={STYLES.input}
+                          >
+                            {cryptoOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Target (Fiat/Display)</label>
+                          <select
+                            aria-label="Hunter target currency"
+                            value={
+                              [...fiatOptions, ...cryptoOptions].some((c) => c.value === targetCurrency)
+                                ? targetCurrency
+                                : DEFAULT_HUNTER_FILTERS.targetCurrency
+                            }
+                            onChange={e => setTargetCurrency(e.target.value)}
+                            style={STYLES.input}
+                          >
+                            {fiatOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                            <option disabled>--- Crypto ---</option>
+                            {cryptoOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                          </select>
+                        </div>
+                        <label
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '0.4rem',
+                            fontSize: '0.75rem',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            marginTop: '0.25rem',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={autoOptimalTargetCurrency}
+                            onChange={(e) => setAutoOptimalTargetCurrency(e.target.checked)}
+                            style={{ marginTop: '0.1rem' }}
+                          />
+                          <span>Auto target currency</span>
+                        </label>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div className="hunter-ops-group" style={STYLES.inputGroup}>
+                  <label style={STYLES.label}>Max Parallel Slots ({CHALLENGE_PARALLEL_SLIDER_MAX} max)</label>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                    <input
+                      type="range"
+                      aria-label="Maximum parallel challenge slots"
+                      min={1}
+                      max={CHALLENGE_PARALLEL_SLIDER_MAX}
+                      step={1}
+                      value={maxParallelClamped}
+                      onChange={(e) =>
+                        setMaxParallel(Math.min(CHALLENGE_PARALLEL_SLIDER_MAX, Math.max(1, parseInt(e.target.value, 10) || 1)))
+                      }
+                      style={{ flex: 1 }}
+                    />
+                    <span style={{ fontSize: '0.8rem', minWidth: 28, textAlign: 'right' }}>
+                      {maxParallelClamped}
+                    </span>
+                  </div>
+                </div>
+                <div className="hunter-ops-group" style={STYLES.inputGroup}>
+                  <label style={STYLES.label}>Stop Loss (USD)</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    placeholder="0 = off"
+                    aria-label="Stop loss (USD)"
+                    value={stopLossStr}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      if (!isUsdLimitInputCharsOk(raw)) return
+                      setStopLossStr(raw)
+                      setStopLoss(parseUsdLimitInput(raw))
+                    }}
+                    onBlur={() => {
+                      const v = parseUsdLimitInput(stopLossStr)
+                      setStopLoss(v)
+                      setStopLossStr(usdLimitToInputStr(v))
+                    }}
+                    style={STYLES.input}
+                  />
+                </div>
+                <div className="hunter-ops-group" style={STYLES.inputGroup}>
+                  <label style={STYLES.label}>Stop Profit (USD)</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    placeholder="0 = off"
+                    aria-label="Stop profit (USD)"
+                    value={stopProfitStr}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      if (!isUsdLimitInputCharsOk(raw)) return
+                      setStopProfitStr(raw)
+                      setStopProfit(parseUsdLimitInput(raw))
+                    }}
+                    onBlur={() => {
+                      const v = parseUsdLimitInput(stopProfitStr)
+                      setStopProfit(v)
+                      setStopProfitStr(usdLimitToInputStr(v))
+                    }}
+                    style={STYLES.input}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </section>
+        </div>
+      </details>
+
+      <nav className="hunter-workspace-steps" aria-label="Hunter workflow">
+        <a href="#hunter-found-challenges"><span className="hunter-workspace-step-number">01</span><span><strong>Find challenges</strong><small>{challenges.length} loaded</small></span><span aria-hidden="true">→</span></a>
+        <a href="#hunter-workspace-queue"><span className="hunter-workspace-step-number">02</span><span><strong>Build your queue</strong><small>{queue.length} queued</small></span><span aria-hidden="true">→</span></a>
+        <a href="#hunter-workspace-monitor"><span className="hunter-workspace-step-number">03</span><span><strong>Monitor runs</strong><small>{runningCount} running · {maxParallelClamped} parallel limit</small></span><span aria-hidden="true">→</span></a>
+      </nav>
+
+      <details id="hunter-found-challenges" className="hunter-found-panel hunter-collapse" open>
+        <summary className="hunter-collapse-summary hunter-found-summary">
+          <span className="hunter-found-summary-title">
+            Found challenges
+            <span className="hunter-collapse-hint" style={{ marginLeft: '0.5rem' }}>
+              {visibleChallenges.length} / {challenges.length}
+            </span>
+          </span>
+          <span className="hunter-collapse-hint">Click row to queue</span>
+        </summary>
+        <div className="hunter-found-toolbar">
+          <input
+            type="search"
+            value={challengeSearch}
+            onChange={(e) => setChallengeSearch(e.target.value)}
+            placeholder="Search slot by name or slug"
+            style={{ ...STYLES.input, minWidth: 220, flex: '1 1 280px' }}
+            aria-label="Search challenge slot"
+          />
+          <select
+            value={challengeSort}
+            onChange={(e) => setChallengeSort(e.target.value)}
+            style={{ ...STYLES.input, minWidth: 200, flex: '0 0 auto' }}
+            aria-label="Sort found challenges"
+          >
+            <option value="prize-desc">Prize: high to low</option>
+            <option value="prize-asc">Prize: low to high</option>
+            <option value="stake-desc">Stake: high to low</option>
+            <option value="stake-asc">Stake: low to high</option>
+            <option value="target-desc">Target: high to low</option>
+            <option value="target-asc">Target: low to high</option>
+            <option value="difficulty-easy">Difficulty: easy first</option>
+            <option value="difficulty-hard">Difficulty: hard first</option>
+          </select>
+        </div>
+        <div className="hunter-found-body" ref={foundScrollRef}>
+          {sortedFoundChallenges.length === 0 ? (
+            <div style={{ padding: '0.75rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              {challengeSearch.trim()
+                ? `No challenges match "${challengeSearch}".`
+                : 'No challenges loaded yet. Use Refresh above to load the list, or enable Scan to keep discovering automatically.'}
+            </div>
+          ) : (
+            <div
+              className="hunter-found-grid"
+              style={{
+                height: `${foundRowVirtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative',
+              }}
+            >
+              {foundRowVirtualizer.getVirtualItems().map((virtualRow) => {
+                const c = sortedFoundChallenges[virtualRow.index]
+                if (!c) return null
+                const meta = getChallengeMeta(c)
+                return (
+                  <div
+                    key={c.id}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    {renderFoundChallengeRow(c, meta)}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </details>
 
       <div className="hunter-grid">
         <div className="hunter-sidebar">
           <div className="hunter-ops-surface">
-          <div className="hunter-card hunter-ops-queue" style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', minHeight: 160, maxHeight: 360 }}>
-            <h3 className="hunter-section-title" style={{ marginBottom: '0.5rem' }}>Queue ({queue.length})</h3>
+          <div id="hunter-workspace-queue" className="hunter-card hunter-ops-queue" style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column', minHeight: 160, maxHeight: 360 }}>
+            <div className="hunter-workspace-section-heading"><span className="hunter-workspace-step-number">02</span><div><h3 className="hunter-section-title">Queue <span>{queue.length}</span></h3><p>Prepared challenges, in the order they will start.</p></div></div>
             <div style={{ overflowY: 'auto', flex: 1 }}>
               {queue.map((item) => {
                 const q = normalizeQueueItem(item)
@@ -4008,365 +4506,17 @@ export default function AutoChallengeHunter({
               })}
               {queue.length === 0 && (
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                  Empty — open Found Challenges and click a row to queue
+                  Your queue is empty. Choose a challenge in Found challenges above; then use Start Next for one run or Start auto for automatic processing.
                 </div>
               )}
             </div>
           </div>
-          <details
-            className="hunter-card hunter-ops-panel hunter-collapse"
-            open={hunterSettingsOpen}
-            onToggle={(e) => setHunterSettingsOpen(e.currentTarget.open)}
-          >
-            <summary className="hunter-collapse-summary">
-              <span className="hunter-section-title" style={{ marginBottom: 0 }}>Filters</span>
-              <span className="hunter-collapse-hint">Presets · probe · runtime</span>
-            </summary>
-            <div className="hunter-ops-accordion">
-              <section className="hunter-ops-section">
-                <button
-                  type="button"
-                  className="hunter-ops-section-head"
-                  onClick={() => setOpsSectionsOpen((prev) => ({ ...prev, presets: !prev.presets }))}
-                >
-                  <span>Presets & Filters</span>
-                  <span>{opsSectionsOpen.presets ? '−' : '+'}</span>
-                </button>
-                {opsSectionsOpen.presets ? (
-                  <div className="hunter-ops-section-body">
-                    <div style={STYLES.inputGroup}>
-                      <label style={STYLES.label}>Presets</label>
-                      <select
-                        value={presetSelectValue}
-                        onChange={(e) => {
-                          const v = e.target.value
-                          setPresetSelectValue(v)
-                          if (v) loadPresetById(v)
-                        }}
-                        style={{ ...STYLES.input, width: '100%' }}
-                      >
-                        <option value="">— Select preset —</option>
-                        {userPresets.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center', marginBottom: '0.35rem' }}>
-                      <input
-                        type="text"
-                        placeholder="Preset name"
-                        value={presetNameDraft}
-                        onChange={(e) => setPresetNameDraft(e.target.value)}
-                        style={{ ...STYLES.input, flex: '1 1 120px', minWidth: 0, fontSize: '0.8rem' }}
-                      />
-                      <button type="button" onClick={saveCurrentPreset} className="hunter-ops-mini-btn">
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={deleteSelectedUserPreset}
-                        disabled={!userPresets.some((p) => p.id === presetSelectValue)}
-                        title="Delete selected preset"
-                        className="hunter-ops-mini-btn"
-                        style={{ opacity: userPresets.some((p) => p.id === presetSelectValue) ? 1 : 0.5 }}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                    <button type="button" onClick={restoreDefaultFilters} className="hunter-ops-mini-btn">
-                      Restore defaults
-                    </button>
-                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
-                      <label style={STYLES.label}>Min Bet Range ($)</label>
-                      <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem'}}>
-                        <input
-                          type="number"
-                          step="0.01"
-                          placeholder="Min"
-                          value={minMinBet}
-                          onChange={e => {
-                            const v = parseFloat(e.target.value)
-                            setMinMinBet(Number.isNaN(v) ? 0 : v)
-                          }}
-                          style={{...STYLES.input, width: '100%'}}
-                        />
-                        <input
-                          type="number"
-                          step="0.01"
-                          placeholder="Max"
-                          value={maxMinBet}
-                          onChange={e => {
-                            const v = parseFloat(e.target.value)
-                            setMaxMinBet(Number.isNaN(v) ? 0 : v)
-                          }}
-                          style={{...STYLES.input, width: '100%'}}
-                        />
-                      </div>
-                    </div>
-                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
-                      <label style={STYLES.label}>Min Prize ($)</label>
-                      <input
-                        type="number"
-                        step="1"
-                        value={minPrizeUsd}
-                        onChange={e => {
-                          const v = parseFloat(e.target.value)
-                          setMinPrizeUsd(Number.isNaN(v) ? 0 : v)
-                        }}
-                        style={STYLES.input}
-                      />
-                    </div>
-                  </div>
-                ) : null}
-              </section>
 
-              <section className="hunter-ops-section">
-                <button
-                  type="button"
-                  className="hunter-ops-section-head"
-                  onClick={() => setOpsSectionsOpen((prev) => ({ ...prev, local: !prev.local }))}
-                >
-                  <span>Local Challenge</span>
-                  <span>{opsSectionsOpen.local ? '−' : '+'}</span>
-                </button>
-                {opsSectionsOpen.local ? (
-                  <div className="hunter-ops-section-body">
-                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                        <label style={STYLES.label}>Create Local Challenge</label>
-                        <button
-                          type="button"
-                          onClick={() => setLocalChallengeExpanded((prev) => !prev)}
-                          className="hunter-ops-mini-btn"
-                        >
-                          {localChallengeExpanded ? 'Collapse' : 'Expand'}
-                        </button>
-                      </div>
-                      {localChallengeExpanded ? (
-                        <div style={{ display: 'grid', gap: '0.4rem' }}>
-                          <input
-                            type="text"
-                            value={localChallengeSlotSearch}
-                            onChange={(e) => setLocalChallengeSlotSearch(e.target.value)}
-                            placeholder="Search slot (name/slug)"
-                            style={{ ...STYLES.input, width: '100%' }}
-                          />
-                          <select
-                            value={localChallengeSlotSlug}
-                            onChange={(e) => setLocalChallengeSlotSlug(e.target.value)}
-                            style={{ ...STYLES.input, width: '100%' }}
-                          >
-                            <option value="">— Select slot —</option>
-                            {localChallengeSlotOptions.map((s) => (
-                              <option key={s.slug} value={s.slug}>
-                                {s.name || s.slug}
-                              </option>
-                            ))}
-                          </select>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
-                            <div>
-                              <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Target Multiplier (x)</label>
-                              <input
-                                type="number"
-                                step="0.1"
-                                min="1.1"
-                                value={localChallengeTargetMulti}
-                                onChange={(e) => setLocalChallengeTargetMulti(e.target.value)}
-                                style={{ ...STYLES.input, width: '100%' }}
-                              />
-                            </div>
-                            <div>
-                              <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Min Bet ($)</label>
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0.01"
-                                value={localChallengeMinBetUsd}
-                                onChange={(e) => setLocalChallengeMinBetUsd(e.target.value)}
-                                style={{ ...STYLES.input, width: '100%' }}
-                              />
-                            </div>
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.4rem', alignItems: 'center' }}>
-                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                              Win amount is not required for local challenges.
-                            </div>
-                            <Button
-                              size="small"
-                              onClick={createLocalChallenge}
-                              title="Create a local challenge card and add it directly to queue"
-                            >
-                              Create
-                            </Button>
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-              </section>
-
-              <section className="hunter-ops-section">
-                <button
-                  type="button"
-                  className="hunter-ops-section-head"
-                  onClick={() => setOpsSectionsOpen((prev) => ({ ...prev, runtime: !prev.runtime }))}
-                >
-                  <span>Runtime & Limits</span>
-                  <span>{opsSectionsOpen.runtime ? '−' : '+'}</span>
-                </button>
-                {opsSectionsOpen.runtime ? (
-                  <div className="hunter-ops-section-body">
-                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
-                      <label style={STYLES.label}>Allowed Currencies</label>
-                      <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
-                        {isEuGoldCoins ? (
-                          <div>
-                            <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Currency (GC / SC)</label>
-                            <select
-                              value={isEuGoldCoinCode(sourceCurrency) ? sourceCurrency : 'sweeps'}
-                              onChange={(e) => {
-                                const v = e.target.value
-                                setSourceCurrency(v)
-                                setTargetCurrency(v)
-                              }}
-                              style={STYLES.input}
-                              title="Stake.eu: one wallet currency"
-                            >
-                              {euCurrencyOptions.map((c) => (
-                                <option key={c.value} value={c.value}>{c.label}</option>
-                              ))}
-                            </select>
-                          </div>
-                        ) : (
-                          <>
-                            <div>
-                              <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Source (Crypto)</label>
-                              <select
-                                value={
-                                  cryptoOptions.some((c) => c.value === sourceCurrency)
-                                    ? sourceCurrency
-                                    : (cryptoOptions[0]?.value || DEFAULT_HUNTER_FILTERS.sourceCurrency)
-                                }
-                                onChange={e => setSourceCurrency(e.target.value)}
-                                style={STYLES.input}
-                              >
-                                {cryptoOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                              </select>
-                            </div>
-                            <div>
-                              <label style={{fontSize: '0.7rem', color: 'var(--text-muted)'}}>Target (Fiat/Display)</label>
-                              <select
-                                value={
-                                  [...fiatOptions, ...cryptoOptions].some((c) => c.value === targetCurrency)
-                                    ? targetCurrency
-                                    : DEFAULT_HUNTER_FILTERS.targetCurrency
-                                }
-                                onChange={e => setTargetCurrency(e.target.value)}
-                                style={STYLES.input}
-                              >
-                                {fiatOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                                <option disabled>--- Crypto ---</option>
-                                {cryptoOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                              </select>
-                            </div>
-                            <label
-                              style={{
-                                display: 'flex',
-                                alignItems: 'flex-start',
-                                gap: '0.4rem',
-                                fontSize: '0.75rem',
-                                color: 'var(--text-muted)',
-                                cursor: 'pointer',
-                                marginTop: '0.25rem',
-                              }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={autoOptimalTargetCurrency}
-                                onChange={(e) => setAutoOptimalTargetCurrency(e.target.checked)}
-                                style={{ marginTop: '0.1rem' }}
-                              />
-                              <span>Auto target currency</span>
-                            </label>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
-                      <label style={STYLES.label}>Max Parallel Slots ({CHALLENGE_PARALLEL_SLIDER_MAX} max)</label>
-                      <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                        <input
-                          type="range"
-                          min={1}
-                          max={CHALLENGE_PARALLEL_SLIDER_MAX}
-                          step={1}
-                          value={maxParallelClamped}
-                          onChange={(e) =>
-                            setMaxParallel(Math.min(CHALLENGE_PARALLEL_SLIDER_MAX, Math.max(1, parseInt(e.target.value, 10) || 1)))
-                          }
-                          style={{ flex: 1 }}
-                        />
-                        <span style={{ fontSize: '0.8rem', minWidth: 28, textAlign: 'right' }}>
-                          {maxParallelClamped}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
-                      <label style={STYLES.label}>Stop Loss (USD)</label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        autoComplete="off"
-                        placeholder="0 = off"
-                        value={stopLossStr}
-                        onChange={(e) => {
-                          const raw = e.target.value
-                          if (!isUsdLimitInputCharsOk(raw)) return
-                          setStopLossStr(raw)
-                          setStopLoss(parseUsdLimitInput(raw))
-                        }}
-                        onBlur={() => {
-                          const v = parseUsdLimitInput(stopLossStr)
-                          setStopLoss(v)
-                          setStopLossStr(usdLimitToInputStr(v))
-                        }}
-                        style={STYLES.input}
-                      />
-                    </div>
-                    <div className="hunter-ops-group" style={STYLES.inputGroup}>
-                      <label style={STYLES.label}>Stop Profit (USD)</label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        autoComplete="off"
-                        placeholder="0 = off"
-                        value={stopProfitStr}
-                        onChange={(e) => {
-                          const raw = e.target.value
-                          if (!isUsdLimitInputCharsOk(raw)) return
-                          setStopProfitStr(raw)
-                          setStopProfit(parseUsdLimitInput(raw))
-                        }}
-                        onBlur={() => {
-                          const v = parseUsdLimitInput(stopProfitStr)
-                          setStopProfit(v)
-                          setStopProfitStr(usdLimitToInputStr(v))
-                        }}
-                        style={STYLES.input}
-                      />
-                    </div>
-                  </div>
-                ) : null}
-              </section>
-            </div>
-          </details>
           </div>
         </div>
 
-        <div className="hunter-main">
+        <div id="hunter-workspace-monitor" className="hunter-main">
+          <div className="hunter-workspace-section-heading"><span className="hunter-workspace-step-number">03</span><div><h3 className="hunter-section-title">Run monitor</h3><p>Review progress and manage each challenge run.</p></div></div>
           <div className="hunter-status-bar">
             <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem'}}>
               <span style={{color: 'var(--text-muted)'}}>Running</span>
@@ -4393,8 +4543,8 @@ export default function AutoChallengeHunter({
           </div>
           {activeRunList.length === 0 ? (
             <div className="hunter-empty">
-              No active challenge. <br/>
-              Fill the Queue (left), then press <strong>Start Next</strong> or <strong>Start auto</strong>.
+              No runs yet. <br/>
+              Add a challenge to the queue, review its target and currency, then choose <strong>Start Next</strong> or <strong>Start auto</strong>.
             </div>
           ) : (
             <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem'}}>
@@ -4507,7 +4657,19 @@ export default function AutoChallengeHunter({
               <span>Log</span>
               <span className="hunter-collapse-hint">{logs.length} lines</span>
             </summary>
-          <div className="hunter-log">
+          <div
+            className="hunter-log"
+            onMouseDown={(e) => e.stopPropagation()}
+            onContextMenu={(e) => {
+              const sel = window.getSelection?.()
+              const selected = sel && !sel.isCollapsed ? String(sel) : ''
+              const lineEl = e.target instanceof Element ? e.target.closest('.hunter-log-line') : null
+              const text = (selected || lineEl?.textContent || '').trim()
+              if (!text) return
+              e.preventDefault()
+              void navigator.clipboard.writeText(text)
+            }}
+          >
             {logs.map((l, i) => (
               <div key={i} className="hunter-log-line">{l}</div>
             ))}
@@ -4516,80 +4678,7 @@ export default function AutoChallengeHunter({
         </div>
       </div>
 
-      <details className="hunter-found-panel hunter-collapse">
-        <summary className="hunter-collapse-summary hunter-found-summary">
-          <span className="hunter-found-summary-title">
-            Found Challenges
-            <span className="hunter-collapse-hint" style={{ marginLeft: '0.5rem' }}>
-              {visibleChallenges.length} / {challenges.length}
-            </span>
-          </span>
-          <span className="hunter-collapse-hint">Click row to queue</span>
-        </summary>
-        <div className="hunter-found-toolbar">
-          <input
-            type="search"
-            value={challengeSearch}
-            onChange={(e) => setChallengeSearch(e.target.value)}
-            placeholder="Search slot by name or slug"
-            style={{ ...STYLES.input, minWidth: 220, flex: '1 1 280px' }}
-            aria-label="Search challenge slot"
-          />
-          <select
-            value={challengeSort}
-            onChange={(e) => setChallengeSort(e.target.value)}
-            style={{ ...STYLES.input, minWidth: 200, flex: '0 0 auto' }}
-            aria-label="Sort found challenges"
-          >
-            <option value="prize-desc">Prize: high to low</option>
-            <option value="prize-asc">Prize: low to high</option>
-            <option value="stake-desc">Stake: high to low</option>
-            <option value="stake-asc">Stake: low to high</option>
-            <option value="target-desc">Target: high to low</option>
-            <option value="target-asc">Target: low to high</option>
-            <option value="difficulty-easy">Difficulty: easy first</option>
-            <option value="difficulty-hard">Difficulty: hard first</option>
-          </select>
-        </div>
-        <div className="hunter-found-body" ref={foundScrollRef}>
-          {sortedFoundChallenges.length === 0 ? (
-            <div style={{ padding: '0.75rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              {challengeSearch.trim()
-                ? `No challenges match "${challengeSearch}".`
-                : 'No challenges yet — press Refresh or enable Scan.'}
-            </div>
-          ) : (
-            <div
-              className="hunter-found-grid"
-              style={{
-                height: `${foundRowVirtualizer.getTotalSize()}px`,
-                width: '100%',
-                position: 'relative',
-              }}
-            >
-              {foundRowVirtualizer.getVirtualItems().map((virtualRow) => {
-                const c = sortedFoundChallenges[virtualRow.index]
-                if (!c) return null
-                const meta = getChallengeMeta(c)
-                return (
-                  <div
-                    key={c.id}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
-                    {renderFoundChallengeRow(c, meta)}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </details>
+
     </div>
   )
 }

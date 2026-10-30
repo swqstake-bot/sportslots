@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { AppBrandMark } from '../../../AppShell/AppBrandMark'
 import { APP_NAME, APP_TAGLINE } from '../../../../constants/branding'
 import { useStakeSiteStore } from '../../../../store/stakeSiteStore'
@@ -32,6 +32,27 @@ export function CasinoShell({
   const preferredSite = useStakeSiteStore((s) => s.preferredSite)
   const showToast = useUiStore((s) => s.showToast)
   const loginLabel = preferredSite === 'eu' ? 'Login Stake.eu' : 'Login with Stake'
+  const toolsRef = useRef<HTMLDetailsElement>(null)
+
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      if (toolsRef.current && !toolsRef.current.contains(event.target as Node)) {
+        toolsRef.current.open = false
+      }
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && toolsRef.current?.open) {
+        toolsRef.current.open = false
+        toolsRef.current.querySelector('summary')?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [])
 
   useEffect(() => {
     if (error) showToast(error, 'error')
@@ -48,34 +69,47 @@ export function CasinoShell({
           <header className="casino-shell-header casino-shell-header--compact">
             <div className="casino-shell-title-row">
               <CasinoTopNav mode={mode} onChangeMode={onChangeMode} />
-              <div className={`casino-shell-status ${sessionOk ? 'is-connected' : 'is-disconnected'}`}>
-                <span className="casino-shell-status-dot" aria-hidden />
-                <span>{sessionOk ? 'Connected' : 'No session'}</span>
-                {!sessionOk && onLogin && (
+              <details ref={toolsRef} className="casino-tools">
+                <summary className={`casino-tools-trigger${mode === 'logs' ? ' is-active' : ''}`}>
+                  Casino tools <span aria-hidden>▾</span>
+                </summary>
+                <div className="casino-tools-menu">
+                  <p className="casino-tools-caption">Connection &amp; diagnostics</p>
+                  {!sessionOk && onLogin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (toolsRef.current) toolsRef.current.open = false
+                        void onLogin()
+                      }}
+                    >
+                      Connect to Stake
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => void onLogin()}
-                    className="casino-shell-session-action"
+                    onClick={() => {
+                      if (toolsRef.current) toolsRef.current.open = false
+                      void onRefreshSession()
+                    }}
                   >
-                    Login
+                    Refresh Casino
+                    <span>Reconnect the casino session</span>
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void onRefreshSession()}
-                  className="casino-shell-session-action"
-                >
-                  Refresh
-                </button>
-                <button
-                  type="button"
-                  className={`casino-shell-session-action ${mode === 'logs' ? 'is-active' : ''}`}
-                  title="API debug and diagnostics"
-                  onClick={() => onChangeMode('logs')}
-                >
-                  API Debug
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    className={mode === 'logs' ? 'is-active' : undefined}
+                    aria-current={mode === 'logs' ? 'page' : undefined}
+                    onClick={() => {
+                      if (toolsRef.current) toolsRef.current.open = false
+                      onChangeMode('logs')
+                    }}
+                  >
+                    API diagnostics
+                    <span>Requests, responses and casino logs</span>
+                  </button>
+                </div>
+              </details>
             </div>
           </header>
           <main className="casino-shell-main animate-in fade-in duration-500">

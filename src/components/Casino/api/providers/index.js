@@ -4,6 +4,7 @@ import * as stakeEngine from './stakeEngine'
 import * as clawbuster from './clawbuster'
 import * as playnetic from './playnetic'
 import * as avatarux from './avatarux'
+import * as toucanroyale from './toucanroyale'
 import * as nolimit from './nolimit'
 import * as mascot from './mascot'
 import * as bgaming from './bgaming'
@@ -157,6 +158,9 @@ const WEB_PROVIDERS = {
   playnetic,
   nolimit,
   avatarux,
+  toucanroyale,
+  'toucan-royale': toucanroyale,
+  'toucan-royale-gaming': toucanroyale,
   mascot,
   hub88: mascot,
   '1000lakes': stakeEngine, // Alias für 1000 Lakes Studios
@@ -225,10 +229,42 @@ const GENERIC_BACKEND_PROVIDER = genericProviders.genericUniversal
 
 const AUTO_FALLBACK_IMPLS = {
   stakeEngine,
+  avatarux,
+  toucanroyale,
   nolimit,
   pragmatic,
   hacksaw,
   generic: GENERIC_BACKEND_PROVIDER,
+}
+
+function isBigplaysLauncherError(err) {
+  return /bigplays8/i.test(String(err?.message || err || ''))
+}
+
+async function startAvataruxFromLauncher(providerId, args) {
+  const session = await executeProviderMethod(providerId, 'startSession', () => avatarux.startSession(...args))
+  return {
+    ...session,
+    __resolvedProviderImplId: 'avatarux',
+    __catalogProviderId: providerId,
+  }
+}
+
+function isToucanSlug(slug) {
+  const s = String(slug || '').toLowerCase()
+  return s.startsWith('toucanroyale-') || s.startsWith('toucan-royale-')
+}
+
+async function startLauncherFallback(providerId, args) {
+  if (isToucanSlug(args[1])) {
+    const session = await executeProviderMethod(providerId, 'startSession', () => toucanroyale.startSession(...args))
+    return {
+      ...session,
+      __resolvedProviderImplId: 'toucanroyale',
+      __catalogProviderId: providerId,
+    }
+  }
+  return startAvataruxFromLauncher(providerId, args)
 }
 
 function buildUnknownProviderFallbackOrder(providerId, slotSlug) {
@@ -294,19 +330,47 @@ export function getProvider(providerId) {
             }
           } catch (err) {
             lastErr = err
+            if (implId === 'stakeEngine' && isBigplaysLauncherError(err)) {
+              try {
+                return await startLauncherFallback(providerId, args)
+              } catch (avataruxErr) {
+                lastErr = avataruxErr
+              }
+            }
           }
         }
         if (lastErr) throw lastErr
       }
-      return executeProviderMethod(resolvedProviderId, 'startSession', async () => {
-        const session = await impl.startSession(...args)
-        return session && typeof session === 'object'
-          ? { ...session, __catalogProviderId: providerId }
-          : session
-      })
+      try {
+        return await executeProviderMethod(resolvedProviderId, 'startSession', async () => {
+          const session = await impl.startSession(...args)
+          return session && typeof session === 'object'
+            ? { ...session, __catalogProviderId: providerId }
+            : session
+        })
+      } catch (err) {
+        if (impl === stakeEngine && isBigplaysLauncherError(err)) {
+          return await startLauncherFallback(providerId, args)
+        }
+        throw err
+      }
     },
     async placeBet(...args) {
       if (typeof impl.placeBet !== 'function') throw normalizeProviderError(resolvedProviderId, new Error('placeBet not implemented'))
+
+      const session = args[0]
+      if (
+        impl !== avatarux &&
+        (session?.__resolvedProviderImplId === 'avatarux' || session?.provider === 'avatarux')
+      ) {
+        return executeProviderMethod(resolvedProviderId, 'placeBet', () => avatarux.placeBet(...args))
+      }
+      if (
+        impl !== toucanroyale &&
+        (session?.__resolvedProviderImplId === 'toucanroyale' || session?.provider === 'toucanroyale')
+      ) {
+        return executeProviderMethod(resolvedProviderId, 'placeBet', () => toucanroyale.placeBet(...args))
+      }
 
       if (!isKnownProvider) {
         const session = args[0]

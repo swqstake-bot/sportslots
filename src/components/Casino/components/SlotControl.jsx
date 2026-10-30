@@ -756,7 +756,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     return stats
   }, [stats, sessionBetsDeduped])
 
-  const buildWorkbenchSessionPayload = useCallback(() => ({
+  const buildWorkbenchSessionPayload = useCallback(() => {
+    const providerMeta = PROVIDERS_META[slot.providerId] || {}
+    return {
     instanceId: workbenchInstanceId || slot.slug,
     slug: slot.slug,
     name: slot.name,
@@ -764,7 +766,15 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     sessionBetsDeduped,
     stats: enrichedStats,
     isRunning: !!isAutospinning,
-  }), [workbenchInstanceId, slot.slug, slot.name, sessionStartAt, sessionBetsDeduped, enrichedStats, isAutospinning])
+    hasSession: !!session,
+    isStarting: !!loading,
+    isSpinning: !!spinLoading,
+    sourceCurrency: effectiveSource,
+    targetCurrency: effectiveTarget,
+    betLabel: formatBetLabel(getEffectiveBetAmount(betAmount, extraBet, slot.slug, session), effectiveTarget, (providerMeta?.betDisplayDivisor && (!Array.isArray(providerMeta?.betDisplayDivisorSlots) || providerMeta.betDisplayDivisorSlots.includes(slot?.slug))) ? { displayDivisor: providerMeta.betDisplayDivisor } : undefined),
+    error,
+    }
+  }, [workbenchInstanceId, slot.slug, slot.name, slot.providerId, sessionStartAt, sessionBetsDeduped, enrichedStats, isAutospinning, session, loading, spinLoading, effectiveSource, effectiveTarget, betAmount, extraBet, error])
 
   const onWorkbenchSessionPublishRef = useRef(onWorkbenchSessionPublish)
   onWorkbenchSessionPublishRef.current = onWorkbenchSessionPublish

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useProfilesStore } from '../../store/profilesStore';
 import { useAutoBetStore } from '../../store/autoBetStore';
@@ -34,6 +34,7 @@ export function ProfilesPanel({ mode, onApply }: ProfilesPanelProps) {
   const [saveName, setSaveName] = useState('');
   const [saveOpen, setSaveOpen] = useState(false);
   const [importError, setImportError] = useState('');
+  const importInput = useRef<HTMLInputElement>(null);
 
   const handleSave = () => {
     if (!saveName.trim()) return;
@@ -114,55 +115,55 @@ export function ProfilesPanel({ mode, onApply }: ProfilesPanelProps) {
   });
 
   return (
-    <div className="copy-feed-block">
-      <h3 className="copy-feed-kicker">Profiles</h3>
-      <div className="copy-feed-fields">
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+    <section className="copy-feed-block sports-profiles">
+      <div className="sports-section-heading">
+        <div><h3 className="copy-feed-kicker">Saved profiles</h3><p className="sports-section-hint">Reuse a configuration or keep a copy of your current settings.</p></div>
+      </div>
+      <div className="sports-profiles-body">
+        <div className="sports-profile-actions">
           <button
             type="button"
             onClick={() => setSaveOpen(!saveOpen)}
-            style={{ flex: 1, padding: '8px 12px', borderRadius: '4px', background: '#2a2a2a', border: '1px solid #444', color: '#fff', cursor: 'pointer' }}
+            className="sports-secondary-btn"
+            aria-expanded={saveOpen}
           >
-            Save Current
+            Save current
           </button>
           <button
             type="button"
             onClick={handleExport}
             disabled={profiles.length === 0}
-            style={{ flex: 1, padding: '8px 12px', borderRadius: '4px', background: '#2a2a2a', border: '1px solid #444', color: '#fff', cursor: 'pointer', opacity: profiles.length === 0 ? 0.5 : 1 }}
+            className="sports-secondary-btn"
           >
-            Export All
+            Export all
           </button>
-          <label
-            style={{ flex: 1, padding: '8px 12px', borderRadius: '4px', background: '#2a2a2a', border: '1px solid #444', color: '#fff', cursor: 'pointer', textAlign: 'center' }}
-          >
+          <button type="button" className="sports-secondary-btn" onClick={() => importInput.current?.click()}>
             Import
-            <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} />
-          </label>
+          </button>
+          <input ref={importInput} type="file" accept=".json" onChange={handleImport} hidden aria-label="Import profiles JSON" />
         </div>
         
         {saveOpen && (
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-            <input
+          <div className="sports-profile-save">
+            <label className="copy-feed-field"><span>Profile name</span><input
               type="text"
               placeholder="Profile name"
               value={saveName}
               onChange={(e) => setSaveName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-              style={{ flex: 1, padding: '8px 12px', borderRadius: '4px', background: '#1a1a1a', border: '1px solid #444', color: '#fff' }}
-            />
+            /></label>
             <button
               type="button"
               onClick={handleSave}
               disabled={!saveName.trim()}
-              style={{ padding: '8px 16px', borderRadius: '4px', background: '#2a2a2a', border: '1px solid #444', color: '#fff', cursor: 'pointer', opacity: !saveName.trim() ? 0.5 : 1 }}
+              className="sports-secondary-btn"
             >
               Save
             </button>
             <button
               type="button"
               onClick={() => { setSaveOpen(false); setSaveName(''); }}
-              style={{ padding: '8px 16px', borderRadius: '4px', background: '#2a2a2a', border: '1px solid #444', color: '#fff', cursor: 'pointer' }}
+              className="sports-secondary-btn"
             >
               Cancel
             </button>
@@ -170,44 +171,28 @@ export function ProfilesPanel({ mode, onApply }: ProfilesPanelProps) {
         )}
 
         {importError && (
-          <div style={{ padding: '8px', marginBottom: '8px', background: '#ff000020', border: '1px solid #ff0000', borderRadius: '4px', color: '#ff6b6b', fontSize: '13px' }}>
+          <div className="sports-profile-error" role="alert">
             {importError}
           </div>
         )}
 
         {relevantProfiles.length === 0 ? (
-          <p style={{ color: '#888', fontSize: '13px', margin: '8px 0' }}>No profiles saved yet.</p>
+          <p className="sports-section-hint">No profiles saved yet. Save the current configuration to reuse it later.</p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div className="sports-profile-list">
             {relevantProfiles.map((profile) => (
               <div
                 key={profile.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '8px 12px',
-                  background: '#1a1a1a',
-                  border: '1px solid #333',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                }}
-                onClick={() => handleLoad(profile.id)}
-                title={`Created: ${new Date(profile.createdAt).toLocaleString()}`}
+                className="sports-profile-row"
               >
-                <span style={{ color: '#fff', fontSize: '14px' }}>{profile.name}</span>
+                <button type="button" className="sports-profile-load" onClick={() => handleLoad(profile.id)} title={`Load profile · Created: ${new Date(profile.createdAt).toLocaleString()}`}>
+                  <span>{profile.name}</span><span className="sports-profile-date">{new Date(profile.createdAt).toLocaleDateString()}</span>
+                </button>
                 <button
                   type="button"
                   onClick={(e) => handleDelete(profile.id, e)}
-                  style={{
-                    padding: '4px 8px',
-                    background: 'transparent',
-                    border: '1px solid #ff4444',
-                    borderRadius: '3px',
-                    color: '#ff4444',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                  }}
+                  className="sports-secondary-btn sports-profile-delete"
+                  aria-label={`Delete profile ${profile.name}`}
                 >
                   Delete
                 </button>
@@ -216,6 +201,6 @@ export function ProfilesPanel({ mode, onApply }: ProfilesPanelProps) {
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 }

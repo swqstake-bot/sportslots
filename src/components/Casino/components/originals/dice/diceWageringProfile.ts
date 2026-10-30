@@ -201,7 +201,124 @@ export const DICE_SELF_RECOVERY_PROFILE = {
   },
 } as const
 
+/**
+ * $50 lottery: Dice/Limbo B2B with peel + hard take-profit, then 98% grind at +$950.
+ */
+export const DICE_HUNT_THEN_GRIND_PROFILE = {
+  name: '50→1k hunt then 98% grind',
+  options: {
+    game: 'dice',
+    initialBetSize: 1.5,
+    betSize: 1.5,
+    targetMultiplier: 2,
+    rollUnder: 49.5,
+    rollOver: false,
+    onWin: 'b2b',
+    onLoss: 'reset',
+    maxFiatBetSize: 18,
+    stopOnProfit: 0,
+    stopOnLoss: 49,
+    stopOnTotalWagered: 138000,
+    isSeedChangeAfterRolls: true,
+    seedChangeAfterRolls: 80,
+    b2bSmartTakeProfitAtMulti: 2.2,
+    b2bSmartTakeProfitAtChainProfitUsd: 8,
+    b2bSmartTakeProfitPeelPct: 55,
+    b2bTakeProfitAfterWins: 4,
+    b2bTakeProfitAtChainMultiplier: 8,
+    b2bTakeProfitChainProfitUsd: 20,
+    b2bRotateSeedOnTakeProfit: true,
+    recoveryTrigger: 'profitAbove',
+    recoveryTriggerValue: 950,
+    recoveryEndTrigger: 'never',
+    recoveryEndValue: 1,
+    recoveryOptions: {
+      game: 'dice',
+      initialBetSize: 6,
+      betSize: 6,
+      targetMultiplier: 1.01,
+      rollUnder: 98,
+      rollOver: false,
+      onWin: 'none',
+      onLoss: 'reset',
+    },
+    rotationStages: [
+      {
+        game: 'dice',
+        bets: 60,
+        options: {
+          targetMultiplier: 2,
+          rollUnder: 49.5,
+          onWin: 'b2b',
+          onLoss: 'reset',
+          initialBetSize: 1.5,
+          betSize: 1.5,
+          b2bSmartTakeProfitAtMulti: 2.2,
+          b2bSmartTakeProfitAtChainProfitUsd: 8,
+          b2bSmartTakeProfitPeelPct: 50,
+          b2bTakeProfitAfterWins: 4,
+          b2bTakeProfitAtChainMultiplier: 6,
+          b2bTakeProfitChainProfitUsd: 18,
+        },
+      },
+      {
+        game: 'limbo',
+        bets: 35,
+        options: {
+          targetMultiplier: 8,
+          onWin: 'b2b',
+          onLoss: 'reset',
+          initialBetSize: 2,
+          betSize: 2,
+          b2bSmartTakeProfitAtMulti: 0,
+          b2bSmartTakeProfitAtChainProfitUsd: 10,
+          b2bSmartTakeProfitPeelPct: 70,
+          b2bTakeProfitAfterWins: 1,
+          b2bTakeProfitAtChainMultiplier: 8,
+          b2bTakeProfitChainProfitUsd: 12,
+        },
+      },
+      {
+        game: 'dice',
+        bets: 40,
+        options: {
+          targetMultiplier: 4.95,
+          rollUnder: 20,
+          onWin: 'b2b',
+          onLoss: 'reset',
+          initialBetSize: 1.25,
+          betSize: 1.25,
+          b2bSmartTakeProfitAtMulti: 2,
+          b2bSmartTakeProfitAtChainProfitUsd: 8,
+          b2bSmartTakeProfitPeelPct: 60,
+          b2bTakeProfitAfterWins: 2,
+          b2bTakeProfitAtChainMultiplier: 5,
+          b2bTakeProfitChainProfitUsd: 14,
+        },
+      },
+      {
+        game: 'limbo',
+        bets: 25,
+        options: {
+          targetMultiplier: 3.5,
+          onWin: 'b2b',
+          onLoss: 'reset',
+          initialBetSize: 2,
+          betSize: 2,
+          b2bSmartTakeProfitAtMulti: 2.5,
+          b2bSmartTakeProfitAtChainProfitUsd: 10,
+          b2bSmartTakeProfitPeelPct: 55,
+          b2bTakeProfitAfterWins: 3,
+          b2bTakeProfitAtChainMultiplier: 8,
+          b2bTakeProfitChainProfitUsd: 16,
+        },
+      },
+    ],
+  },
+} as const
+
 export const DICE_B2B_WAGER_PROFILE_JSON = JSON.stringify(DICE_B2B_WAGER_PROFILE, null, 2)
 export const DICE_RECOVERY_LIMBO_PROFILE_JSON = JSON.stringify(DICE_RECOVERY_LIMBO_PROFILE, null, 2)
 export const DICE_ROTATION_HYBRID_PROFILE_JSON = JSON.stringify(DICE_ROTATION_HYBRID_PROFILE, null, 2)
 export const DICE_SELF_RECOVERY_PROFILE_JSON = JSON.stringify(DICE_SELF_RECOVERY_PROFILE, null, 2)
+export const DICE_HUNT_THEN_GRIND_PROFILE_JSON = JSON.stringify(DICE_HUNT_THEN_GRIND_PROFILE, null, 2)

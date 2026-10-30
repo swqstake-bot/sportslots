@@ -4,6 +4,8 @@ export interface HubStatsPayload {
   queued: number
   running: number
   completed: number
+  /** Runs that failed before completion; display only. */
+  failed?: number
   bestMulti: number
   ts: number
   /** Session P/L USD (resource mode / lite KPI). */

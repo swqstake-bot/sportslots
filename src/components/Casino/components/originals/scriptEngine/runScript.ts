@@ -58,6 +58,8 @@ export function extractConfigFromScript(scriptText: string): Record<string, unkn
     [/b2bSmartTakeProfitAtPct\s*=\s*([\d.]+)/, 'b2bSmartTakeProfitAtPct'],
     [/targetMultiplierFrom\s*=\s*([\d.]+)/, 'targetMultiplierFrom'],
     [/targetMultiplierTo\s*=\s*([\d.]+)/, 'targetMultiplierTo'],
+    [/targetMultiplierSample\s*=\s*['"]([^'"]+)['"]/, 'targetMultiplierSample'],
+    [/targetSelectionMode\s*=\s*['"]([^'"]+)['"]/, 'targetSelectionMode'],
     [/targetMultiplier\s*=\s*([\d.]+)/, 'targetMultiplier'],
     [/randomNumbersFrom\s*=\s*(\d+)/, 'randomNumbersFrom'],
     [/randomNumbersTo\s*=\s*(\d+)/, 'randomNumbersTo'],
@@ -71,6 +73,7 @@ export function extractConfigFromScript(scriptText: string): Record<string, unkn
     [/increaseBetAfterSeedReset\s*=\s*([\d.]+)/, 'increaseBetAfterSeedReset'],
     [/mines\s*=\s*(\d+)/, 'mines'],
     [/diamonds\s*=\s*(\d+)/, 'diamonds'],
+    [/baccaratMode\s*=\s*['"]([^'"]+)['"]/, 'baccaratMode'],
     [/requestInterval\s*=\s*(\d+)/, 'requestInterval'],
   ]
   const boolPatterns: [RegExp, string][] = [
@@ -83,8 +86,17 @@ export function extractConfigFromScript(scriptText: string): Record<string, unkn
   for (const [re, key] of patterns) {
     const m = scriptText.match(re)
     if (m) {
-      if (key === 'game' || key === 'risk' || key === 'onWin' || key === 'onLoss') opts[key] = m[1]
-      else opts[key] = Number(m[1])
+      if (
+        key === 'game' ||
+        key === 'risk' ||
+        key === 'onWin' ||
+        key === 'onLoss' ||
+        key === 'targetMultiplierSample' ||
+        key === 'targetSelectionMode' ||
+        key === 'baccaratMode'
+      ) {
+        opts[key] = m[1]
+      } else opts[key] = Number(m[1])
     }
   }
   for (const [re, key] of boolPatterns) {
@@ -100,6 +112,14 @@ export function extractConfigFromScript(scriptText: string): Record<string, unkn
     opts.betSize = opts.initialBetSize
   }
   if (!opts.onLoss) opts.onLoss = 'reset'
+  // Limbo/Dice Scripts mit From/To → Random-Mode (sonst bleibt static targetMultiplier=2).
+  if (
+    opts.targetMultiplierFrom != null &&
+    opts.targetMultiplierTo != null &&
+    !opts.targetSelectionMode
+  ) {
+    opts.targetSelectionMode = 'random'
+  }
   const smartAtPct = opts.b2bSmartTakeProfitAtPct as number | undefined
   if (smartAtPct != null && smartAtPct > 0 && !opts.b2bSmartTakeProfitAtMulti) {
     opts.b2bSmartTakeProfitAtMulti = smartAtPct >= 10 ? smartAtPct / 100 : smartAtPct
@@ -116,6 +136,13 @@ export function normalizeProfileOptions(options: Record<string, unknown>): Recor
   const o = { ...options }
   if (o.initialBetSize != null && o.betSize == null) o.betSize = o.initialBetSize
   if (!o.onLoss) o.onLoss = 'reset'
+  if (
+    o.targetMultiplierFrom != null &&
+    o.targetMultiplierTo != null &&
+    !o.targetSelectionMode
+  ) {
+    o.targetSelectionMode = 'random'
+  }
   if (String(o.game || '').toLowerCase() === 'keno' && !o.onWin) o.onWin = 'b2b'
   const smartAtPct = o.b2bSmartTakeProfitAtPct as number | undefined
   if (smartAtPct != null && smartAtPct > 0 && !o.b2bSmartTakeProfitAtMulti) {
@@ -162,6 +189,7 @@ function withCodeModePacing(options: Record<string, unknown>): Record<string, un
       rawBump == null || !Number.isFinite(Number(rawBump)) ? 0 : Math.max(0, Number(rawBump))
     )
     const interval = resolveCodeModeIntervalMs(options.requestInterval)
+    const maxFiat = Number(options.maxFiatBetSize)
     return {
       ...options,
       requestInterval: interval,
@@ -169,6 +197,7 @@ function withCodeModePacing(options: Record<string, unknown>): Record<string, un
       _workbenchSettings: {
         requestInterval: interval,
         requestIntervalRateLimitIncrement: bump,
+        ...(Number.isFinite(maxFiat) && maxFiat > 0 ? { maxFiatBetSize: maxFiat } : {}),
       },
     }
   } catch {

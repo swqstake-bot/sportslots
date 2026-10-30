@@ -16,6 +16,14 @@ export type WorkbenchSessionPublish = {
   sessionBetsDeduped: any[]
   stats: any
   isRunning?: boolean
+  /** Presentation metadata from the actual mounted slot control. */
+  hasSession?: boolean
+  isStarting?: boolean
+  isSpinning?: boolean
+  sourceCurrency?: string
+  targetCurrency?: string
+  betLabel?: string
+  error?: string
 }
 
 type InstanceChip = {

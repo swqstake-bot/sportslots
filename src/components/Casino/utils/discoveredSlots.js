@@ -38,6 +38,7 @@ export function inferProviderId(slug) {
     s.startsWith('nlc-')
   ) return 'nolimit'
   if (s.startsWith('avatarux-')) return 'avatarux'
+  if (s.startsWith('toucanroyale-') || s.startsWith('toucan-royale-')) return 'toucanroyale'
   if (s.startsWith('mascot-')) return 'mascot'
   if (s.startsWith('hub88-')) return 'mascot'
   if (s.startsWith('relax-')) return 'relax'

@@ -35,7 +35,8 @@ export function ChallengeHubView({
   onSelectChallenge,
   onHubStatsChange,
 }: ChallengeHubViewProps) {
-  const [tab, setTab] = useState<HubTab>('casino')
+  const tab = useUiStore(s => s.challengeHubTab)
+  const setTab = useUiStore(s => s.setChallengeHubTab)
   const preferredSite = useStakeSiteStore((s) => s.preferredSite)
   const [, setHubStatsBySource] = useState<Record<string, HubStatsPayload>>({})
   const [resourceMode, setResourceMode] = useState(() => isChallengeHubResourceMode())
@@ -69,7 +70,7 @@ export function ChallengeHubView({
 
   const handleTabChange = useCallback((next: HubTab) => {
     setTab(next)
-  }, [])
+  }, [setTab])
 
   useEffect(() => {
     function onExternalOpenTab(ev: Event) {
@@ -79,13 +80,12 @@ export function ChallengeHubView({
         return
       }
       if (wanted === 'telegram' || wanted === 'forum' || wanted === 'promotions') {
-        useUiStore.getState().setCasinoMode('promotions')
-        window.dispatchEvent(new CustomEvent('promotions-hub-open-tab', { detail: { tab: wanted } }))
+        useUiStore.setState({ casinoMode: 'promotions', promotionsHubTab: wanted === 'promotions' ? 'casino' : wanted })
       }
     }
     window.addEventListener('challenge-hub-open-tab', onExternalOpenTab as EventListener)
     return () => window.removeEventListener('challenge-hub-open-tab', onExternalOpenTab as EventListener)
-  }, [])
+  }, [setTab])
 
   const handleHubStatsChange = useCallback((payload: HubStatsPayload) => {
     if (!payload?.source) return
@@ -119,32 +119,31 @@ export function ChallengeHubView({
           <ChallengeHubTabStrip
             tab={tab}
             onTabChange={handleTabChange}
-            resourceMode={resourceMode}
-            onToggleResourceMode={() => setChallengeHubResourceMode(true)}
           />
         ) : (
-          <div className="challenge-hub-resource-title">Resource mode</div>
+          <div className="challenge-hub-resource-title">Hunter <span>Compact view</span></div>
         )}
         <div className="challenge-hub-topbar-inbox">
-          {resourceMode ? (
-            <button
-              type="button"
-              className="challenge-hub-action is-active"
-              title="Exit resource mode"
-              onClick={() => setChallengeHubResourceMode(false)}
-            >
-              Full UI
-            </button>
-          ) : tab === 'casino' ? (
+          {!resourceMode && tab === 'casino' ? (
             <button
               type="button"
               className={`challenge-hub-action${sideCollapsed ? '' : ' is-active'}`}
               title={sideCollapsed ? 'Show live bet feed' : 'Hide live bet feed'}
+              aria-pressed={!sideCollapsed}
               onClick={() => setSideCollapsed((c) => !c)}
             >
-              Feed
+              Live feed
             </button>
           ) : null}
+          <button
+            type="button"
+            className={`challenge-hub-action${resourceMode ? ' is-active' : ''}`}
+            title={resourceMode ? 'Return to the full challenge workspace' : 'Reduce the interface to running sessions and key statistics'}
+            aria-pressed={resourceMode}
+            onClick={() => setChallengeHubResourceMode(!resourceMode)}
+          >
+            {resourceMode ? 'Full workspace' : 'Compact view'}
+          </button>
           <ChallengeHubNotificationCenter />
         </div>
       </div>

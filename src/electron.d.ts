@@ -2,6 +2,8 @@
 // and https://www.electronjs.org/docs/api/context-bridge
 
 export interface ElectronAPI {
+  getAppVersion?: () => Promise<string>;
+  version?: string;
   isFrameless?: boolean;
   windowMinimize?: () => Promise<boolean>;
   windowMaximize?: () => Promise<boolean>;

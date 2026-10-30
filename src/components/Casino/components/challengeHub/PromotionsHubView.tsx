@@ -7,6 +7,8 @@ import { startPromotionCompletionWatcher } from '../../utils/promotionCompletion
 import { useStakeSiteStore } from '../../../../store/stakeSiteStore'
 import type { CasinoChallengeSelection } from '../../types'
 import type { HubStatsPayload } from './hubTypes'
+import { useUiStore } from '../../../../store/uiStore'
+import { removeWorkspaceSession } from '../../../../store/workspaceSessionStore'
 
 type PromoHubTab = 'casino' | 'forum' | 'telegram'
 
@@ -30,7 +32,10 @@ export const PromotionsHubView = memo(function PromotionsHubView({
 }: PromotionsHubViewProps) {
   const preferredSite = useStakeSiteStore((s) => s.preferredSite)
   const hasForum = preferredSite !== 'eu'
-  const [tab, setTab] = useState<PromoHubTab>('casino')
+  const tab = useUiStore(s => s.promotionsHubTab)
+  const setTab = useUiStore(s => s.setPromotionsHubTab)
+  const [telegramVisited, setTelegramVisited] = useState(tab === 'telegram')
+  if (tab === 'telegram' && !telegramVisited) setTelegramVisited(true)
   const TelegramChallengeHunterAny = TelegramChallengeHunter as any
   const [telegramEnabled, setTelegramEnabled] = useState<boolean>(() => {
     try {
@@ -41,6 +46,13 @@ export const PromotionsHubView = memo(function PromotionsHubView({
   })
 
   useEffect(() => startPromotionCompletionWatcher(preferredSite === 'eu' ? 'eu' : 'com'), [preferredSite])
+  useEffect(() => {
+    if (!hasForum && tab === 'forum') setTab('casino')
+  }, [hasForum, tab, setTab])
+  useEffect(() => {
+    if (!telegramEnabled) removeWorkspaceSession('casino-telegram')
+    return () => removeWorkspaceSession('casino-telegram')
+  }, [telegramEnabled])
 
   useEffect(() => {
     try {
@@ -60,7 +72,7 @@ export const PromotionsHubView = memo(function PromotionsHubView({
         /* ignore */
       }
     }
-  }, [])
+  }, [setTab])
 
   useEffect(() => {
     function onOpenTab(ev: Event) {
@@ -107,7 +119,7 @@ export const PromotionsHubView = memo(function PromotionsHubView({
         </button>
       </div>
 
-      {tab === 'telegram' ? (
+      {telegramVisited && <div hidden={tab !== 'telegram'} data-promotion-panel="telegram">
         <SectionCard>
           <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
             <button type="button" className="challenge-hub-action" onClick={() => setTelegramEnabled((prev) => !prev)}>
@@ -125,7 +137,8 @@ export const PromotionsHubView = memo(function PromotionsHubView({
             <p className="promo-note">Off until you enable it. Nothing is sent before the hunter is configured.</p>
           )}
         </SectionCard>
-      ) : tab === 'forum' && hasForum ? (
+      </div>}
+      {tab !== 'telegram' && (tab === 'forum' && hasForum ? (
         <>
           <PromotionsView accessToken={accessToken} webSlots={webSlots} source="forum" />
           <SectionCard>
@@ -138,7 +151,7 @@ export const PromotionsHubView = memo(function PromotionsHubView({
         </>
       ) : (
         <PromotionsView accessToken={accessToken} webSlots={webSlots} source="casino" />
-      )}
+      ))}
     </div>
   )
 })

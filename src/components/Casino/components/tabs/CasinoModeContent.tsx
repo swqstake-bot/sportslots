@@ -1,4 +1,6 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { removeWorkspaceSession } from '../../../../store/workspaceSessionStore'
+import { reportHubWorkspaceStatus } from '../../../../utils/workspaceHubStatus'
 import OriginalsView from '../OriginalsView'
 import BonusHuntControl from '../BonusHuntControl'
 import BetList from '../BetList'
@@ -33,6 +35,7 @@ interface CasinoModeContentProps {
   handleExportSets: () => void
   handleStartAll: () => void
   handleStopAll: () => void
+  onStopInstance?: (instanceId: string) => void
   handleApplyFirstSlotSettings: () => void
   getSlotControlRef: (instanceId: string) => any
   handlePlayLogUpdate: () => void
@@ -63,6 +66,7 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
     handleExportSets,
     handleStartAll,
     handleStopAll,
+    onStopInstance,
     handleApplyFirstSlotSettings,
     getSlotControlRef,
     handlePlayLogUpdate,
@@ -101,11 +105,17 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
   const showHub = hubKeepAlive
   const showPromotions = promoKeepAlive
 
-  let primary: ReactNode = null
-  if (mode === 'originals') {
-    primary = <OriginalsView accessToken={token} />
-  } else if (mode === 'play') {
-    primary = (
+  // Preserve the existing component instance after first use, including its
+  // running session. Opening a different workspace is a view change only.
+  const [openedModes, setOpenedModes] = useState(() => new Set([mode]))
+  if (!openedModes.has(mode)) setOpenedModes(new Set([...openedModes, mode]))
+  useEffect(() => () => {
+    for (const source of ['hunter', 'balance', 'telegram']) removeWorkspaceSession(`casino-${source}`)
+  }, [])
+
+  let playContent: ReactNode = null
+  if (openedModes.has('play')) {
+    playContent = (
       <PlayModeContent
         webSlots={webSlots}
         slotsLoading={slotsLoading}
@@ -137,6 +147,7 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
         handleExportSets={handleExportSets}
         handleStartAll={handleStartAll}
         handleStopAll={handleStopAll}
+        onStopInstance={onStopInstance}
         handleApplyFirstSlotSettings={handleApplyFirstSlotSettings}
         getSlotControlRef={getSlotControlRef}
         handlePlayLogUpdate={handlePlayLogUpdate}
@@ -144,8 +155,10 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
         onDismissChallengeHandoff={onDismissChallengeHandoff}
       />
     )
-  } else if (mode === 'bonushunt') {
-    primary = (
+  }
+  let bonusContent: ReactNode = null
+  if (openedModes.has('bonushunt')) {
+    bonusContent = (
       <div className="bonushunt-wrapper">
         <BonusHuntControl
           accessToken={token}
@@ -173,19 +186,21 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
         />
       </div>
     )
-  } else if (mode === 'logs') {
-    primary = (
+  }
+  const diagnostics = mode === 'logs' ? (
       <div className="space-y-6">
         <SectionCard title="API Debug">
           <BetList bets={recentBets} totalCount={recentBets?.length ?? 0} currencyCode="usd" emptyMessage="No bets found" />
         </SectionCard>
         <LogViewer refreshKey={playLogRefreshKey} />
       </div>
-    )
-  }
+    ) : null
 
   return (
     <>
+      <div data-casino-panel="play" className="casino-mode-panel" hidden={mode !== 'play'}>{playContent}</div>
+      <div data-casino-panel="originals" className="casino-mode-panel" hidden={mode !== 'originals'}>{openedModes.has('originals') && <OriginalsView accessToken={token} />}</div>
+      <div data-casino-panel="bonushunt" className="casino-mode-panel" hidden={mode !== 'bonushunt'}>{bonusContent}</div>
       {showHub ? (
         <div className={isHubMode ? 'min-w-0 min-h-0' : 'hidden'} aria-hidden={!isHubMode}>
           <ChallengeHubView
@@ -193,7 +208,7 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
             webSlots={webSlots as any}
             onDiscoveredSlots={handleDiscoveredSlots}
             onSelectChallenge={handleSelectChallenge}
-            onHubStatsChange={() => {}}
+            onHubStatsChange={reportHubWorkspaceStatus}
           />
         </div>
       ) : null}
@@ -204,11 +219,11 @@ export function CasinoModeContent(props: CasinoModeContentProps) {
             webSlots={webSlots as any}
             onDiscoveredSlots={handleDiscoveredSlots}
             onSelectChallenge={handleSelectChallenge}
-            onHubStatsChange={() => {}}
+            onHubStatsChange={reportHubWorkspaceStatus}
           />
         </div>
       ) : null}
-      {!isHubMode && !isPromotionsMode ? primary : null}
+      {diagnostics}
     </>
   )
 }

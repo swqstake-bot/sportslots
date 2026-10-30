@@ -193,6 +193,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
   useEffect(() => {
     if (typeof onHubStatsChange !== 'function') return
     const running = Object.values(activeRuns).filter((run) => run?.status === 'running').length
+    const failed = Object.values(activeRuns).filter((run) => run?.status === 'failed' || run?.status === 'error').length
     const completed = Object.values(activeRuns).filter((run) => run?.status === 'target_hit' || run?.status === 'completed').length
     const bestMulti = Object.values(bestMultiBySlot).reduce((max, value) => {
       const n = Number(value)
@@ -202,6 +203,7 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
       source: 'telegram',
       queued: queue.length,
       running,
+      failed,
       completed,
       bestMulti,
       ts: Date.now(),
@@ -1142,7 +1144,20 @@ export default function TelegramChallengeHunter({ accessToken, webSlots = [], on
             </div>
           )}
 
-          <div className="hunter-log" style={{ maxHeight: 200, overflow: 'auto', fontSize: '0.75rem' }}>
+          <div
+            className="hunter-log"
+            style={{ maxHeight: 200, overflow: 'auto', fontSize: '0.75rem' }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onContextMenu={(e) => {
+              const sel = window.getSelection?.()
+              const selected = sel && !sel.isCollapsed ? String(sel) : ''
+              const lineEl = e.target instanceof Element ? e.target.closest('.hunter-log-line') : null
+              const text = (selected || lineEl?.textContent || '').trim()
+              if (!text) return
+              e.preventDefault()
+              void navigator.clipboard.writeText(text)
+            }}
+          >
             {logs.map((l, i) => (
               <div key={i} className="hunter-log-line">
                 {l}

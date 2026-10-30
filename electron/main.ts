@@ -3258,7 +3258,7 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
     else {
         const allowed = [
             'stake-engine.com', 'engine.io', 'stake.com', 'evolution.com', 'stake.bet', 'stake.eu', 'evo-games.com',
-            'nolimitcdn.com', 'nolimitcity.com', 'l0mpxqfj.xyz', 'bigplays8.xyz', 'thunderkick', 'relax',
+            'nolimitcdn.com', 'nolimitcity.com', 'l0mpxqfj.xyz', 'bigplays8.xyz', 'draknos.com', 'nssb360.com', 'svuindex.com', 'thunderkick', 'relax',
             'blueprint', 'endorphina', 'netent', 'gameart', 'push', 'btg', 'oak', 'redtiger',
             'playngo', 'octoplay', 'peterandsons', 'shady', 'shuffle', 'titan', 'twist',
             'popiplay', 'helio', 'samurai', '1000lakes', 'hacksawgaming.com', 'rgs-social.hacksawgaming.com',

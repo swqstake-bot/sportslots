@@ -1,238 +1,123 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { WalletSelector } from '../WalletSelector'
-import { PrimaryNav } from './PrimaryNav'
-import { ThemeAccentButton } from './ThemeAccentButton'
-import { HeaderAccountMeta } from './HeaderAccountMeta'
-import { AppBrandMark, AppBrandTitle } from './AppBrandMark'
-import { APP_VIEW_TITLES } from '../../constants/branding'
 import { useStakeSiteStore } from '../../store/stakeSiteStore'
+import type { AppView, CasinoMode } from '../../store/uiStore'
+import { workspacePageTitle, type WorkspaceDestination } from './workspaceNavigation'
+import { WorkspaceSessions } from './WorkspaceSessions'
 
-type AppView = 'casino' | 'sports' | 'logger'
 type StakeSite = 'com' | 'eu'
-
-interface SiteStatuses {
-  preferredSite: StakeSite
-  activeOrigin: string
-  com: { site: 'com'; origin: string; valid: boolean }
-  eu: { site: 'eu'; origin: string; valid: boolean }
-}
+type SiteStatuses = Awaited<ReturnType<Window['electronAPI']['getStakeSiteStatuses']>>
 
 interface AppHeaderProps {
   currentView: AppView
-  onChangeView: (view: AppView) => void
+  casinoMode: CasinoMode
   userName?: string
-  isChallengeRunning: boolean
-  isRunning: boolean
-  isCopyRunning?: boolean
-  onRunClick?: () => void
   isLoading: boolean
   onRefresh: () => void
   onLogin: (site?: StakeSite) => void
-  onSessionRevalidate?: () => void
-  onSiteChanged?: () => void
+  onSessionRevalidate: () => void
+  onSiteChanged: () => void
+  onNavigate: (destination: WorkspaceDestination) => void
 }
 
-export function AppHeader({
-  currentView,
-  onChangeView,
-  userName,
-  isChallengeRunning,
-  isRunning,
-  isCopyRunning = false,
-  onRunClick,
-  isLoading,
-  onRefresh,
-  onLogin,
-  onSessionRevalidate,
-  onSiteChanged,
-}: AppHeaderProps) {
-  const hasUser = Boolean(userName)
-  const preferredSite = useStakeSiteStore((s) => s.preferredSite)
-  const setPreferredSite = useStakeSiteStore((s) => s.setPreferredSite)
-  const [siteStatuses, setSiteStatuses] = useState<SiteStatuses | null>(null)
+export function AppHeader({ currentView, casinoMode, userName, isLoading, onRefresh, onLogin, onSessionRevalidate, onSiteChanged, onNavigate }: AppHeaderProps) {
+  const preferredSite = useStakeSiteStore(s => s.preferredSite)
+  const setPreferredSite = useStakeSiteStore(s => s.setPreferredSite)
+  const showConnection = useRef<HTMLDetailsElement>(null)
+  const [statuses, setStatuses] = useState<SiteStatuses | null>(null)
   const [switching, setSwitching] = useState(false)
+  const [connectionError, setConnectionError] = useState('')
 
-  const refreshSiteState = useCallback(async () => {
+  const refreshStatus = useCallback(async () => {
+    if (!window.electronAPI?.getStakeSiteStatuses) return
     try {
-      const api = window.electronAPI
-      if (!api?.getStakeSiteStatuses) return
-      const statuses = await api.getStakeSiteStatuses()
-      setSiteStatuses(statuses)
-      setPreferredSite(statuses.preferredSite || 'com')
-    } catch (err) {
-      console.warn('[AppHeader] Failed to load stake site status', err)
+      const next = await window.electronAPI.getStakeSiteStatuses()
+      setStatuses(next)
+      setPreferredSite(next.preferredSite || 'com')
+      setConnectionError('')
+    } catch {
+      setStatuses(null)
+      setConnectionError('Connection status unavailable')
     }
   }, [setPreferredSite])
 
   useEffect(() => {
-    void refreshSiteState()
-    const onRevalidated = () => {
-      void refreshSiteState()
-    }
-    window.addEventListener('stake-session-revalidated', onRevalidated)
-    return () => window.removeEventListener('stake-session-revalidated', onRevalidated)
-  }, [refreshSiteState])
+    void refreshStatus()
+    const refresh = () => { void refreshStatus() }
+    window.addEventListener('stake-session-revalidated', refresh)
+    return () => window.removeEventListener('stake-session-revalidated', refresh)
+  }, [refreshStatus])
 
-  const handleSiteSwitch = async (site: StakeSite) => {
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      if (showConnection.current?.open && !showConnection.current.contains(event.target as Node)) showConnection.current.open = false
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && showConnection.current?.open) {
+        showConnection.current.open = false
+        showConnection.current.querySelector('summary')?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [])
+
+  const switchSite = async (site: StakeSite) => {
     if (site === preferredSite || switching) return
     setSwitching(true)
+    setConnectionError('')
     try {
       const result = await window.electronAPI.setStakeSite(site)
       setPreferredSite(result.preferredSite)
-      setSiteStatuses(result.statuses)
-      if (result.preferredSite === 'eu' && currentView === 'sports') {
-        onChangeView('casino')
-      }
-      if (!result.status?.valid) {
-        onLogin(site)
-      } else {
-        window.dispatchEvent(new CustomEvent('stake-session-revalidated'))
-        onSiteChanged?.()
-      }
-    } catch (err) {
-      console.error('[AppHeader] Site switch failed', err)
+      setStatuses(result.statuses)
+      if (result.preferredSite === 'eu' && currentView === 'sports') onNavigate({ view: 'casino', casinoMode: 'play' })
+      if (!result.status?.valid) onLogin(site)
+      else onSiteChanged()
+      if (showConnection.current) showConnection.current.open = false
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : 'Could not switch platform')
     } finally {
       setSwitching(false)
     }
   }
 
-  const handleDeleteCache = async () => {
-    const ok = window.confirm(
-      'Delete all cache and login/session data?\n\nThis clears Stake cookies, local cache and Telegram session, then restarts the app.'
-    )
-    if (!ok) return
-    try {
-      try {
-        localStorage.clear()
-        sessionStorage.clear()
-      } catch {
-        /* ignore */
-      }
-      const api = window.electronAPI
-      if (!api?.deleteCacheAndRelaunch) {
-        window.alert('Delete Cache is only available in the desktop app.')
-        return
-      }
-      await api.deleteCacheAndRelaunch()
-    } catch (err) {
-      console.error('[AppHeader] Delete cache failed', err)
-      window.alert(`Delete cache failed: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
-
-  const loginLabel = preferredSite === 'eu' ? 'Login Stake.eu' : 'Login with Stake'
-  const anySportsRun = isRunning || isCopyRunning
-  const runLabel = isRunning && isCopyRunning
-    ? 'AutoBet + Copy'
-    : isRunning
-      ? 'AutoBet'
-      : isCopyRunning
-        ? 'Copy'
-        : 'Stopped'
+  const valid = statuses?.[preferredSite]?.valid
+  const connectionLabel = connectionError ? 'Status unavailable' : statuses ? (valid ? 'Connected' : 'Sign in required') : 'Checking connection'
 
   return (
-    <header className="app-header">
-      <div className="app-header-left">
-        <div className="app-header-brand-row">
-          <AppBrandMark size={34} className="app-header-logo" />
-          <h1 className="app-header-title">
-            <AppBrandTitle suffix={APP_VIEW_TITLES[currentView]} />
-          </h1>
-        </div>
-        {hasUser && (
-          <div className="app-header-userpill">
-            <span className="app-header-dot" />
-            <span>{userName}</span>
-          </div>
-        )}
-        {isChallengeRunning && <div className="app-header-alert">Challenge running</div>}
-        <PrimaryNav
-          currentView={currentView}
-          onChangeView={onChangeView}
-          hideSports={preferredSite === 'eu'}
-        />
+    <header className="workspace-header">
+      <div className="workspace-header-context">
+        <span className="workspace-eyebrow">{currentView === 'casino' && (casinoMode === 'challengeHub' || casinoMode === 'promotions') ? 'Challenges & promotions' : 'Workspace'}</span>
+        <h1>{workspacePageTitle(currentView, casinoMode)}</h1>
       </div>
-
-      <div className="app-header-right">
-        <div className="app-site-switch" role="group" aria-label="Stake site">
-          <button
-            type="button"
-            className={`app-site-switch-btn ${preferredSite === 'com' ? 'is-active' : ''}`.trim()}
-            onClick={() => void handleSiteSwitch('com')}
-            disabled={switching}
-            aria-pressed={preferredSite === 'com'}
-          >
-            <span
-              className={`app-site-switch-dot ${siteStatuses?.com?.valid ? 'is-valid' : ''}`.trim()}
-              aria-hidden
-            />
-            .com
-          </button>
-          <button
-            type="button"
-            className={`app-site-switch-btn ${preferredSite === 'eu' ? 'is-active' : ''}`.trim()}
-            onClick={() => void handleSiteSwitch('eu')}
-            disabled={switching}
-            aria-pressed={preferredSite === 'eu'}
-          >
-            <span
-              className={`app-site-switch-dot ${siteStatuses?.eu?.valid ? 'is-valid' : ''}`.trim()}
-              aria-hidden
-            />
-            .eu
-          </button>
-        </div>
-        {hasUser ? (
-          <>
-            <button
-              type="button"
-              className={`app-run-state ${anySportsRun ? 'is-running' : ''}`.trim()}
-              onClick={() => onRunClick?.()}
-              title={anySportsRun ? 'Open Sports run' : 'Sports is stopped'}
-            >
-              <span>{runLabel}</span>
-              <span className="app-run-state-dot" />
-            </button>
-            <HeaderAccountMeta enabled={hasUser} />
-            <WalletSelector />
-            <ThemeAccentButton />
-            <button type="button" onClick={onRefresh} className={`app-header-refresh-btn ${isLoading ? 'is-loading' : ''}`.trim()}>
-              Refresh
-            </button>
-            <button
-              type="button"
-              onClick={onSessionRevalidate}
-              className="app-header-refresh-btn"
-              aria-label="Revalidate Stake session"
-            >
-              Session
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleDeleteCache()}
-              className="app-header-refresh-btn app-header-danger-btn"
-              aria-label="Delete cache and login data, then restart"
-              title="Clear cookies, cache, login/session data and restart"
-            >
-              Delete Cache
-            </button>
-          </>
-        ) : (
-          <>
-            <button type="button" onClick={() => onLogin(preferredSite)} className="app-header-login-btn">
-              {loginLabel}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleDeleteCache()}
-              className="app-header-refresh-btn app-header-danger-btn"
-              aria-label="Delete cache and login data, then restart"
-              title="Clear cookies, cache, login/session data and restart"
-            >
-              Delete Cache
-            </button>
-          </>
-        )}
+      <div className="workspace-header-actions">
+        <details className="workspace-connection" ref={showConnection}>
+          <summary className="workspace-connection-trigger" aria-label={`Stake.${preferredSite}: ${connectionLabel}. Connection options`}>
+            <span className={`workspace-status-dot ${valid ? 'is-connected' : ''}`} aria-hidden="true" />
+            <span>Stake.{preferredSite}</span><span className="workspace-connection-label">{connectionLabel}</span>
+            <span aria-hidden="true">⌄</span>
+          </summary>
+          <div className="workspace-connection-menu">
+            <div className="workspace-section-heading"><strong>Platform & connection</strong><span className="workspace-muted">{userName || 'No account connected'}</span></div>
+            <div className="workspace-platforms" role="group" aria-label="Stake platform">
+              {(['com', 'eu'] as const).map(site => <button type="button" key={site} aria-pressed={site === preferredSite} disabled={switching} onClick={() => void switchSite(site)}><span>Stake.{site}</span><small>{statuses ? (statuses[site]?.valid ? 'Connected' : 'Sign in required') : 'Not checked'}</small></button>)}
+            </div>
+            {connectionError && <p className="workspace-inline-error" role="alert">{connectionError}</p>}
+            {!valid && <button type="button" className="workspace-button is-primary" onClick={() => onLogin(preferredSite)}>Sign in to Stake.{preferredSite}</button>}
+            <button type="button" className="workspace-button" onClick={async () => { await onSessionRevalidate(); void refreshStatus() }}>Check connection</button>
+            <button type="button" className="workspace-text-button" onClick={() => { if (showConnection.current) showConnection.current.open = false; onNavigate({ view: 'settings' }) }}>Connection settings →</button>
+          </div>
+        </details>
+        <WorkspaceSessions onNavigate={onNavigate} />
+        {userName && <div className="workspace-header-wallet"><WalletSelector /></div>}
+        <button type="button" className={`workspace-header-refresh ${isLoading ? 'is-loading' : ''}`} onClick={onRefresh} disabled={isLoading} aria-label="Refresh account and balances" title="Refresh account and balances">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9"/></svg>
+        </button>
+        <button type="button" className="workspace-account-button" onClick={() => onNavigate({ view: 'overview' })} title={userName ? `${userName} · Account overview` : 'Open overview'} aria-label={userName ? `${userName}: account overview` : 'Open overview'}>{userName ? userName.slice(0, 2).toUpperCase() : 'SW'}</button>
       </div>
     </header>
   )

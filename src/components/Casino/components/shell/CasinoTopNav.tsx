@@ -8,12 +8,12 @@ interface CasinoTopNavProps {
 const PLAY_MODES: { id: Exclude<CasinoMode, 'logs'>; label: string; title: string }[] = [
   { id: 'play', label: 'Slots', title: 'Slots and autospin' },
   { id: 'originals', label: 'Originals', title: 'Stake Originals' },
+  { id: 'bonushunt', label: 'Bonus Hunt', title: 'Hunt until bonus triggers' },
 ]
 
 const HUNT_MODES: { id: Exclude<CasinoMode, 'logs'>; label: string; title: string }[] = [
-  { id: 'challengeHub', label: 'Challenges', title: 'Stake casino challenges and hunter' },
+  { id: 'challengeHub', label: 'Hunter', title: 'Stake casino challenges and hunter' },
   { id: 'promotions', label: 'Promotions', title: 'Casino promotions, forum competitions, Telegram' },
-  { id: 'bonushunt', label: 'Bonus Hunt', title: 'Hunt until bonus triggers' },
 ]
 
 function NavButtons({
@@ -44,11 +44,12 @@ function NavButtons({
 }
 
 export function CasinoTopNav({ mode, onChangeMode }: CasinoTopNavProps) {
+  const challengeWorkspace = mode === 'challengeHub' || mode === 'promotions'
   return (
-    <nav className="casino-topnav" aria-label="Casino sections">
-      <NavButtons modes={PLAY_MODES} mode={mode} onChangeMode={onChangeMode} />
-      <span className="casino-topnav-split" aria-hidden />
-      <NavButtons modes={HUNT_MODES} mode={mode} onChangeMode={onChangeMode} />
+    <nav className="casino-topnav" aria-label={challengeWorkspace ? 'Challenge sections' : 'Casino game sections'}>
+      <div className="casino-topnav-group" role="group" aria-label={challengeWorkspace ? 'Challenges and promotions' : 'Games'}>
+        <NavButtons modes={challengeWorkspace ? HUNT_MODES : PLAY_MODES} mode={mode} onChangeMode={onChangeMode} />
+      </div>
     </nav>
   )
 }

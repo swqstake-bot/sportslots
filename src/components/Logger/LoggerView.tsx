@@ -40,6 +40,7 @@ export default function LoggerView() {
   const [sportsBets, setSportsBets] = useState<LoggerBetEntry[]>([]);
   const [currencyRates, setCurrencyRates] = useState<Record<string, number>>({});
   const [statusMessage, setStatusMessage] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
   const currencyRefreshInFlightRef = useRef(false);
   const lastCasinoIdentityRef = useRef<string>('');
   const lastSportsIdentityRef = useRef<string>('');
@@ -77,14 +78,21 @@ export default function LoggerView() {
 
   const handleImport = useCallback(async () => {
     setStatusMessage('');
-    const r = await window.electronAPI.importLoggerBetLogs();
-    if (r?.cancelled) return;
-    if (!r?.ok) {
-      setStatusMessage(r?.error || 'Import fehlgeschlagen');
-      return;
+    setIsImporting(true);
+    try {
+      const r = await window.electronAPI.importLoggerBetLogs();
+      if (r?.cancelled) return;
+      if (!r?.ok) {
+        setStatusMessage(r?.error || 'Import failed.');
+        return;
+      }
+      applyImportedBets(r.bets || []);
+      setStatusMessage(`${r.bets?.length ?? 0} bets loaded (in-memory only).`);
+    } catch (error) {
+      setStatusMessage(`Import failed: ${error instanceof Error ? error.message : 'Unable to read the session file.'}`);
+    } finally {
+      setIsImporting(false);
     }
-    applyImportedBets(r.bets || []);
-    setStatusMessage(`${r.bets?.length ?? 0} bets loaded (in-memory only).`);
   }, [applyImportedBets]);
 
   const handleExport = useCallback(async (bets: LoggerBetEntry[]) => {
@@ -93,10 +101,14 @@ export default function LoggerView() {
       setStatusMessage('No bets available to export.');
       return;
     }
-    const r = await window.electronAPI.exportLoggerBetLogs(bets);
-    if (r?.cancelled) return;
-    if (r?.ok) setStatusMessage(`Exported: ${bets.length} bets -> ${r.path || 'Saved'}`);
-    else setStatusMessage(r?.error || 'Export failed');
+    try {
+      const r = await window.electronAPI.exportLoggerBetLogs(bets);
+      if (r?.cancelled) return;
+      if (r?.ok) setStatusMessage(`Exported: ${bets.length} bets -> ${r.path || 'Saved'}`);
+      else setStatusMessage(r?.error || 'Export failed');
+    } catch (error) {
+      setStatusMessage(`Export failed: ${error instanceof Error ? error.message : 'Unable to save the session file.'}`);
+    }
   }, []);
 
   const handleDeleteAll = useCallback(async () => {
@@ -135,12 +147,14 @@ export default function LoggerView() {
 
   return (
     <div className="logger-root p-6 lg:p-8 w-full">
+      <div className="logger-analysis-intro"><span className="workspace-eyebrow">Review exported sessions</span><h2>Import analysis</h2><p>Inspect Casino and Sports bets from your saved session files.</p></div>
       <div className="logger-topbar mb-5">
         <div className="logger-tabs-wrap">
           <button
             type="button"
             onClick={() => setTab('casino')}
             className={`logger-tab-btn ${tab === 'casino' ? 'is-active' : ''}`}
+            aria-pressed={tab === 'casino'}
           >
             Casino Bets
           </button>
@@ -148,13 +162,18 @@ export default function LoggerView() {
             type="button"
             onClick={() => setTab('sports')}
             className={`logger-tab-btn ${tab === 'sports' ? 'is-active' : ''}`}
+            aria-pressed={tab === 'sports'}
           >
             Sports Bets
           </button>
         </div>
+        <div className="workspace-button-row">
+        <button type="button" className="logger-action-btn" onClick={() => void handleImport()} disabled={isImporting}>{isImporting ? 'Importing…' : 'Import (JSONL)'}</button>
+        <button type="button" className="logger-action-btn" onClick={() => void handleExport([...casinoBets, ...sportsBets])} disabled={casinoBets.length + sportsBets.length === 0}>Export all (JSONL)</button>
         <button type="button" className="logger-danger-btn" onClick={handleDeleteAll}>
           Clear view
         </button>
+        </div>
       </div>
 
       <p className="logger-muted logger-archive-hint">
@@ -162,14 +181,14 @@ export default function LoggerView() {
         <span className="mono">Import (JSONL)</span> here to review, filter, and export CSV. Data stays in memory until
         you close the app or clear the view.
       </p>
+      {statusMessage && <p className="logger-status" role="status">{statusMessage}</p>}
 
       {tab === 'casino' ? (
         <CasinoLoggerTab
           bets={sortedCasinoBets}
           currencyRates={currencyRates}
-          statusMessage={statusMessage}
+          statusMessage=""
           onExport={handleExport}
-          onImport={handleImport}
         />
       ) : (
         <SportsLoggerTab

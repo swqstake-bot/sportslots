@@ -1,0 +1,601 @@
+/* Challenge Hunter presentation. Run, queue and discovery logic stay in the existing component. */
+.casino-root .challenge-hub-root .challenge-hub-canvas:has(#hub-panel-casino:not(.hidden) .hunter-workspace) {
+  /* The workspace owns vertical scrolling; nested overflow prevented the run controls from sticking. */
+  overflow: visible;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace {
+  min-width: 0;
+  gap: 0.85rem !important;
+  container-type: inline-size;
+  container-name: hunter;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-header {
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-card);
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-title h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-title p,
+.casino-root .challenge-hub-root .hunter-workspace-section-heading p {
+  margin: 0.3rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-main-actions,
+.casino-root .challenge-hub-root .hunter-workspace-buttons {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-main-actions {
+  flex-shrink: 0;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-main-actions button {
+  min-height: 38px;
+  padding: 0.45rem 1rem !important;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-toolbar {
+  display: grid;
+  grid-template-columns: 1fr 1.12fr 1.12fr;
+  min-width: 0;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-toolgroup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.75rem 1rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-toolgroup + .hunter-workspace-toolgroup {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-toolgroup h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-updated {
+  font-size: 0.7rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-caption {
+  color: var(--text-muted);
+  font-size: 0.73rem;
+  line-height: 1.45;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace button,
+.casino-root .challenge-hub-root .hunter-workspace input,
+.casino-root .challenge-hub-root .hunter-workspace select {
+  font-size: 0.8rem !important;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace button {
+  min-height: 32px;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-toolbar button {
+  padding: 0.35rem 0.65rem !important;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-runbar-parallel {
+  gap: 0.5rem;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 0.73rem;
+  font-weight: 500;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-runbar-parallel input {
+  width: 3.3rem;
+  min-height: 32px;
+  border-radius: 6px;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-tools {
+  justify-content: flex-start;
+  margin-left: 0;
+  gap: 0.65rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-header-tools > summary {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-header-tools > summary::after {
+  content: '⌄';
+  margin-left: 0.6rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-header-tools-menu {
+  right: 0;
+  left: auto;
+  min-width: 230px;
+  padding: 0.5rem;
+  background: var(--bg-card);
+  box-shadow: 0 12px 28px #0005;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-header-tools-menu button {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-header-tools-menu > div,
+.casino-root .challenge-hub-root .hunter-workspace .hunter-header-tools-menu > div > button {
+  width: 100%;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-steps a {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 0.7rem 0.9rem;
+  color: var(--text);
+  text-decoration: none;
+  border-radius: 9px;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-steps a + a {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-steps a:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-step-number {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  height: 28px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.73rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-steps strong,
+.casino-root .challenge-hub-root .hunter-workspace-steps small {
+  display: block;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-steps strong {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-steps small {
+  margin-top: 0.18rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-steps a > :last-child {
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-found-panel[open] {
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  margin-top: 0;
+  box-shadow: none;
+  border-radius: 10px;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-found-summary-title {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.82rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-collapse-summary {
+  min-height: 40px;
+  padding: 0.6rem 0.8rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-found-toolbar {
+  padding: 0.5rem 0.75rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-found-body {
+  padding-top: 0.5rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-found-body:has(.hunter-found-grid) {
+  height: 148px;
+  max-height: 24vh;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-found-row {
+  grid-template-columns: minmax(150px, 1.45fr) 0.62fr 0.62fr 0.85fr 0.72fr 0.88fr minmax(180px, 1.2fr);
+  min-height: 62px;
+  box-shadow: none;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-found-actions {
+  grid-template-columns: minmax(48px, 1fr) auto auto;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-found-actions button {
+  min-height: 30px;
+  padding: 0.3rem 0.45rem !important;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-found-actions select {
+  min-height: 30px;
+  min-width: 0;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-found-key,
+.casino-root .challenge-hub-root .hunter-workspace .hunter-found-sub {
+  font-size: 0.68rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-grid {
+  grid-template-columns: minmax(280px, 310px) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-sidebar {
+  margin: 0;
+  padding: 0;
+  border: none;
+  overflow: visible;
+  min-width: 0;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-ops-queue,
+.casino-root .challenge-hub-root .hunter-workspace .hunter-main {
+  padding: 0.9rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-card);
+  box-shadow: none;
+  min-width: 0;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-empty {
+  padding: 1.25rem 1rem;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-main {
+  gap: 0.7rem;
+  overflow: visible;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-section-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin-bottom: 0.8rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-section-heading .hunter-section-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-section-heading .hunter-section-title > span {
+  margin-left: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-sidebar .hunter-ops-surface .hunter-ops-panel {
+  margin-top: 0.8rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-card);
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-ops-section-head,
+.casino-root .challenge-hub-root .hunter-workspace .hunter-ops-mini-btn {
+  font-size: 0.78rem;
+  padding: 0.55rem 0.65rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-ops-section-body {
+  padding: 0.75rem;
+  gap: 0.65rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-ops-section-body label {
+  font-size: 0.76rem !important;
+  line-height: 1.5;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-ops-section-body input:not([type='checkbox']):not([type='range']),
+.casino-root .challenge-hub-root .hunter-workspace .hunter-ops-section-body select {
+  min-height: 34px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace [id^='hunter-workspace-'],
+.casino-root .challenge-hub-root .hunter-workspace #hunter-found-challenges {
+  scroll-margin-top: 235px;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace :is(a, button, input, select, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-compact {
+  gap: 0.85rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-settings-panel {
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border-subtle));
+  border-radius: 12px;
+  background: var(--bg-card);
+  box-shadow: none;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-settings-summary {
+  min-height: 72px;
+  gap: 0.8rem;
+  padding: 0.85rem 1rem;
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-card));
+}
+
+.casino-root .challenge-hub-root .hunter-settings-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  margin-right: auto;
+}
+
+.casino-root .challenge-hub-root .hunter-settings-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  height: 36px;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.casino-root .challenge-hub-root .hunter-settings-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.casino-root .challenge-hub-root .hunter-settings-heading strong {
+  display: block;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.casino-root .challenge-hub-root .hunter-settings-heading small,
+.casino-root .challenge-hub-root .hunter-settings-panel .hunter-ops-section-head small {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
+.casino-root .challenge-hub-root .hunter-settings-toggle {
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.casino-root .challenge-hub-root .hunter-settings-panel .hunter-ops-accordion {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 0.7rem;
+  padding: 0.8rem;
+}
+
+.casino-root .challenge-hub-root .hunter-settings-panel .hunter-ops-section {
+  min-width: 0;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace .hunter-settings-panel .hunter-ops-section-head {
+  min-height: 70px;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  text-align: left;
+  font-size: 0.82rem;
+}
+
+.casino-root .challenge-hub-root .hunter-settings-panel .hunter-ops-section-head[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+@container hunter (max-width: 900px) {
+  .casino-root .challenge-hub-root .hunter-settings-panel .hunter-ops-accordion {
+    grid-template-columns: 1fr;
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace .hunter-settings-panel .hunter-ops-section-head {
+    min-height: 60px;
+  }
+}
+
+@media (max-width: 600px) {
+  .casino-root .challenge-hub-root .hunter-settings-toggle {
+    display: none;
+  }
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-compact .hunter-resource-lite-label {
+  font-size: 0.75rem;
+}
+
+.casino-root .challenge-hub-root .hunter-workspace-compact .hunter-resource-lite-actions button {
+  min-height: 36px;
+  font-size: 0.8rem !important;
+}
+
+@media (max-width: 1100px) {
+  .casino-root .challenge-hub-root .hunter-workspace .hunter-grid {
+    grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+  }
+}
+
+@container hunter (max-width: 900px) {
+  .casino-root .challenge-hub-root .hunter-workspace-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace-setup {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    border-left: none !important;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace-setup h3 {
+    width: auto;
+    margin-right: auto;
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace-setup > .hunter-workspace-caption {
+    width: 100%;
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace .hunter-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace .hunter-found-body {
+    overflow-x: auto;
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace .hunter-found-grid {
+    min-width: 800px;
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace [id^='hunter-workspace-'],
+  .casino-root .challenge-hub-root .hunter-workspace #hunter-found-challenges {
+    scroll-margin-top: 340px;
+  }
+}
+
+@media (max-width: 850px) {
+  .casino-root .challenge-hub-root .hunter-workspace-header {
+    position: static;
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace-toolgroup + .hunter-workspace-toolgroup {
+    border-left: none;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace-title {
+    flex-wrap: wrap;
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace-steps a + a {
+    border-left: none;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace .hunter-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace .hunter-found-toolbar input {
+    min-width: 0 !important;
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace .hunter-found-body {
+    overflow-x: auto;
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace .hunter-found-grid {
+    min-width: 800px;
+  }
+
+  .casino-root .challenge-hub-root .hunter-workspace [id^='hunter-workspace-'],
+  .casino-root .challenge-hub-root .hunter-workspace #hunter-found-challenges {
+    scroll-margin-top: 1rem;
+  }
+}

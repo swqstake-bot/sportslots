@@ -2,6 +2,18 @@
   color: var(--app-text);
 }
 
+.logger-analysis-intro { margin-bottom: 24px; }
+.logger-analysis-intro h2 { font-size: 23px; font-weight: 550; letter-spacing: -.025em; margin: 5px 0; }
+.logger-analysis-intro p { color: var(--app-text-muted); font-size: 13px; }
+.workspace-app .logger-topbar { padding: 12px 0; border-width: 0 0 1px; background: transparent; box-shadow: none; gap: 14px; }
+.workspace-app .logger-tabs-wrap { padding: 0; border: 0; background: transparent; gap: 16px; }
+.workspace-app .logger-tab-btn { padding: 8px 0; background: transparent; color: var(--app-text-muted); border: 0; border-bottom: 2px solid transparent; }
+.workspace-app .logger-tab-btn.is-active { color: var(--app-accent); background: transparent; border-bottom-color: var(--app-accent); }
+.workspace-app .logger-panel { border-radius: 6px; padding: 20px; }
+.workspace-app .logger-grid { gap: 14px; }
+.workspace-app .logger-grid label { font-size: 12px; }
+.workspace-app :is(.logger-action-btn,.logger-danger-btn) { border-radius: 5px; min-height: 34px; font-size: 12px; }
+
 .logger-topbar {
   display: flex;
   align-items: center;

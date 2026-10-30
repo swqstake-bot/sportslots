@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useId } from 'react';
 import type { CSSProperties } from 'react';
 import { StakeApi } from '../../api/client';
 import { Queries } from '../../api/queries';
@@ -60,6 +60,7 @@ export function TournamentEventPickFields({
   const [sports, setSports] = useState<{ name: string; slug: string }[]>([]);
   const [tournamentOptions, setTournamentOptions] = useState<TournamentEventOption[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
+  const fieldId = useId();
 
   const arrowClass = variant === 'modal' ? 'text-gray-500' : '';
 
@@ -164,13 +165,14 @@ export function TournamentEventPickFields({
   };
 
   return (
-    <div className="space-y-3">
+    <div className={variant === 'app' ? 'sports-tournament-fields' : 'space-y-3'}>
       <div>
-        <label className={labelClass} style={labelStyle}>
+        <label htmlFor={`${fieldId}-sport`} className={labelClass} style={labelStyle}>
           Event sport
         </label>
-        <div className="relative">
+        <div className={variant === 'app' ? 'sports-tournament-select' : 'relative'}>
           <select
+            id={`${fieldId}-sport`}
             value={pickerSport}
             onChange={(e) => onSportChange(e.target.value)}
             className={selectClass}
@@ -184,13 +186,13 @@ export function TournamentEventPickFields({
             ))}
           </select>
           <div
-            className={`pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 ${arrowClass}`}
+            className={`pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 ${variant === 'app' ? 'sports-tournament-caret' : arrowClass}`}
             style={variant === 'app' ? { color: 'var(--app-text-muted)' } : undefined}
           >
             ▼
           </div>
         </div>
-        <p className="text-[10px] mt-1" style={helpStyle}>
+        <p className="sports-field-help mt-1" style={helpStyle}>
           {variant === 'modal' ? (
             <span className="text-gray-500">Select a sport to load active tournaments.</span>
           ) : (
@@ -200,11 +202,12 @@ export function TournamentEventPickFields({
       </div>
 
       <div>
-        <label className={labelClass} style={labelStyle}>
+        <label htmlFor={`${fieldId}-event`} className={labelClass} style={labelStyle}>
           Tournament / Event
         </label>
-        <div className="relative">
+        <div className={variant === 'app' ? 'sports-tournament-select' : 'relative'}>
           <select
+            id={`${fieldId}-event`}
             value={selectedEventKey}
             onChange={(e) => onEventChange(e.target.value)}
             disabled={!pickerSport || loadingEvents}
@@ -230,7 +233,7 @@ export function TournamentEventPickFields({
             ))}
           </select>
           <div
-            className={`pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 ${arrowClass}`}
+            className={`pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 ${variant === 'app' ? 'sports-tournament-caret' : arrowClass}`}
             style={variant === 'app' ? { color: 'var(--app-text-muted)' } : undefined}
           >
             ▼
@@ -239,10 +242,11 @@ export function TournamentEventPickFields({
       </div>
 
       <div>
-        <label className={labelClass} style={labelStyle}>
+        <label htmlFor={`${fieldId}-url`} className={labelClass} style={labelStyle}>
           Event-URL (optional)
         </label>
         <input
+          id={`${fieldId}-url`}
           type="text"
           value={settings.eventTournamentUrl || ''}
           onChange={(e) => onUrlChange(e.target.value)}
@@ -250,7 +254,7 @@ export function TournamentEventPickFields({
           style={inputSelectStyle}
           placeholder="https://stake.com/.../sports/..."
         />
-        <p className="text-[10px] mt-1" style={helpStyle}>
+        <p className="sports-field-help mt-1" style={helpStyle}>
           {variant === 'modal' ? (
             <span className="text-gray-500">Alternative to selection: paste a link (overrides sport/event).</span>
           ) : (

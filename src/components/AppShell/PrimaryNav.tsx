@@ -1,4 +1,4 @@
-type AppView = 'casino' | 'sports' | 'logger'
+import type { AppView } from '../../store/uiStore'
 
 interface PrimaryNavProps {
   currentView: AppView
@@ -10,7 +10,7 @@ interface PrimaryNavProps {
 const TABS: { id: AppView; label: string }[] = [
   { id: 'casino', label: 'Casino' },
   { id: 'sports', label: 'Sports' },
-  { id: 'logger', label: 'Logger' },
+  { id: 'logger', label: 'Import analysis' },
 ]
 
 export function PrimaryNav({ currentView, onChangeView, hideSports = false }: PrimaryNavProps) {

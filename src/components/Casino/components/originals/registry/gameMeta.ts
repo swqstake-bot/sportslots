@@ -34,7 +34,12 @@ export const GAME_META: Record<string, OriginalsGameMeta> = {
   'tome-of-life': { category: 'slots', tagline: 'Tome slot lines', optionsHint: 'Lines count for each GraphQL spin.' },
   blackjack: { category: 'table', tagline: 'Standard blackjack hand', optionsHint: 'One hand per bet — no extra parameters.' },
   roulette: { category: 'table', tagline: 'Table game (API pending)', optionsHint: 'Capture stake.com network when placing a manual bet.' },
-  baccarat: { category: 'table', tagline: 'Table game (API pending)', optionsHint: 'Capture stake.com network when placing a manual bet.' },
+  baccarat: {
+    category: 'table',
+    tagline: 'Player / Banker / Tie (or hedge both)',
+    optionsHint:
+      'baccaratMode both = same amount on player+banker (betSize per side). hedge splits total 50/50. player | banker | tie for one side.',
+  },
   'video-poker': { category: 'table', tagline: 'Video poker (API pending)', optionsHint: 'Capture stake.com network when placing a manual bet.' },
   drill: { category: 'action', tagline: 'Drill game (API pending)', optionsHint: 'API not wired yet.' },
   moles: { category: 'action', tagline: 'Moles game (API pending)', optionsHint: 'API not wired yet.' },

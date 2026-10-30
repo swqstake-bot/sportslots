@@ -99,7 +99,6 @@ interface CasinoLoggerTabProps {
   currencyRates: Record<string, number>;
   statusMessage: string;
   onExport: (bets: LoggerBetEntry[]) => Promise<void> | void;
-  onImport: () => Promise<void> | void;
 }
 
 export default function CasinoLoggerTab({
@@ -107,7 +106,6 @@ export default function CasinoLoggerTab({
   currencyRates,
   statusMessage,
   onExport,
-  onImport,
 }: CasinoLoggerTabProps) {
   const [filterMinMulti, setFilterMinMulti] = useState('');
   const [filterMaxMulti, setFilterMaxMulti] = useState('');
@@ -393,7 +391,6 @@ export default function CasinoLoggerTab({
             </select>
           </label>
           <label className="logger-check"><input type="checkbox" checked={sortDesc} onChange={(e) => setSortDesc(e.target.checked)} />Descending</label>
-          <button type="button" className="logger-action-btn" onClick={() => onImport()}>Import (JSONL)</button>
           <button type="button" className="logger-action-btn" onClick={() => onExport(filteredBets.length > 0 ? filteredBets : bets)} disabled={bets.length === 0}>Export (JSONL)</button>
           <button type="button" className="logger-action-btn" onClick={handleExportCsv} disabled={bets.length === 0}>
             Export (CSV)

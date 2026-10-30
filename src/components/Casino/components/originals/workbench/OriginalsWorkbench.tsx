@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import { useWorkspaceSessionStatus } from '../../../../../hooks/useWorkspaceSessionStatus'
 
 import './originals-workbench.css'
 import DiceRunnerTab from '../DiceRunnerTab'
@@ -121,6 +122,12 @@ export default function OriginalsWorkbench({ gameSlug, onBack, accessToken }: Or
   )
 
   const session = useOriginalsSession(accessToken, wbSettings)
+  useWorkspaceSessionStatus('originals-automatic', {
+    source: 'originals', label: `${game?.name || gameSlug} · ${mode === 'conditions' ? 'Conditions' : 'Automatic'}`,
+    state: session.paused ? 'paused' : session.running ? 'running' : null,
+    currency: wbSettings.currency,
+    destination: { view: 'casino', casinoMode: 'originals' },
+  })
 
   const automaticLastResult = useMemo(() => {
     const row = session.betList[0]

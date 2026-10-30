@@ -1,19 +1,24 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { publishWorkspaceSession, removeWorkspaceSession, useWorkspaceSessionStore } from '../../../../store/workspaceSessionStore'
 import SlotControlJS from '../SlotControl'
 import { SlotSelectMulti } from '../SlotSelectGrouped'
-import { Button } from '../ui/Button'
 import { SectionCard } from '../ui/SectionCard'
 import { SlotWorkbench } from '../slots/workbench/SlotWorkbench'
+import { SlotsOverview } from '../slots/workbench/SlotsOverview'
+import type { SlotWorkspaceView } from '../slots/workbench/SlotWorkbench'
 import {
   SlotWorkbenchStatsPanel,
   type WorkbenchSessionPublish,
 } from '../slots/workbench/SlotWorkbenchStatsPanel'
 import type { CasinoSlotInstance, SlotSet } from '../../types'
 import { useStakeSiteStore } from '../../../../store/stakeSiteStore'
+import { useUiStore } from '../../../../store/uiStore'
 import { isEuGoldCoinCode } from '../../constants/currencies'
+import { PROVIDERS } from '../../constants/providers'
 
 const SlotControl = SlotControlJS as any
 const STATS_FILTER_KEY = 'slotbot_workbench_stats_filter'
+const WORKSPACE_VIEW_KEY = 'slotbot_workbench_view_v1'
 
 interface PlayModeContentProps {
   webSlots: any[]
@@ -47,6 +52,7 @@ interface PlayModeContentProps {
   handleExportSets: () => void
   handleStartAll: () => void
   handleStopAll: () => void
+  onStopInstance?: (instanceId: string) => void
   handleApplyFirstSlotSettings: () => void
   getSlotControlRef: (instanceId: string) => any
   handlePlayLogUpdate: () => void
@@ -86,6 +92,7 @@ export function PlayModeContent(props: PlayModeContentProps) {
     handleExportSets,
     handleStartAll,
     handleStopAll,
+    onStopInstance,
     handleApplyFirstSlotSettings,
     getSlotControlRef,
     handlePlayLogUpdate,
@@ -95,6 +102,15 @@ export function PlayModeContent(props: PlayModeContentProps) {
   const preferredSite = useStakeSiteStore((s) => s.preferredSite)
   const isEuGoldCoins = preferredSite === 'eu'
   const [activeInstanceId, setActiveInstanceId] = useState('')
+  const [preferredView, setPreferredView] = useState<SlotWorkspaceView | null>(() => {
+    try {
+      const saved = localStorage.getItem(WORKSPACE_VIEW_KEY)
+      return saved === 'focus' || saved === 'all' ? saved : null
+    } catch {
+      return null
+    }
+  })
+  const [instanceNumbers, setInstanceNumbers] = useState<{ next: number; byId: Record<string, number> }>({ next: 1, byId: {} })
   const [statsFilterId, setStatsFilterId] = useState(() => {
     try {
       const raw = localStorage.getItem(STATS_FILTER_KEY)
@@ -104,11 +120,59 @@ export function PlayModeContent(props: PlayModeContentProps) {
     }
   })
   const [sessionsById, setSessionsById] = useState<Record<string, WorkbenchSessionPublish>>({})
+  const publishedSessionIds = useRef(new Set<string>())
+  const focusRequest = useUiStore(s => s.slotWorkbenchFocus)
+  const consumedFocusRequest = useRef<{ instanceId: string; revision: number } | null>(null)
 
   const instanceIds = useMemo(
     () => selectedSlotInstances.map((i) => i.id),
     [selectedSlotInstances]
   )
+  // Numbers belong to instance IDs, so removing a neighbor never renumbers a live card.
+  if (instanceIds.length !== Object.keys(instanceNumbers.byId).length || instanceIds.some((id) => !instanceNumbers.byId[id])) {
+    let next = instanceNumbers.next
+    const byId: Record<string, number> = {}
+    for (const id of instanceIds) byId[id] = instanceNumbers.byId[id] || next++
+    setInstanceNumbers({ next, byId })
+  }
+  const workspaceView: SlotWorkspaceView = instanceIds.length > 1 ? (preferredView || 'all') : 'focus'
+
+  const openInstanceControls = useCallback((id: string) => {
+    setActiveInstanceId(id)
+    setStatsFilterId(id)
+    setPreferredView('focus')
+  }, [])
+
+  useEffect(() => {
+    if (!preferredView) return
+    try { localStorage.setItem(WORKSPACE_VIEW_KEY, preferredView) } catch { /* preferences may be unavailable */ }
+  }, [preferredView])
+
+  useEffect(() => {
+    if (!focusRequest || !instanceIds.includes(focusRequest.instanceId)) return
+    if (consumedFocusRequest.current?.instanceId === focusRequest.instanceId && consumedFocusRequest.current.revision === focusRequest.revision) return
+    let cancelled = false
+    queueMicrotask(() => {
+      if (cancelled) return
+      consumedFocusRequest.current = focusRequest
+      setActiveInstanceId(focusRequest.instanceId)
+      setStatsFilterId(focusRequest.instanceId)
+      setPreferredView('focus')
+    })
+    return () => { cancelled = true }
+  }, [focusRequest, instanceIds])
+  useEffect(() => {
+    for (const id of publishedSessionIds.current) {
+      if (!instanceIds.includes(id.slice('slot-'.length))) {
+        removeWorkspaceSession(id)
+        publishedSessionIds.current.delete(id)
+      }
+    }
+  }, [instanceIds])
+  useEffect(() => {
+    const published = publishedSessionIds.current
+    return () => { for (const id of published) removeWorkspaceSession(id) }
+  }, [])
 
   // Derive valid activeInstanceId during render to avoid setState in effect
   useEffect(() => {
@@ -148,12 +212,35 @@ export function PlayModeContent(props: PlayModeContentProps) {
   const handleWorkbenchSessionPublish = useCallback((payload: WorkbenchSessionPublish) => {
     const id = String(payload?.instanceId || '')
     if (!id) return
+    if (typeof payload.isRunning === 'boolean') {
+      const workspaceId = `slot-${id}`
+      const previous = useWorkspaceSessionStore.getState().sessions[workspaceId]
+      const state = payload.isStarting ? 'waiting' : payload.isRunning || payload.isSpinning ? 'running' : payload.error ? 'error' : 'stopped'
+      const number = instanceNumbers.byId[id]
+      const name = payload.name || payload.slug || 'Slot session'
+      const label = number ? `${name} · #${String(number).padStart(2, '0')}` : name
+      const currency = payload.sourceCurrency || undefined
+      const detail = payload.isStarting ? 'Opening the slot session.' : payload.error || (payload.isSpinning && !payload.isRunning ? 'Finishing the current spin.' : undefined)
+      if ((payload.isRunning || payload.isSpinning || payload.isStarting || payload.error || previous) && (previous?.state !== state || previous.label !== label || previous.currency !== currency || previous.detail !== detail)) {
+        publishedSessionIds.current.add(workspaceId)
+        publishWorkspaceSession({ id: workspaceId, source: 'slots', label, state, currency, detail,
+          updatedAt: Date.now(), destination: { view: 'casino', casinoMode: 'play', slotInstanceId: id },
+        })
+      }
+    }
     setSessionsById((prev) => {
       const prevRow = prev[id]
       if (
         prevRow &&
         prevRow.sessionStartAt === payload.sessionStartAt &&
         prevRow.isRunning === payload.isRunning &&
+        prevRow.hasSession === payload.hasSession &&
+        prevRow.isStarting === payload.isStarting &&
+        prevRow.isSpinning === payload.isSpinning &&
+        prevRow.sourceCurrency === payload.sourceCurrency &&
+        prevRow.targetCurrency === payload.targetCurrency &&
+        prevRow.betLabel === payload.betLabel &&
+        prevRow.error === payload.error &&
         prevRow.sessionBetsDeduped === payload.sessionBetsDeduped &&
         prevRow.stats === payload.stats
       ) {
@@ -161,20 +248,24 @@ export function PlayModeContent(props: PlayModeContentProps) {
       }
       return { ...prev, [id]: payload }
     })
-  }, [])
+  }, [instanceNumbers.byId])
 
   const workbenchInstances = useMemo(
     () =>
-      selectedSlotInstances.map((inst) => {
+      selectedSlotInstances.map((inst, index) => {
         const slot = webSlots.find((s: any) => s.slug === inst.slug)
+        const provider = (PROVIDERS as Record<string, { name?: string }>)[String(slot?.providerId || '')]
         return {
           id: inst.id,
           slug: inst.slug,
           label: slot?.name || inst.slug,
           running: !!sessionsById[inst.id]?.isRunning,
+          number: instanceNumbers.byId[inst.id] || index + 1,
+          thumbnailUrl: slot?.thumbnailUrl || undefined,
+          providerName: provider?.name || slot?.providerName || undefined,
         }
       }),
-    [selectedSlotInstances, webSlots, sessionsById]
+    [selectedSlotInstances, webSlots, sessionsById, instanceNumbers.byId]
   )
 
   useEffect(() => {
@@ -184,6 +275,7 @@ export function PlayModeContent(props: PlayModeContentProps) {
     queueMicrotask(() => {
       setActiveInstanceId(id)
       setStatsFilterId(id)
+      setPreferredView('focus')
     })
     const t = window.setTimeout(() => {
       document.getElementById(`slot-wb-instance-${id}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
@@ -195,136 +287,141 @@ export function PlayModeContent(props: PlayModeContentProps) {
 
   const fleetBar = (
     <>
-      <select
-        value={loadedSetId}
-        onChange={(e) => handleLoadSet(e.target.value)}
-        className="bg-[var(--bg-deep)] border border-[var(--border)] rounded-[var(--radius-md)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--accent)] outline-none transition-all min-w-[120px]"
-        aria-label="Load slot set"
-      >
-        <option value="">Set…</option>
-        {slotSets.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name} ({(s.slugs || []).length})
-          </option>
-        ))}
-      </select>
-      <details className="relative">
-        <summary className="list-none cursor-pointer h-8 px-2.5 text-xs font-medium rounded-md border border-[var(--border-subtle)] bg-[var(--bg-deep)] text-[var(--text-muted)] hover:text-[var(--text)] inline-flex items-center">
-          Sets
-        </summary>
-        <div className="absolute z-20 mt-1 flex gap-1.5 rounded-[var(--radius-md)] p-1 bg-[var(--bg-card)] border border-[var(--border-subtle)] shadow-none">
-          <Button variant="secondary" size="sm" className="text-xs px-3 py-1.5 rounded-md" onClick={() => setSaveSlotSetOpen(true)}>
-            Save
-          </Button>
-          <Button variant="secondary" size="sm" className="text-xs px-3 py-1.5 rounded-md" onClick={handleExportSets}>
-            Export
-          </Button>
-          <label className="cursor-pointer inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium rounded-md bg-[var(--bg-elevated)] text-[var(--text)]">
-            Import
-            <input type="file" accept=".json" onChange={handleImportSets} className="hidden" />
-          </label>
-          {loadedSetId && (
-            <Button variant="danger" size="sm" className="text-xs px-3 py-1.5 rounded-md" onClick={(e) => handleDeleteSet(loadedSetId, e)}>
-              Delete
-            </Button>
-          )}
+      <div className="slot-wb-toolbar-row">
+        <div className="slot-wb-set-controls">
+          <select
+            value={loadedSetId}
+            onChange={(e) => handleLoadSet(e.target.value)}
+            aria-label="Load slot set"
+          >
+            <option value="">Load slot set…</option>
+            {slotSets.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({(s.slugs || []).length})
+              </option>
+            ))}
+          </select>
+          <details className="slot-wb-set-manager">
+            <summary className="casino-action">Manage sets <span aria-hidden>▾</span></summary>
+            <div className="slot-wb-set-menu">
+              <button type="button" className="casino-action" onClick={() => setSaveSlotSetOpen(true)}>
+                Save current set
+              </button>
+              <button type="button" className="casino-action" onClick={handleExportSets}>
+                Export sets
+              </button>
+              <label className="casino-action slot-wb-import">
+                Import sets
+                <input type="file" accept=".json" aria-label="Import slot sets from JSON" onChange={handleImportSets} className="slot-wb-file-input" />
+              </label>
+              {loadedSetId && (
+                <button type="button" className="casino-action casino-action--danger" onClick={(e) => handleDeleteSet(loadedSetId, e)}>
+                  Delete loaded set
+                </button>
+              )}
+            </div>
+          </details>
         </div>
-      </details>
-      <div className="flex gap-1.5 items-center rounded-md p-0.5 bg-[var(--bg-deep)] border border-[var(--border-subtle)]">
-        <Button
-          onClick={handleStartAll}
-          disabled={!hasSelection}
-          size="sm"
-          className="h-8 text-xs font-semibold px-3 bg-[var(--accent)] hover:opacity-95 text-[var(--bg-deep)]"
-        >
-          Start all
-        </Button>
-        <Button
-          onClick={handleStopAll}
-          disabled={!hasSelection}
-          variant="danger"
-          size="sm"
-          className="h-8 text-xs font-semibold px-3"
-        >
-          Stop all
-        </Button>
+        <div className="slot-wb-group-controls" role="group" aria-label="All selected slots">
+          <span className="slot-wb-control-label">All slots</span>
+          <button
+            type="button"
+            onClick={handleStartAll}
+            disabled={!hasSelection}
+            className="casino-action casino-action--primary"
+          >
+            Start all ({selectedSlotInstances.length})
+          </button>
+          <button
+            type="button"
+            onClick={handleStopAll}
+            disabled={!hasSelection}
+            className="casino-action casino-action--danger"
+          >
+            Stop all
+          </button>
+        </div>
         <button
           type="button"
           onClick={() => setGlobalControlsOpen((o) => !o)}
-          className="h-8 w-8 flex items-center justify-center rounded text-xs text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)] transition-colors"
+          className={`casino-action slot-wb-shared-toggle${globalControlsOpen ? ' is-active' : ''}`}
           aria-expanded={globalControlsOpen}
-          aria-label="Shared currency and apply-first settings"
+          aria-controls="slot-workbench-shared-settings"
         >
-          {globalControlsOpen ? '▼' : '▸'}
+          Shared settings <span aria-hidden>{globalControlsOpen ? '▴' : '▾'}</span>
         </button>
       </div>
       {globalControlsOpen && (
-        <div className="flex flex-wrap gap-2 items-center p-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/40 w-full">
-          <Button onClick={handleApplyFirstSlotSettings} disabled={selectedSlotInstances.length < 2} variant="secondary" size="sm" className="h-8 text-xs py-0 px-2">
-            Apply first
-          </Button>
-          <label className="flex items-center gap-1.5 text-xs cursor-pointer text-[var(--text)]">
+        <div id="slot-workbench-shared-settings" className="slot-wb-shared-settings">
+          <div className="slot-wb-shared-heading">
+            <strong>Settings for all selected slots</strong>
+            <p>Use one currency setup, or copy the first slot’s settings to the others.</p>
+          </div>
+          <button type="button" onClick={handleApplyFirstSlotSettings} disabled={selectedSlotInstances.length < 2} className="casino-action">
+            Copy first slot settings
+          </button>
+          <label className="slot-wb-check">
             <input
               type="checkbox"
               checked={useSharedCurrency}
               onChange={(e) => setUseSharedCurrency(e.target.checked)}
               className="w-3.5 h-3.5 rounded accent-[var(--accent)]"
             />
-            <span>Shared</span>
+            <span>Use shared currency</span>
           </label>
           {useSharedCurrency && (
-            <span className="flex flex-wrap gap-1 items-center text-xs">
+            <div className="slot-wb-currency-fields">
               {isEuGoldCoins ? (
-                <select
-                  value={isEuGoldCoinCode(sharedSourceCurrency) ? sharedSourceCurrency : 'sweeps'}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setSharedSourceCurrency(v)
-                    setSharedTargetCurrency(v)
-                  }}
-                  className="h-8 text-xs bg-[var(--bg-deep)] border border-[var(--border)] rounded px-2 py-0 outline-none"
-                  title="Currency (GC / SC)"
-                >
-                  {displayedCurrencies
-                    .filter((c) => isEuGoldCoinCode(c.value))
-                    .map((c) => (
-                      <option key={c.value} value={c.value}>
-                        {c.label}
-                      </option>
-                    ))}
-                </select>
+                <label className="slot-wb-currency-field">
+                  <span>Currency</span>
+                  <select
+                    aria-label="Shared currency"
+                    value={isEuGoldCoinCode(sharedSourceCurrency) ? sharedSourceCurrency : 'sweeps'}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setSharedSourceCurrency(v)
+                      setSharedTargetCurrency(v)
+                    }}
+                    title="Currency (GC / SC)"
+                  >
+                    {displayedCurrencies
+                      .filter((c) => isEuGoldCoinCode(c.value))
+                      .map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {c.label}
+                        </option>
+                      ))}
+                  </select>
+                </label>
               ) : (
                 <>
-                  <select
-                    value={sharedSourceCurrency}
-                    onChange={(e) => setSharedSourceCurrency(e.target.value)}
-                    className="h-8 text-xs bg-[var(--bg-deep)] border border-[var(--border)] rounded px-2 py-0 outline-none"
-                  >
-                    {displayedCurrencies.map((c) => (
-                      <option key={c.value} value={c.value}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-[var(--text-muted)]">→</span>
-                  <select
-                    value={sharedTargetCurrency}
-                    onChange={(e) => setSharedTargetCurrency(e.target.value)}
-                    className="h-8 text-xs bg-[var(--bg-deep)] border border-[var(--border)] rounded px-2 py-0 outline-none"
-                  >
-                    {displayedCurrencies.map((c) => (
-                      <option key={c.value} value={c.value}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                  <label className="flex items-center gap-1 cursor-pointer text-[var(--text-muted)]">
+                  <label className="slot-wb-currency-field">
+                    <span>Wallet currency</span>
+                    <select aria-label="Wallet currency" value={sharedSourceCurrency} onChange={(e) => setSharedSourceCurrency(e.target.value)}>
+                      {displayedCurrencies.map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="slot-wb-currency-field">
+                    <span>Game currency</span>
+                    <select aria-label="Game currency" value={sharedTargetCurrency} onChange={(e) => setSharedTargetCurrency(e.target.value)}>
+                      {displayedCurrencies.map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="slot-wb-check">
                     <input type="checkbox" checked={sharedCryptoOnly} onChange={(e) => setSharedCryptoOnly(e.target.checked)} className="w-3.5 h-3.5 rounded accent-[var(--accent)]" />
                     <span>Crypto only</span>
                   </label>
                 </>
               )}
-            </span>
+            </div>
           )}
         </div>
       )}
@@ -352,7 +449,7 @@ export function PlayModeContent(props: PlayModeContentProps) {
   )
 
   return (
-    <div className="space-y-3">
+    <div className="slot-play-page">
       {challengeHandoff ? (
         <div className="casino-handoff-banner" id="slot-wb-instance-handoff">
           <div>
@@ -371,9 +468,9 @@ export function PlayModeContent(props: PlayModeContentProps) {
         </div>
       ) : null}
       {hasSelection ? (
-        <details className="rounded-[var(--radius-md)] border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/30 px-3 py-2">
-          <summary className="cursor-pointer list-none text-xs font-semibold text-[var(--text-muted)] select-none">
-            Change slots ({selectedSlotInstances.length})
+        <details className="slot-selection-drawer">
+          <summary>
+            Add or change slots <span>{selectedSlotInstances.length} selected</span><span aria-hidden>▾</span>
           </summary>
           <div className="mt-3 pt-2 border-t border-[var(--border-subtle)]">
             {selectionBody}
@@ -387,18 +484,26 @@ export function PlayModeContent(props: PlayModeContentProps) {
         <SlotWorkbench
           instances={workbenchInstances}
           activeInstanceId={activeInstanceId || workbenchInstances[0]?.id || ''}
-          onActiveInstanceChange={(id) => {
-            setActiveInstanceId(id)
-            setStatsFilterId(id)
-          }}
+          onActiveInstanceChange={openInstanceControls}
+          view={workspaceView}
+          onViewChange={setPreferredView}
           onRemoveInstance={handleRemoveInstance}
           fleet={fleetBar}
           stats={
             <SlotWorkbenchStatsPanel
-              instances={workbenchInstances.map((i) => ({ id: i.id, label: i.label }))}
+              instances={workbenchInstances.map((i) => ({ id: i.id, label: `${i.label} · #${String(i.number).padStart(2, '0')}` }))}
               sessionsById={sessionsById}
               filterId={statsFilterId}
               onFilterChange={setStatsFilterId}
+            />
+          }
+          overview={
+            <SlotsOverview
+              instances={workbenchInstances}
+              sessionsById={sessionsById}
+              onOpenControls={openInstanceControls}
+              onRemoveInstance={handleRemoveInstance}
+              onStopInstance={onStopInstance}
             />
           }
         >

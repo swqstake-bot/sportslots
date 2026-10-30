@@ -368,6 +368,7 @@ export default function OriginalsSettingsModal({
   useEffect(() => {
     if (!open) return
 
+    const previousFocus = document.activeElement
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
 
@@ -388,6 +389,9 @@ export default function OriginalsSettingsModal({
       document.body.style.overflow = prevOverflow
       window.removeEventListener('keydown', onKey)
       window.clearTimeout(t)
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+        previousFocus.focus({ preventScroll: true })
+      }
     }
   }, [open, onClose])
 

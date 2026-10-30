@@ -10,6 +10,7 @@ export const PROVIDERS = {
   lk7: { id: 'lk7', name: 'LK7', impl: 'web' },
   'lk7-com': { id: 'lk7-com', name: 'LK7', impl: 'web' },
   avatarux: { id: 'avatarux', name: 'Avatarux', impl: 'web' },
+  toucanroyale: { id: 'toucanroyale', name: 'Toucan Royale', impl: 'web' },
   mascot: { id: 'mascot', name: 'Mascot', impl: 'web' },
   hub88: { id: 'hub88', name: 'Mascot (Hub88)', impl: 'web' },
   bgaming: { id: 'bgaming', name: 'BGaming', impl: 'web' },

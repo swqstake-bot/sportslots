@@ -9,6 +9,7 @@ const TURBO_BLOCKED = new Set([
   'chicken',
   'pump',
   'mines',
+  'baccarat',
 ])
 
 export function isTurboCompatibleGame(slug: string): boolean {

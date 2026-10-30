@@ -234,9 +234,11 @@ export function ActiveBetsPanel({
       .catch(() => showToast('Copy failed', 'error'));
   }, [activeBets, finishedBets, selectedBetIds, showToast]);
 
-  useEffect(() => {
+  const changeActiveTab = (tab: typeof activeTab) => {
+    if (tab === activeTab) return;
+    setActiveTab(tab);
     setSelectedBetIds(new Set());
-  }, [activeTab]);
+  };
 
   useEffect(() => {
     refreshCashoutOffersRef.current = refreshCashoutOffers;
@@ -633,7 +635,7 @@ export function ActiveBetsPanel({
       <div className="active-bets-panel-subtabs">
         <button
           type="button"
-          onClick={() => setActiveTab('active')}
+          onClick={() => changeActiveTab('active')}
           className={`active-bets-panel-subtab ${activeTab === 'active' ? 'is-active' : ''}`.trim()}
         >
           Active
@@ -641,7 +643,7 @@ export function ActiveBetsPanel({
 
         <button
           type="button"
-          onClick={() => setActiveTab('top15')}
+          onClick={() => changeActiveTab('top15')}
           className={`active-bets-panel-subtab ${activeTab === 'top15' ? 'is-active' : ''}`.trim()}
         >
           Top 15
@@ -659,7 +661,7 @@ export function ActiveBetsPanel({
 
         <button
           type="button"
-          onClick={() => setActiveTab('finished')}
+          onClick={() => changeActiveTab('finished')}
           className={`active-bets-panel-subtab ${activeTab === 'finished' ? 'is-active' : ''}`.trim()}
         >
           Finished

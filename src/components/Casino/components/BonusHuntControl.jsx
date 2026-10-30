@@ -3,6 +3,7 @@
  * Nutzt gleiche Währung/Einsatz für alle.
  */
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { useWorkspaceSessionStatus } from '../../../hooks/useWorkspaceSessionStatus'
 import styles from './BonusHuntControl.module.css'
 import { getProvider } from '../api/providers'
 import { getImpliedScatterLevel } from '../api/providers/hacksaw'
@@ -106,6 +107,10 @@ export default function BonusHuntControl({
   const [maxParallelSlots, setMaxParallelSlots] = useState(3)
   const [isRunning, setIsRunning] = useState(false)
   const [error, setError] = useState('')
+  useWorkspaceSessionStatus('bonus-hunt', {
+    source: 'bonus-hunt', label: 'Bonus Hunt', state: isRunning ? 'running' : error ? 'error' : null,
+    currency: sourceCurrency, destination: { view: 'casino', casinoMode: 'bonushunt' },
+  })
   const [huntState, setHuntState] = useState({})
   const [betHistory, setBetHistory] = useState([])
   const clearHuntBetHistory = useCallback(() => setBetHistory([]), [])

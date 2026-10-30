@@ -4,8 +4,11 @@ import { ACCENT_BRIGHTNESS } from '../utils/accentTheme';
 
 export type ToastType = 'success' | 'error' | 'info';
 
-function normalizeCurrentView(v: unknown): 'sports' | 'casino' | 'logger' {
-  return v === 'casino' || v === 'sports' || v === 'logger' ? v : 'casino';
+export type AppView = 'overview' | 'sports' | 'casino' | 'logger' | 'settings';
+export type WorkspaceDensity = 'comfortable' | 'compact';
+
+function normalizeCurrentView(v: unknown): AppView {
+  return v === 'overview' || v === 'casino' || v === 'sports' || v === 'logger' || v === 'settings' ? v : 'casino';
 }
 
 const DEV_VISIBILITY_DEFAULTS = {
@@ -45,8 +48,14 @@ interface ToastState {
 export type CasinoMode = 'play' | 'originals' | 'challengeHub' | 'promotions' | 'bonushunt' | 'logs'
 
 interface UiState {
-  currentView: 'sports' | 'casino' | 'logger';
+  currentView: AppView;
   casinoMode: CasinoMode;
+  challengeHubTab: 'casino' | 'autorun' | 'archive';
+  promotionsHubTab: 'casino' | 'forum' | 'telegram';
+  slotWorkbenchFocus: { instanceId: string; revision: number } | null;
+  sidebarCollapsed: boolean;
+  workspaceDensity: WorkspaceDensity;
+  startPage: 'last' | 'overview';
   /** Ausgewählter Sport-Slug (z. B. soccer, tennis). */
   selectedSportSlug: string | null;
   /** Live/Upcoming-Filter bei Sportansicht (z.B. Soccer) */
@@ -68,8 +77,13 @@ interface UiState {
   toast: ToastState;
 
   setFixtureSearchQuery: (q: string) => void;
-  setCurrentView: (view: 'sports' | 'casino' | 'logger') => void;
+  setCurrentView: (view: AppView) => void;
   setCasinoMode: (mode: CasinoMode) => void;
+  setChallengeHubTab: (tab: 'casino' | 'autorun' | 'archive') => void;
+  setPromotionsHubTab: (tab: 'casino' | 'forum' | 'telegram') => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
+  setWorkspaceDensity: (density: WorkspaceDensity) => void;
+  setStartPage: (page: 'last' | 'overview') => void;
   setSelectedSportSlug: (sportSlug: string | null) => void;
   setSportFilterType: (type: 'live' | 'upcoming') => void;
   setRightSidebarTab: (tab: 'autobet' | 'activebets') => void;
@@ -95,6 +109,12 @@ export const useUiStore = create<UiState>()(
     (set) => ({
       currentView: 'casino',
       casinoMode: 'play',
+      challengeHubTab: 'casino',
+      promotionsHubTab: 'casino',
+      slotWorkbenchFocus: null,
+      sidebarCollapsed: false,
+      workspaceDensity: 'comfortable',
+      startPage: 'last',
       selectedSportSlug: 'soccer',
       sportFilterType: 'upcoming',
       fixtureSearchQuery: '',
@@ -110,7 +130,12 @@ export const useUiStore = create<UiState>()(
 
       setFixtureSearchQuery: (q) => set({ fixtureSearchQuery: q }),
       setCasinoMode: (mode) => set({ casinoMode: mode }),
+      setChallengeHubTab: (challengeHubTab) => set({ challengeHubTab }),
+      setPromotionsHubTab: (promotionsHubTab) => set({ promotionsHubTab }),
       setCurrentView: (view) => set({ currentView: normalizeCurrentView(view) }),
+      setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+      setWorkspaceDensity: (workspaceDensity) => set({ workspaceDensity }),
+      setStartPage: (startPage) => set({ startPage }),
       setSelectedSportSlug: (sportSlug) => set({ selectedSportSlug: sportSlug }),
       setSportFilterType: (type) => set({ sportFilterType: type }),
       setRightSidebarTab: (tab) => set({ rightSidebarTab: tab }),
@@ -181,9 +206,13 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: 'ui-storage',
+      version: 1,
       partialize: (state) => ({
         currentView: state.currentView,
         casinoMode: state.casinoMode,
+        sidebarCollapsed: state.sidebarCollapsed,
+        workspaceDensity: state.workspaceDensity,
+        startPage: state.startPage,
         selectedSportSlug: state.selectedSportSlug,
         sportFilterType: state.sportFilterType,
         rightSidebarTab: state.rightSidebarTab,
@@ -224,6 +253,20 @@ export const useUiStore = create<UiState>()(
           ...next,
           selectedSportSlug: legacySport,
         }
+      },
+      merge: (persistedState, currentState) => {
+        const saved = (persistedState && typeof persistedState === 'object' ? persistedState : {}) as Partial<UiState>;
+        const validModes: CasinoMode[] = ['play', 'originals', 'challengeHub', 'promotions', 'bonushunt', 'logs'];
+        return {
+          ...currentState,
+          ...saved,
+          currentView: saved.startPage === 'overview' ? 'overview' : normalizeCurrentView(saved.currentView),
+          casinoMode: validModes.includes(saved.casinoMode as CasinoMode) ? saved.casinoMode! : 'play',
+          sidebarCollapsed: saved.sidebarCollapsed === true,
+          workspaceDensity: saved.workspaceDensity === 'compact' ? 'compact' : 'comfortable',
+          startPage: saved.startPage === 'overview' ? 'overview' : 'last',
+          devVisibility: normalizeDevVisibility(saved.devVisibility),
+        };
       },
     }
   )
