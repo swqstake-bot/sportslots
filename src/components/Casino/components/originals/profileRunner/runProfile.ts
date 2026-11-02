@@ -57,6 +57,7 @@ const CODE_MODE_RATE_LIMIT_DECAY_AFTER_CLEAN_BETS = 80
 /** First 429 waits 15s; each consecutive 429 adds another 15s (15, 30, 45…). */
 const CODE_MODE_RATE_LIMIT_COOLDOWN_STEP_MS = 15_000
 const CODE_MODE_RATE_LIMIT_COOLDOWN_CAP_MS = 120_000
+import { createBetProgression, readProgressionParams } from '../engine/betProgression'
 import {
   resolveOriginalsRoundUsd,
   isB2bWinMode,
@@ -434,6 +435,10 @@ export async function runProfile(
   let workbenchOptions: OriginalsWorkbenchOptions = {
     ...(options._workbenchOptions ?? {}) as OriginalsWorkbenchOptions,
   }
+  /** Named strategy preset (Martingale, Paroli, ...). Inactive for `custom` -> manual On win / On loss. */
+  const strategyProgression = createBetProgression(
+    readProgressionParams(workbenchEnabled ? { ...options, ...workbenchOptions } : options)
+  )
   const wbSessionSettings = (options._workbenchSettings ?? {}) as {
     clientSeed?: string
     maxFiatBetSize?: number
@@ -799,6 +804,10 @@ export async function runProfile(
     lastPayoutCurrency: number,
     lastPayoutUsd?: number
   ) => {
+    if (strategyProgression.active && opts !== recoveryOptions) {
+      betSizeUsd = effectiveBaseUsd * strategyProgression.onWin()
+      return
+    }
     const onWin = resolveOnWin(opts, workbenchEnabled ? workbenchOptions : undefined)
     const initialForMode = opts === recoveryOptions ? initialBetSizeRec : initialBetSizeWager
     if (onWin === 'none') return
@@ -821,6 +830,10 @@ export async function runProfile(
     }
   }
   const applyLossFor = (opts: Record<string, unknown>) => {
+    if (strategyProgression.active && opts !== recoveryOptions) {
+      betSizeUsd = effectiveBaseUsd * strategyProgression.onLoss()
+      return
+    }
     const onLoss = (opts.onLoss as string) || 'reset'
     const initialForMode = opts === recoveryOptions ? initialBetSizeRec : initialBetSizeWager
     const seedRolls = optFrom(opts, 'seedChangeAfterRolls', 0)
@@ -1295,6 +1308,7 @@ export async function runProfile(
         currentOpts = recoveryOptions!
         currentGame = (recoveryOptions!.game as string) || 'limbo'
         betSizeUsd = initialBetSizeRec
+        strategyProgression.reset()
         lastWin = false
         currentStreak = 0
         const why =
@@ -1318,6 +1332,7 @@ export async function runProfile(
         currentOpts = options
         currentGame = (options.game as string) || 'dice'
         betSizeUsd = initialBetSizeWager
+        strategyProgression.reset()
         currentBlockBase = initialBetSizeWager
         effectiveBaseUsd = initialBetSizeWager
         lastWin = false

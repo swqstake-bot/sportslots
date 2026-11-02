@@ -527,6 +527,16 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
               : ''
           pushLog(`${ctx.slotName}  net ${parsed.netResult}${mult}`)
 
+          if (
+            cfg.stops.stopOnMultiplier != null &&
+            parsed.multiplier != null &&
+            Number.isFinite(parsed.multiplier) &&
+            parsed.multiplier >= cfg.stops.stopOnMultiplier
+          ) {
+            stopAll(`Big win ${parsed.multiplier.toFixed(2)}x (>= ${cfg.stops.stopOnMultiplier}x)`)
+            return
+          }
+
           if (cfg.stops.maxTotalSpins != null && totalSpinsRef.current >= cfg.stops.maxTotalSpins) {
             stopAll('Max total spins reached')
             return
@@ -957,6 +967,24 @@ export const AutorunTab = memo(function AutorunTab({ accessToken, webSlots, onHu
               onChange={(e) => {
                 const v = e.target.value
                 setConfig((c) => ({ ...c, stops: { ...c.stops, maxLosingStreak: v === '' ? null : Math.max(1, Math.floor(Number(v))) } }))
+              }}
+              disabled={isRunning}
+            />
+          </label>
+          <label className="text-[11px] text-[var(--text-muted)] block">
+            Stop on a single-spin win of at least X× (empty = off)
+            <input
+              type="number"
+              min={1}
+              step="any"
+              className="mt-0.5 w-full rounded-md border border-[var(--border)] bg-[var(--bg-deep)] px-2 py-1 text-sm"
+              value={config.stops.stopOnMultiplier ?? ''}
+              onChange={(e) => {
+                const v = e.target.value
+                setConfig((c) => ({
+                  ...c,
+                  stops: { ...c.stops, stopOnMultiplier: v === '' || !(Number(v) > 0) ? null : Number(v) },
+                }))
               }}
               disabled={isRunning}
             />

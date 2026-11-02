@@ -7,6 +7,7 @@
 
 
 import type { ProfileOptions as LegacyProfileOptions } from '../scriptBuilder/profileSchema'
+import type { StrategyPresetId } from '../engine/betProgression'
 
 
 
@@ -85,6 +86,18 @@ export interface OriginalsWorkbenchOptions extends Omit<Partial<LegacyProfileOpt
   onWin?: WorkbenchOnWinLoss
 
   onLoss?: WorkbenchOnWinLoss
+
+  /** Named bet progression (overrides On win / On loss while not `custom`). */
+  strategyPreset?: StrategyPresetId
+
+  /** Paroli: consecutive wins before reset to base. */
+  strategyParoliWins?: number
+
+  /** D'Alembert: one unit as % of the base bet. */
+  strategyUnitPct?: number
+
+  /** Step cap for Martingale / Anti-Martingale / D'Alembert / Fibonacci (0 = off). */
+  strategyMaxSteps?: number
 
   stopOnDrawdown?: number
 

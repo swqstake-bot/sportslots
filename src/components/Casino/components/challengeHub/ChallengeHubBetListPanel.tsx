@@ -4,6 +4,7 @@ import { subscribeChallengeHubBetFeed } from '../../utils/challengeHubLiveFeed'
 import { SESSION_ONLY_HUB_AND_LOGGER } from '../../../../config/sessionData'
 import { betShareIdRegistry } from '../../utils/betShareIdRegistry'
 import { ChallengeHubBetListFeed, CHALLENGE_HUB_BET_LIST_MAX_ROWS } from './ChallengeHubBetListFeed'
+import { LiveHouseBetsPanel } from './LiveHouseBetsPanel'
 import { useChallengeHubRecentBets } from './ChallengeHubBetListContext'
 import { formatAmount } from '../../utils/formatAmount'
 import {
@@ -225,6 +226,9 @@ export const ChallengeHubBetListPanel = memo(function ChallengeHubBetListPanel({
           </div>
         )}
       </div>
+
+      <div className="challenge-hub-activity-divider" />
+      <LiveHouseBetsPanel accessToken={accessToken} />
     </SectionCard>
   )
 })

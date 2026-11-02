@@ -13,6 +13,8 @@ export interface AutorunGlobalStops {
   maxTotalSpins: number | null
   maxRuntimeMinutes: number | null
   maxLosingStreak: number | null
+  /** Stop when a single spin pays at least this multiplier (big win). null = off. */
+  stopOnMultiplier: number | null
 }
 
 export interface AutorunConfig {
@@ -65,6 +67,7 @@ export function createDefaultAutorunConfig(): AutorunConfig {
       maxTotalSpins: null,
       maxRuntimeMinutes: null,
       maxLosingStreak: null,
+      stopOnMultiplier: null,
     },
   }
 }
@@ -119,6 +122,10 @@ export function normalizeAutorunConfig(raw: unknown): AutorunConfig {
       maxTotalSpins: parseNum(stopsIn.maxTotalSpins, base.stops.maxTotalSpins),
       maxRuntimeMinutes: parseNum(stopsIn.maxRuntimeMinutes, base.stops.maxRuntimeMinutes),
       maxLosingStreak: parseNum(stopsIn.maxLosingStreak, base.stops.maxLosingStreak),
+      stopOnMultiplier: (() => {
+        const v = parseNum(stopsIn.stopOnMultiplier, base.stops.stopOnMultiplier)
+        return v != null && v > 0 ? v : null
+      })(),
     },
   }
 }
