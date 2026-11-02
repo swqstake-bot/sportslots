@@ -50,6 +50,8 @@ export interface StakeSiteStatusSummary {
 export interface StakeSiteStatuses {
   preferredSite: StakePreferredSite;
   activeOrigin: string;
+  mirror: string;
+  mirrorOptions: StakeMirrorOptions;
   com: StakeSiteStatusSummary;
   eu: StakeSiteStatusSummary;
 }
@@ -61,7 +63,25 @@ const STATUS_CACHE_MS = 1000;
 let lastLoggedStatusKey = '';
 const LOG_VALID_SESSION_STATUS = false;
 
-let preferredSiteCache: StakePreferredSite | null = null;
+/** Mirror-Wert „auto“ = bisheriges Verhalten (stake.bet bevorzugt, sonst stake.com je nach Session-Cookie). */
+export const STAKE_MIRROR_AUTO = 'auto';
+/** Fest eingebaute Mirrors der Classic-Plattform; eigene Domains kommen als „custom“ dazu. */
+export const STAKE_BUILTIN_MIRRORS = ['stake.com', 'stake.bet', 'stake3114.com'] as const;
+const MAX_CUSTOM_MIRRORS = 20;
+
+export interface StakeMirrorOptions {
+  selected: string;
+  builtin: string[];
+  custom: string[];
+}
+
+interface StakePrefs {
+  site: StakePreferredSite;
+  mirror: string;
+  customMirrors: string[];
+}
+
+let prefsCache: StakePrefs | null = null;
 
 function sitePrefsPath(): string {
   return path.join(app.getPath('userData'), 'stake-site.json');
@@ -71,28 +91,141 @@ function normalizePreferredSite(raw: unknown): StakePreferredSite {
   return String(raw || '').trim().toLowerCase() === 'eu' ? 'eu' : 'com';
 }
 
-export function getPreferredStakeSite(): StakePreferredSite {
-  if (preferredSiteCache) return preferredSiteCache;
+/** „https://Stake3114.com/x“ → „stake3114.com“; null = ungültig (stake.eu ist eine eigene Plattform, kein Mirror). */
+export function normalizeMirrorHost(raw: unknown): string | null {
+  let value = String(raw ?? '').trim().toLowerCase();
+  if (!value) return null;
+  value = value.replace(/^[a-z][a-z0-9+.-]*:\/\//, '');
+  value = (value.split(/[/?#]/)[0] ?? '').replace(/:\d+$/, '').replace(/\.$/, '');
+  if (!value || value.length > 253) return null;
+  if (!/^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(value)) return null;
+  if (value === 'stake.eu' || value.endsWith('.stake.eu')) return null;
+  return value;
+}
+
+function readPrefs(): StakePrefs {
+  if (prefsCache) return prefsCache;
+  let parsed: { site?: unknown; mirror?: unknown; customMirrors?: unknown } = {};
   try {
-    const raw = fs.readFileSync(sitePrefsPath(), 'utf8');
-    const parsed = JSON.parse(raw) as { site?: string };
-    preferredSiteCache = normalizePreferredSite(parsed?.site);
+    parsed = JSON.parse(fs.readFileSync(sitePrefsPath(), 'utf8')) ?? {};
   } catch {
-    preferredSiteCache = 'com';
+    /* defaults */
   }
-  return preferredSiteCache;
+  const builtin = new Set<string>(STAKE_BUILTIN_MIRRORS);
+  const custom: string[] = [];
+  if (Array.isArray(parsed.customMirrors)) {
+    for (const entry of parsed.customMirrors) {
+      const host = normalizeMirrorHost(entry);
+      if (host && !builtin.has(host) && !custom.includes(host) && custom.length < MAX_CUSTOM_MIRRORS) {
+        custom.push(host);
+      }
+    }
+  }
+  const rawMirror = String(parsed.mirror ?? '').trim().toLowerCase();
+  const mirrorHost = rawMirror === STAKE_MIRROR_AUTO ? null : normalizeMirrorHost(rawMirror);
+  const mirror =
+    mirrorHost && (builtin.has(mirrorHost) || custom.includes(mirrorHost)) ? mirrorHost : STAKE_MIRROR_AUTO;
+  prefsCache = { site: normalizePreferredSite(parsed.site), mirror, customMirrors: custom };
+  return prefsCache;
+}
+
+function writePrefs(next: StakePrefs): void {
+  prefsCache = next;
+  try {
+    fs.writeFileSync(
+      sitePrefsPath(),
+      JSON.stringify({ site: next.site, mirror: next.mirror, customMirrors: next.customMirrors }, null, 2),
+      'utf8'
+    );
+  } catch (err) {
+    console.warn('[StakeSession] Failed to persist site preferences', err);
+  }
+  invalidateStakeSessionStatusCache();
+}
+
+export function getPreferredStakeSite(): StakePreferredSite {
+  return readPrefs().site;
 }
 
 export function setPreferredStakeSite(site: StakePreferredSite | string): StakePreferredSite {
   const next = normalizePreferredSite(site);
-  preferredSiteCache = next;
-  try {
-    fs.writeFileSync(sitePrefsPath(), JSON.stringify({ site: next }, null, 2), 'utf8');
-  } catch (err) {
-    console.warn('[StakeSession] Failed to persist preferred site', err);
-  }
-  invalidateStakeSessionStatusCache();
+  writePrefs({ ...readPrefs(), site: next });
   return next;
+}
+
+/** Aktiver Mirror der Classic-Plattform: „auto“ oder ein Hostname wie „stake3114.com“. */
+export function getStakeMirror(): string {
+  return readPrefs().mirror;
+}
+
+export function getStakeMirrorOptions(): StakeMirrorOptions {
+  const prefs = readPrefs();
+  return { selected: prefs.mirror, builtin: [...STAKE_BUILTIN_MIRRORS], custom: [...prefs.customMirrors] };
+}
+
+/** Mirror wählen: „auto“, ein eingebauter oder ein eigener Hostname (wird gespeichert). Wirft bei ungültigem Host. */
+export function setStakeMirror(raw: unknown): string {
+  const prefs = readPrefs();
+  const wanted = String(raw ?? '').trim().toLowerCase();
+  if (wanted === STAKE_MIRROR_AUTO) {
+    writePrefs({ ...prefs, mirror: STAKE_MIRROR_AUTO });
+    return STAKE_MIRROR_AUTO;
+  }
+  const host = normalizeMirrorHost(wanted);
+  if (!host) throw new Error(`Invalid mirror domain: ${String(raw ?? '').slice(0, 80)}`);
+  let custom = prefs.customMirrors;
+  const isBuiltin = (STAKE_BUILTIN_MIRRORS as readonly string[]).includes(host);
+  if (!isBuiltin && !custom.includes(host)) {
+    if (custom.length >= MAX_CUSTOM_MIRRORS) throw new Error('Too many custom mirrors');
+    custom = [...custom, host];
+  }
+  writePrefs({ ...prefs, mirror: host, customMirrors: custom });
+  return host;
+}
+
+/** Eigenen Mirror aus der Liste löschen (fällt auf „auto“ zurück, wenn er aktiv war). */
+export function removeCustomStakeMirror(raw: unknown): StakeMirrorOptions {
+  const host = normalizeMirrorHost(raw);
+  const prefs = readPrefs();
+  if (!host || !prefs.customMirrors.includes(host)) return getStakeMirrorOptions();
+  writePrefs({
+    ...prefs,
+    customMirrors: prefs.customMirrors.filter((entry) => entry !== host),
+    mirror: prefs.mirror === host ? STAKE_MIRROR_AUTO : prefs.mirror,
+  });
+  return getStakeMirrorOptions();
+}
+
+function classicHostBases(): string[] {
+  return [...new Set<string>(['stake.com', 'stake.bet', ...STAKE_BUILTIN_MIRRORS, ...readPrefs().customMirrors])];
+}
+
+function hostUnder(hostname: string, base: string): boolean {
+  return hostname === base || hostname.endsWith(`.${base}`);
+}
+
+/** Hostname gehört zu stake.com/.bet/.eu oder einem bekannten Mirror (inkl. Subdomains). */
+export function isStakeHostname(hostname: string): boolean {
+  const host = String(hostname || '').toLowerCase().replace(/^\./, '');
+  if (!host) return false;
+  return [...classicHostBases(), 'stake.eu'].some((base) => hostUnder(host, base));
+}
+
+/** Cookie-Domain (evtl. mit führendem Punkt) gehört zur Classic-Plattform (.com/.bet/Mirror). */
+export function isClassicStakeCookieDomain(domain: string): boolean {
+  const host = String(domain || '').toLowerCase().replace(/^\./, '');
+  if (!host) return false;
+  return classicHostBases().some((base) => hostUnder(host, base));
+}
+
+/** Origins aller bekannten Classic-Hosts (z. B. zum Aufräumen von Cookies). */
+export function knownClassicMirrorOrigins(): string[] {
+  return classicHostBases().map((host) => `https://${host}`);
+}
+
+/** URL-Muster für webRequest-Filter (alle Stake-Hosts inkl. Mirrors und stake.eu). */
+export function stakeUrlMatchPatterns(): string[] {
+  return [...classicHostBases(), 'stake.eu'].flatMap((host) => [`*://${host}/*`, `*://*.${host}/*`]);
 }
 
 function isCookieExpired(cookie: Electron.Cookie): boolean {
@@ -126,6 +259,8 @@ async function hasValidSessionCookieForOrigin(origin: string): Promise<boolean> 
 
 /** Classic (.com/.bet) origin resolution — prefer stake.bet when both present. */
 async function resolveClassicStakeOrigin(): Promise<string> {
+  const mirror = getStakeMirror();
+  if (mirror !== STAKE_MIRROR_AUTO) return `https://${mirror}`;
   const hasCom = await hasValidSessionCookieForOrigin(STAKE_ORIGIN_COM);
   const hasBet = await hasValidSessionCookieForOrigin(STAKE_ORIGIN_BET);
   if (hasBet) return STAKE_ORIGIN_BET;
@@ -285,25 +420,34 @@ export function invalidateStakeSessionStatusCache(): void {
 }
 
 export function isStakeOriginUrl(url: string): boolean {
-  return STAKE_ORIGINS.some((origin) => url.startsWith(origin)) || /https?:\/\/([^/]*\.)?stake\.(com|bet|eu)\b/i.test(url);
+  if (STAKE_ORIGINS.some((origin) => url.startsWith(origin))) return true;
+  try {
+    return isStakeHostname(new URL(url).hostname);
+  } catch {
+    return false;
+  }
 }
 
 export async function listStakeSiteStatuses(): Promise<StakeSiteStatuses> {
   const preferredSite = getPreferredStakeSite();
-  const [comOrigin, hasCom, hasBet, hasEu] = await Promise.all([
+  const mirror = getStakeMirror();
+  const [comOrigin, hasCom, hasBet, hasEu, hasMirror] = await Promise.all([
     resolveClassicStakeOrigin(),
     hasValidSessionCookieForOrigin(STAKE_ORIGIN_COM),
     hasValidSessionCookieForOrigin(STAKE_ORIGIN_BET),
     hasValidSessionCookieForOrigin(STAKE_ORIGIN_EU),
+    mirror === STAKE_MIRROR_AUTO ? Promise.resolve(false) : hasValidSessionCookieForOrigin(`https://${mirror}`),
   ]);
   const activeOrigin = await resolveStakeOrigin();
   return {
     preferredSite,
     activeOrigin,
+    mirror,
+    mirrorOptions: getStakeMirrorOptions(),
     com: {
       site: 'com',
       origin: comOrigin,
-      valid: hasCom || hasBet,
+      valid: mirror === STAKE_MIRROR_AUTO ? hasCom || hasBet : hasMirror,
     },
     eu: {
       site: 'eu',

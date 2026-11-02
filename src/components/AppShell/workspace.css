@@ -214,3 +214,9 @@
   .workspace-header-refresh.is-loading svg { animation: none; }
   .workspace-app * { scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+.workspace-mirror { display: grid; gap: 6px; min-width: 0; }
+.workspace-mirror label,.workspace-mirror small { color: var(--app-text-muted); font-size: 11px; overflow-wrap: anywhere; }
+.workspace-mirror select,.workspace-mirror input { width: 100%; padding: 8px 10px; border-radius: 5px; border: 1px solid var(--app-border); background: var(--app-bg-deep); color: var(--app-text); font-size: 12px; }
+.workspace-mirror select:disabled { opacity: .6; }
+.workspace-mirror-add { display: flex; gap: 6px; }
+.workspace-mirror-add input { flex: 1; min-width: 0; }

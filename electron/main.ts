@@ -28,12 +28,20 @@ import {
   ensureValidStakeSession,
   getPreferredStakeSite,
   getStakeSessionStatus,
+  getStakeMirror,
+  getStakeMirrorOptions,
   invalidateStakeSessionStatusCache,
+  isClassicStakeCookieDomain,
+  isStakeHostname,
   isStakeOriginUrl,
+  knownClassicMirrorOrigins,
   listStakeSiteStatuses,
+  removeCustomStakeMirror,
   resolveStakeLoginOrigin,
   resolveStakeOrigin,
   setPreferredStakeSite,
+  setStakeMirror,
+  stakeUrlMatchPatterns,
   STAKE_ORIGIN_BET,
   STAKE_ORIGIN_COM,
   STAKE_ORIGIN_EU,
@@ -437,9 +445,7 @@ function isPragmaticProxyTarget(hostname: string, pathname: string): boolean {
   if (PRAGMATIC_HOST_SUFFIXES.some((suffix) => hostnameMatches(hostname, suffix))) return true;
   // playGame.do auf stake.com läuft über rgs — nicht als Pragmatic-CDN behandeln
   if (
-    hostnameMatches(hostname, 'stake.com') ||
-    hostnameMatches(hostname, 'stake.bet') ||
-    hostnameMatches(hostname, 'stake.eu') ||
+    isStakeHostname(hostname) ||
     hostnameMatches(hostname, 'stake-engine.com') ||
     hostnameMatches(hostname, 'engine.io')
   ) {
@@ -969,6 +975,34 @@ function createWindow() {
   });
 }
 
+/**
+ * Origin/Referer/User-Agent für Requests an Stake-Hosts setzen. Die URL-Filter enthalten alle bekannten Mirrors —
+ * bei Mirror-Wechsel erneut aufrufen (ersetzt den vorherigen Listener).
+ */
+function registerStakeHeaderInjection(): void {
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: stakeUrlMatchPatterns() },
+    (
+      details: { url: string; requestHeaders: Record<string, string> },
+      callback: (response: { requestHeaders: Record<string, string> }) => void
+    ) => {
+      if (isStakeOriginUrl(details.url)) {
+        try {
+          const u = new URL(details.url);
+          const origin = `${u.protocol}//${u.host}`;
+          details.requestHeaders['Origin'] = origin;
+          details.requestHeaders['Referer'] = `${origin}/`;
+          details.requestHeaders['User-Agent'] = STAKE_BROWSER_USER_AGENT;
+          Object.assign(details.requestHeaders, stakeClientHintHeaders());
+        } catch {
+          // ignore parse errors and keep existing headers
+        }
+      }
+      callback({ requestHeaders: details.requestHeaders });
+    }
+  );
+}
+
 async function openStakeLoginWindow(
   explicitOrigin?: string,
   options?: StakeLoginWindowOptions
@@ -1107,7 +1141,7 @@ async function openStakeLoginWindow(
       const sessionCookieMatchesLoginSite = (cookie: Electron.Cookie): boolean => {
         const domain = String(cookie.domain || '').toLowerCase();
         if (isEu) return domain.includes('stake.eu');
-        return domain.includes('stake.com') || domain.includes('stake.bet');
+        return isClassicStakeCookieDomain(domain);
       };
 
       const tryFinishIfReady = async () => {
@@ -1444,6 +1478,49 @@ ipcMain.handle('stake-site-statuses', async () => {
     return listStakeSiteStatuses();
 });
 
+/** Mirror-Auswahl (Classic-Plattform): Zustand für die UI — `valid` = Session für den aktiven Mirror vorhanden. */
+async function buildStakeMirrorState() {
+    const statuses = await listStakeSiteStatuses();
+    return {
+      mirror: getStakeMirror(),
+      options: getStakeMirrorOptions(),
+      activeOrigin: statuses.com.origin,
+      valid: statuses.com.valid,
+    };
+}
+
+function resetStakeBridgeWindow(): void {
+    if (stakeBridgeWin && !stakeBridgeWin.isDestroyed()) {
+      try {
+        stakeBridgeWin.destroy();
+      } catch {
+        /* ignore */
+      }
+    }
+    stakeBridgeWin = null;
+}
+
+ipcMain.handle('stake-get-mirrors', async () => buildStakeMirrorState());
+
+ipcMain.handle('stake-set-mirror', async (_event, mirror: string) => {
+    setStakeMirror(mirror);
+    // Bridge-Fenster hängt an der alten Origin; Header-Filter müssen den neuen Host kennen.
+    resetStakeBridgeWindow();
+    registerStakeHeaderInjection();
+    invalidateStakeSessionStatusCache();
+    await getStakeSessionStatus(true);
+    return buildStakeMirrorState();
+});
+
+ipcMain.handle('stake-remove-mirror', async (_event, mirror: string) => {
+    removeCustomStakeMirror(mirror);
+    resetStakeBridgeWindow();
+    registerStakeHeaderInjection();
+    invalidateStakeSessionStatusCache();
+    await getStakeSessionStatus(true);
+    return buildStakeMirrorState();
+});
+
 /** Wipe cookies/cache/session files and relaunch — hard reset for stuck login/session. */
 ipcMain.handle('app-delete-cache', async () => {
   const wipeSession = async (ses: Electron.Session) => {
@@ -1492,7 +1569,7 @@ ipcMain.handle('app-delete-cache', async () => {
 
   const ses = session.defaultSession;
   await wipeSession(ses);
-  for (const origin of [STAKE_ORIGIN_COM, STAKE_ORIGIN_BET, STAKE_ORIGIN_EU]) {
+  for (const origin of new Set([STAKE_ORIGIN_COM, STAKE_ORIGIN_BET, STAKE_ORIGIN_EU, ...knownClassicMirrorOrigins()])) {
     await removeCookiesForOrigin(ses, origin);
   }
 
@@ -3275,7 +3352,7 @@ ipcMain.handle('proxy-request', async (_event, { url, method = 'GET', headers = 
             'cdn.sanity.io',
             'sta.ke',
         ];
-        if (proxyHostname && allowed.some(h => hostnameMatches(proxyHostname, h))) {
+        if (proxyHostname && (allowed.some(h => hostnameMatches(proxyHostname, h)) || isStakeHostname(proxyHostname))) {
             isAllowed = true;
             type = 'rgs';
         }
@@ -3646,8 +3723,7 @@ app.whenReady().then(() => {
         removed: boolean
       ) => {
         const domain = String(cookie.domain || '').toLowerCase();
-        const isStakeCookie =
-          domain.includes('stake.com') || domain.includes('stake.bet') || domain.includes('stake.eu');
+        const isStakeCookie = isStakeHostname(domain);
         if (!isStakeCookie) return;
         if (!STAKE_COOKIE_DEBUG_NAMES.has(String(cookie.name || ''))) return;
         invalidateStakeSessionStatusCache();
@@ -3665,37 +3741,7 @@ app.whenReady().then(() => {
       }
     );
 
-    // Inject headers for requests to Stake origins from Renderer (if any)
-    session.defaultSession.webRequest.onBeforeSendHeaders(
-      {
-        urls: [
-          '*://stake.com/*',
-          '*://*.stake.com/*',
-          '*://stake.bet/*',
-          '*://*.stake.bet/*',
-          '*://stake.eu/*',
-          '*://*.stake.eu/*',
-        ],
-      },
-      (
-        details: { url: string; requestHeaders: Record<string, string> },
-        callback: (response: { requestHeaders: Record<string, string> }) => void
-      ) => {
-        if (isStakeOriginUrl(details.url)) {
-          try {
-            const u = new URL(details.url);
-            const origin = `${u.protocol}//${u.host}`;
-            details.requestHeaders['Origin'] = origin;
-            details.requestHeaders['Referer'] = `${origin}/`;
-            details.requestHeaders['User-Agent'] = STAKE_BROWSER_USER_AGENT;
-            Object.assign(details.requestHeaders, stakeClientHintHeaders());
-          } catch {
-            // ignore parse errors and keep existing headers
-          }
-        }
-        callback({ requestHeaders: details.requestHeaders });
-      }
-    );
+    registerStakeHeaderInjection();
 
     if (SESSION_ONLY_BET_LOGS) {
       clearAllBetLogs();

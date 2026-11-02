@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ThemeAccentButton } from './ThemeAccentButton'
 import { useUiStore } from '../../store/uiStore'
 import { useStakeSiteStore } from '../../store/stakeSiteStore'
+import { MirrorSelect } from './MirrorSelect'
 import type { WorkspaceDestination } from './workspaceNavigation'
 
 interface WorkspaceSettingsProps {
@@ -50,7 +51,7 @@ export function WorkspaceSettings({ onNavigate, onLogin, onSessionRevalidate, on
     <div className="workspace-page-intro"><span className="workspace-eyebrow">Make it yours</span><h2>Settings</h2><p>Connections, appearance and tools, together in one place.</p></div>
     <section className="workspace-settings-section" aria-labelledby="settings-connection">
       <div className="workspace-settings-description"><h3 id="settings-connection">Account & connection</h3><p>Stake.{preferredSite} is selected. Use the platform menu in the header to switch accounts or regions.</p></div>
-      <div className="workspace-settings-controls"><div className="workspace-setting-row"><div><strong>Stake.{preferredSite}</strong><p>{preferredSite === 'eu' ? 'Casino with GC / SC currencies. Sports is not available on this platform.' : 'Casino, Sports and promotions.'}</p></div><button type="button" className="workspace-button" onClick={() => onLogin(preferredSite)}>Open sign-in</button></div><div className="workspace-setting-row"><div><strong>Connection status</strong><p>Validate the current session or refresh account balances.</p></div><div className="workspace-button-row"><button type="button" className="workspace-button" onClick={onSessionRevalidate}>Check connection</button><button type="button" className="workspace-button" onClick={onRefresh}>Refresh balances</button></div></div></div>
+      <div className="workspace-settings-controls"><div className="workspace-setting-row"><div><strong>Stake.{preferredSite}</strong><p>{preferredSite === 'eu' ? 'Casino with GC / SC currencies. Sports is not available on this platform.' : 'Casino, Sports and promotions.'}</p></div><button type="button" className="workspace-button" onClick={() => onLogin(preferredSite)}>Open sign-in</button></div>{preferredSite === 'com' && <div className="workspace-setting-row"><div><strong>Mirror domain</strong><p>Domain used for sign-in, API and WebSocket traffic. Each domain keeps its own session.</p></div><MirrorSelect onChanged={state => { if (!state.valid) onLogin('com'); else onSessionRevalidate() }} /></div>}<div className="workspace-setting-row"><div><strong>Connection status</strong><p>Validate the current session or refresh account balances.</p></div><div className="workspace-button-row"><button type="button" className="workspace-button" onClick={onSessionRevalidate}>Check connection</button><button type="button" className="workspace-button" onClick={onRefresh}>Refresh balances</button></div></div></div>
     </section>
     <section className="workspace-settings-section" aria-labelledby="settings-appearance">
       <div className="workspace-settings-description"><h3 id="settings-appearance">Appearance</h3><p>Keep the workspace comfortable at your preferred window size.</p></div>

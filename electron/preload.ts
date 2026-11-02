@@ -37,6 +37,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getStakeSite: () => ipcRenderer.invoke('stake-get-site'),
     setStakeSite: (site: 'com' | 'eu') => ipcRenderer.invoke('stake-set-site', site),
     getStakeSiteStatuses: () => ipcRenderer.invoke('stake-site-statuses'),
+    getStakeMirrors: () => ipcRenderer.invoke('stake-get-mirrors'),
+    setStakeMirror: (mirror: string) => ipcRenderer.invoke('stake-set-mirror', mirror),
+    removeStakeMirror: (mirror: string) => ipcRenderer.invoke('stake-remove-mirror', mirror),
     deleteCacheAndRelaunch: () =>
         ipcRenderer.invoke('app-delete-cache') as Promise<{ ok: boolean }>,
     invoke: (channel: string, ...args: any[]) => {

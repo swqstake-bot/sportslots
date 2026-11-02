@@ -1,6 +1,15 @@
 // See https://electronjs.org/docs/tutorial/context-isolation
 // and https://www.electronjs.org/docs/api/context-bridge
 
+export interface StakeMirrorState {
+  /** 'auto' oder aktiver Hostname. */
+  mirror: string;
+  options: { selected: string; builtin: string[]; custom: string[] };
+  activeOrigin: string;
+  /** Session-Cookie für den aktiven Mirror vorhanden. */
+  valid: boolean;
+}
+
 export interface ElectronAPI {
   getAppVersion?: () => Promise<string>;
   version?: string;
@@ -62,9 +71,16 @@ export interface ElectronAPI {
   getStakeSiteStatuses: () => Promise<{
     preferredSite: 'com' | 'eu';
     activeOrigin: string;
+    /** Gewählter Mirror der Classic-Plattform: 'auto' oder Hostname (z. B. stake3114.com). */
+    mirror?: string;
     com: { site: 'com'; origin: string; valid: boolean };
     eu: { site: 'eu'; origin: string; valid: boolean };
   }>;
+  /** Mirror-Liste + aktiver Mirror der Classic-Plattform (.com/.bet/Mirror). */
+  getStakeMirrors: () => Promise<StakeMirrorState>;
+  /** 'auto', ein Preset oder ein eigener Hostname; eigene Hosts werden gespeichert. Wirft bei ungültiger Domain. */
+  setStakeMirror: (mirror: string) => Promise<StakeMirrorState>;
+  removeStakeMirror: (mirror: string) => Promise<StakeMirrorState>;
   /** Clear cookies/cache/login session data and relaunch the app. */
   deleteCacheAndRelaunch: () => Promise<{ ok: boolean }>;
   invoke: (channel: string, ...args: any[]) => Promise<any>;

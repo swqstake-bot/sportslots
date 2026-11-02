@@ -4,6 +4,7 @@ import { useStakeSiteStore } from '../../store/stakeSiteStore'
 import type { AppView, CasinoMode } from '../../store/uiStore'
 import { workspacePageTitle, type WorkspaceDestination } from './workspaceNavigation'
 import { WorkspaceSessions } from './WorkspaceSessions'
+import { MirrorSelect } from './MirrorSelect'
 
 type StakeSite = 'com' | 'eu'
 type SiteStatuses = Awaited<ReturnType<Window['electronAPI']['getStakeSiteStatuses']>>
@@ -23,6 +24,7 @@ interface AppHeaderProps {
 export function AppHeader({ currentView, casinoMode, userName, isLoading, onRefresh, onLogin, onSessionRevalidate, onSiteChanged, onNavigate }: AppHeaderProps) {
   const preferredSite = useStakeSiteStore(s => s.preferredSite)
   const setPreferredSite = useStakeSiteStore(s => s.setPreferredSite)
+  const mirror = useStakeSiteStore(s => s.mirror)
   const showConnection = useRef<HTMLDetailsElement>(null)
   const [statuses, setStatuses] = useState<SiteStatuses | null>(null)
   const [switching, setSwitching] = useState(false)
@@ -86,6 +88,7 @@ export function AppHeader({ currentView, casinoMode, userName, isLoading, onRefr
   }
 
   const valid = statuses?.[preferredSite]?.valid
+  const siteLabel = preferredSite === 'com' && mirror !== 'auto' ? mirror : `Stake.${preferredSite}`
   const connectionLabel = connectionError ? 'Status unavailable' : statuses ? (valid ? 'Connected' : 'Sign in required') : 'Checking connection'
 
   return (
@@ -96,9 +99,9 @@ export function AppHeader({ currentView, casinoMode, userName, isLoading, onRefr
       </div>
       <div className="workspace-header-actions">
         <details className="workspace-connection" ref={showConnection}>
-          <summary className="workspace-connection-trigger" aria-label={`Stake.${preferredSite}: ${connectionLabel}. Connection options`}>
+          <summary className="workspace-connection-trigger" aria-label={`${siteLabel}: ${connectionLabel}. Connection options`}>
             <span className={`workspace-status-dot ${valid ? 'is-connected' : ''}`} aria-hidden="true" />
-            <span>Stake.{preferredSite}</span><span className="workspace-connection-label">{connectionLabel}</span>
+            <span>{siteLabel}</span><span className="workspace-connection-label">{connectionLabel}</span>
             <span aria-hidden="true">⌄</span>
           </summary>
           <div className="workspace-connection-menu">
@@ -106,6 +109,13 @@ export function AppHeader({ currentView, casinoMode, userName, isLoading, onRefr
             <div className="workspace-platforms" role="group" aria-label="Stake platform">
               {(['com', 'eu'] as const).map(site => <button type="button" key={site} aria-pressed={site === preferredSite} disabled={switching} onClick={() => void switchSite(site)}><span>Stake.{site}</span><small>{statuses ? (statuses[site]?.valid ? 'Connected' : 'Sign in required') : 'Not checked'}</small></button>)}
             </div>
+            {preferredSite === 'com' && (
+              <MirrorSelect onChanged={state => {
+                void refreshStatus()
+                if (!state.valid) onLogin('com')
+                else onSiteChanged()
+              }} />
+            )}
             {connectionError && <p className="workspace-inline-error" role="alert">{connectionError}</p>}
             {!valid && <button type="button" className="workspace-button is-primary" onClick={() => onLogin(preferredSite)}>Sign in to Stake.{preferredSite}</button>}
             <button type="button" className="workspace-button" onClick={async () => { await onSessionRevalidate(); void refreshStatus() }}>Check connection</button>
