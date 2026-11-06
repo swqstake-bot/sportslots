@@ -2,6 +2,8 @@
  * StakeCruncher difficulty badge for challenge rows.
  */
 
+import { formatExpectedSpins, formatHitProbability } from '../../utils/challengeDifficulty'
+
 const GRADE_CLASS = {
   easy: 'challenge-diff--easy',
   medium: 'challenge-diff--medium',
@@ -21,38 +23,41 @@ export default function ChallengeDifficultyBadge({
   if (loading) {
     return (
       <span className="challenge-diff challenge-diff--loading" title="Loading StakeCruncher stats…">
-        …
+        {compact ? '…' : 'Analyzing…'}
       </span>
     )
   }
 
-  if (!assessment) {
+  const grade = assessment?.grade || 'unknown'
+  const retry = !compact && assessment && onAnalyze && (grade === 'error' || grade === 'unknown')
+  if (!assessment || retry) {
     return (
       <button
         type="button"
         className="challenge-diff challenge-diff--analyze"
-        title="Estimate difficulty (StakeCruncher)"
+        title={retry ? assessment.hint : 'Estimate difficulty (StakeCruncher)'}
         onClick={(e) => {
           e.stopPropagation()
           onAnalyze?.()
         }}
       >
-        Analyze
+        {retry ? (grade === 'error' ? 'Error · Retry' : 'No data · Retry') : 'Analyze'}
       </button>
     )
   }
 
-  const grade = assessment.grade || 'unknown'
   const cls = GRADE_CLASS[grade] || GRADE_CLASS.unknown
-  const sub =
-    !compact && assessment.hitProbability != null && assessment.grade !== 'unknown' && assessment.grade !== 'impossible'
-      ? ` · ${(assessment.hitProbability * 100).toFixed(assessment.hitProbability >= 0.01 ? 2 : 3)}%`
-      : ''
+  const badge = <span className={`challenge-diff ${cls}`} title={assessment.hint || assessment.label}>{assessment.label}</span>
+  const { hitProbability, expectedSpins } = assessment
+  if (compact || !(hitProbability > 0) || grade === 'unknown' || grade === 'impossible') return badge
 
+  const chance = hitProbability < 0.000001 ? '<0.0001%' : formatHitProbability(hitProbability)
   return (
-    <span className={`challenge-diff ${cls}`} title={assessment.hint || assessment.label}>
-      {assessment.label}
-      {sub}
+    <span className="challenge-diff-result">
+      {badge}
+      <small>
+        {chance} per spin{expectedSpins > 0 ? ` · ${formatExpectedSpins(expectedSpins)} avg. spins` : ''}
+      </small>
     </span>
   )
 }

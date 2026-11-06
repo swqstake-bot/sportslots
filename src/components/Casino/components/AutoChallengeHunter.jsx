@@ -1256,8 +1256,8 @@ export default function AutoChallengeHunter({
               try: tries,
             })
             window.setTimeout(() => requestChallengeDifficulty(challenge, { force: true }), 10_000)
+            return
           }
-          return
         }
         console.error('[StakeCruncher] difficulty request failed', {
           challengeId: cid,
@@ -3343,16 +3343,16 @@ export default function AutoChallengeHunter({
           <span style={{ fontWeight: 600 }}>{c.targetMultiplier}×</span>
         </div>
         <div
+          className="hunter-queue-difficulty"
           style={STYLES.statRow}
           role="presentation"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <span style={{ color: 'var(--text-muted)' }}>Difficulty</span>
+          <span style={{ color: 'var(--text-muted)' }}>StakeCruncher</span>
           <ChallengeDifficultyBadge
             assessment={difficultyByChallengeId[c.id]}
             loading={difficultyLoadingIds.has(c.id)}
-            compact
             onAnalyze={() => requestChallengeDifficulty(c, { force: true })}
           />
         </div>

@@ -323,6 +323,25 @@
   line-height: 1.6;
 }
 
+.casino-root .challenge-hub-root .hunter-queue-difficulty {
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.casino-root .challenge-hub-root .challenge-diff-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: auto;
+  gap: 0.2rem;
+  text-align: right;
+}
+
+.casino-root .challenge-hub-root .challenge-diff-result small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
 .casino-root .challenge-hub-root .hunter-workspace .hunter-main {
   gap: 0.7rem;
   overflow: visible;
