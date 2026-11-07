@@ -29,6 +29,7 @@ import { AppBrandMark } from './components/AppShell/AppBrandMark';
 import { WindowTitleBar } from './components/AppShell/WindowTitleBar';
 import { APP_NAME, APP_TAGLINE } from './constants/branding';
 import { refreshWalletBalances } from './utils/walletBalance';
+import { startFinishedSportBetsSync } from './store/finishedSportBets';
 import { refreshStakeSiteFromMain, useStakeSiteStore } from './store/stakeSiteStore';
 import {
   ACTIVE_SPORT_BETS_MAX_TOTAL,
@@ -259,6 +260,13 @@ function App() {
   }, [setUser, fetchActiveSportBets, shouldFetchActiveSportBets, isAuthenticated, showToast]);
 
   const needsActiveSportBets = currentView === 'sports';
+  const userId = user?.id;
+  const userName = user?.name;
+
+  useEffect(() => {
+    if (!isAuthenticated || preferredSite !== 'com' || !userId || !userName) return;
+    return startFinishedSportBetsSync({ id: userId, name: userName });
+  }, [isAuthenticated, preferredSite, userId, userName]);
 
   // Initial load & polling (balances always; active sport bets only when sports UI needs them)
   useEffect(() => {

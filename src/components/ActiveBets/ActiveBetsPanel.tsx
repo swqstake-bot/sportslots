@@ -76,13 +76,15 @@ export function ActiveBetsPanel({
     activeBets,
     setActiveBets,
     finishedBets,
-    permanentWonCount,
+    savedWonCount,
+    finishedError,
     isLoadingActive,
     isLoadingFinished,
     usdRates,
     fetchActiveBets,
     fetchFinishedBets,
   } = useBetHistory({
+    userId: user?.id,
     userName,
     refreshIntervalMs: 0,
     onActiveFetched: (bets) => {
@@ -537,7 +539,7 @@ export function ActiveBetsPanel({
       <>
         <CollapsibleSection
           title="Won"
-          count={Math.max(wonBets.length, permanentWonCount)}
+          count={wonBets.length}
           defaultOpen
           accent="won"
         >
@@ -587,14 +589,14 @@ export function ActiveBetsPanel({
       : activeTab === 'active'
         ? `Total Active: ${activeBets.length}`
         : `Total Finished: ${finishedBets.length}${
-            permanentWonCount > 0 ? ` · Won (cached): ${permanentWonCount}` : ''
+            savedWonCount > 0 ? ` · Saved wins: ${savedWonCount}` : ''
           }`;
   const emptyLabel =
     activeTab === 'top15'
       ? 'No Top 15 bets'
       : activeTab === 'active'
         ? 'No active bets'
-        : 'No finished bets';
+        : finishedError ? 'No saved slips available' : 'No finished bets';
 
   return (
     <div className={`active-bets-panel ${embedded ? 'active-bets-panel--embedded' : ''}`.trim()}>
@@ -620,6 +622,7 @@ export function ActiveBetsPanel({
             onClick={activeTab === 'finished' ? fetchFinishedBets : fetchActiveBets}
             disabled={isLoading}
             className="active-bets-panel-icon-btn"
+            aria-label={activeTab === 'finished' ? 'Refresh Finished Bets' : 'Refresh Active Bets'}
             title={activeTab === 'finished' ? 'Refresh Finished Bets' : 'Refresh Active Bets'}
           >
             {isLoading ? <span className="animate-spin block">↻</span> : <span>↻</span>}
@@ -636,6 +639,7 @@ export function ActiveBetsPanel({
         <button
           type="button"
           onClick={() => changeActiveTab('active')}
+          aria-pressed={activeTab === 'active'}
           className={`active-bets-panel-subtab ${activeTab === 'active' ? 'is-active' : ''}`.trim()}
         >
           Active
@@ -643,7 +647,17 @@ export function ActiveBetsPanel({
 
         <button
           type="button"
+          onClick={() => changeActiveTab('finished')}
+          aria-pressed={activeTab === 'finished'}
+          className={`active-bets-panel-subtab ${activeTab === 'finished' ? 'is-active' : ''}`.trim()}
+        >
+          Finished
+        </button>
+
+        <button
+          type="button"
           onClick={() => changeActiveTab('top15')}
+          aria-pressed={activeTab === 'top15'}
           className={`active-bets-panel-subtab ${activeTab === 'top15' ? 'is-active' : ''}`.trim()}
         >
           Top 15
@@ -658,15 +672,11 @@ export function ActiveBetsPanel({
           onCashoutSelected={handleCashoutSelected}
           onCopySelectedIds={copySelectedIds}
         />
-
-        <button
-          type="button"
-          onClick={() => changeActiveTab('finished')}
-          className={`active-bets-panel-subtab ${activeTab === 'finished' ? 'is-active' : ''}`.trim()}
-        >
-          Finished
-        </button>
       </div>
+
+      {activeTab === 'finished' && finishedError && (
+        <p className="active-bets-panel-sync-error" role="status">{finishedError}</p>
+      )}
 
       {activeTab === 'top15' ? (
         <div className="active-bets-panel-sort active-bets-panel-sort--top15">
@@ -764,7 +774,7 @@ export function ActiveBetsPanel({
                   <span />
                 </div>
               )}
-              {renderBetSections()}
+              {(activeTab !== 'finished' || totalCount > 0) && renderBetSections()}
               {activeTab !== 'top15' && totalCount === 0 && !isLoading && (
                 <div className="active-bets-panel-empty">
                   <svg

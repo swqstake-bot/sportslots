@@ -57,6 +57,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSessionToken: () => ipcRenderer.invoke('get-session-token'),
     getStakeSessionStatus: () => ipcRenderer.invoke('stake-session-status'),
     revalidateStakeSession: () => ipcRenderer.invoke('stake-session-revalidate'),
+    loadWonSportBets: (userName: string) => ipcRenderer.invoke('sport-won-archive-load', userName),
+    saveWonSportBets: (userName: string, entries: unknown[], onlyMissing?: boolean) =>
+        ipcRenderer.invoke('sport-won-archive-save', userName, entries, onlyMissing) as Promise<void>,
     fetchLoggerCurrencyRates: () => ipcRenderer.invoke('logger-fetch-currency-rates'),
     saveLoggerBet: (entry: any) => ipcRenderer.invoke('logger-save-bet', entry),
     loadLoggerBetLogs: (options?: { limit?: number; fromDate?: string; toDate?: string }) => ipcRenderer.invoke('logger-load-bet-logs', options),

@@ -1,13 +1,11 @@
 /**
  * Dauerhafter Cache gewonnener Sportwetten (über die ~300 Finished-API-Fenster hinaus).
- * Keyed by userName; slim snapshots for list UI + permanent count.
+ * Local snapshots and migration from the old browser cache to the desktop archive.
  */
 import type { SportBet, SportBetOutcome } from './userStore';
 import { finishedBetBucket } from '../services/cashoutService';
 
 const STORAGE_PREFIX = 'sports_won_bets_cache:';
-/** Soft cap — prune oldest by createdAt when exceeded. */
-const MAX_ENTRIES = 5000;
 
 export type CachedWonBet = {
   id: string;
@@ -22,6 +20,7 @@ export type CachedWonBet = {
   fixtureName?: string;
   pickName?: string;
   legsTotal?: number;
+  outcomes?: SportBetOutcome[];
   cachedAt: number;
 };
 
@@ -43,50 +42,30 @@ function load(userName: string): CacheFile {
   return { byId: {} };
 }
 
-function save(userName: string, file: CacheFile) {
-  try {
-    localStorage.setItem(storageKey(userName), JSON.stringify(file));
-  } catch {
-    /* quota */
-  }
-}
-
-function pruneIfNeeded(file: CacheFile): CacheFile {
-  const ids = Object.keys(file.byId);
-  if (ids.length <= MAX_ENTRIES) return file;
-  const sorted = ids
-    .map((id) => file.byId[id])
-    .filter(Boolean)
-    .sort((a, b) => {
-      const ta = Date.parse(a.createdAt) || a.cachedAt || 0;
-      const tb = Date.parse(b.createdAt) || b.cachedAt || 0;
-      return tb - ta;
-    })
-    .slice(0, MAX_ENTRIES);
-  const byId: Record<string, CachedWonBet> = {};
-  for (const e of sorted) byId[e.id] = e;
-  return { byId };
-}
-
-function snapshotFromSportBet(bet: SportBet): CachedWonBet | null {
-  if (!bet?.id) return null;
+export function snapshotWonBet(bet: SportBet, previous?: CachedWonBet): CachedWonBet | null {
+  if (!bet?.id || bet.active) return null;
+  if (String(bet.status || '').toLowerCase().endsWith('pending')) return null;
   if (finishedBetBucket(bet) !== 'won') return null;
-  const outcomes = bet.outcomes ?? [];
+  const outcomes = bet.outcomes?.length ? bet.outcomes : previous?.outcomes ?? [];
   const first = outcomes[0];
   return {
     id: bet.id,
-    iid: bet.iid ?? bet.bet?.iid,
+    iid: bet.iid ?? bet.bet?.iid ?? previous?.iid,
     status: String(bet.status || 'won'),
     amount: Number(bet.amount) || 0,
     currency: String(bet.currency || 'usd'),
     payout: Number(bet.payout) || 0,
     payoutMultiplier: Number(bet.payoutMultiplier) || Number(bet.potentialMultiplier) || 0,
     potentialMultiplier: Number(bet.potentialMultiplier) || Number(bet.payoutMultiplier) || 0,
-    createdAt: String(bet.createdAt || new Date().toISOString()),
-    fixtureName: first?.fixture?.name,
-    pickName: first?.outcome?.name,
-    legsTotal: outcomes.length || undefined,
-    cachedAt: Date.now(),
+    createdAt: String(bet.createdAt || previous?.createdAt || new Date().toISOString()),
+    fixtureName: first?.fixture?.name ?? previous?.fixtureName,
+    pickName: first?.outcome?.name ?? previous?.pickName,
+    legsTotal: outcomes.length || previous?.legsTotal,
+    outcomes: outcomes.length ? outcomes.map(({ id, odds, status, outcome, market, fixture }) => ({
+      id, odds, status, outcome, market,
+      fixture: { id: fixture?.id, name: fixture?.name, status: fixture?.status },
+    })) : undefined,
+    cachedAt: previous?.cachedAt ?? Date.now(),
   };
 }
 
@@ -102,7 +81,7 @@ function syntheticOutcomes(entry: CachedWonBet): SportBetOutcome[] {
       status: 'won',
       outcome: { id: `${entry.id}-o-${i}`, odds: 1, name: i === 0 ? pickName : '' },
       market: { id: `${entry.id}-m-${i}`, name: '', status: 'settled' },
-      fixture: { id: `${entry.id}-f-${i}`, name: i === 0 ? fixtureName : fixtureName, status: 'ended' },
+      fixture: { id: `${entry.id}-f-${i}`, name: i === 0 ? fixtureName : 'Saved leg', status: 'ended' },
     });
   }
   return out;
@@ -124,65 +103,49 @@ export function cachedWonToSportBet(entry: CachedWonBet): SportBet {
     cashoutMultiplier: 0,
     createdAt: entry.createdAt,
     user: { id: '' },
-    outcomes: syntheticOutcomes(entry),
+    outcomes: entry.outcomes?.length ? entry.outcomes : syntheticOutcomes(entry),
   };
 }
 
-/** Upsert all API finished bets that bucket as won. Returns new permanent count. */
-export function upsertWonBetsFromApi(userName: string, bets: SportBet[]): number {
-  if (!userName) return 0;
-  let file = load(userName);
-  let changed = false;
-  for (const bet of bets) {
-    const snap = snapshotFromSportBet(bet);
-    if (!snap) continue;
-    const prev = file.byId[snap.id];
-    if (
-      !prev ||
-      prev.payout !== snap.payout ||
-      prev.status !== snap.status ||
-      prev.amount !== snap.amount
-    ) {
-      file.byId[snap.id] = snap;
-      changed = true;
-    }
+export function readLegacyWonBets(userName: string): CachedWonBet[] {
+  return Object.values(load(userName).byId).filter((entry) => typeof entry?.id === 'string' && entry.id);
+}
+
+export async function loadArchivedWonBets(userName: string, legacy: CachedWonBet[]) {
+  const api = window.electronAPI;
+  if (!api?.loadWonSportBets || !api.saveWonSportBets) return { entries: legacy, migrationFailed: false };
+  const archived = await api.loadWonSportBets(userName);
+  const ids = new Set(archived.map((entry) => entry.id));
+  const missing = legacy.filter((entry) => !ids.has(entry.id));
+  const entries = [...archived, ...missing];
+  try {
+    if (missing.length) await api.saveWonSportBets(userName, missing, true);
+    return { entries, migrationFailed: false };
+  } catch (error) {
+    console.error('Could not migrate legacy won bets:', error);
+    return { entries, migrationFailed: true };
   }
-  if (changed) {
-    file = pruneIfNeeded(file);
-    save(userName, file);
+}
+
+export async function saveWonBets(userName: string, entries: CachedWonBet[]): Promise<void> {
+  if (!entries.length) return;
+  const api = window.electronAPI;
+  if (api?.saveWonSportBets) {
+    await api.saveWonSportBets(userName, entries);
+    return;
   }
-  return Object.keys(file.byId).length;
+  const existing = load(userName).byId;
+  const byId = { ...existing, ...Object.fromEntries(entries.map((entry) => [entry.id, entry])) };
+  localStorage.setItem(storageKey(userName), JSON.stringify({ byId }));
 }
 
-export function getPermanentWonCount(userName: string): number {
-  if (!userName) return 0;
-  return Object.keys(load(userName).byId).length;
-}
-
-/** Cached wins not present in the current API window (newest first). */
-export function listCachedWonMissingFromApi(userName: string, apiIds: Set<string>): SportBet[] {
-  if (!userName) return [];
-  const file = load(userName);
-  return Object.values(file.byId)
-    .filter((e) => e?.id && !apiIds.has(e.id))
-    .sort((a, b) => {
-      const ta = Date.parse(a.createdAt) || a.cachedAt || 0;
-      const tb = Date.parse(b.createdAt) || b.cachedAt || 0;
-      return tb - ta;
-    })
-    .map(cachedWonToSportBet);
-}
-
-/**
- * Persist won from API window, then append older cached wins so the Won list
- * survives past the ~300 finished-bet API cap.
- */
-export function mergeFinishedWithWonCache(userName: string, apiBets: SportBet[]): {
-  bets: SportBet[];
-  permanentWonCount: number;
-} {
-  const permanentWonCount = upsertWonBetsFromApi(userName, apiBets);
-  const apiIds = new Set(apiBets.map((b) => b.id));
-  const extras = listCachedWonMissingFromApi(userName, apiIds);
-  return { bets: extras.length ? [...apiBets, ...extras] : apiBets, permanentWonCount };
+export async function migrateLegacyWonBetsBeforeReset(): Promise<void> {
+  const api = window.electronAPI;
+  if (!api?.saveWonSportBets) return;
+  const keys = Object.keys(localStorage).filter((key) => key.startsWith(STORAGE_PREFIX));
+  for (const key of keys) {
+    const name = key.slice(STORAGE_PREFIX.length);
+    const entries = readLegacyWonBets(name);
+    if (entries.length) await api.saveWonSportBets(name, entries, true);
+  }
 }

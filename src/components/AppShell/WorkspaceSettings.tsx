@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ThemeAccentButton } from './ThemeAccentButton'
 import { useUiStore } from '../../store/uiStore'
 import { useStakeSiteStore } from '../../store/stakeSiteStore'
+import { migrateLegacyWonBetsBeforeReset } from '../../store/wonBetsCache'
 import { MirrorSelect } from './MirrorSelect'
 import type { WorkspaceDestination } from './workspaceNavigation'
 
@@ -37,6 +38,7 @@ export function WorkspaceSettings({ onNavigate, onLogin, onSessionRevalidate, on
     if (!window.confirm('Clear cache and sign-in data, then restart?\n\nThis removes Stake cookies, local settings and the Telegram session. Running sessions will be interrupted. Export anything you need before continuing.')) return
     setResetting(true)
     try {
+      await migrateLegacyWonBetsBeforeReset()
       localStorage.clear()
       sessionStorage.clear()
       await api.deleteCacheAndRelaunch()

@@ -36,7 +36,7 @@ export const WORKSPACE_NAVIGATION: WorkspaceNavigationItem[] = [
   },
   {
     id: 'sports', label: 'Sports', icon: 'sports', destination: { view: 'sports' },
-    description: 'Configure AutoBet, Copy and manage active bets.',
+    description: 'Configure AutoBet and Copy, and review active and finished bet slips.',
   },
   {
     id: 'challenges', label: 'Challenges & promos', icon: 'challenges',

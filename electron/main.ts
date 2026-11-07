@@ -56,6 +56,7 @@ import {
   stakeClientHintHeaders,
 } from './stakeBrowserChrome.js';
 import { destroyEuTurnstileWindow, solveEuTopUpTurnstile } from './euTurnstile.js';
+import { loadWonSportBets, saveWonSportBets } from './sportWonArchive.js';
 
 configureStakeBrowserUserAgent();
 
@@ -1861,6 +1862,12 @@ ipcMain.handle('logger-fetch-currency-rates', async () => {
         return {};
     }
 });
+
+ipcMain.handle('sport-won-archive-load', (_event, userName: unknown) =>
+    loadWonSportBets(app.getPath('userData'), userName));
+
+ipcMain.handle('sport-won-archive-save', (_event, userName: unknown, entries: unknown, onlyMissing?: unknown) =>
+    saveWonSportBets(app.getPath('userData'), userName, entries, onlyMissing));
 
 ipcMain.handle('logger-save-bet', async () => {
     /** Background houseBet logging disabled — use Challenge Hub export + Logger import. */

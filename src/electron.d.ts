@@ -1,6 +1,8 @@
 // See https://electronjs.org/docs/tutorial/context-isolation
 // and https://www.electronjs.org/docs/api/context-bridge
 
+import type { CachedWonBet } from './store/wonBetsCache';
+
 export interface StakeMirrorState {
   /** 'auto' oder aktiver Hostname. */
   mirror: string;
@@ -86,6 +88,8 @@ export interface ElectronAPI {
   invoke: (channel: string, ...args: any[]) => Promise<any>;
   getKeyAuthHwid: () => Promise<string>;
   getSessionToken: () => Promise<string | null>;
+  loadWonSportBets?: (userName: string) => Promise<CachedWonBet[]>;
+  saveWonSportBets?: (userName: string, entries: CachedWonBet[], onlyMissing?: boolean) => Promise<void>;
   fetchLoggerCurrencyRates: () => Promise<Record<string, number>>;
   saveLoggerBet: (entry: any) => Promise<string | null>;
   loadLoggerBetLogs: (options?: { limit?: number; fromDate?: string; toDate?: string }) => Promise<any[]>;

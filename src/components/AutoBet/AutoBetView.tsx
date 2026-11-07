@@ -146,7 +146,7 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
   const taskDescription = activeTab === 'copy'
     ? 'Choose a source, define your filters and follow the incoming feed.'
     : activeTab === 'bets'
-      ? 'Review active bets and open their details.'
+      ? 'Review active bet slips or open Finished to find settled bets and saved wins.'
       : activeTab === 'logs'
         ? 'Follow AutoBet and Copy events in one place.'
         : 'Choose events, set your stake and review the current configuration.';
@@ -549,7 +549,7 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
       {isWide && (
         <div className="autobet-wide-header">
           <div className="autobet-wide-header-main">
-            <div className="sports-heading-copy"><h2 className="autobet-wide-title">{activeTab === 'copy' ? 'Copy' : activeTab === 'bets' ? 'Active bets' : activeTab === 'logs' ? 'Activity' : 'AutoBet'}</h2><p>{taskDescription}</p></div>
+            <div className="sports-heading-copy"><h2 className="autobet-wide-title">{activeTab === 'copy' ? 'Copy' : activeTab === 'bets' ? 'Bet slips' : activeTab === 'logs' ? 'Activity' : 'AutoBet'}</h2><p>{taskDescription}</p></div>
             <span className={`autobet-status-pill ${(activeTab === 'copy' ? copyRunning : isRunning) ? 'is-running' : ''}`.trim()}>
               <span className="autobet-status-dot" />
               {activeTab === 'copy' ? 'Copy' : 'AutoBet'} · {(activeTab === 'copy' ? copyRunning : isRunning) ? 'Running' : 'Stopped'}
@@ -597,7 +597,7 @@ export function AutoBetView({ layout = 'sidebar' }: AutoBetViewProps) {
             type="button"
             aria-current={activeTab === 'bets' ? 'page' : undefined}
           >
-            Active bets <span className="autobet-tab-count">{activeBetCount}</span>
+            Bet slips <span className="autobet-tab-count">{activeBetCount} active</span>
           </button>
         )}
         <button

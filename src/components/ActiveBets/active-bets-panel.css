@@ -425,6 +425,14 @@
 }
 
 .bet-group-dot--won,
+.active-bets-panel-sync-error {
+  margin: 0;
+  padding: 0.65rem 1rem;
+  color: var(--app-text-muted, var(--text-muted));
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--app-border);
+}
+
 .bet-group-dot--cashout {
   background: #00e701;
   box-shadow: 0 0 6px rgba(0, 231, 1, 0.45);

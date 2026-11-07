@@ -4,7 +4,7 @@ import { StakeApi } from '../api/client';
 import { Queries } from '../api/queries';
 import { useUserStore, type SportBet } from '../store/userStore';
 import { setShieldOdds } from '../store/shieldOddsCache';
-import { getPermanentWonCount, mergeFinishedWithWonCache } from '../store/wonBetsCache';
+import { refreshFinishedSportBets, useFinishedSportBets } from '../store/finishedSportBets';
 import { useSportsFxRates, loadSportsFxRates } from './useSportsFxRates';
 import {
   ACTIVE_SPORT_BETS_MAX_TOTAL,
@@ -13,15 +13,6 @@ import {
 
 const BATCH_LIMIT = ACTIVE_SPORT_BETS_PAGE_SIZE;
 const MAX_BETS_LIMIT = ACTIVE_SPORT_BETS_MAX_TOTAL;
-const FINISHED_STATUSES = [
-  'settled',
-  'settledManual',
-  'settledPending',
-  'cancelPending',
-  'cancelled',
-  'cashout',
-  'cashoutPending',
-];
 
 /** Liste liefert oft keinen Cashout – Preview-Werte nicht bei jedem Poll verlieren. */
 function mergePreviewCashoutFields(server: SportBet, prev: SportBet | undefined): SportBet {
@@ -41,37 +32,34 @@ function mergePreviewCashoutFields(server: SportBet, prev: SportBet | undefined)
 }
 
 export interface UseBetHistoryOptions {
+  userId: string | undefined;
   userName: string | undefined;
   refreshIntervalMs?: number;
   onActiveFetched?: (bets: SportBet[]) => void;
 }
 
 export function useBetHistory({
+  userId,
   userName,
   refreshIntervalMs = 120_000,
   onActiveFetched,
 }: UseBetHistoryOptions) {
   const setStoreActiveBets = useUserStore((s) => s.setActiveBets);
   const [activeBets, setActiveBetsState] = useState<SportBet[]>(() => useUserStore.getState().activeBets);
-  const [finishedBets, setFinishedBets] = useState<SportBet[]>([]);
-  const [permanentWonCount, setPermanentWonCount] = useState(0);
+  const activeBetsRef = useRef(activeBets);
+  const { bets: finishedBets, savedWonCount, loading: isLoadingFinished, error: finishedError } = useFinishedSportBets(userId, userName);
   const [isLoadingActive, setIsLoadingActive] = useState(false);
-  const [isLoadingFinished, setIsLoadingFinished] = useState(false);
   const { usdRates, refreshRates: fetchUsdRates } = useSportsFxRates();
   const onActiveFetchedRef = useRef(onActiveFetched);
   onActiveFetchedRef.current = onActiveFetched;
   const loadingActiveRef = useRef(false);
-  const loadingFinishedRef = useRef(false);
 
   const setActiveBets = useCallback<Dispatch<SetStateAction<SportBet[]>>>(
     (next) => {
-      setActiveBetsState((prev) => {
-        const resolved = typeof next === 'function'
-          ? (next as (value: SportBet[]) => SportBet[])(prev)
-          : next;
-        setStoreActiveBets(resolved);
-        return resolved;
-      });
+      const resolved = typeof next === 'function' ? next(activeBetsRef.current) : next;
+      activeBetsRef.current = resolved;
+      setActiveBetsState(resolved);
+      setStoreActiveBets(resolved);
     },
     [setStoreActiveBets]
   );
@@ -112,65 +100,17 @@ export function useBetHistory({
     }
   }, [userName, setActiveBets]);
 
-  const fetchFinishedBets = useCallback(async () => {
-    if (!userName) return;
-    if (loadingFinishedRef.current) return;
-    loadingFinishedRef.current = true;
-    setIsLoadingFinished(true);
-    try {
-      let offset = 0;
-      const all: SportBet[] = [];
-      while (true) {
-        if (all.length >= MAX_BETS_LIMIT) break;
-        const res = await StakeApi.query<{ user?: { sportBetList?: Array<{ bet?: SportBet }> } }>(Queries.FetchFinishedSportBets, {
-          limit: BATCH_LIMIT,
-          offset,
-          name: userName,
-          status: FINISHED_STATUSES,
-        });
-        if (res.errors) break;
-        const raw = res.data?.user?.sportBetList ?? [];
-        const batch = raw.map((item) => item?.bet).filter((b): b is SportBet => !!b && !!b.id);
-        if (batch.length > 0) all.push(...batch);
-        if (batch.length < BATCH_LIMIT) break;
-        offset += BATCH_LIMIT;
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-      const unique = Array.from(new Map(all.map((b) => [b.id, b])).values());
-      const merged = mergeFinishedWithWonCache(userName, unique);
-      setFinishedBets(merged.bets);
-      setPermanentWonCount(merged.permanentWonCount);
-    } catch (err) {
-      console.error('Error fetching finished bets:', err);
-    } finally {
-      setIsLoadingFinished(false);
-      loadingFinishedRef.current = false;
-    }
-  }, [userName]);
-
-  useEffect(() => {
-    if (!userName) {
-      setPermanentWonCount(0);
-      return;
-    }
-    setPermanentWonCount(getPermanentWonCount(userName));
-  }, [userName]);
-
   useEffect(() => {
     if (!userName) return;
     fetchActiveBets();
-    fetchFinishedBets();
     void loadSportsFxRates();
-  }, [userName, fetchActiveBets, fetchFinishedBets]);
+  }, [userName, fetchActiveBets]);
 
   useEffect(() => {
     if (!userName || refreshIntervalMs <= 0) return;
-    const t = setInterval(() => {
-      fetchActiveBets();
-      fetchFinishedBets();
-    }, refreshIntervalMs);
+    const t = setInterval(fetchActiveBets, refreshIntervalMs);
     return () => clearInterval(t);
-  }, [userName, refreshIntervalMs, fetchActiveBets, fetchFinishedBets]);
+  }, [userName, refreshIntervalMs, fetchActiveBets]);
 
   // Persist API adjustments into shield cache so effective odds stay correct after refresh (same as AutoBet path).
   useEffect(() => {
@@ -185,13 +125,13 @@ export function useBetHistory({
     activeBets,
     setActiveBets,
     finishedBets,
-    setFinishedBets,
-    permanentWonCount,
+    savedWonCount,
+    finishedError,
     isLoadingActive,
     isLoadingFinished,
     usdRates,
     fetchActiveBets,
-    fetchFinishedBets,
+    fetchFinishedBets: refreshFinishedSportBets,
     fetchUsdRates,
   };
 }
