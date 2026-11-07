@@ -788,6 +788,7 @@
 .bet-preview-panel {
   display: flex;
   flex-direction: column;
+  container: bet-preview / inline-size;
   min-height: 0;
   height: 100%;
   overflow: hidden;
@@ -887,6 +888,77 @@
 
 .bet-preview-head-id:hover {
   color: var(--app-accent);
+}
+
+.bet-preview-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  align-self: center;
+  flex: 0 1 min(40%, 15rem);
+  min-width: 0;
+}
+
+.bet-preview-search > svg {
+  position: absolute;
+  left: 0.55rem;
+  color: var(--app-text-muted);
+  pointer-events: none;
+}
+
+.bet-preview-search > input {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0.3rem 1.8rem;
+  border: 1px solid var(--app-border);
+  border-radius: 7px;
+  background: var(--app-bg-card);
+  color: var(--app-text);
+  font-size: 0.78rem;
+}
+
+.bet-preview-search > input::placeholder {
+  color: var(--app-text-muted);
+}
+
+.bet-preview-search > input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.bet-preview-search-clear {
+  position: absolute;
+  right: 0.25rem;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.bet-preview-search-clear:hover {
+  color: var(--app-text);
+  background: color-mix(in srgb, var(--app-border) 55%, transparent);
+}
+
+.bet-preview-search-empty {
+  margin: 0;
+  padding: 1.1rem 0.8rem;
+  color: var(--app-text-muted);
+  font-size: 0.8rem;
+}
+
+@container bet-preview (max-width: 420px) {
+  .bet-preview-head {
+    flex-wrap: wrap;
+  }
+
+  .bet-preview-search {
+    flex: 1 0 100%;
+    order: 1;
+  }
 }
 
 .bet-preview-panel-close {

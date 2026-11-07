@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react';
 import type { SportBet, SportBetOutcome } from '../../store/userStore';
 import {
   getCashoutValue,
@@ -9,6 +10,7 @@ import {
 } from '../../services/cashoutService';
 import { formatAmount } from '../Casino/utils/formatAmount';
 import { toUsd } from '../Logger/loggerUtils';
+import { marketKeywordHaystack, normalizeMatchText } from '../../utils/marketKeywordFilter';
 import { formatSportBetShareIdForCopy } from '../../utils/stakeSportsUrl';
 import { MatchTracker } from './MatchTracker';
 
@@ -53,6 +55,9 @@ export function BetPreviewPanel({
   usdRates = {},
   variant = 'modal',
 }: BetPreviewPanelProps) {
+  const [matchSearch, setMatchSearch] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const selectionsRef = useRef<HTMLDivElement>(null);
   const cashoutVal = getCashoutValue(bet);
   const cashoutMult = resolveCashoutMultiplierForBet(bet);
   const statusLower = String(bet.status || '').toLowerCase();
@@ -61,6 +66,11 @@ export function BetPreviewPanel({
     && !bet.cashoutDisabled && cashoutVal > 0 && cashoutMult > 0;
 
   const outcomes = bet.outcomes ?? [];
+  const searchWords = normalizeMatchText(matchSearch).match(/[\p{L}\p{N}]+/gu) ?? [];
+  const visibleOutcomes = searchWords.length > 0 ? outcomes.filter((leg) => {
+    const text = marketKeywordHaystack([leg?.fixture?.name, leg?.outcome?.name, leg?.market?.name]);
+    return searchWords.every((word) => text.includes(word));
+  }) : outcomes;
   const firstFixture = outcomes[0]?.fixture?.name ?? 'Bet';
   const legsTotal = outcomes.length;
   const openLegs = getOpenLegsCount(bet);
@@ -98,6 +108,11 @@ export function BetPreviewPanel({
     void navigator.clipboard.writeText(sportsReference).catch(() => {});
   };
 
+  const changeMatchSearch = (value: string) => {
+    setMatchSearch(value);
+    selectionsRef.current?.scrollTo(0, 0);
+  };
+
   return (
     <div
       className={`bet-preview-panel bet-preview-panel--${variant}`.trim()}
@@ -117,6 +132,35 @@ export function BetPreviewPanel({
             </button>
           </div>
         </div>
+        {legsTotal > 0 && (
+          <div className="bet-preview-search">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <circle cx="10.8" cy="10.8" r="6.4" />
+              <path d="m16 16 4.4 4.4" />
+            </svg>
+            <input
+              ref={searchInputRef}
+              type="search"
+              aria-label="Search matches in this bet slip"
+              placeholder="Search matches"
+              value={matchSearch}
+              onChange={(event) => changeMatchSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape' && matchSearch) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  changeMatchSearch('');
+                }
+              }}
+            />
+            {matchSearch && (
+              <button type="button" className="bet-preview-search-clear" aria-label="Clear match search" onClick={() => {
+                changeMatchSearch('');
+                searchInputRef.current?.focus();
+              }}>×</button>
+            )}
+          </div>
+        )}
         <button type="button" onClick={onClose} className="bet-preview-panel-close" aria-label="Close preview">
           ✕
         </button>
@@ -158,11 +202,16 @@ export function BetPreviewPanel({
 
       <div className="bet-preview-legs-head">
         <span>Selections</span>
-        <span className="bet-preview-legs-count">{legsTotal}</span>
+        <span className="bet-preview-legs-count" aria-live="polite">
+          {searchWords.length > 0 ? `${visibleOutcomes.length} / ${legsTotal}` : legsTotal}
+        </span>
       </div>
 
-      <div className="bet-preview-panel-legs">
-        {outcomes.map((o, i) => {
+      <div className="bet-preview-panel-legs" ref={selectionsRef}>
+        {searchWords.length > 0 && visibleOutcomes.length === 0 && (
+          <p className="bet-preview-search-empty">No matches in this bet slip.</p>
+        )}
+        {visibleOutcomes.map((o, i) => {
           const legStatus = getLegStatus(o);
           return (
             <div key={o?.id ?? i} className={`bet-preview-leg-row bet-preview-leg-row--${legStatus}`}>

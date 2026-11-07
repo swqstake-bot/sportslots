@@ -20,6 +20,7 @@ export function BetPreviewModal({ bet, onClose, onCashout, usdRates = {} }: BetP
     >
       <div className="rounded-xl shadow-2xl w-[96vw] max-w-2xl max-h-[88vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
         <BetPreviewPanel
+          key={bet.id}
           bet={bet}
           onClose={onClose}
           onCashout={onCashout}

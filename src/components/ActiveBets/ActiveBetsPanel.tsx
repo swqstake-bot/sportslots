@@ -798,6 +798,7 @@ export function ActiveBetsPanel({
             {showInlinePreview && (
               <div className="active-bets-preview-pane">
                 <BetPreviewPanel
+                  key={previewBet.id}
                   bet={previewBet}
                   onClose={closePreview}
                   onCashout={isBetOpenForCashout(previewBet) ? handleCashout : undefined}
