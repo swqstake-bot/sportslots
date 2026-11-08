@@ -1,15 +1,15 @@
 import { useUiStore } from '../../store/uiStore';
 import type { SportBet } from '../../store/userStore';
-import { BetPreviewPanel } from './BetPreviewPanel';
+import { BetPreviewPanel, type BetPreviewPanelProps } from './BetPreviewPanel';
 
-interface BetPreviewModalProps {
+interface BetPreviewModalProps extends Pick<BetPreviewPanelProps, 'matchSearch' | 'onMatchSearchChange'> {
   bet: SportBet;
   onClose: () => void;
   onCashout?: (betId: string, multiplier: number) => void;
   usdRates?: Record<string, number>;
 }
 
-export function BetPreviewModal({ bet, onClose, onCashout, usdRates = {} }: BetPreviewModalProps) {
+export function BetPreviewModal({ bet, matchSearch, onMatchSearchChange, onClose, onCashout, usdRates = {} }: BetPreviewModalProps) {
   const currentView = useUiStore((s) => s.currentView);
 
   return (
@@ -22,6 +22,8 @@ export function BetPreviewModal({ bet, onClose, onCashout, usdRates = {} }: BetP
         <BetPreviewPanel
           key={bet.id}
           bet={bet}
+          matchSearch={matchSearch}
+          onMatchSearchChange={onMatchSearchChange}
           onClose={onClose}
           onCashout={onCashout}
           usdRates={usdRates}

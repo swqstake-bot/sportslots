@@ -106,6 +106,7 @@ export function ActiveBetsPanel({
   const [autoCashoutTargetUsd, setAutoCashoutTargetUsd] = useState(500);
   const [selectedBetIds, setSelectedBetIds] = useState<Set<string>>(new Set());
   const [previewBet, setPreviewBet] = useState<SportBet | null>(null);
+  const [matchSearch, setMatchSearch] = useState('');
   const didOpenInitialPreviewRef = useRef(false);
   const autoCashoutFxWarningRef = useRef<Set<string>>(new Set());
 
@@ -604,6 +605,8 @@ export function ActiveBetsPanel({
         {showModalPreview && (
           <BetPreviewModal
             bet={previewBet}
+            matchSearch={matchSearch}
+            onMatchSearchChange={setMatchSearch}
             onClose={closePreview}
             onCashout={isBetOpenForCashout(previewBet) ? handleCashout : undefined}
             usdRates={usdRates}
@@ -800,6 +803,8 @@ export function ActiveBetsPanel({
                 <BetPreviewPanel
                   key={previewBet.id}
                   bet={previewBet}
+                  matchSearch={matchSearch}
+                  onMatchSearchChange={setMatchSearch}
                   onClose={closePreview}
                   onCashout={isBetOpenForCashout(previewBet) ? handleCashout : undefined}
                   usdRates={usdRates}

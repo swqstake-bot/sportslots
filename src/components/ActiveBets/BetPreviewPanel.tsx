@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import type { SportBet, SportBetOutcome } from '../../store/userStore';
 import {
   getCashoutValue,
@@ -42,6 +42,8 @@ function resolvePreviewStatus(bet: SportBet): { label: string; tone: 'active' | 
 
 export interface BetPreviewPanelProps {
   bet: SportBet;
+  matchSearch: string;
+  onMatchSearchChange: (value: string) => void;
   onClose: () => void;
   onCashout?: (betId: string, multiplier: number) => void;
   usdRates?: Record<string, number>;
@@ -50,12 +52,13 @@ export interface BetPreviewPanelProps {
 
 export function BetPreviewPanel({
   bet,
+  matchSearch,
+  onMatchSearchChange,
   onClose,
   onCashout,
   usdRates = {},
   variant = 'modal',
 }: BetPreviewPanelProps) {
-  const [matchSearch, setMatchSearch] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const selectionsRef = useRef<HTMLDivElement>(null);
   const cashoutVal = getCashoutValue(bet);
@@ -109,7 +112,7 @@ export function BetPreviewPanel({
   };
 
   const changeMatchSearch = (value: string) => {
-    setMatchSearch(value);
+    onMatchSearchChange(value);
     selectionsRef.current?.scrollTo(0, 0);
   };
 
