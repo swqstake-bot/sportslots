@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.330': [
+    '🐛 Stop on Bonus (Stake Engine, z. B. Hushbough): die Bonus-Zeile behält den „Open“-Button, auch wenn Stake die Wette schon vorher meldet — Bonus im Popup öffnen und ausspielen',
+  ],
   '1.0.329': [
     '🐛 Stop on Bonus: Stake-Engine-Boni im Format „scatterTrigger“ / „freeSpinsStart“ (z. B. Hushbough) werden erkannt — Autospin stoppt, Scatter-Anzahl für „Min. Scatter“ stimmt',
   ],

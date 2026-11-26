@@ -1107,11 +1107,24 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
                 Number(row?.rawWinAmount ?? 0) || 0,
                 Number(parsed.rawWinAmount ?? parsed.winAmount ?? 0) || 0
               ),
-              isBonus: !!(row?.isBonus || parsed.isBonus),
+              isBonus: !!(row?.isBonus || parsed.isBonus || parsed.stoppedBonus),
               houseBetReconciled: true,
               source: normalizeBetHistorySource(row?.source) || 'housebets',
               id: row?.id,
               addedAt: row?.addedAt,
+              // Stop-on-bonus (Stake Engine: houseBets kommt vor placeBet): Zeile bleibt „Bonus offen“,
+              // damit „Open“ in der BetList erscheint; Win erst nach dem Ausspielen im Popup.
+              ...(parsed.stoppedBonus
+                ? {
+                    stoppedBonus: true,
+                    houseBetReconciled: false,
+                    winAmount: 0,
+                    rawWinAmount: Number(parsed.rawWinAmount ?? 0) || 0,
+                    scatterCount: parsed.scatterCount != null ? Number(parsed.scatterCount) : row?.scatterCount,
+                    slotSlug: row?.slotSlug || slot.slug,
+                    slotName: row?.slotName || slot.name,
+                  }
+                : {}),
               ...(settledBetUsd?.fxStatus === 'ok' &&
               settledBetUsd.usd != null &&
               Number.isFinite(Number(settledBetUsd.usd))
@@ -1208,6 +1221,21 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             ? `round:${String(clone[pendingIdx].roundId)}`
             : null
           const wasStoppedBonus = !!clone[pendingIdx]?.stoppedBonus
+          // Stake Engine: Stake bucht die Wette schon beim Play (Payout 0, Runde offen). Diese House-Zeile
+          // darf den gestoppten Bonus nicht schließen — sonst verschwindet „Open“, bevor er gespielt wurde.
+          if (
+            wasStoppedBonus &&
+            !clone[pendingIdx]?.bonusOpenedAt &&
+            (Number(parsed.winAmount ?? parsedWin) || 0) <= 0
+          ) {
+            if (incomingShare.shareIid && !houseShareFieldsFromParsed(clone[pendingIdx]).shareIid) {
+              clone[pendingIdx] = { ...clone[pendingIdx], ...incomingShare }
+              recordBetHistoryAudit({ slotSlug: slot.slug, event: 'share-on-open-stopped-bonus', roundId: rid ?? null })
+              return clone
+            }
+            recordBetHistoryAudit({ slotSlug: slot.slug, event: 'skip-zero-house-for-open-bonus', roundId: rid ?? null })
+            return rows
+          }
           const placeWin = Number(clone[pendingIdx]?.stoppedBonus ? 0 : clone[pendingIdx]?.winAmount) || 0
           const houseWin = Number(parsed.winAmount ?? parsedWin) || 0
           // House/Stake history is source of truth, but avoid net+gross double vs placeBet.
@@ -1643,6 +1671,10 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       if (!res?.ok) {
         setError(res?.error || 'Could not open slot popup.')
         return
+      }
+      if (betEntry?.id != null) {
+        const openedAt = Date.now()
+        setBetHistory((prev) => prev.map((r) => (r?.id === betEntry.id ? { ...r, bonusOpenedAt: openedAt } : r)))
       }
       if (res?.popupId && betEntry?.id != null) {
         openedBonusPopupsRef.current.set(res.popupId, {
