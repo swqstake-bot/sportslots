@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.332': [
+    '✨ Stop on Bonus: Button „Bonus öffnen“ direkt im roten Stopp-Hinweis — öffnet den Slot im Popup zum Ausspielen, unabhängig von der Spin-Liste',
+  ],
   '1.0.331': [
     '🐛 Stop on Bonus (Stake Engine, z. B. Hushbough): Bonus-Zeile wird nicht mehr von der verspäteten Bet des vorherigen Spins überschrieben — sie bleibt mit „Open“ stehen, bis der Bonus ausgespielt ist',
   ],

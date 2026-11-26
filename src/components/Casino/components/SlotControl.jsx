@@ -435,10 +435,14 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
   const [loading, setLoading] = useState(false)
   const [spinLoading, setSpinLoading] = useState(false)
   const [error, setError] = useState('')
+  /** Stop-on-bonus: offener Bonus zum Öffnen direkt aus dem roten Stopp-Banner (unabhängig von der BetList-Zuordnung). */
+  const [pendingBonusOpen, setPendingBonusOpen] = useState(null)
   const [providerWarning, setProviderWarning] = useState('')
   const [providerRuntimeState, setProviderRuntimeState] = useState(() => getProviderSessionState(slot?.providerId)?.state || 'idle')
   const [lastResult, setLastResult] = useState(null)
   const [betHistory, setBetHistory] = useState([])
+  const betHistoryRef = useRef(betHistory)
+  betHistoryRef.current = betHistory
   const betHistoryLengthRef = useRef(0)
   const seenBetDedupKeysRef = useRef(new Set())
   const seenBetDedupOrderRef = useRef([])
@@ -1679,6 +1683,28 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     }
   }, [accessToken, effectiveSource, effectiveTarget])
 
+  /** „Bonus öffnen“ im Stopp-Banner: gleiche Popup-Logik wie „Open“ in der BetList. */
+  const handleOpenPendingBonus = useCallback(async () => {
+    const ctx = pendingBonusOpen
+    if (!ctx?.slotSlug) return
+    // Passende Bonus-Zeile (falls noch vorhanden) als geöffnet markieren, damit der Gewinn danach zugeordnet wird.
+    const rows = betHistoryRef.current || []
+    let row = null
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const r = rows[i]
+      if (!r?.stoppedBonus || r?.bonusOpenedAt) continue
+      if (ctx.roundId != null && r.roundId != null && String(r.roundId) !== String(ctx.roundId)) continue
+      row = r
+      break
+    }
+    await handleOpenSlotFromBet({
+      ...(row || {}),
+      slotSlug: ctx.slotSlug,
+      slotName: ctx.slotName,
+      id: row?.id,
+    })
+  }, [pendingBonusOpen, handleOpenSlotFromBet])
+
   useEffect(() => {
     if (!window.electronAPI?.onSlotPopupClosed) return
     const unsub = window.electronAPI.onSlotPopupClosed((payload) => {
@@ -1687,6 +1713,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       // Stop-on-bonus: Win kommt von houseBets nach Settlement — nicht aus rawWinAmount des Trigger-Spins
       // (sonst doppelter Win: einmal „vor Open“, einmal nach House-Settlement).
       openedBonusPopupsRef.current.delete(popupId)
+      setPendingBonusOpen(null)
     })
     return () => {
       if (typeof unsub === 'function') unsub()
@@ -1837,6 +1864,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
     }
     autospinCancelRef.current = false
     setIsAutospinning(true)
+    setPendingBonusOpen(null)
     setAutospinProgress(0)
     setError('')
     setProviderWarning('')
@@ -1975,6 +2003,15 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
             recordAutospinStopBet({ ...parsed, winAmount: 0, stoppedBonus: true }, { stoppedBonus: true })
           }
           setError(`Autospin stopped: bonus${parsed.scatterCount != null ? ` (${parsed.scatterCount} scatters)` : ''} hit after ${spinsDone + 1} spin(s)`)
+          setPendingBonusOpen({
+            slotSlug: slot.slug,
+            slotName: slot.name,
+            roundId: parsed.roundId ?? null,
+            betAmount: parsed.betAmount ?? effectiveBet,
+            currencyCode: parsed.currencyCode || effectiveTarget || null,
+            scatterCount: parsed.scatterCount ?? null,
+            at: Date.now(),
+          })
           notifyBonusHit(slot.name, spinsDone + 1)
           triggerLogRefresh()
           break
@@ -2734,7 +2771,31 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           )}
         </p>
       )}
-      {error && <div style={STYLES.error}>{error}</div>}
+      {error && (
+        <div style={{ ...STYLES.error, display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+          <span style={{ flex: 1, minWidth: 0 }}>{error}</span>
+          {pendingBonusOpen && (
+            <button
+              type="button"
+              onClick={() => void handleOpenPendingBonus()}
+              title={`Bonus in ${pendingBonusOpen.slotName || pendingBonusOpen.slotSlug} öffnen und ausspielen`}
+              style={{
+                padding: '0.35rem 0.85rem',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--error)',
+                background: 'rgba(255, 82, 82, 0.18)',
+                color: 'var(--error)',
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Bonus öffnen
+            </button>
+          )}
+        </div>
+      )}
       {providerWarning && <div style={STYLES.warning}>{providerWarning}</div>}
     </>
   )
