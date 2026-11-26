@@ -2,6 +2,7 @@
  * Slot-Auswahl – Futuristisch: Horizontale Provider-Chips + kompaktes Grid
  */
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { SlotCatalogReloadBar } from './SlotCatalogReloadBar'
 import { getSlotsGroupedByProvider, PROVIDERS as PROVIDERS_BASIC } from '../constants/slots'
 import { PROVIDERS as PROVIDERS_META, supportsMultiCurrencySameSlot } from '../constants/providers'
 import {
@@ -493,6 +494,7 @@ export function SlotSelectMulti({
 
   return (
     <div className="slot-select-cyber" style={{ marginBottom: '1rem' }}>
+      <SlotCatalogReloadBar slotCount={slots?.length || 0} />
       {isInstanceMode && !hideInstanceTray && selectedInstances.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
           {selectedInstances.map((inst) => {

@@ -1,5 +1,26 @@
-import { useState, useEffect, useMemo } from 'react'
-import { fetchStakeSlots, NEW_SLOTS_REFRESH_INTERVAL_MS } from '../api/stakeSlotsApi'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import {
+  fetchStakeSlots,
+  NEW_SLOTS_REFRESH_INTERVAL_MS,
+  reloadAllSlots,
+  getSlotReloadState,
+  subscribeSlotReload,
+  subscribeSlotCatalog,
+} from '../api/stakeSlotsApi'
+
+/**
+ * Status + Auslöser für „Slots aktualisieren“ (kompletter Katalog-Scan). Der Status liegt global
+ * in stakeSlotsApi, damit Button und useSlots (in verschiedenen Komponenten) synchron bleiben.
+ */
+export function useSlotCatalogReload() {
+  const [state, setState] = useState(getSlotReloadState)
+  useEffect(() => subscribeSlotReload(setState), [])
+  const reload = useCallback(() => reloadAllSlots().catch((e) => {
+    console.warn('[Slots] Vollreload fehlgeschlagen:', e?.message || e)
+    return null
+  }), [])
+  return { reload, reloading: state.running, progress: state.progress, lastResult: state.lastResult }
+}
 
 function mergeSlots(dynamicList, discoveredList = []) {
   const bySlug = new Map()
@@ -18,6 +39,15 @@ export function useSlots(accessToken, discoveredSlots = []) {
   const [dynamicSlots, setDynamicSlots] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const { reload, reloading, progress } = useSlotCatalogReload()
+
+  // Manueller Vollreload („Slots aktualisieren“) → neuen Katalog sofort übernehmen.
+  useEffect(() => subscribeSlotCatalog((list) => {
+    if (Array.isArray(list) && list.length) {
+      setDynamicSlots(list)
+      setError('')
+    }
+  }), [])
 
   useEffect(() => {
     if (!accessToken?.trim()) {
@@ -75,5 +105,5 @@ export function useSlots(accessToken, discoveredSlots = []) {
     () => mergeSlots(dynamicSlots, discoveredSlots),
     [dynamicSlots, discoveredSlots]
   )
-  return { slots: webSlots, loading, error }
+  return { slots: webSlots, loading, error, reload, reloading, progress }
 }

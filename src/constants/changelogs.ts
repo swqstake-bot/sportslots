@@ -1,4 +1,8 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.328': [
+    '🐛 Slots: Stake-Engine-Spiele, die nur in der Kategorie „Engine“ stehen (z. B. Swaq Studios „Hushbough“), fehlen nicht mehr',
+    '✨ Slots: Button „Slots aktualisieren“ lädt den kompletten Katalog neu (alle Kategorien + alle Provider, neue Studios automatisch) mit Fortschrittsbalken',
+  ],
   '1.0.327': [
     '🐛 Slots: neue Releases werden wieder automatisch geladen (alle 15 Min im Hintergrund + Stake „New Releases“-Gruppe), nicht mehr nur über Challenges',
   ],

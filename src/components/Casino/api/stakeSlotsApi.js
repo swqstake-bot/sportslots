@@ -24,8 +24,20 @@ const QUICK_LOAD_EXTRA_GROUPS = [
  * auch dann gefunden werden, wenn ein Sort-Wert von der API abgelehnt wird.
  */
 const NEW_RELEASE_GROUPS = [
-  { slug: 'new-releases', pages: 4 },
+  { slug: 'new-releases', pages: 14 },
 ]
+/**
+ * Globale Kategorien für Quick-Load (sort „newest“). Stake-Engine-Spiele stehen teils NUR in
+ * „engine“ und nicht in „slots“ (z. B. swaqstudios-hushbough) — ohne diese Quelle fehlten sie.
+ */
+const QUICK_LOAD_NEWEST_CATEGORIES = [
+  { slug: 'slots', pages: NEWEST_PAGES_MAX },
+  { slug: 'engine', pages: NEWEST_PAGES_MAX },
+]
+/** Vollscan: diese Gruppen werden komplett paginiert (keine Offset-Grenze bei Stake). */
+const FULL_SCAN_GLOBAL_GROUPS = ['slots', 'engine', 'new-releases']
+const FULL_SCAN_PAGE_DELAY_MS = 80
+const FULL_SCAN_PROVIDER_CONCURRENCY = 4
 const SESSION_CACHE_TTL_MS = 10 * 60 * 1000 // 10 min – kein Refetch beim Tab-Wechsel
 /** Hintergrund-Reload für neue Slots (useSlots), damit lange laufende Sessions Neuerscheinungen sehen. */
 export const NEW_SLOTS_REFRESH_INTERVAL_MS = 15 * 60 * 1000
@@ -125,6 +137,9 @@ const PROVIDER_MAP = {
   'colorful-play-gaming': 'stakeEngine',
   'colorfulplay': 'stakeEngine',
   'colorfulplaygaming': 'stakeEngine',
+  // Swaq Studios (Stake Engine). Stake-Gruppen-Slug ist „swaqstudios“ (ohne Bindestrich).
+  swaqstudios: 'stakeEngine',
+  'swaq-studios': 'stakeEngine',
   // LK7 / Flower Poker (HAR: lk7.live.stake-engine.com, mode "base", no play currency)
   lk7: 'stakeEngine',
   'lk7-com': 'stakeEngine',
@@ -169,6 +184,21 @@ function getProviderKuratorSlugs() {
   return [...new Set(Object.keys(PROVIDER_MAP))].sort()
 }
 
+/**
+ * Provider-Kuratoren für den Vollscan: PROVIDER_MAP plus alle Provider-Gruppen-Slugs, die in
+ * geladenen Spielen (groupGames) gesehen wurden — neue Studios brauchen so keinen manuellen Eintrag.
+ */
+function collectProviderKuratorSlugs(...slotLists) {
+  const set = new Set(getProviderKuratorSlugs())
+  for (const list of slotLists) {
+    for (const s of list || []) {
+      const ps = String(s?.providerSlug || '').trim().toLowerCase()
+      if (ps) set.add(ps)
+    }
+  }
+  return [...set].sort()
+}
+
 const SLUG_KURATOR_QUERY = `query SlugKuratorGroup($slug: String!, $limit: Int!, $offset: Int!, $sort: GameKuratorGroupGameSortEnum = popular7d, $filterIds: [String!], $locale: Locale = "en") {
   slugKuratorGroup(slug: $slug) {
     id name slug
@@ -208,6 +238,8 @@ function mapGameToSlot(game) {
     name: game.name,
     providerId,
     thumbnailUrl: game.thumbnailUrl,
+    /** Stake Provider-Gruppen-Slug (z. B. „swaqstudios“) — für dynamische Provider im Vollscan. */
+    providerSlug: String(providerSlug).toLowerCase(),
     /** Stake Kurator `game.id` — für RGS-Fairness (`RotateSeed` / `userGameFair`), nicht Slug. */
     stakeGameId: game.id != null ? String(game.id) : undefined,
   }
@@ -342,68 +374,269 @@ async function fetchNewestPagesForCuratorSlug(curatorSlug, maxPages, sort = 'new
   return out
 }
 
-/** Ein Provider-Kurator komplett paginieren (limit 39, Offset pro Gruppe — nicht global). */
-async function fetchSlotsForKuratorSlug(curatorSlug, sort = 'popular7d') {
+/**
+ * Eine Kurator-Gruppe komplett paginieren und gameCount mitliefern.
+ * `isComplete(gameCount, collected)`: bricht nach einer Seite ab, wenn die Gruppe schon bekannt ist
+ * (spart beim Provider-Durchlauf fast alle Folgeseiten).
+ */
+async function fetchCuratorWithCount(curatorSlug, { sort = 'popular7d', onPage, isComplete } = {}) {
   const collected = []
   let offset = 0
+  let gameCount = null
+  let exists = true
   while (true) {
+    let response
     try {
-      const response = await fetchPage({ slug: curatorSlug, limit: PAGE_SIZE, offset, sort }, 2)
-      const batch = parseGamesFromResponse(response)
-      if (!batch.length) break
-      collected.push(...batch)
-      if (batch.length < PAGE_SIZE) break
-      offset += PAGE_SIZE
-      await new Promise((r) => setTimeout(r, KURATOR_PAGE_DELAY_MS))
+      response = await fetchPage({ slug: curatorSlug, limit: PAGE_SIZE, offset, sort }, 2)
     } catch (error) {
       if (isRetryableSlotError(error)) break
       throw error
     }
+    const group = response?.data?.slugKuratorGroup
+    if (!group) {
+      exists = false
+      break
+    }
+    if (gameCount == null && Number.isFinite(Number(group.gameCount))) gameCount = Number(group.gameCount)
+    const rawCount = group.groupGamesList?.length ?? 0
+    const batch = parseGamesFromResponse(response)
+    collected.push(...batch)
+    onPage?.({ fetched: offset + rawCount, gameCount })
+    if (rawCount < PAGE_SIZE) break
+    if (isComplete?.(gameCount, collected)) break
+    offset += PAGE_SIZE
+    await new Promise((r) => setTimeout(r, FULL_SCAN_PAGE_DELAY_MS))
   }
-  return collected
+  return { slots: collected, gameCount, exists }
 }
 
-/** Vollständiger Katalog: alle Provider-Kuratoren + global „slots“ (SSP reloadSlots-Pattern). */
-async function fetchFullSlotCatalogByProviders() {
+/**
+ * Vollständiger Katalog:
+ *  1. globale Gruppen „slots“, „engine“ (Stake-Engine-Spiele ohne slots-Kategorie!) und
+ *     „new-releases“ komplett paginiert,
+ *  2. alle Provider-Kuratoren aus PROVIDER_MAP + dynamisch entdeckte Provider-Slugs.
+ * @param {object[]} [cached] bisheriger Katalog (liefert zusätzlich bekannte Provider-Slugs)
+ * @param {(p: SlotReloadProgress) => void} [onProgress]
+ */
+async function fetchFullSlotCatalogByProviders(cached = [], onProgress) {
   const bySlug = new Map()
-  const kuratorSlugs = getProviderKuratorSlugs()
-  console.log(`[Slots] Vollscan über ${kuratorSlugs.length} Provider-Kuratoren…`)
+  const failures = []
+  const addAll = (list) => {
+    let added = 0
+    for (const slot of list) {
+      if (!bySlug.has(slot.slug)) added++
+      bySlug.set(slot.slug, slot)
+    }
+    return added
+  }
 
-  for (let i = 0; i < kuratorSlugs.length; i++) {
-    const curatorSlug = kuratorSlugs[i]
+  const groups = FULL_SCAN_GLOBAL_GROUPS
+  let providerSlugs = collectProviderKuratorSlugs(cached)
+  let done = 0
+  const emit = (patch) => {
+    const total = groups.length + providerSlugs.length
+    onProgress?.({
+      phase: 'groups',
+      done,
+      total,
+      current: '',
+      slots: bySlug.size,
+      percent: 0,
+      ...patch,
+    })
+  }
+
+  console.log(`[Slots] Vollscan: ${groups.length} globale Gruppen + Provider-Kuratoren…`)
+  for (let gi = 0; gi < groups.length; gi++) {
+    const slug = groups[gi]
     try {
-      const batch = await fetchSlotsForKuratorSlug(curatorSlug, 'popular7d')
-      let added = 0
-      for (const slot of batch) {
-        if (!bySlug.has(slot.slug)) added++
-        bySlug.set(slot.slug, slot)
-      }
-      if (batch.length > 0) {
-        console.log(
-          `[Slots] ${i + 1}/${kuratorSlugs.length} „${curatorSlug}“: +${batch.length} (${added} neu) · gesamt ${bySlug.size}`
-        )
-      }
+      const res = await fetchCuratorWithCount(slug, {
+        sort: 'popular7d',
+        onPage: ({ fetched, gameCount }) => {
+          const frac = gameCount ? Math.min(1, fetched / gameCount) : 0
+          emit({
+            phase: 'groups',
+            current: gameCount ? `${slug} · ${Math.min(fetched, gameCount)}/${gameCount}` : slug,
+            percent: Math.round(((gi + frac) / groups.length) * 50),
+          })
+        },
+      })
+      const added = addAll(res.slots)
+      console.log(`[Slots] Gruppe „${slug}“: ${res.slots.length} Spiele (${added} neu) · gesamt ${bySlug.size}`)
     } catch (error) {
-      console.warn(`[Slots] Kurator „${curatorSlug}“:`, error?.message || error)
+      failures.push(slug)
+      console.warn(`[Slots] Gruppe „${slug}“:`, error?.message || error)
     }
-    if (i + 1 < kuratorSlugs.length) {
-      await new Promise((r) => setTimeout(r, KURATOR_SWITCH_DELAY_MS))
-    }
+    done++
+    emit({ phase: 'groups', current: slug, percent: Math.round(((gi + 1) / groups.length) * 50) })
   }
 
-  try {
-    const globalBatch = await fetchSlotsForKuratorSlug('slots', 'popular7d')
-    for (const slot of globalBatch) bySlug.set(slot.slug, slot)
-    if (globalBatch.length) {
-      console.log(`[Slots] Global „slots“: +${globalBatch.length} · gesamt ${bySlug.size}`)
-    }
-  } catch (error) {
-    if (!isRetryableSlotError(error)) {
-      console.warn('[Slots] Global „slots“:', error?.message || error)
+  // Provider-Slugs aus den gerade geladenen Spielen ergänzen (neue Studios automatisch).
+  providerSlugs = collectProviderKuratorSlugs(cached, Array.from(bySlug.values()))
+  const countByProvider = new Map()
+  for (const s of bySlug.values()) {
+    if (s.providerSlug) countByProvider.set(s.providerSlug, (countByProvider.get(s.providerSlug) || 0) + 1)
+  }
+  console.log(`[Slots] Vollscan über ${providerSlugs.length} Provider-Kuratoren…`)
+
+  let providersDone = 0
+  let cursor = 0
+  const worker = async () => {
+    while (cursor < providerSlugs.length) {
+      const curatorSlug = providerSlugs[cursor++]
+      try {
+        const res = await fetchCuratorWithCount(curatorSlug, {
+          sort: 'popular7d',
+          // Schon alle Spiele des Providers aus den globalen Gruppen bekannt → keine Folgeseiten.
+          isComplete: (gameCount) =>
+            gameCount != null && (countByProvider.get(curatorSlug) || 0) >= gameCount,
+        })
+        const added = addAll(res.slots)
+        if (added > 0) {
+          console.log(`[Slots] Provider „${curatorSlug}“: +${added} neu · gesamt ${bySlug.size}`)
+        }
+      } catch (error) {
+        failures.push(curatorSlug)
+        console.warn(`[Slots] Kurator „${curatorSlug}“:`, error?.message || error)
+      }
+      providersDone++
+      done++
+      emit({
+        phase: 'providers',
+        current: curatorSlug,
+        percent: 50 + Math.round((providersDone / Math.max(1, providerSlugs.length)) * 50),
+      })
+      await new Promise((r) => setTimeout(r, FULL_SCAN_PAGE_DELAY_MS))
     }
   }
+  await Promise.all(
+    Array.from({ length: Math.min(FULL_SCAN_PROVIDER_CONCURRENCY, providerSlugs.length) }, () => worker())
+  )
 
-  return Array.from(bySlug.values())
+  return { slots: Array.from(bySlug.values()), failures, providerCount: providerSlugs.length }
+}
+
+/**
+ * @typedef {object} SlotReloadProgress
+ * @property {'groups'|'providers'|'done'|'error'} phase
+ * @property {number} done   erledigte Kuratoren (globale Gruppen + Provider)
+ * @property {number} total  Kuratoren gesamt (wächst, wenn neue Provider entdeckt werden)
+ * @property {string} current aktueller Kurator
+ * @property {number} slots  bisher gefundene Slots
+ * @property {number} percent 0–100
+ * @property {number} [added] neue Slots ggü. vorherigem Katalog (nur bei phase 'done')
+ * @property {string} [error]
+ */
+
+let reloadAllPromise = null
+let reloadState = { running: false, progress: null, lastResult: null }
+const reloadListeners = new Set()
+const catalogListeners = new Set()
+
+function setReloadState(patch) {
+  reloadState = { ...reloadState, ...patch }
+  for (const fn of reloadListeners) {
+    try {
+      fn(reloadState)
+    } catch (_) {}
+  }
+}
+
+/** Aktueller Status des manuellen Vollreloads (für UI außerhalb von useSlots). */
+export function getSlotReloadState() {
+  return reloadState
+}
+
+/** @returns {() => void} unsubscribe */
+export function subscribeSlotReload(listener) {
+  reloadListeners.add(listener)
+  return () => reloadListeners.delete(listener)
+}
+
+/** Benachrichtigt, wenn ein Vollreload einen neuen Katalog geschrieben hat. @returns {() => void} */
+export function subscribeSlotCatalog(listener) {
+  catalogListeners.add(listener)
+  return () => catalogListeners.delete(listener)
+}
+
+/**
+ * „Slots aktualisieren“: kompletter Katalog-Scan (globale Gruppen + alle Provider inkl. dynamisch
+ * entdeckter), Merge mit dem Cache, Session- und localStorage-Cache aktualisieren.
+ * Läuft bereits ein Reload, wird dessen Promise zurückgegeben.
+ * @param {{ onProgress?: (p: SlotReloadProgress) => void }} [options]
+ * @returns {Promise<{ slots: object[], added: number, total: number, failures: string[] }>}
+ */
+export function reloadAllSlots(options = {}) {
+  const { onProgress } = options
+  let unsubscribe = null
+  if (onProgress) unsubscribe = subscribeSlotReload((st) => st.progress && onProgress(st.progress))
+  if (reloadAllPromise) return reloadAllPromise.finally(() => unsubscribe?.())
+
+  const t0 = Date.now()
+  const cached = sessionSlotsCache?.length ? sessionSlotsCache : loadCachedSlots() || []
+  setReloadState({
+    running: true,
+    progress: { phase: 'groups', done: 0, total: 0, current: '', slots: 0, percent: 0 },
+  })
+
+  reloadAllPromise = (async () => {
+    try {
+      const { slots: fetched, failures, providerCount } = await fetchFullSlotCatalogByProviders(cached, (p) =>
+        setReloadState({ progress: p })
+      )
+      if (!fetched.length) throw new Error('Keine Slots von der Stake-API erhalten')
+      const knownBefore = new Set(cached.map((s) => s.slug))
+      const merged = mergeSlotsInto(cached, fetched)
+      const added = merged.filter((s) => !knownBefore.has(s.slug)).length
+      saveCachedSlots(merged)
+      sessionSlotsCache = merged
+      sessionCacheTime = Date.now()
+      const sec = Math.round((Date.now() - t0) / 1000)
+      console.log(
+        `[Slots] Vollreload: ${merged.length} Slots · +${added} neu · ${providerCount} Provider in ${sec}s` +
+          (failures.length ? ` · Fehler: ${failures.slice(0, 10).join(', ')}` : '')
+      )
+      logApiCall({
+        type: 'stake/slugKuratorGroup',
+        endpoint: 'graphql',
+        request: { mode: 'manual_full_reload', globalGroups: FULL_SCAN_GLOBAL_GROUPS, providerCount },
+        response: { count: merged.length, fetched: fetched.length, added, failures },
+        error: null,
+        durationMs: Date.now() - t0,
+      })
+      const result = { slots: merged, added, total: merged.length, failures }
+      const prev = reloadState.progress || {}
+      setReloadState({
+        running: false,
+        progress: { ...prev, phase: 'done', percent: 100, slots: merged.length, added, current: '' },
+        lastResult: { added, total: merged.length, failures: failures.length, at: Date.now() },
+      })
+      for (const fn of catalogListeners) {
+        try {
+          fn(merged)
+        } catch (_) {}
+      }
+      return result
+    } catch (error) {
+      const msg = error?.message || String(error)
+      logApiCall({
+        type: 'stake/slugKuratorGroup',
+        endpoint: 'graphql',
+        request: { mode: 'manual_full_reload' },
+        response: null,
+        error: msg,
+        durationMs: Date.now() - t0,
+      })
+      setReloadState({
+        running: false,
+        progress: { ...(reloadState.progress || {}), phase: 'error', error: msg },
+      })
+      throw error
+    } finally {
+      reloadAllPromise = null
+    }
+  })()
+  return reloadAllPromise.finally(() => unsubscribe?.())
 }
 
 /**
@@ -432,7 +665,9 @@ async function quickLoadNewSlots(cached) {
     }
   }
 
-  await runSource('slots (newest)', () => fetchNewestPagesForCuratorSlug('slots', NEWEST_PAGES_MAX, 'newest'))
+  for (const g of QUICK_LOAD_NEWEST_CATEGORIES) {
+    await runSource(`${g.slug} (newest)`, () => fetchNewestPagesForCuratorSlug(g.slug, g.pages, 'newest'))
+  }
   for (const g of NEW_RELEASE_GROUPS) {
     await runSource(`${g.slug}`, () => fetchNewestPagesForCuratorSlug(g.slug, g.pages, 'popular7d'))
   }
@@ -464,6 +699,7 @@ async function quickLoadNewSlots(cached) {
     request: {
       quickLoad: true,
       newestPages: NEWEST_PAGES_MAX,
+      newestCategories: QUICK_LOAD_NEWEST_CATEGORIES,
       newReleaseGroups: NEW_RELEASE_GROUPS,
       extraGroups: QUICK_LOAD_EXTRA_GROUPS,
     },
@@ -512,7 +748,7 @@ export async function fetchStakeSlots(accessToken, options = {}) {
   console.log('[Slots] Kein Cache, vollständiger Ladevorgang (Provider-Kuratoren)…')
 
   try {
-    const all = await fetchFullSlotCatalogByProviders()
+    const { slots: all } = await fetchFullSlotCatalogByProviders([])
     if (!all.length) throw new Error('Keine Slots von der Stake-API erhalten')
 
     saveCachedSlots(all)
@@ -522,7 +758,7 @@ export async function fetchStakeSlots(accessToken, options = {}) {
     logApiCall({
       type: 'stake/slugKuratorGroup',
       endpoint: 'graphql',
-      request: { mode: 'provider_kurators', kuratorCount: getProviderKuratorSlugs().length },
+      request: { mode: 'provider_kurators', globalGroups: FULL_SCAN_GLOBAL_GROUPS },
       response: { count: all.length },
       error: null,
       durationMs: Date.now() - t0,
