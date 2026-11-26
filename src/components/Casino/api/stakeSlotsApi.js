@@ -18,7 +18,17 @@ const QUICK_LOAD_EXTRA_GROUPS = [
   { slug: 'fat-panda', pages: 4 },
   { slug: 'lk7-com', pages: 3 },
 ]
+/**
+ * Stake-Kuratorgruppen mit Neuerscheinungen (stake.com/casino/group/new-releases).
+ * Werden mit popular7d geladen — unabhängig vom „newest“-Sort, damit neue Slots
+ * auch dann gefunden werden, wenn ein Sort-Wert von der API abgelehnt wird.
+ */
+const NEW_RELEASE_GROUPS = [
+  { slug: 'new-releases', pages: 4 },
+]
 const SESSION_CACHE_TTL_MS = 10 * 60 * 1000 // 10 min – kein Refetch beim Tab-Wechsel
+/** Hintergrund-Reload für neue Slots (useSlots), damit lange laufende Sessions Neuerscheinungen sehen. */
+export const NEW_SLOTS_REFRESH_INTERVAL_MS = 15 * 60 * 1000
 
 let sessionSlotsCache = null
 let sessionCacheTime = 0
@@ -312,12 +322,12 @@ function mergeSlotsInto(base, incoming) {
   return Array.from(bySlug.values())
 }
 
-/** Mehrere Seiten „newest“ für einen Kurator (z. B. hacksaw-gaming). */
-async function fetchNewestPagesForCuratorSlug(curatorSlug, maxPages) {
+/** Mehrere Seiten „newest“ (oder anderer Sort) für einen Kurator (z. B. hacksaw-gaming). */
+async function fetchNewestPagesForCuratorSlug(curatorSlug, maxPages, sort = 'newest') {
   const out = []
   for (let page = 0; page < maxPages; page++) {
     const offset = page * PAGE_SIZE
-    const variables = { slug: curatorSlug, limit: PAGE_SIZE, offset, sort: 'newest' }
+    const variables = { slug: curatorSlug, limit: PAGE_SIZE, offset, sort }
     try {
       const response = await fetchPage(variables, 2)
       const slots = parseGamesFromResponse(response)
@@ -396,70 +406,105 @@ async function fetchFullSlotCatalogByProviders() {
   return Array.from(bySlug.values())
 }
 
-export async function fetchStakeSlots(accessToken) {
-  if (sessionSlotsCache && Date.now() - sessionCacheTime < SESSION_CACHE_TTL_MS) {
+/**
+ * Neuerscheinungen laden und in den Cache mergen. Jede Quelle ist einzeln abgesichert:
+ * ein Fehler (z. B. abgelehnter Sort, Rate-Limit) verwirft nicht mehr alle anderen Quellen.
+ * Früher führte ein einziger Fehler im globalen „newest“-Scan dazu, dass nur noch der alte
+ * Cache benutzt wurde — neue Slots kamen dann nur noch über Challenges rein.
+ */
+async function quickLoadNewSlots(cached) {
+  const t0 = Date.now()
+  const newest = []
+  const failures = []
+  let sourcesOk = 0
+
+  const runSource = async (label, task) => {
+    try {
+      const rows = await task()
+      sourcesOk++
+      if (rows.length) {
+        newest.push(...rows)
+        console.log(`[Slots] Quick-Load: +${rows.length} Einträge von „${label}“`)
+      }
+    } catch (e) {
+      failures.push(label)
+      console.warn(`[Slots] Quick-Load „${label}“ fehlgeschlagen:`, e?.message || e)
+    }
+  }
+
+  await runSource('slots (newest)', () => fetchNewestPagesForCuratorSlug('slots', NEWEST_PAGES_MAX, 'newest'))
+  for (const g of NEW_RELEASE_GROUPS) {
+    await runSource(`${g.slug}`, () => fetchNewestPagesForCuratorSlug(g.slug, g.pages, 'popular7d'))
+  }
+  for (const g of QUICK_LOAD_EXTRA_GROUPS) {
+    await runSource(`${g.slug} (newest)`, () => fetchNewestPagesForCuratorSlug(g.slug, g.pages, 'newest'))
+  }
+
+  if (sourcesOk === 0) {
+    throw new Error(`Alle Quick-Load-Quellen fehlgeschlagen (${failures.join(', ')})`)
+  }
+
+  const knownBefore = new Set(cached.map((s) => s.slug))
+  const merged = mergeSlotsInto(cached, newest)
+  const newlyAdded = merged.filter((s) => !knownBefore.has(s.slug))
+  saveCachedSlots(merged)
+  sessionSlotsCache = merged
+  sessionCacheTime = Date.now()
+  const sec = Math.round((Date.now() - t0) / 1000)
+  console.log(
+    `[Slots] Quick-Load: ${merged.length} Slots gesamt · ${newest.length} Einträge von API zusammengeführt · ${newlyAdded.length} neue Slugs (vorher ${cached.length}) in ${sec}s` +
+      (failures.length ? ` · Fehler: ${failures.join(', ')}` : '')
+  )
+  if (newlyAdded.length) {
+    console.log('[Slots] Neu:', newlyAdded.slice(0, 20).map((s) => s.slug).join(', '))
+  }
+  logApiCall({
+    type: 'stake/slugKuratorGroup',
+    endpoint: 'graphql',
+    request: {
+      quickLoad: true,
+      newestPages: NEWEST_PAGES_MAX,
+      newReleaseGroups: NEW_RELEASE_GROUPS,
+      extraGroups: QUICK_LOAD_EXTRA_GROUPS,
+    },
+    response: { count: merged.length, mergedRows: newest.length, newlyAddedSlugs: newlyAdded.length, failures },
+    error: null,
+    durationMs: Date.now() - t0,
+  })
+  return merged
+}
+
+/**
+ * @param {string} accessToken
+ * @param {{ force?: boolean }} [options] force: Session-Cache ignorieren (Hintergrund-Reload neuer Slots)
+ */
+export async function fetchStakeSlots(accessToken, options = {}) {
+  const force = Boolean(options?.force)
+  if (!force && sessionSlotsCache && Date.now() - sessionCacheTime < SESSION_CACHE_TTL_MS) {
     console.log(`[Slots] Session-Cache (${sessionSlotsCache.length} Slots), kein API-Call`)
     return sessionSlotsCache
   }
 
-  const cached = loadCachedSlots()
+  const cached = sessionSlotsCache?.length ? sessionSlotsCache : loadCachedSlots()
   const t0 = Date.now()
 
   if (cached && cached.length > 0) {
-    console.log(`[Slots] Cache: ${cached.length} Slots, lade ${NEWEST_PAGES_MAX} Seiten newest (global slots) + Kuratoren…`)
+    console.log(`[Slots] Cache: ${cached.length} Slots, lade Neuerscheinungen (newest + new-releases + Kuratoren)…`)
     try {
-      const newest = []
-      for (let page = 0; page < NEWEST_PAGES_MAX; page++) {
-        const offset = page * PAGE_SIZE
-        const variables = { slug: 'slots', limit: PAGE_SIZE, offset, sort: 'newest' }
-        try {
-          const response = await fetchPage(variables, 2)
-          const slots = parseGamesFromResponse(response)
-          if (slots.length === 0) break
-          newest.push(...slots)
-          if (slots.length < PAGE_SIZE) break
-        } catch (error) {
-          if (isRetryableSlotError(error)) break
-          throw error
-        }
-      }
-      for (const g of QUICK_LOAD_EXTRA_GROUPS) {
-        try {
-          const extra = await fetchNewestPagesForCuratorSlug(g.slug, g.pages)
-          if (extra.length) {
-            newest.push(...extra)
-            console.log(`[Slots] Quick-Load: +${extra.length} Einträge von Kurator „${g.slug}“ (newest)`)
-          }
-        } catch (e) {
-          console.warn(`[Slots] Quick-Load Kurator ${g.slug}:`, e?.message || e)
-        }
-      }
-      const knownBefore = new Set(cached.map((s) => s.slug))
-      const merged = mergeSlotsInto(cached, newest)
-      let newlyAddedSlugs = 0
-      for (const s of merged) {
-        if (!knownBefore.has(s.slug)) newlyAddedSlugs++
-      }
-      saveCachedSlots(merged)
-      sessionSlotsCache = merged
-      sessionCacheTime = Date.now()
-      const sec = Math.round((Date.now() - t0) / 1000)
-      console.log(
-        `[Slots] Quick-Load: ${merged.length} Slots gesamt · ${newest.length} Einträge von API zusammengeführt · ca. ${newlyAddedSlugs} neue Slugs (vorher ${cached.length}) in ${sec}s`
-      )
+      return await quickLoadNewSlots(cached)
+    } catch (err) {
+      console.warn('[Slots] Quick-Load fehlgeschlagen, nutze Cache:', err?.message)
       logApiCall({
         type: 'stake/slugKuratorGroup',
         endpoint: 'graphql',
-        request: { quickLoad: true, newestPages: NEWEST_PAGES_MAX, extraGroups: QUICK_LOAD_EXTRA_GROUPS },
-        response: { count: merged.length, mergedRows: newest.length, newlyAddedSlugs },
-        error: null,
+        request: { quickLoad: true },
+        response: null,
+        error: err?.message || String(err),
         durationMs: Date.now() - t0,
       })
-      return merged
-    } catch (err) {
-      console.warn('[Slots] Quick-Load fehlgeschlag, nutze Cache:', err?.message)
       sessionSlotsCache = cached
-      sessionCacheTime = Date.now()
+      // Kurz cachen, damit der nächste Versuch nicht sofort erneut fehlschlägt, aber bald wieder probiert wird.
+      sessionCacheTime = Date.now() - SESSION_CACHE_TTL_MS + 60 * 1000
       return cached
     }
   }

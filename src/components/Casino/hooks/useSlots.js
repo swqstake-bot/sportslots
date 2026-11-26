@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { fetchStakeSlots } from '../api/stakeSlotsApi'
+import { fetchStakeSlots, NEW_SLOTS_REFRESH_INTERVAL_MS } from '../api/stakeSlotsApi'
 
 function mergeSlots(dynamicList, discoveredList = []) {
   const bySlug = new Map()
@@ -43,7 +43,32 @@ export function useSlots(accessToken, discoveredSlots = []) {
         }
       })
       .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
+
+    // Neue Releases regelmäßig im Hintergrund nachladen — sonst kamen neue Slots in lang
+    // laufenden Sessions nur noch über Challenges (discoveredSlots) in die Liste.
+    let refreshing = false
+    const refreshNewSlots = () => {
+      if (cancelled || refreshing) return
+      refreshing = true
+      fetchStakeSlots(accessToken, { force: true })
+        .then((list) => {
+          if (cancelled || !list?.length) return
+          setDynamicSlots((prev) => {
+            if (prev === list) return prev
+            if (list.length !== prev.length) {
+              console.log('[Slots] Hintergrund-Reload: %d → %d Slots', prev.length, list.length)
+            }
+            return list
+          })
+        })
+        .catch((e) => console.warn('[Slots] Hintergrund-Reload fehlgeschlagen:', e?.message || e))
+        .finally(() => { refreshing = false })
+    }
+    const intervalId = setInterval(refreshNewSlots, NEW_SLOTS_REFRESH_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(intervalId)
+    }
   }, [accessToken])
 
   const webSlots = useMemo(

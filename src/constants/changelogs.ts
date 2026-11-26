@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.327': [
+    '🐛 Slots: neue Releases werden wieder automatisch geladen (alle 15 Min im Hintergrund + Stake „New Releases“-Gruppe), nicht mehr nur über Challenges',
+  ],
   '1.0.320': [
     '🐛 BetList: neueste Spins oben',
   ],
