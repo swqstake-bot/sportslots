@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.331': [
+    '🐛 Stop on Bonus (Stake Engine, z. B. Hushbough): Bonus-Zeile wird nicht mehr von der verspäteten Bet des vorherigen Spins überschrieben — sie bleibt mit „Open“ stehen, bis der Bonus ausgespielt ist',
+  ],
   '1.0.330': [
     '🐛 Stop on Bonus (Stake Engine, z. B. Hushbough): die Bonus-Zeile behält den „Open“-Button, auch wenn Stake die Wette schon vorher meldet — Bonus im Popup öffnen und ausspielen',
   ],

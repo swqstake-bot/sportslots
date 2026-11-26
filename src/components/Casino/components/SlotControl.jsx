@@ -274,6 +274,9 @@ function findPendingRowForHouseReconcile(
     const row = prev[i]
     if (sessionStartAt && (row?.addedAt ?? 0) < sessionStartAt) continue
     if (!row?.stoppedBonus) continue
+    // Noch nicht geöffneter Bonus kann bei Stake nicht abgerechnet sein (Runde offen). Ohne diese Sperre
+    // „klaut“ die verspätete House-Bet des VORHERIGEN Spins die Bonus-Zeile (Hushbough: Open + Bet-ID weg).
+    if (row?.awaitOpenBeforeSettle && !row?.bonusOpenedAt) continue
     if (!PENDING_HOUSE_RECONCILE_SOURCES.has(normalizeBetHistorySource(row?.source))) continue
     if (row?.houseBetReconciled) continue
     if ((now - Number(row?.addedAt || 0)) > STOPPED_BONUS_RECONCILE_WINDOW_MS) continue
@@ -1021,7 +1024,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         }
         // Race: houseBets oft vor placeBet → sonst Leerspin + Ergebnis (Hacksaw/Pragmatic .eu).
         // placeBet merged rückwärts in die jüngste noch nicht reconciled house-Zeile.
-        {
+        // Gestoppter Bonus nie: seine Runde ist bei Stake noch offen, eine vorhandene House-Zeile gehört
+        // zu einem anderen Spin → Bonus-Zeile immer neu anlegen (mit Open-Button).
+        if (!parsed.stoppedBonus) {
           const PLACEBET_HOUSE_LOOSE_MS = 12_000
           let bestIdx = -1
           let bestScore = -Infinity
@@ -1107,24 +1112,11 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
                 Number(row?.rawWinAmount ?? 0) || 0,
                 Number(parsed.rawWinAmount ?? parsed.winAmount ?? 0) || 0
               ),
-              isBonus: !!(row?.isBonus || parsed.isBonus || parsed.stoppedBonus),
+              isBonus: !!(row?.isBonus || parsed.isBonus),
               houseBetReconciled: true,
               source: normalizeBetHistorySource(row?.source) || 'housebets',
               id: row?.id,
               addedAt: row?.addedAt,
-              // Stop-on-bonus (Stake Engine: houseBets kommt vor placeBet): Zeile bleibt „Bonus offen“,
-              // damit „Open“ in der BetList erscheint; Win erst nach dem Ausspielen im Popup.
-              ...(parsed.stoppedBonus
-                ? {
-                    stoppedBonus: true,
-                    houseBetReconciled: false,
-                    winAmount: 0,
-                    rawWinAmount: Number(parsed.rawWinAmount ?? 0) || 0,
-                    scatterCount: parsed.scatterCount != null ? Number(parsed.scatterCount) : row?.scatterCount,
-                    slotSlug: row?.slotSlug || slot.slug,
-                    slotName: row?.slotName || slot.name,
-                  }
-                : {}),
               ...(settledBetUsd?.fxStatus === 'ok' &&
               settledBetUsd.usd != null &&
               Number.isFinite(Number(settledBetUsd.usd))
@@ -1223,11 +1215,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           const wasStoppedBonus = !!clone[pendingIdx]?.stoppedBonus
           // Stake Engine: Stake bucht die Wette schon beim Play (Payout 0, Runde offen). Diese House-Zeile
           // darf den gestoppten Bonus nicht schließen — sonst verschwindet „Open“, bevor er gespielt wurde.
-          if (
-            wasStoppedBonus &&
-            !clone[pendingIdx]?.bonusOpenedAt &&
-            (Number(parsed.winAmount ?? parsedWin) || 0) <= 0
-          ) {
+          if (wasStoppedBonus && clone[pendingIdx]?.awaitOpenBeforeSettle && !clone[pendingIdx]?.bonusOpenedAt) {
             if (incomingShare.shareIid && !houseShareFieldsFromParsed(clone[pendingIdx]).shareIid) {
               clone[pendingIdx] = { ...clone[pendingIdx], ...incomingShare }
               recordBetHistoryAudit({ slotSlug: slot.slug, event: 'share-on-open-stopped-bonus', roundId: rid ?? null })
@@ -1505,8 +1493,9 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
           : Number(parsed.betAmount) > 0
             ? realizedWin / Number(parsed.betAmount)
             : 0
+      // Gestoppter Bonus: gepufferte House-IDs gehören zu früheren Spins (Bonus-Runde ist noch offen).
       const orphanShare =
-        source === 'placebet'
+        source === 'placebet' && !stoppedBonus
           ? claimOrphanHouseShare(orphanHouseShareBufferRef.current, {
               betAmount: parsed.betAmount,
               winAmount: realizedWin,
@@ -1534,6 +1523,10 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
         rawWinAmount: Number(parsed.rawWinAmount ?? parsed.winAmount ?? 0) || 0,
         isBonus: parsed.isBonus || stoppedBonus,
         stoppedBonus,
+        // Stake Engine: Bonus-Runde bleibt bis „Open“ offen → House-Bets erst danach zuordnen.
+        ...(stoppedBonus && isStakeEngineSlot({ providerId: effectiveProviderId, slug: slot.slug })
+          ? { awaitOpenBeforeSettle: true }
+          : {}),
         scatterCount: parsed.scatterCount != null ? Number(parsed.scatterCount) : undefined,
         balance: parsed.balance,
         currencyCode,
@@ -1609,7 +1602,7 @@ const SlotControl = forwardRef(function SlotControl({ slot, accessToken, compact
       }
       return [...rows, entry]
     })
-  }, [slot.slug, slot.name, effectiveTarget, sessionStartAt, toUsdMajor, currencyRates])
+  }, [slot.slug, slot.name, effectiveProviderId, effectiveTarget, sessionStartAt, toUsdMajor, currencyRates])
 
   const isStakeEngine = isStakeEngineSlot({
     providerId: effectiveProviderId,
