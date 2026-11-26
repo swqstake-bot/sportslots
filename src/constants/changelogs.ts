@@ -1,4 +1,7 @@
 export const CHANGELOGS: Record<string, string[]> = {
+  '1.0.329': [
+    '🐛 Stop on Bonus: Stake-Engine-Boni im Format „scatterTrigger“ / „freeSpinsStart“ (z. B. Hushbough) werden erkannt — Autospin stoppt, Scatter-Anzahl für „Min. Scatter“ stimmt',
+  ],
   '1.0.328': [
     '🐛 Slots: Stake-Engine-Spiele, die nur in der Kategorie „Engine“ stehen (z. B. Swaq Studios „Hushbough“), fehlen nicht mehr',
     '✨ Slots: Button „Slots aktualisieren“ lädt den kompletten Katalog neu (alle Kategorien + alle Provider, neue Studios automatisch) mit Fortschrittsbalken',

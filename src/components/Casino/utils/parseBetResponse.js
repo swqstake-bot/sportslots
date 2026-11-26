@@ -165,21 +165,52 @@ function extractBonusFeatureFromEvents(events) {
   return { bonusFeatureId, scatterCount }
 }
 
+/** Stake-Engine-Book-Events (round.state), die einen Freispiel-Bonus auslösen bzw. laufen lassen. */
+const STATE_FS_TRIGGER_TYPES = new Set([
+  'freespintrigger', 'freespinstrigger', 'freespinstart', 'freespinsstart', 'freespinenter', 'freespinsenter',
+])
+const STATE_FS_RUNNING_TYPES = new Set([
+  'enterbonus', 'updatefreespin', 'updatefreespins', 'freespinend', 'freespinsend',
+  'freespinretrigger', 'freespinsretrigger',
+])
+
+function stateScatterCount(s) {
+  if (Array.isArray(s?.positions) && s.positions.length) return s.positions.length
+  const n = Number(s?.count ?? s?.scatterCount)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 function extractBonusFeatureFromState(state) {
   if (!Array.isArray(state)) return { bonusFeatureId: null, scatterCount: null }
+  // Hushbough u. a.: „scatterTrigger“ (count/positions) kommt direkt vor „freeSpinsStart“ — Scatter-Zahl merken.
+  let scatterCount = null
+  for (const s of state) {
+    const tNorm = String(s?.type || '').toLowerCase().replace(/[_-]/g, '')
+    if (tNorm === 'scattertrigger' && !s?.isRetrigger) {
+      scatterCount = stateScatterCount(s)
+      break
+    }
+  }
   for (const s of state) {
     const t = String(s?.type || '').toLowerCase()
     const tNorm = t.replace(/[_-]/g, '')
-    if (tNorm === 'freespintrigger' || tNorm === 'freespinstart' || tNorm === 'freespinenter') {
-      const scatterCount = Array.isArray(s?.positions) ? s.positions.length : null
+    if (STATE_FS_TRIGGER_TYPES.has(tNorm)) {
+      return { bonusFeatureId: 'fs', scatterCount: stateScatterCount(s) ?? scatterCount }
+    }
+    if (STATE_FS_RUNNING_TYPES.has(tNorm)) {
       return { bonusFeatureId: 'fs', scatterCount }
     }
-    if (tNorm === 'enterbonus' || tNorm === 'updatefreespin' || tNorm === 'freespinend') {
-      return { bonusFeatureId: 'fs', scatterCount: null }
+    // Generisch: jedes Book-Event mit „freespin“ im Typ (z. B. freeSpinsStart, freeSpinsRetrigger) ist ein Freispiel-Bonus.
+    if (tNorm.includes('freespin')) {
+      return { bonusFeatureId: 'fs', scatterCount }
     }
-    if (t.includes('bonus') || t.includes('freespin') || s?.bonusType != null) {
+    if (t.includes('bonus') || s?.bonusType != null) {
       const bonusFeatureId = s?.bonusType ?? (t.includes('bonus') ? 'fs' : null)
       if (bonusFeatureId) return { bonusFeatureId, scatterCount: null }
+    }
+    // Freispiel-Reveal (spinType „free“) — Bonus läuft in diesem Book.
+    if (String(s?.spinType || '').toLowerCase() === 'free') {
+      return { bonusFeatureId: 'fs', scatterCount }
     }
   }
   return { bonusFeatureId: null, scatterCount: null }
@@ -229,7 +260,9 @@ export function parseBetResponse(response, betAmount) {
       if (String(a?.at || '').toLowerCase() === 'activator') hasActivatorOnly = true
     }
   }
-  const stateBonus = extractBonusFeatureFromState(response?.round?.state)
+  const stateBonus = extractBonusFeatureFromState(
+    Array.isArray(response?.round?.state) ? response.round.state : response?._stakeEngine?.raw?.round?.state
+  )
   const detectors = [
     () => stateBonus?.bonusFeatureId ? { isBonus: true, shouldStopOnBonus: true } : null,
     (r) => (r?.freeRoundOffer || r?.promotionWin) ? { isBonus: true, shouldStopOnBonus: true } : null,
